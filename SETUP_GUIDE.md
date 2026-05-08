@@ -4,7 +4,7 @@
 
 Project META-CXR được refactor để:
 - Chỉ sử dụng **MIMIC-CXR-JPG** dataset
-- Đọc data từ **GCS bucket** `gs://mimic-cxr-jpg-data` (project: `deploy-app-web-494904`)
+- Đọc data từ **GCS bucket** `gs://mimic-cxr-jpg-data` (project: `mimic-cxr-jpg-491409`)
 - Train song song trên **2 GPU** via PyTorch DDP
 - Chạy hoàn toàn trên **Kaggle** (2x T4 GPU miễn phí)
 - Cấu hình qua **YAML config** (không hardcode)
@@ -31,7 +31,7 @@ META-CXR/
 
 ### Bước 1 — Tạo Service Account
 
-1. Vào [Google Cloud Console](https://console.cloud.google.com) → chọn project **`deploy-app-web-494904`**
+1. Vào [Google Cloud Console](https://console.cloud.google.com) → chọn project **`mimic-cxr-jpg-491409`**
 2. Menu trái: **IAM & Admin** → **Service Accounts**
 3. Click **"+ Create Service Account"**
    - Name: ví dụ `kaggle-mimic-reader`
@@ -50,10 +50,10 @@ File JSON có dạng:
 ```json
 {
   "type": "service_account",
-  "project_id": "deploy-app-web-494904",
+  "project_id": "mimic-cxr-jpg-491409",
   "private_key_id": "...",
   "private_key": "-----BEGIN RSA PRIVATE KEY-----\n...",
-  "client_email": "kaggle-mimic-reader@deploy-app-web-494904.iam.gserviceaccount.com",
+  "client_email": "kaggle-mimic-reader@mimic-cxr-jpg-491409.iam.gserviceaccount.com",
   ...
 }
 ```
