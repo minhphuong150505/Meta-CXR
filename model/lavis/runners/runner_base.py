@@ -166,7 +166,7 @@ class RunnerBase:
 
         if amp:
             if self._scaler is None:
-                self._scaler = torch.cuda.amp.GradScaler()
+                self._scaler = torch.amp.GradScaler(device="cuda")
 
         return self._scaler
 
@@ -374,16 +374,15 @@ class RunnerBase:
         return train_dataloader
 
     def setup_output_dir(self):
-        #lib_root = Path(registry.get_path("library_root"))
+        base_dir = Path(self.config.run_cfg.get("output_dir", "pretraining/outputs"))
 
-        output_dir = Path("pretraining/outputs") / self.run_name
-        if os.path.exists(output_dir) and not self.evaluate_only: # for evaluation want to use the same output dir
-            output_dir = Path("pretraining/outputs") / "{}_{}".format(
+        output_dir = base_dir / self.run_name
+        if os.path.exists(output_dir) and not self.evaluate_only:
+            output_dir = base_dir / "{}_{}".format(
                 self.run_name, datetime.datetime.now().strftime("%m%d_%H%M%S")
             )
         elif self.evaluate_only:
-            # replace "_eval" with "" in the output dir name
-            output_dir = Path("pretraining/outputs") / self.run_name.replace("_eval", "")
+            output_dir = base_dir / self.run_name.replace("_eval", "")
         result_dir = output_dir / "result"
 
         output_dir.mkdir(parents=True, exist_ok=True)

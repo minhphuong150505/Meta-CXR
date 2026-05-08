@@ -1,0 +1,19 @@
+paths:
+  data_root: "/kaggle/working/data"
+  mimic_cxr_jpg_root: "${paths.data_root}/mimic-cxr-jpg/2.1.0"
+  split_csv: "${paths.mimic_cxr_jpg_root}/mimic-cxr-2.0.0-split.csv"
+  reports_csv: "${paths.data_root}/mimic-cxr/report_processed/mimic_cxr_cleaned.csv"
+  chexpert_csv: "${paths.data_root}/data/data_files/mimic-cxr-2.0.0-chexpert.csv"
+  metadata_csv: "${paths.data_root}/data/data_files/mimic-cxr-2.0.0-metadata.csv"
+  output_dir: "/kaggle/working/output"
+  checkpoint_dir: "/kaggle/working/checkpoints"
+  gcs_bucket: "gs://mimic-cxr-jpg-lite"
+  gcs_project: "mimic-cxr-jpg-491409"
+
+wandb:
+  entity: ""
+  project: "meta-cxr"
+
+java:
+  home: "/usr/lib/jvm/java-8-openjdk-amd64/jre"
+  path: "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin:"
