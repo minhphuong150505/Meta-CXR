@@ -7,7 +7,7 @@ paths:
   metadata_csv: "${paths.data_root}/data/data_files/mimic-cxr-2.0.0-metadata.csv"
   output_dir: "/kaggle/working/output"
   checkpoint_dir: "/kaggle/working/checkpoints"
-  gcs_bucket: "gs://mimic-cxr-jpg-lite"
+  gcs_bucket: "gs://mimic-cxr-jpg-data"
   gcs_project: "deploy-app-web-494904"
 
 wandb:
