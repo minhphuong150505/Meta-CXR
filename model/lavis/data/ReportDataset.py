@@ -305,7 +305,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.annotation['Img_Folder'] = self.annotation['Img_Folder'].apply(lambda x: x.replace('\\', '/'))
 
         # Extract patient_id from Img_Folder (3rd part) and study_id is the name of the notefile without the pre-pending 's'
-        self.annotation['subject_id'] = self.annotation['Img_Folder'].apply(lambda x: int(x.split('/')[2].lstrip('p')))
+        self.annotation['subject_id'] = self.annotation['Img_Folder'].apply(lambda x: int(x.split('/')[1].lstrip('p')))
         self.annotation['study_id'] = self.annotation['Note_file'].apply(lambda x: int(x.lstrip('s').rstrip('.txt')))
 
         # Merge chexpert labels with annotation dataframe
