@@ -1,12 +1,26 @@
-PATH_TO_MIMIC_CXR = "/workspace/mimic-cxr" #TODO set your own path to MIMIC-CXR-JPG dataset (should point to a folder containing "mimic-cxr-jpg" folder)
-PATH_TO_MIMIC_NLE = "<PATH_TO_MIMIC_NLE>" #TODO set your own path to MIMIC-NLE dataset (should point to a folder containing "mimic-nle" folder)
-VIS_ROOT = f"{PATH_TO_MIMIC_CXR}/mimic-cxr-jpg/2.1.0"
+from pathlib import Path
+from omegaconf import OmegaConf
 
-JAVA_HOME = "/usr/lib/jvm/java-8-openjdk-amd64/jre" #TODO set your own path to java home, adapt version if necessary
-JAVA_PATH = "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin:"
+_CONFIG_PATH = Path(__file__).parent / "configs" / "env_config.yaml"
 
-# CHEXBERT_ENV_PATH = '/root/miniconda3/envs/chexbert/bin/python'  # Linux path to Python environment
+if not _CONFIG_PATH.exists():
+    raise FileNotFoundError(
+        f"env_config.yaml not found at {_CONFIG_PATH}. "
+        "Copy configs/env_config.yaml.example to configs/env_config.yaml and fill in your paths."
+    )
 
-# CHEXBERT_PATH = '/workspace/chexbert/src'  # Linux path to chexbert project
+_cfg = OmegaConf.to_container(OmegaConf.load(str(_CONFIG_PATH)), resolve=True)
 
-WANDB_ENTITY = "dasith-dev-uom" #TODO set your own wandb entity
+PATH_TO_MIMIC_CXR = _cfg["paths"]["data_root"]
+VIS_ROOT          = _cfg["paths"]["mimic_cxr_jpg_root"]
+SPLIT_CSV         = _cfg["paths"]["split_csv"]
+REPORTS_CSV       = _cfg["paths"]["reports_csv"]
+CHEXPERT_CSV      = _cfg["paths"]["chexpert_csv"]
+METADATA_CSV      = _cfg["paths"]["metadata_csv"]
+OUTPUT_DIR        = _cfg["paths"]["output_dir"]
+
+JAVA_HOME         = _cfg["java"]["home"]
+JAVA_PATH         = _cfg["java"]["path"]
+
+WANDB_ENTITY      = _cfg["wandb"]["entity"]
+WANDB_PROJECT     = _cfg["wandb"]["project"]

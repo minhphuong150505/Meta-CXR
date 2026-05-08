@@ -7,7 +7,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import List, Any
 
-from local_config import PATH_TO_MIMIC_CXR, JAVA_HOME, JAVA_PATH
+from local_config import JAVA_HOME, JAVA_PATH, SPLIT_CSV, REPORTS_CSV, CHEXPERT_CSV, METADATA_CSV
 
 # set java path
 os.environ["JAVA_HOME"] = JAVA_HOME
@@ -218,16 +218,16 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         super().__init__(vis_processor, text_processor, vis_root, ann_paths)
 
         # load csv file
-        self.split = pd.read_csv(f'{PATH_TO_MIMIC_CXR}/mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-split.csv')
+        self.split = pd.read_csv(SPLIT_CSV)
         self.cur_split = split
-        self.reports = pd.read_csv('mimic-cxr/report_processed/mimic_cxr_cleaned.csv')
+        self.reports = pd.read_csv(REPORTS_CSV)
         # drop reports where findings are nan
         self.reports = self.reports.dropna(subset=['findings'])
 
         self.use_pred_labels = True
 
         # self.chexpert = pd.read_csv(f'data/data_files/finding_chexbert_labels.csv')
-        self.chexpert = pd.read_csv(f'data/data_files/mimic-cxr-2.0.0-chexpert.csv')
+        self.chexpert = pd.read_csv(CHEXPERT_CSV)
         
         self.chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
                               "Cardiomegaly", "Lung Opacity",
@@ -238,7 +238,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                               "Fracture", "Support Devices"]
         
         # metadata file
-        self.metadata = pd.read_csv("data/data_files/mimic-cxr-2.0.0-metadata.csv")
+        self.metadata = pd.read_csv(METADATA_CSV)
         print(f"Number of metadata records: {len(self.metadata)}")
         # only consider image have AP and PA views. exclude lateral views
         self.metadata = self.metadata[self.metadata['ViewPosition'].isin(['PA', 'AP'])][['dicom_id']]
