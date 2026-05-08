@@ -8,7 +8,7 @@ paths:
   output_dir: "/kaggle/working/output"
   checkpoint_dir: "/kaggle/working/checkpoints"
   gcs_bucket: "gs://mimic-cxr-jpg-lite"
-  gcs_project: "mimic-cxr-jpg-491409"
+  gcs_project: "deploy-app-web-494904"
 
 wandb:
   entity: ""
