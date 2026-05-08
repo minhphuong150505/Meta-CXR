@@ -10,10 +10,10 @@ from time import time
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from torch.cuda.amp import autocast as autocast
 from torch.nn import functional as F
 
-from torchvision.transforms import Compose, Resize, ToTensor, CenterCrop, transforms
+from torchvision import transforms
+from torchvision.transforms import Compose, Resize, ToTensor, CenterCrop
 
 from model.lavis.common.registry import registry
 from model.lavis.models.base_model import all_gather_with_grad, concat_all_gather

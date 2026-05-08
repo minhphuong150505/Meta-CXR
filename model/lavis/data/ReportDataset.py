@@ -25,7 +25,8 @@ from pycocoevalcap.meteor.meteor import Meteor
 from pycocoevalcap.rouge.rouge import Rouge
 from skimage import io
 from sklearn.metrics import classification_report, accuracy_score
-from torchvision.transforms import Compose, Resize, ToTensor, CenterCrop, transforms
+from torchvision import transforms
+from torchvision.transforms import Compose, Resize, ToTensor, CenterCrop
 
 from model.lavis.processors import BaseProcessor
 from model.lavis.common.registry import registry
