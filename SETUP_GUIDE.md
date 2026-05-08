@@ -4,7 +4,7 @@
 
 Project META-CXR được refactor để:
 - Chỉ sử dụng **MIMIC-CXR-JPG** dataset
-- Đọc data từ **GCS bucket** `gs://mimic-cxr-jpg-lite` (project: `deploy-app-web-494904`)
+- Đọc data từ **GCS bucket** `gs://mimic-cxr-jpg-data` (project: `deploy-app-web-494904`)
 - Train song song trên **2 GPU** via PyTorch DDP
 - Chạy hoàn toàn trên **Kaggle** (2x T4 GPU miễn phí)
 - Cấu hình qua **YAML config** (không hardcode)
@@ -101,7 +101,7 @@ git push
 ### Cell 2 — GCS Authentication
 - Đọc secret `GCS_SERVICE_ACCOUNT` từ Kaggle Secrets
 - Lưu credentials ra `/kaggle/working/gcs_credentials.json`
-- Xác minh kết nối tới bucket — phải in ra `Bucket 'mimic-cxr-jpg-lite' accessible: True`
+- Xác minh kết nối tới bucket — phải in ra `Bucket 'mimic-cxr-jpg-data' accessible: True`
 
 ### Cell 3 — Clone GitHub Repository
 - Clone `https://github.com/DasithEdirisinghe/META-CXR.git` về `/kaggle/working/META-CXR`
@@ -188,7 +188,7 @@ wandb:
 ## Cấu Trúc GCS Bucket Yêu Cầu
 
 ```
-gs://mimic-cxr-jpg-lite/
+gs://mimic-cxr-jpg-data/
 ├── mimic-cxr-jpg/
 │   └── 2.1.0/
 │       ├── mimic-cxr-2.0.0-split.csv
@@ -215,4 +215,4 @@ gs://mimic-cxr-jpg-lite/
 | `CUDA out of memory` | Batch size quá lớn | Giảm `batch_size_train` từ 8 xuống 4 trong `mimic_cxr_2gpu.yaml` |
 | `ModuleNotFoundError` | PYTHONPATH chưa set | Cell 6 đã set `PYTHONPATH=/kaggle/working/META-CXR` tự động |
 | Chỉ thấy 1 GPU | Kaggle accelerator sai | Settings → Accelerator → GPU T4 x2 |
-| `MISSING: mimic_cxr_cleaned.csv` | Cấu trúc bucket khác | Chạy `!gsutil ls gs://mimic-cxr-jpg-lite/` để kiểm tra và điều chỉnh paths |
+| `MISSING: mimic_cxr_cleaned.csv` | Cấu trúc bucket khác | Chạy `!gsutil ls gs://mimic-cxr-jpg-data/` để kiểm tra và điều chỉnh paths |
