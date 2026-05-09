@@ -1,14 +1,12 @@
 paths:
-  data_root: "/kaggle/working/data"
-  mimic_cxr_jpg_root: "${paths.data_root}/mimic-cxr-jpg/2.1.0"
-  split_csv: "${paths.mimic_cxr_jpg_root}/mimic-cxr-2.0.0-split.csv"
-  reports_csv: "${paths.data_root}/mimic-cxr/report_processed/mimic_cxr_cleaned.csv"
-  chexpert_csv: "${paths.data_root}/data/data_files/mimic-cxr-2.0.0-chexpert.csv"
-  metadata_csv: "${paths.data_root}/data/data_files/mimic-cxr-2.0.0-metadata.csv"
+  data_root: "/kaggle/input/mimic-cxr-jpg-lite"
+  mimic_cxr_jpg_root: "/kaggle/input/mimic-cxr-jpg-lite"
+  split_csv: "/kaggle/input/mimic-cxr-jpg-lite/mimic-cxr-2.0.0-split.csv"
+  reports_csv: "/kaggle/working/mimic_cxr_cleaned.csv"
+  chexpert_csv: "/kaggle/input/mimic-cxr-jpg-lite/mimic-cxr-2.0.0-chexpert.csv"
+  metadata_csv: "/kaggle/input/mimic-cxr-jpg-lite/mimic-cxr-2.0.0-metadata.csv"
   output_dir: "/kaggle/working/output"
   checkpoint_dir: "/kaggle/working/checkpoints"
-  gcs_bucket: "gs://mimic-cxr-jpg-data"
-  gcs_project: "mimic-cxr-jpg-491409"
 
 wandb:
   entity: ""

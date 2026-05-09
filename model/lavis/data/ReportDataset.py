@@ -221,6 +221,9 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         # load csv file
         self.split = pd.read_csv(SPLIT_CSV)
         self.cur_split = split
+        # MIMIC-CXR split CSV uses 'validate' not 'val'
+        if split == 'val' and 'validate' in self.split['split'].values:
+            split = 'validate'
         self.reports = pd.read_csv(REPORTS_CSV)
         # drop reports where findings are nan
         self.reports = self.reports.dropna(subset=['findings'])
