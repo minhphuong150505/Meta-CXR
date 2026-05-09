@@ -9,7 +9,7 @@ paths:
   checkpoint_dir: "/kaggle/working/checkpoints"
 
 wandb:
-  entity: ""
+  entity: "phuongnm150505-uit"
   project: "meta-cxr"
 
 java:
