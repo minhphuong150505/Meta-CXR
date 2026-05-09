@@ -60,7 +60,7 @@ class RunnerBase:
 
         self._model = model
 
-        self._wrapped_model = model
+        self._wrapped_model = None
         self._device = None
         self._optimizer = None
         self._scaler = None
@@ -516,6 +516,7 @@ class RunnerBase:
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         logging.info("Training time {}".format(total_time_str))
+
 
     def evaluate(self, cur_epoch="best", skip_reload=False):
         test_logs = dict()
