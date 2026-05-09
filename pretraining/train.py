@@ -102,11 +102,15 @@ def main():
 
     # Only rank 0 logs to wandb; other ranks use disabled mode to silence any stray calls
     if is_main_process():
-        wandb_run = wandb.init(
-            project=cfg.run_cfg.get("project_name", WANDB_PROJECT),
-            entity=WANDB_ENTITY if WANDB_ENTITY else None,
-            name=cfg.run_cfg.run_name
-        )
+        try:
+            wandb_run = wandb.init(
+                project=cfg.run_cfg.get("project_name", WANDB_PROJECT),
+                entity=WANDB_ENTITY if WANDB_ENTITY else None,
+                name=cfg.run_cfg.run_name
+            )
+        except wandb.errors.UsageError:
+            print("wandb: No API key found — logging disabled")
+            wandb_run = wandb.init(mode="disabled")
     else:
         wandb_run = wandb.init(mode="disabled")
 
