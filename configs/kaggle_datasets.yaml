@@ -1,0 +1,24 @@
+# Kaggle dataset config — sửa file này khi:
+#   - Đổi slug dataset (vd. dùng dataset mới)
+#   - Kaggle thay đổi cấu trúc mount (/kaggle/input/datasets/ → khác)
+#   - Đổi tên file CSV pre-built hoặc các metadata CSV
+
+datasets:
+  images:
+    slug: "mimic-cxr-jpg-lite"
+    required_files:
+      - "mimic-cxr-2.0.0-split.csv"
+      - "mimic-cxr-2.0.0-chexpert.csv"
+      - "mimic-cxr-2.0.0-metadata.csv"
+  reports:
+    slug: "mimic-cxr-reported"
+    cleaned_csv_filename: "mimic_cxr_cleaned.csv"
+    txt_glob: "files/**/s*.txt"
+
+# Thứ tự tìm mount point — path đầu tiên tồn tại sẽ được dùng.
+mount_search_roots:
+  - "/kaggle/input/datasets"
+  - "/kaggle/input"
+
+working:
+  cleaned_csv_path: "/kaggle/working/mimic_cxr_cleaned.csv"
