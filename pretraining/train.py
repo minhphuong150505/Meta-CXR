@@ -124,6 +124,13 @@ def main():
         split="train", cfg=cfg, truncate=None
     )
 
+    if not cfg.run_cfg.evaluate:
+        datasets['mimic_cxr']['val'] = MIMIC_CXR_Dataset(
+            vis_processor=None, text_processor=None,
+            vis_root=VIS_ROOT,
+            split="val", cfg=cfg, truncate=None
+        )
+
     model = task.build_model(cfg)
 
     if not cfg.run_cfg.evaluate:
