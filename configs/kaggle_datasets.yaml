@@ -14,6 +14,10 @@ datasets:
     slug: "mimic-cxr-reported"
     cleaned_csv_filename: "mimic_cxr_cleaned.csv"
     txt_glob: "files/**/s*.txt"
+  checkpoints:
+    slug: "meta-cxr-checkpoints"
+    title: "META-CXR training checkpoints"
+    license: "CC0-1.0"
 
 # Thứ tự tìm mount point — path đầu tiên tồn tại sẽ được dùng.
 mount_search_roots:

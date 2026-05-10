@@ -45,6 +45,7 @@ run:
 
   weight_decay: 0.02
   max_epoch: 10
+  save_freq: 3
   # T4 has 16 GB VRAM; 8/GPU x 2 GPUs x accum_grad_iters=4 = effective batch 64
   batch_size_train: 8
   batch_size_eval: 8
