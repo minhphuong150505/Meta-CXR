@@ -1,207 +1,169 @@
-# META-CXR — Hướng Dẫn Cài Đặt và Chạy Trên Kaggle
+# META-CXR — Hướng Dẫn Chạy Training Trên Kaggle
 
-## Tổng Quan
+## Tổng Quan Pipeline
 
-Project META-CXR được refactor để:
-- Chỉ sử dụng **MIMIC-CXR-JPG** dataset
-- Đọc data từ **GCS bucket** `gs://mimic-cxr-jpg-data` (project: `mimic-cxr-jpg-491409`)
-- Train song song trên **2 GPU** via PyTorch DDP
-- Chạy hoàn toàn trên **Kaggle** (2x T4 GPU miễn phí)
-- Cấu hình qua **YAML config** (không hardcode)
+```
+Chest X-Ray (MIMIC-CXR-JPG)
+  → Vision Encoders (BioViL-T / PubMedCLIP)
+  → MHCAC Classification (14 nhóm bệnh)
+  → BLIP2 Q-Former
+  → Vicuna-7B
+  → Radiology Report
+```
+
+Training chạy trên **Kaggle 2× T4 GPU** (miễn phí), chia thành **nhiều session** nếu cần do giới hạn 12h/session. Checkpoint được tự động lưu mỗi 3 epoch và push lên Kaggle Dataset để resume session sau.
 
 ---
 
-## Cấu Trúc Files Quan Trọng
+## Thiết Lập Một Lần (Setup)
+
+### 1. Tạo Kaggle API Token
+
+1. Vào [kaggle.com](https://www.kaggle.com) → **Account** → **Settings** → cuộn xuống **API**
+2. Click **"Create New Token"** → file `kaggle.json` tải về máy
+3. Mở file, lấy 2 giá trị: `username` và `key`
+
+### 2. Thêm Secrets Vào Notebook Kaggle
+
+Mở notebook `META_CXR_kaggle.ipynb` trên Kaggle, rồi:
+
+**Settings (⚙️ bên phải) → Add-ons → Secrets → "+ Add New Secret"**
+
+Thêm 3 secrets sau:
+
+| Label | Value |
+|-------|-------|
+| `WANDB_API_KEY` | API key từ [wandb.ai](https://wandb.ai) → Settings → API Keys |
+| `KAGGLE_USERNAME` | `username` trong `kaggle.json` (vd. `minhphuong150505`) |
+| `KAGGLE_KEY` | `key` trong `kaggle.json` |
+
+> **Tại sao cần `KAGGLE_USERNAME` + `KAGGLE_KEY`?**  
+> Cell 8 dùng Kaggle CLI để push checkpoint lên dataset của bạn. CLI cần xác thực qua hai giá trị này. Cell 8 tự đọc từ Secrets và cấu hình — **bạn không cần tạo `~/.kaggle/kaggle.json` thủ công**.
+
+### 3. Thiết Lập GPU
+
+**Settings → Accelerator → GPU T4 x2** (bắt buộc — DDP cần 2 GPU)  
+**Settings → Internet → On** (để clone GitHub và download packages)
+
+### 4. Đính Kèm 2 Input Datasets
+
+**Notebook Settings → Add Data** → tìm và thêm 2 datasets:
+
+| Dataset | Slug | Nội dung |
+|---------|------|----------|
+| MIMIC-CXR-JPG-LITE | `mimic-cxr-jpg-lite` | JPG images + metadata CSVs |
+| mimic-cxr-reported | `mimic-cxr-reported` | `mimic_cxr_cleaned.csv` + `.txt` reports |
+
+> **`mimic_cxr_cleaned.csv` cần có sẵn trong dataset `mimic-cxr-reported`.**  
+> Nếu chưa có, chạy notebook `generate_mimic_cxr_cleaned.ipynb` một lần để tạo, rồi upload lên dataset đó.
+
+---
+
+## Câu Hỏi Thường Gặp
+
+### Có cần tạo dataset checkpoint thủ công không?
+
+**Không.** Cell 8 tự động:
+- Lần đầu: tạo mới dataset `meta-cxr-checkpoints` (private, dưới tên tài khoản của bạn)
+- Các lần sau: push version mới lên dataset đó
+
+Bạn chỉ cần thêm `KAGGLE_USERNAME` và `KAGGLE_KEY` vào Secrets là xong.
+
+---
+
+## Chạy Session 1 (Train từ đầu)
+
+Chạy các cell theo thứ tự:
 
 ```
-META-CXR/
-├── configs/
-│   ├── env_config.yaml          # Config paths, WandB, Java (overwrite bởi Kaggle Cell 5)
-│   └── env_config.yaml.example  # Template cho môi trường local
-├── pretraining/configs/
-│   └── mimic_cxr_2gpu.yaml      # Config training 2-GPU DDP
-├── META_CXR_kaggle.ipynb        # Notebook chạy trên Kaggle
-├── local_config.py              # Load từ env_config.yaml (không còn hardcode)
-└── ...
+Cell 1 → Cell 2 → Cell 3 → Cell 4 → Cell 5 → Cell 6 → Cell 7 → Cell 8
+```
+
+| Cell | Tên | Làm gì |
+|------|-----|--------|
+| **1** | Install Dependencies | Cài packages còn thiếu, verify 2 GPUs |
+| **2** | WandB Setup | Đăng nhập WandB để track experiments |
+| **3** | Clone Repository | Clone code từ GitHub về `/kaggle/working/META-CXR` |
+| **4** | Verify Datasets | Kiểm tra 2 input datasets, copy `mimic_cxr_cleaned.csv` |
+| **5** | Write env_config.yaml | Tạo file config paths cho Kaggle environment |
+| **6** | Launch Training | Chạy DDP training 2-GPU, **auto-detect resume nếu có checkpoint** |
+| **7** | Display Results | Hiển thị metrics, predictions, checkpoint list |
+| **8** | Push Checkpoints | Tự push checkpoints lên Kaggle Dataset |
+
+**Sau khi Cell 8 chạy xong**, bạn sẽ thấy:
+```
+✅ Done: https://www.kaggle.com/datasets/minhphuong150505/meta-cxr-checkpoints
+Session tiếp theo: Notebook Settings → Add Data → tìm 'meta-cxr-checkpoints' → Add. Cell 6 sẽ tự resume.
 ```
 
 ---
 
-## Phần 1 — Lấy GCS Service Account Key
+## Chạy Session 2+ (Resume từ checkpoint)
 
-### Bước 1 — Tạo Service Account
+**Bước duy nhất cần làm thủ công:**
 
-1. Vào [Google Cloud Console](https://console.cloud.google.com) → chọn project **`mimic-cxr-jpg-491409`**
-2. Menu trái: **IAM & Admin** → **Service Accounts**
-3. Click **"+ Create Service Account"**
-   - Name: ví dụ `kaggle-mimic-reader`
-   - Click **Create and Continue**
-4. Gán role: tìm và chọn **"Storage Object Viewer"** (đủ quyền đọc GCS)
-5. Click **Done**
+1. Mở notebook trên Kaggle
+2. **Settings → Add Data** → tìm dataset `meta-cxr-checkpoints` (của bạn) → **Add**
+3. Chạy lại các cell **1 → 8** như bình thường
 
-### Bước 2 — Tạo JSON Key
-
-1. Trong danh sách Service Accounts, click vào account vừa tạo
-2. Tab **"Keys"** → **"Add Key"** → **"Create new key"**
-3. Chọn **JSON** → **Create**
-4. File `.json` sẽ tự download về máy — **giữ file này an toàn, không commit lên git**
-
-File JSON có dạng:
-```json
-{
-  "type": "service_account",
-  "project_id": "mimic-cxr-jpg-491409",
-  "private_key_id": "...",
-  "private_key": "-----BEGIN RSA PRIVATE KEY-----\n...",
-  "client_email": "kaggle-mimic-reader@mimic-cxr-jpg-491409.iam.gserviceaccount.com",
-  ...
-}
+Cell 6 sẽ tự động phát hiện dataset checkpoint đã attach, tìm checkpoint epoch lớn nhất và resume từ đó. Bạn sẽ thấy trong output:
+```
+Resume from: /kaggle/input/datasets/meta-cxr-checkpoints/checkpoint_2.pth
 ```
 
 ---
 
-## Phần 2 — Cấu Hình Kaggle Notebook
+## Cấu Hình Training
 
-### Bước 1 — Thiết lập GPU
-
-1. Mở notebook `META_CXR_kaggle.ipynb` trên Kaggle
-2. **Settings** (bên phải) → **Accelerator** → chọn **"GPU T4 x2"**
-3. Bật **"Internet"** (cần để clone GitHub và download packages)
-
-### Bước 2 — Thêm GCS Secret
-
-1. Bên phải màn hình: **Add-ons** → **Secrets**
-2. Click **"+ Add New Secret"**
-3. Điền:
-   - **Label**: `GCS_SERVICE_ACCOUNT`
-   - **Value**: paste **toàn bộ nội dung** file JSON vừa download (từ `{` đến `}`)
-4. Click **"Attach to notebook"**
-
-### Bước 3 — Push Code Lên GitHub (bắt buộc)
-
-Notebook sẽ clone repo từ GitHub ở Cell 3, vì vậy **tất cả thay đổi code phải được push trước**:
-
-```bash
-git add configs/ pretraining/configs/mimic_cxr_2gpu.yaml META_CXR_kaggle.ipynb \
-        local_config.py model/lavis/data/ReportDataset.py \
-        model/lavis/runners/runner_base.py pretraining/train.py
-git commit -m "refactor: YAML config, MIMIC-CXR only, 2-GPU DDP, Kaggle notebook"
-git push
-```
-
----
-
-## Phần 3 — Chạy Notebook (7 Cells theo thứ tự)
-
-### Cell 1 — Cài Dependencies
-- Cài các package còn thiếu trên Kaggle: `omegaconf`, `pycocoevalcap`, `torchinfo`, `wandb`, `peft`, v.v.
-- Download NLTK punkt data
-- Kiểm tra số GPU (phải thấy **2 GPUs**)
-
-### Cell 2 — GCS Authentication
-- Đọc secret `GCS_SERVICE_ACCOUNT` từ Kaggle Secrets
-- Lưu credentials ra `/kaggle/working/gcs_credentials.json`
-- Xác minh kết nối tới bucket — phải in ra `Bucket 'mimic-cxr-jpg-data' accessible: True`
-
-### Cell 3 — Clone GitHub Repository
-- Clone `https://github.com/DasithEdirisinghe/META-CXR.git` về `/kaggle/working/META-CXR`
-- Nếu đã tồn tại thì `git pull` để lấy code mới nhất
-
-### Cell 4 — Download Data từ GCS
-- Liệt kê cấu trúc bucket để xác nhận
-- Sync toàn bộ data xuống `/kaggle/working/data/`
-- Kiểm tra 4 file CSV quan trọng:
-  - `mimic-cxr-jpg/2.1.0/mimic-cxr-2.0.0-split.csv`
-  - `mimic-cxr/report_processed/mimic_cxr_cleaned.csv`
-  - `data/data_files/mimic-cxr-2.0.0-chexpert.csv`
-  - `data/data_files/mimic-cxr-2.0.0-metadata.csv`
-
-> **Lưu ý**: Bước này tốn thời gian nhất nếu dataset lớn. Dùng `gsutil -m rsync` để tự skip file đã có khi chạy lại.
-
-### Cell 5 — Tạo `configs/env_config.yaml`
-- Tự phát hiện `JAVA_HOME` trên Kaggle
-- Ghi file `configs/env_config.yaml` với đường dẫn Kaggle (`/kaggle/working/data`)
-- In ra nội dung file để xác nhận
-
-### Cell 6 — Launch Training 2-GPU
-Chạy lệnh:
-```bash
-python -m torch.distributed.run --standalone --nproc_per_node=2 \
-  --master_port=12355 -m pretraining.train \
-  --cfg-path pretraining/configs/mimic_cxr_2gpu.yaml
-```
-- Output được stream trực tiếp ra notebook
-- Mỗi epoch có thể mất 30–90 phút tùy kích thước dataset
-
-### Cell 7 — Xem Kết Quả Đánh Giá
-- Đọc và hiển thị log metrics theo từng epoch (dưới dạng bảng pandas)
-- Hiển thị sample predictions
-- Liệt kê các checkpoint đã lưu
-
----
-
-## Phần 4 — Cấu Hình Nâng Cao
-
-### Thay Đổi Hyperparameters
-
-Sửa file `pretraining/configs/mimic_cxr_2gpu.yaml`:
+Sửa `pretraining/configs/mimic_cxr_2gpu.yaml` để điều chỉnh:
 
 ```yaml
 run:
-  max_epoch: 10           # số epoch
-  batch_size_train: 8     # batch/GPU (T4=16GB, giảm nếu OOM)
-  accum_grad_iters: 4     # effective batch = 8 x 2 GPUs x 4 = 64
-  init_lr: 2e-4           # learning rate
+  max_epoch: 10        # tổng số epoch (tính cả các session trước)
+  save_freq: 3         # lưu checkpoint mỗi N epoch (mặc định 3)
+  batch_size_train: 8  # batch/GPU — giảm xuống 4 nếu OOM
+  accum_grad_iters: 4  # effective batch = 8 × 2 GPUs × 4 = 64
+  init_lr: 2e-4
   warmup_steps: 1000
 ```
 
-### Chạy Ở Môi Trường Local
-
-1. Copy và điều chỉnh config:
-```bash
-cp configs/env_config.yaml.example configs/env_config.yaml
-# Sửa data_root, output_dir, java.home trong env_config.yaml
-```
-
-2. Chạy single GPU:
-```bash
-python -m pretraining.train --cfg-path pretraining/configs/blip2_pretrain_stage1.yaml
-```
-
-3. Chạy 2-GPU DDP:
-```bash
-python -m torch.distributed.run --standalone --nproc_per_node=2 \
-  -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_2gpu.yaml
-```
-
-### WandB Experiment Tracking
-
-Để bật WandB logging, sửa `configs/env_config.yaml`:
-```yaml
-wandb:
-  entity: "your-wandb-username"
-  project: "meta-cxr"
-```
+> **Lưu ý `max_epoch` khi resume:**  
+> `max_epoch` là tổng epoch kể từ epoch 0. Nếu session 1 chạy epoch 0–4 (max_epoch=5), session 2 cần set `max_epoch: 10` để chạy thêm epoch 5–9.
 
 ---
 
-## Cấu Trúc GCS Bucket Yêu Cầu
+## Workflow Nhiều Session
 
 ```
-gs://mimic-cxr-jpg-data/
-├── mimic-cxr-jpg/
-│   └── 2.1.0/
-│       ├── mimic-cxr-2.0.0-split.csv
-│       └── files/
-│           ├── p10/...   (JPG images)
-│           └── p19/...
-├── mimic-cxr/
-│   └── report_processed/
-│       └── mimic_cxr_cleaned.csv
-└── data/
-    └── data_files/
-        ├── mimic-cxr-2.0.0-chexpert.csv
-        └── mimic-cxr-2.0.0-metadata.csv
+Session 1: epoch 0 → 4
+  - Checkpoint được lưu tại epoch 2 (save_freq=3, epoch 2 = lần đầu thỏa (2+1)%3==0)
+  - checkpoint_best.pth lưu bất cứ khi nào val metric cải thiện
+  - Cell 8 push → dataset meta-cxr-checkpoints (version 1)
+
+Session 2: epoch 5 → 9
+  - Attach dataset meta-cxr-checkpoints → Cell 6 auto-resume từ checkpoint_2.pth
+  - Checkpoint lưu tại epoch 5, 8
+  - Cell 8 push → dataset meta-cxr-checkpoints (version 2)
+```
+
+Sau mỗi session, `/kaggle/working/output/` chứa tối đa:
+- `checkpoint_2.pth`, `checkpoint_5.pth`, `checkpoint_8.pth` — checkpoint lịch sử
+- `checkpoint_best.pth` — checkpoint có val metric tốt nhất
+
+Tổng dung lượng: ~4GB cho 10 epoch (3 numbered + 1 best).
+
+---
+
+## Tải Checkpoint Về Máy Local
+
+Sau khi Cell 8 push thành công, tải về máy:
+
+```bash
+# Cài kaggle CLI
+pip install kaggle
+
+# Tải toàn bộ checkpoint dataset về ./checkpoints/
+kaggle datasets download minhphuong150505/meta-cxr-checkpoints -p ./checkpoints --unzip
 ```
 
 ---
@@ -210,9 +172,27 @@ gs://mimic-cxr-jpg-data/
 
 | Lỗi | Nguyên nhân | Giải pháp |
 |-----|-------------|-----------|
-| `Bucket accessible: False` | Sai credentials hoặc thiếu quyền | Kiểm tra service account có role `Storage Object Viewer` |
-| `FileNotFoundError: env_config.yaml` | Cell 5 chưa chạy | Chạy Cell 5 trước Cell 6 |
-| `CUDA out of memory` | Batch size quá lớn | Giảm `batch_size_train` từ 8 xuống 4 trong `mimic_cxr_2gpu.yaml` |
-| `ModuleNotFoundError` | PYTHONPATH chưa set | Cell 6 đã set `PYTHONPATH=/kaggle/working/META-CXR` tự động |
-| Chỉ thấy 1 GPU | Kaggle accelerator sai | Settings → Accelerator → GPU T4 x2 |
-| `MISSING: mimic_cxr_cleaned.csv` | Cấu trúc bucket khác | Chạy `!gsutil ls gs://mimic-cxr-jpg-data/` để kiểm tra và điều chỉnh paths |
+| Cell 8: `Kaggle API credentials not found` | Chưa thêm secrets | Thêm `KAGGLE_USERNAME` + `KAGGLE_KEY` vào Kaggle Secrets |
+| Cell 6: training không resume | Dataset checkpoint chưa attach | Settings → Add Data → thêm `meta-cxr-checkpoints` |
+| `RuntimeError: iostream error` khi save | Disk full | Tăng `save_freq` (ví dụ 5) để ít checkpoint hơn |
+| `RuntimeError: find_unused_parameters` | DDP bug | Đã fix trong `runner_base.py` — pull code mới nhất |
+| `FileNotFoundError: mimic_cxr_cleaned.csv` | CSV chưa có trong dataset | Chạy `generate_mimic_cxr_cleaned.ipynb` một lần |
+| `CUDA out of memory` | Batch size quá lớn | Giảm `batch_size_train` từ 8 → 4 |
+| Chỉ 1 GPU | Accelerator sai | Settings → Accelerator → **GPU T4 x2** |
+| Cell 3 clone chậm | Network throttle | Bình thường, đợi vài phút |
+
+---
+
+## Cấu Trúc Files Quan Trọng
+
+```
+META-CXR/
+├── META_CXR_kaggle.ipynb         # Notebook chính — chạy theo thứ tự Cell 1→8
+├── generate_mimic_cxr_cleaned.ipynb  # Chạy 1 lần để tạo mimic_cxr_cleaned.csv
+├── configs/
+│   ├── kaggle_datasets.yaml      # Slugs datasets, checkpoint config (sửa tại đây)
+│   └── env_config.yaml           # Auto-generated bởi Cell 5 — không sửa trực tiếp
+├── pretraining/configs/
+│   └── mimic_cxr_2gpu.yaml       # Hyperparameters training (sửa tại đây)
+└── CHECKPOINT_WORKFLOW.md        # Chi tiết kỹ thuật về checkpoint workflow
+```
