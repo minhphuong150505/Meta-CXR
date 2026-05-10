@@ -369,6 +369,10 @@ class RunnerBase:
         return self.config.run_cfg.get("resume_ckpt_path", None)
 
     @property
+    def save_freq(self):
+        return self.config.run_cfg.get("save_freq", 1)
+
+    @property
     def train_loader(self):
         train_dataloader = self.dataloaders["train"]
 
@@ -468,12 +472,12 @@ class RunnerBase:
 
                             self._save_checkpoint(cur_epoch, is_best=True)
 
-                        else:
+                        elif (cur_epoch + 1) % self.save_freq == 0:
                             self._save_checkpoint(cur_epoch, is_best=False)
 
         else:
             # if no validation split is provided, we just save the checkpoint at the end of each epoch.
-            if not self.evaluate_only:
+            if not self.evaluate_only and (cur_epoch + 1) % self.save_freq == 0:
                 self._save_checkpoint(cur_epoch, is_best=False)
 
         return best_agg_metric, best_epoch
