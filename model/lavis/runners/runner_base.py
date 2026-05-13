@@ -433,12 +433,8 @@ class RunnerBase:
                         if not self.evaluate_only and split_name == "val": #dont save for train_val
                             if agg_metrics > best_agg_metric:
                                 best_epoch, best_agg_metric = cur_epoch, agg_metrics
-
                                 self._save_checkpoint(cur_epoch, is_best=True)
                                 logging.info("Saving best model at epoch {}".format(cur_epoch))
-
-                            else:
-                                self._save_checkpoint(cur_epoch, is_best=False, is_last=True)
 
                         val_log.update({"best_epoch": best_epoch})
                         self.log_stats(val_log, split_name)
@@ -469,22 +465,19 @@ class RunnerBase:
                     if not self.evaluate_only:
                         if loss < best_agg_metric and split_name == "val":
                             best_epoch, best_agg_metric = cur_epoch, loss
-
                             self._save_checkpoint(cur_epoch, is_best=True)
+                            logging.info("Saving best model at epoch {} (val loss {:.4f})".format(cur_epoch, loss))
 
-                        elif (cur_epoch + 1) % self.save_freq == 0:
-                            self._save_checkpoint(cur_epoch, is_best=False)
-
-        else:
-            # if no validation split is provided, we just save the checkpoint at the end of each epoch.
-            if not self.evaluate_only and (cur_epoch + 1) % self.save_freq == 0:
-                self._save_checkpoint(cur_epoch, is_best=False)
+        # Always save `checkpoint_last.pth` at end of every epoch (resume anchor).
+        if not self.evaluate_only:
+            self._save_checkpoint(cur_epoch, is_best=False, is_last=True)
 
         return best_agg_metric, best_epoch
 
     def train(self, wandb_run):
         start_time = time.time()
-        best_agg_metric = 0
+        # Lower-is-better for loss-based selection; higher-is-better paths overwrite anyway.
+        best_agg_metric = float("inf")
         best_epoch = 0
 
         self.log_config()
@@ -513,10 +506,6 @@ class RunnerBase:
                     break
 
             #dist.barrier()
-
-        # testing phase
-        test_epoch = "best" if len(self.valid_splits) > 0 else cur_epoch
-        self.evaluate(cur_epoch=test_epoch, skip_reload=self.evaluate_only)
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
