@@ -62,6 +62,28 @@ def _state_dict_has_non_finite(state_dict):
     return bad > 0, bad
 
 
+def _scaler_state_is_degenerate(scaler_state):
+    """Detect a GradScaler state that has degraded to scale<=0 (training-dead).
+
+    After enough consecutive AMP overflows, scale halves down to fp32 underflow
+    and becomes exactly 0. From that point: loss*0=0, grad=0, then unscale_
+    divides by 0 producing NaN — every step is skipped forever. Loading such a
+    scaler state poisons the resumed run even though no tensor is NaN/Inf.
+    """
+    if not isinstance(scaler_state, dict):
+        return False, None
+    scale = scaler_state.get("scale")
+    if scale is None:
+        return False, None
+    try:
+        scale_val = scale.item() if isinstance(scale, torch.Tensor) else float(scale)
+    except (TypeError, ValueError):
+        return False, None
+    if not (scale_val > 0):
+        return True, scale_val
+    return False, scale_val
+
+
 @registry.register_runner("runner_base")
 class RunnerBase:
     """
@@ -819,9 +841,15 @@ class RunnerBase:
 
         if self.scaler and "scaler" in checkpoint and checkpoint["scaler"] is not None:
             scaler_bad, scaler_bad_count = _state_dict_has_non_finite(checkpoint["scaler"])
+            scaler_dead, scaler_scale = _scaler_state_is_degenerate(checkpoint["scaler"])
             if scaler_bad:
                 logging.warning(
                     f"Scaler state contains {scaler_bad_count} non-finite tensor(s) — "
+                    "skipping load. GradScaler will start fresh."
+                )
+            elif scaler_dead:
+                logging.warning(
+                    f"Scaler state has degenerate scale={scaler_scale} — "
                     "skipping load. GradScaler will start fresh."
                 )
             else:
