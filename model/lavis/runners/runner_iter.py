@@ -16,7 +16,11 @@ from model.lavis.common.dist_utils import download_cached_file, is_main_process,
 from model.lavis.common.registry import registry
 from model.lavis.common.utils import is_url
 from model.lavis.datasets.data_utils import concat_datasets, reorg_datasets_by_split
-from model.lavis.runners.runner_base import RunnerBase, _state_dict_has_non_finite
+from model.lavis.runners.runner_base import (
+    RunnerBase,
+    _scaler_state_is_degenerate,
+    _state_dict_has_non_finite,
+)
 from torch.utils.data.dataset import ChainDataset
 
 
@@ -221,9 +225,15 @@ class RunnerIter(RunnerBase):
 
         if self.scaler and "scaler" in checkpoint and checkpoint["scaler"] is not None:
             scaler_bad, scaler_bad_count = _state_dict_has_non_finite(checkpoint["scaler"])
+            scaler_dead, scaler_scale = _scaler_state_is_degenerate(checkpoint["scaler"])
             if scaler_bad:
                 logging.warning(
                     f"Scaler state contains {scaler_bad_count} non-finite tensor(s) — "
+                    "skipping load. GradScaler will start fresh."
+                )
+            elif scaler_dead:
+                logging.warning(
+                    f"Scaler state has degenerate scale={scaler_scale} — "
                     "skipping load. GradScaler will start fresh."
                 )
             else:
