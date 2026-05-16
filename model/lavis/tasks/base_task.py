@@ -219,6 +219,15 @@ class BaseTask:
                 loss, loss_dict = self.train_step(model=model, samples=samples)
                 loss /= accum_grad_iters #TODO: not affect loss_dict values for logging
 
+            # Skip iter if loss is NaN/Inf so corruption can't propagate through
+            # accumulated grads; AMP overflow handling alone doesn't clear .grad.
+            if not torch.isfinite(loss):
+                logging.warning(
+                    f"Non-finite loss at iter {i} (value={loss.item()}); skipping step."
+                )
+                optimizer.zero_grad(set_to_none=True)
+                continue
+
             # after_train_step()
             if use_amp:
                 scaler.scale(loss).backward()
@@ -238,6 +247,10 @@ class BaseTask:
                     # Directly clip the gradients for non-AMP training
                     clip_grad_norm_(model.parameters(), max_norm)
                     optimizer.step()
+                # Clear grads after each optimizer step; without this, residual
+                # inf/NaN from an AMP overflow persist across iters and corrupt
+                # all subsequent updates.
+                optimizer.zero_grad(set_to_none=True)
 
             current_lr = optimizer.param_groups[0]["lr"]
             # print(f"current lr is {current_lr}")
