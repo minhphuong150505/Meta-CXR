@@ -16,7 +16,7 @@ from model.lavis.common.dist_utils import download_cached_file, is_main_process,
 from model.lavis.common.registry import registry
 from model.lavis.common.utils import is_url
 from model.lavis.datasets.data_utils import concat_datasets, reorg_datasets_by_split
-from model.lavis.runners.runner_base import RunnerBase
+from model.lavis.runners.runner_base import RunnerBase, _state_dict_has_non_finite
 from torch.utils.data.dataset import ChainDataset
 
 
@@ -153,17 +153,31 @@ class RunnerIter(RunnerBase):
 
     @main_process
     def _save_checkpoint(self, cur_iters, is_best=False):
-        save_obj = {
-            "model": self.unwrap_dist_model(self.model).state_dict(),
-            "optimizer": self.optimizer.state_dict(),
-            "config": self.config.to_dict(),
-            "scaler": self.scaler.state_dict() if self.scaler else None,
-            "iters": cur_iters,
-        }
+        model_state = self.unwrap_dist_model(self.model).state_dict()
+        optimizer_state = self.optimizer.state_dict()
         save_to = os.path.join(
             self.output_dir,
             "checkpoint_{}.pth".format("best" if is_best else cur_iters),
         )
+
+        # Refuse to overwrite a prior good checkpoint with a poisoned one.
+        model_bad, model_bad_count = _state_dict_has_non_finite(model_state)
+        opt_bad, opt_bad_count = _state_dict_has_non_finite(optimizer_state)
+        if model_bad or opt_bad:
+            logging.error(
+                f"Refusing to save checkpoint to {save_to}: "
+                f"model has {model_bad_count} non-finite tensor(s), "
+                f"optimizer has {opt_bad_count}. Prior checkpoint preserved."
+            )
+            return
+
+        save_obj = {
+            "model": model_state,
+            "optimizer": optimizer_state,
+            "config": self.config.to_dict(),
+            "scaler": self.scaler.state_dict() if self.scaler else None,
+            "iters": cur_iters,
+        }
         logging.info("Saving checkpoint at iters {} to {}.".format(cur_iters, save_to))
         torch.save(save_obj, save_to)
 
@@ -182,11 +196,38 @@ class RunnerIter(RunnerBase):
             raise RuntimeError("checkpoint url or path is invalid")
 
         state_dict = checkpoint["model"]
+        model_bad, model_bad_count = _state_dict_has_non_finite(state_dict)
+        if model_bad:
+            logging.warning(
+                f"Model state_dict contains {model_bad_count} non-finite tensor(s); "
+                "loading anyway but training may need to recover via the NaN-loss guard."
+            )
         self.unwrap_dist_model(self.model).load_state_dict(state_dict)
 
-        self.optimizer.load_state_dict(checkpoint["optimizer"])
-        if self.scaler and "scaler" in checkpoint:
-            self.scaler.load_state_dict(checkpoint["scaler"])
+        # Skip loading optimizer state if it contains NaN/Inf (poisoned Adam
+        # moments would corrupt model weights on the first update).
+        opt_bad, opt_bad_count = _state_dict_has_non_finite(checkpoint["optimizer"])
+        if opt_bad:
+            logging.warning(
+                f"Optimizer state contains {opt_bad_count} non-finite tensor(s) — "
+                "skipping load. Optimizer will be re-initialized."
+            )
+        else:
+            try:
+                self.optimizer.load_state_dict(checkpoint["optimizer"])
+            except ValueError as e:
+                logging.warning(f"Optimizer state could not be loaded due to: {str(e)}")
+                logging.warning("Proceeding with re-initialized optimizer.")
+
+        if self.scaler and "scaler" in checkpoint and checkpoint["scaler"] is not None:
+            scaler_bad, scaler_bad_count = _state_dict_has_non_finite(checkpoint["scaler"])
+            if scaler_bad:
+                logging.warning(
+                    f"Scaler state contains {scaler_bad_count} non-finite tensor(s) — "
+                    "skipping load. GradScaler will start fresh."
+                )
+            else:
+                self.scaler.load_state_dict(checkpoint["scaler"])
 
         self.start_iters = checkpoint["iters"] + 1
         logging.info("Resume checkpoint from {}".format(url_or_filename))
