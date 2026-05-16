@@ -20,8 +20,9 @@ class Pubmedclip(nn.Module):
         ).to(self.device)
 
     def forward(self, image, apply_aug = True):
-        # Load and preprocess the image
-        inputs = self.processor(images=image, return_tensors="pt")
+        # Input is already a [0,1] float tensor from dataset ToTensor(); skip
+        # the processor's /255 rescale or it produces near-constant features.
+        inputs = self.processor(images=image, return_tensors="pt", do_rescale=False)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}  # Move to device
         
         # inputs = inputs['pixel_values'].squeeze(0)
