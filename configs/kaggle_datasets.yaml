@@ -18,6 +18,14 @@ datasets:
     slug: "meta-cxr-checkpoints"
     title: "META-CXR training checkpoints"
     license: "CC0-1.0"
+  processed:
+    slug: "mimic-cxr-p10-processed"
+    title: "MIMIC-CXR p10 Preprocessed (LA-filtered, train/val/test)"
+    license: "CC0-1.0"
+    required_files:
+      - "train.csv"
+      - "val.csv"
+      - "test.csv"
 
 # Thứ tự tìm mount point — path đầu tiên tồn tại sẽ được dùng.
 mount_search_roots:
