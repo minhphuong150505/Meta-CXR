@@ -447,8 +447,13 @@ class RunnerBase:
         self.output_dir = output_dir
 
     def validate(self, cur_epoch, best_agg_metric, best_epoch, wandb_run):
-        if len(self.valid_splits) > 0:
-            for split_name in self.valid_splits:
+        eval_splits = []
+        for split_name in list(self.valid_splits) + list(self.test_splits):
+            if split_name not in eval_splits:
+                eval_splits.append(split_name)
+
+        if len(eval_splits) > 0:
+            for split_name in eval_splits:
                 logging.info("Evaluating on {}.".format(split_name))
 
                 val_log, results, gts, loss = self.eval_epoch(
@@ -480,7 +485,9 @@ class RunnerBase:
                         if not self.evaluate_only and split_name == "val": #dont save for train_val
                             if agg_metrics > best_agg_metric:
                                 best_epoch, best_agg_metric = cur_epoch, agg_metrics
-                                self._save_checkpoint(cur_epoch, is_best=True)
+                                self._save_checkpoint(cur_epoch, is_best=True,
+                                                      best_agg_metric=best_agg_metric,
+                                                      best_epoch=best_epoch)
                                 logging.info("Saving best model at epoch {}".format(cur_epoch))
 
                         val_log.update({"best_epoch": best_epoch})
@@ -508,16 +515,27 @@ class RunnerBase:
                             pass
 
                 if loss is not None:
-                    self.log_stats({"loss":loss}, split_name, commit=False)
+                    if isinstance(loss, dict):
+                        eval_stats = {k: float(v) for k, v in loss.items()}
+                    else:
+                        eval_stats = {"loss": float(loss)}
+
+                    self.log_stats(eval_stats, split_name)
+
+                    loss_value = eval_stats.get("loss")
                     if not self.evaluate_only:
-                        if loss < best_agg_metric and split_name == "val":
-                            best_epoch, best_agg_metric = cur_epoch, loss
-                            self._save_checkpoint(cur_epoch, is_best=True)
-                            logging.info("Saving best model at epoch {} (val loss {:.4f})".format(cur_epoch, loss))
+                        if loss_value is not None and loss_value < best_agg_metric and split_name == "val":
+                            best_epoch, best_agg_metric = cur_epoch, loss_value
+                            self._save_checkpoint(cur_epoch, is_best=True,
+                                                  best_agg_metric=best_agg_metric,
+                                                  best_epoch=best_epoch)
+                            logging.info("Saving best model at epoch {} (val loss {:.4f})".format(cur_epoch, loss_value))
 
         # Always save `checkpoint_last.pth` at end of every epoch (resume anchor).
         if not self.evaluate_only:
-            self._save_checkpoint(cur_epoch, is_best=False, is_last=True)
+            self._save_checkpoint(cur_epoch, is_best=False, is_last=True,
+                                  best_agg_metric=best_agg_metric,
+                                  best_epoch=best_epoch)
 
         return best_agg_metric, best_epoch
 
@@ -532,6 +550,14 @@ class RunnerBase:
         # resume from checkpoint if specified
         if not self.evaluate_only and self.resume_ckpt_path is not None:
             self._load_checkpoint(self.resume_ckpt_path)
+            # Restore best-tracking from the checkpoint so we don't overwrite
+            # checkpoint_best.pth with a worse score on the first resumed epoch.
+            resumed_metric = getattr(self, "_resumed_best_metric", None)
+            resumed_epoch = getattr(self, "_resumed_best_epoch", None)
+            if resumed_metric is not None:
+                best_agg_metric = resumed_metric
+            if resumed_epoch is not None:
+                best_epoch = resumed_epoch
 
         for cur_epoch in range(self.start_epoch, self.max_epoch):
             custom_epochs = self.datasets['mimic_cxr']['train'].custom_epochs_per_epoch if 'mimic_cxr' in self.datasets else self.datasets['train'].custom_epochs_per_epoch
@@ -708,7 +734,8 @@ class RunnerBase:
         return loaders
 
     @main_process
-    def _save_checkpoint(self, cur_epoch, is_best=False, is_last=False):
+    def _save_checkpoint(self, cur_epoch, is_best=False, is_last=False,
+                         best_agg_metric=None, best_epoch=None):
         """
         Save the checkpoint at the current epoch.
         """
@@ -746,6 +773,8 @@ class RunnerBase:
             "config": self.config.to_dict(),
             "scaler": self.scaler.state_dict() if self.scaler else None,
             "epoch": cur_epoch,
+            "best_agg_metric": best_agg_metric,
+            "best_epoch": best_epoch,
         }
         logging.info("Saving checkpoint at epoch {} to {}.".format(cur_epoch, save_to))
         torch.save(save_obj, save_to)
@@ -856,7 +885,15 @@ class RunnerBase:
                 self.scaler.load_state_dict(checkpoint["scaler"])
 
         self.start_epoch = checkpoint["epoch"] + 1
-        logging.info("Resume checkpoint from {}".format(url_or_filename))
+        # Restore best-tracking so resumed runs don't overwrite checkpoint_best.pth
+        # with a worse score (old checkpoints without these keys fall back to None).
+        self._resumed_best_metric = checkpoint.get("best_agg_metric", None)
+        self._resumed_best_epoch = checkpoint.get("best_epoch", None)
+        logging.info(
+            "Resume checkpoint from {} (best_agg_metric={}, best_epoch={})".format(
+                url_or_filename, self._resumed_best_metric, self._resumed_best_epoch
+            )
+        )
 
     @main_process
     def log_stats(self, stats, split_name, commit=True):
