@@ -5,6 +5,10 @@ paths:
   reports_csv: "/kaggle/working/mimic_cxr_cleaned.csv"
   chexpert_csv: "/kaggle/input/mimic-cxr-jpg-lite/mimic-cxr-2.0.0-chexpert.csv"
   metadata_csv: "/kaggle/input/mimic-cxr-jpg-lite/mimic-cxr-2.0.0-metadata.csv"
+  processed_dir: "/kaggle/input/mimic-cxr-p10-processed"
+  processed_train_csv: "/kaggle/input/mimic-cxr-p10-processed/train.csv"
+  processed_val_csv:   "/kaggle/input/mimic-cxr-p10-processed/val.csv"
+  processed_test_csv:  "/kaggle/input/mimic-cxr-p10-processed/test.csv"
   output_dir: "/kaggle/working/output"
   checkpoint_dir: "/kaggle/working/checkpoints"
 

@@ -7,7 +7,11 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import List, Any
 
-from local_config import JAVA_HOME, JAVA_PATH, SPLIT_CSV, REPORTS_CSV, CHEXPERT_CSV, METADATA_CSV
+from local_config import (
+    JAVA_HOME, JAVA_PATH,
+    SPLIT_CSV, REPORTS_CSV, CHEXPERT_CSV, METADATA_CSV,
+    PROCESSED_TRAIN_CSV, PROCESSED_VAL_CSV, PROCESSED_TEST_CSV,
+)
 
 # set java path
 os.environ["JAVA_HOME"] = JAVA_HOME
@@ -218,21 +222,25 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         """
         super().__init__(vis_processor, text_processor, vis_root, ann_paths)
 
-        # load csv file
-        self.split = pd.read_csv(SPLIT_CSV)
+        # Preprocessed CSVs already contain: dicom_id, subject_id, study_id,
+        # image_path, findings_clean, impression_clean, findings_len, split.
+        # Splits are pre-filtered to PA/AP views with cleaned findings.
         self.cur_split = split
-        # MIMIC-CXR split CSV uses 'validate' not 'val'
-        if split == 'val' and 'validate' in self.split['split'].values:
-            split = 'validate'
-        self.reports = pd.read_csv(REPORTS_CSV)
-        # drop reports where findings are nan
-        self.reports = self.reports.dropna(subset=['findings'])
+        csv_map = {
+            "train": PROCESSED_TRAIN_CSV,
+            "val":   PROCESSED_VAL_CSV,
+            "test":  PROCESSED_TEST_CSV,
+        }
+        if split not in csv_map:
+            raise ValueError(f"Unknown split '{split}' (expected train/val/test)")
+        self.reports = pd.read_csv(csv_map[split])
+        self.reports = self.reports.dropna(subset=['findings_clean'])
+        self.reports = self.reports.rename(columns={'findings_clean': 'findings'})
 
         self.use_pred_labels = True
 
-        # self.chexpert = pd.read_csv(f'data/data_files/finding_chexbert_labels.csv')
         self.chexpert = pd.read_csv(CHEXPERT_CSV)
-        
+
         self.chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
                               "Cardiomegaly", "Lung Opacity",
                               "Lung Lesion", "Edema",
@@ -240,14 +248,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                               "Atelectasis", "Pneumothorax",
                               "Pleural Effusion", "Pleural Other",
                               "Fracture", "Support Devices"]
-        
-        # metadata file
-        self.metadata = pd.read_csv(METADATA_CSV)
-        print(f"Number of metadata records: {len(self.metadata)}")
-        # only consider image have AP and PA views. exclude lateral views
-        self.metadata = self.metadata[self.metadata['ViewPosition'].isin(['PA', 'AP'])][['dicom_id']]
-        
-        print(f"Number of metadata records: {len(self.metadata)}")
+
         ### This is with uncertain ###
         # #replace uncertain(-1) label with 2. CE loss do not accept negative labels
         self.chexpert[self.chexpert_cols] = self.chexpert[self.chexpert_cols].replace(-1, 2)
@@ -290,33 +291,19 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                 
         self.img_ids = {img_id: i for i, img_id in enumerate(self.reports['dicom_id'])}
         self.id_to_dicom = {v: k for k, v in self.img_ids.items()}
-        self.split_ids = set(self.split.loc[self.split['split'] == split]['dicom_id'])
 
-        # get all dicom_ids where "split" is split
-        self.annotation = self.reports.loc[self.reports['dicom_id'].isin(self.split_ids)]
+        # Split + PA/AP filtering already done at preprocessing time.
+        self.annotation = self.reports
         if truncate is not None:
             self.annotation = self.annotation[:truncate]
-        
-        # filter records based on the view position
-        self.annotation = self.annotation[self.annotation['dicom_id'].isin(self.metadata['dicom_id'])]
 
         print(f"Number of annotation records: {len(self.annotation)}")
-        
+
+        self.annotation = self.annotation.copy()
         self.annotation['findings'] = self.annotation['findings'].apply(lambda x: x.replace('\n', ''))
-        
-        # Replace backslashes with forward slashes
-        self.annotation['Img_Folder'] = self.annotation['Img_Folder'].apply(lambda x: x.replace('\\', '/'))
 
-        # Extract patient_id from Img_Folder (3rd part) and study_id is the name of the notefile without the pre-pending 's'
-        self.annotation['subject_id'] = self.annotation['Img_Folder'].apply(lambda x: int(x.split('/')[1].lstrip('p')))
-        self.annotation['study_id'] = self.annotation['Note_file'].apply(lambda x: int(x.lstrip('s').rstrip('.txt')))
-
-        # Merge chexpert labels with annotation dataframe
-        # self.annotation = pd.merge(self.annotation, self.chexpert, how='left', left_on=['dicom_id'], right_on=['dicom_id'])
-        
-        # self.annotation = pd.merge(self.annotation, self.chexpert, how='inner', left_on=['dicom_id'], right_on=['dicom_id'])
-        
-        self.annotation = pd.merge(self.annotation, self.chexpert, how='inner', left_on=['study_id'], right_on=['study_id'])
+        # subject_id / study_id are already typed int in the preprocessed CSV.
+        self.annotation = pd.merge(self.annotation, self.chexpert, how='inner', on='study_id')
         
         print(f"Number of annotation records: {len(self.annotation)}")
         
@@ -396,7 +383,12 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
 
         ann = self.annotation.iloc[actual_index]
 
-        image_path = os.path.join(self.vis_root, ann["Img_Folder"], ann["Img_Filename"])
+        # CSV stores absolute Kaggle path (e.g. /kaggle/input/datasets/<slug>/mimic-cxr-jpg-lite/p10/...).
+        # Re-anchor to the current vis_root so the same code runs locally and on Kaggle.
+        raw = ann["image_path"].replace("\\", "/")
+        marker = "/mimic-cxr-jpg-lite/"
+        rel = raw.split(marker, 1)[-1] if marker in raw else raw.lstrip("/")
+        image_path = os.path.join(self.vis_root, rel)
         image = self.load_image(Path(image_path))
         image = self.general_trans(image)
         
