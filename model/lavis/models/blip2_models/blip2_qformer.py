@@ -28,6 +28,7 @@ from mhcac.mhcac_12 import AbnormalityClassificationModel
 
 
 from vision_encoders.pubmedclip.pubmed_clip import Pubmedclip
+from vision_encoders.swin.swin_encoder import SwinEncoder
 # from vision_encoders.medclip.medclip import Medclip
 
 from mhcac.utils import compute_metrics_for_tasks
@@ -74,16 +75,31 @@ class Blip2Qformer(Blip2Base):
         cross_attention_freq=2,
         embed_dim=256,
         max_txt_len=32,
+        use_biovil=True,
+        use_pubmedclip=True,
+        use_swin=False,
     ):
         super().__init__()
 
         self.tokenizer = self.init_tokenizer()
 
-        self.visual_encoder, self.ln_vision, vis_num_feat = self.init_vision_encoder(
-            vit_model, img_size, drop_path_rate, use_grad_checkpoint, vit_precision
-        )
+        self.use_biovil = bool(use_biovil)
+        self.use_pubmedclip = bool(use_pubmedclip)
+        self.use_swin = bool(use_swin)
+        if not any([self.use_biovil, self.use_pubmedclip, self.use_swin]):
+            raise ValueError("At least one encoder must be enabled: biovil, pubmedclip, or swin")
+
         self.vit_model = vit_model
-        if freeze_vit:
+        vis_num_feat = 1408
+        if self.use_biovil:
+            self.visual_encoder, self.ln_vision, vis_num_feat = self.init_vision_encoder(
+                "biovil", img_size, drop_path_rate, use_grad_checkpoint, vit_precision
+            )
+        else:
+            self.visual_encoder = None
+            self.ln_vision = nn.LayerNorm(vis_num_feat)
+
+        if freeze_vit and self.visual_encoder is not None:
             for name, param in self.visual_encoder.named_parameters():
                 param.requires_grad = False
             self.visual_encoder = self.visual_encoder.eval()
@@ -116,8 +132,19 @@ class Blip2Qformer(Blip2Base):
         
         self.vit_projection = nn.Linear(768, 1408)
 
-        self.pubmedclip = Pubmedclip(aug = self.vis_augs).eval()
-        
+        self.pubmedclip = Pubmedclip(aug=self.vis_augs).eval() if self.use_pubmedclip else None
+
+        self.swin = (
+            SwinEncoder(
+                model_name="swin_tiny_patch4_window7_224",
+                pretrained=True,
+                frozen=True,
+            ).eval()
+            if self.use_swin
+            else None
+        )
+        self.swin_qformer_proj = nn.Linear(768, 1408) if self.use_swin else None
+
         # self.medclip = Medclip().eval()
         
         self.mhcac = AbnormalityClassificationModel(embed_dim=768, num_abnormalities=14, num_classes=3, num_layers=6, num_commmon_tokens = 14,initial_expert_tokens = None)
@@ -185,6 +212,34 @@ class Blip2Qformer(Blip2Base):
         mask = mask.unsqueeze(0).expand(embeddings.size(0), -1)
         mask = mask.unsqueeze(-1)  # Add dimension for broadcasting
         return embeddings * mask  # Apply mask by element-wise multiplication
+
+    def _encode_image_streams(self, image, apply_aug=False):
+        cnn_patches = None
+        vit_patches = None
+        swin_patches = None
+        qformer_streams = []
+
+        if self.use_biovil:
+            cnn_patches = self.ln_vision(
+                self.visual_encoder(image).projected_patch_embeddings.reshape(
+                    image.shape[0], -1, 1408
+                )
+            )
+            qformer_streams.append(cnn_patches)
+
+        if self.use_pubmedclip:
+            vit_patches, pubmed_projection = self.pubmedclip(image, apply_aug=apply_aug)
+            qformer_streams.append(pubmed_projection)
+
+        if self.use_swin:
+            swin_patches = self.swin(image)
+            qformer_streams.append(self.swin_qformer_proj(swin_patches))
+
+        if not qformer_streams:
+            raise ValueError("No image encoder stream is enabled.")
+
+        qformer_image_embeds = torch.cat(qformer_streams, dim=1)
+        return cnn_patches, vit_patches, swin_patches, qformer_image_embeds
     
     def initialize_expert_tokens(self, chexpert_cols, embed_dim):
         # Initialize expert tokens based on text embeddings of abnormality names
@@ -218,28 +273,15 @@ class Blip2Qformer(Blip2Base):
         image = samples["image"]
         text = samples["text_output"]
 
-        if self.vit_model == "biovil":
-            image_bio = image
-            # image_bio = self.vis_augs(image_bio)
-            image_embeds = self.ln_vision(self.visual_encoder(image_bio).projected_patch_embeddings.reshape(image.shape[0], -1, 1408))
-            # image_embeds = self.visual_encoder(image_bio).projected_patch_embeddings.reshape(image.shape[0], -1, 1408)
-            # image_embeds = self._create_mask(image_embeds, mask_ratio=0.2)  # Mask 20% of patches
-
-        else:
-            image_bio = image
-            # image_bio = self.vis_augs(image_bio)
-            image_embeds = self.ln_vision(self.visual_encoder(image_bio))
-            # image_embeds = self.visual_encoder(image_bio)
-            # image_embeds = self._create_mask(image_embeds)  # Mask 20% of patches
-
-        image_embeds_2, image_projection = self.pubmedclip(image, apply_aug = False)
-        # image_embeds_2 = self._create_mask(image_embeds_2, mask_ratio=0.1)  # Mask 10% of patches
+        cnn_patches, vit_patches, swin_patches, qformer_image_embeds = self._encode_image_streams(
+            image, apply_aug=False
+        )
 
         # image_embeds_3 = self.ln_vision(self.medclip(image))
         # image_embeds_3 = self._create_mask(image_embeds_3)  # Mask 20% of patches
 
         
-        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(
+        image_atts = torch.ones(qformer_image_embeds.size()[:-1], dtype=torch.long).to(
             image.device
         )
         
@@ -296,7 +338,13 @@ class Blip2Qformer(Blip2Base):
         ### ---- classification loss ----###
         
         cls_labels = samples["classification_labels"]  # Ground truth labels for abnormalities
-        classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(cnn_patches = image_embeds, vit_patches = image_embeds_2, text_embeddings = text_output.last_hidden_state ,labels = cls_labels)  # Output from your MHCAC module
+        classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
+            cnn_patches=cnn_patches,
+            vit_patches=vit_patches,
+            swin_patches=swin_patches,
+            text_embeddings=text_output.last_hidden_state,
+            labels=cls_labels,
+        )
 
         # classification_logits,vit_attention, cnn_attention = self.mhcac(cnn_patches = image_embeds, vit_patches = image_embeds_2, labels = None)  # Output from your MHCAC module
 
@@ -519,10 +567,7 @@ class Blip2Qformer(Blip2Base):
             captions (list): A list of strings of length batch_size * num_captions.
         """
         image = samples["image"].cuda()
-        if self.vit_model == "biovil":
-            image_embeds = self.ln_vision(self.visual_encoder(image).projected_patch_embeddings.reshape(image.shape[0], -1, 1408))
-        else:
-            image_embeds = self.ln_vision(self.visual_encoder(image))
+        _, _, _, image_embeds = self._encode_image_streams(image, apply_aug=False)
 
         if not use_nucleus_sampling:
             image_embeds = image_embeds.repeat_interleave(num_beams, dim=0)
@@ -560,33 +605,18 @@ class Blip2Qformer(Blip2Base):
         return captions
 
     def forward_image(self, image):
-        if self.vit_model == "biovil":
-            image_bio = image
-            image_embeds = self.ln_vision(self.visual_encoder(image_bio).projected_patch_embeddings.reshape(image_bio.shape[0], -1, 1408))
-            # image_embeds = self.visual_encoder(image_bio).projected_patch_embeddings.reshape(image.shape[0], -1, 1408)
-            # image_embeds = self._create_mask(image_embeds)  # Mask 20% of patches
+        cnn_patches, vit_patches, swin_patches, concat_image_embeds = self._encode_image_streams(
+            image, apply_aug=False
+        )
 
-        else:
-            # image_bio = self.vis_transforms(image)
-            image_bio = image
-            image_embeds = self.ln_vision(self.visual_encoder(image_bio))
-            # image_embeds = self._create_mask(image_embeds)  # Mask 20% of patches
-        # print(f"image_embeds shape: {image_embeds.shape}")
+        classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
+            cnn_patches=cnn_patches,
+            vit_patches=vit_patches,
+            swin_patches=swin_patches,
+            text_embeddings=None,
+            labels=None,
+        )
 
-        image_pubmed = image
-        # image_pubmed = image_pubmed.unsqueeze(0)
-        # print(f"image_pubmed shape: {image_pubmed.shape}")
-        image_embeds_2, image_projection = self.pubmedclip(image_pubmed,  apply_aug = False)
-
-        classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(cnn_patches = image_embeds, vit_patches = image_embeds_2, text_embeddings = None ,labels = None)
-
-
-        # image_embeds_3 = self.ln_vision(self.medclip(image))
-        # image_embeds_3 = self._create_mask(image_embeds_3)  # Mask 20% of patches
-
-        # Concatenate the masked outputs
-
-        concat_image_embeds = torch.cat((image_embeds, image_projection), dim=1)
         image_atts = torch.ones(concat_image_embeds.size()[:-1], dtype=torch.long).to(
             image.device
         )
@@ -678,7 +708,7 @@ class Blip2Qformer(Blip2Base):
             ), "Image is not provided for mode 'image' or 'multimodal'"
             # return query features
             with self.maybe_autocast():
-                image_embeds_frozen = self.ln_vision(self.visual_encoder(image))
+                _, _, _, image_embeds_frozen = self._encode_image_streams(image, apply_aug=False)
             image_embeds_frozen = image_embeds_frozen.float()
             image_atts = torch.ones(
                 image_embeds_frozen.size()[:-1], dtype=torch.long
@@ -718,7 +748,7 @@ class Blip2Qformer(Blip2Base):
         elif mode == "multimodal":
             # return multimodel query features
             with self.maybe_autocast():
-                image_embeds_frozen = self.ln_vision(self.visual_encoder(image))
+                _, _, _, image_embeds_frozen = self._encode_image_streams(image, apply_aug=False)
             image_embeds_frozen = image_embeds_frozen.float()
             image_atts = torch.ones(
                 image_embeds_frozen.size()[:-1], dtype=torch.long
@@ -757,6 +787,9 @@ class Blip2Qformer(Blip2Base):
     @classmethod
     def from_config(cls, cfg):
         vit_model = cfg.get("vit_model", "eva_clip_g")
+        vit_model_cls = cfg.get("vit_model_cls", [])
+        if isinstance(vit_model_cls, str):
+            vit_model_cls = [vit_model_cls]
         img_size = cfg.get("image_size")
         num_query_token = cfg.get("num_query_token")
         cross_attention_freq = cfg.get("cross_attention_freq", 2)
@@ -767,6 +800,25 @@ class Blip2Qformer(Blip2Base):
         freeze_vit = cfg.get("freeze_vit", True)
 
         max_txt_len = cfg.get("max_txt_len", 32)
+        encoders = cfg.get("encoders", {}) or {}
+
+        def cfg_bool(value, default=False):
+            if value is None:
+                return default
+            if isinstance(value, str):
+                return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+            return bool(value)
+
+        use_biovil = cfg_bool(
+            encoders.get("biovil", cfg.get("use_biovil", vit_model == "biovil"))
+        )
+        use_pubmedclip = cfg_bool(
+            encoders.get(
+                "pubmedclip",
+                cfg.get("use_pubmedclip", "pubmedclip" in list(vit_model_cls)),
+            )
+        )
+        use_swin = cfg_bool(encoders.get("swin", cfg.get("use_swin", False)))
 
         model = cls(
             vit_model=vit_model,
@@ -778,6 +830,9 @@ class Blip2Qformer(Blip2Base):
             num_query_token=num_query_token,
             cross_attention_freq=cross_attention_freq,
             max_txt_len=max_txt_len,
+            use_biovil=use_biovil,
+            use_pubmedclip=use_pubmedclip,
+            use_swin=use_swin,
         )
         model.load_checkpoint_from_config(cfg)
 
