@@ -41,9 +41,9 @@ run:
   run_name: stage1_pt_instruct_blip_origlr_img448
   # optimizer
   lr_sched: "linear_warmup_cosine_lr"
-  init_lr: 1e-4
-  min_lr: 1e-5 #1e-5
-  warmup_lr: 1e-6
+  init_lr: 5e-5
+  min_lr: 1e-6
+  warmup_lr: 5e-7
 
   weight_decay: 0.05
   max_epoch: 100

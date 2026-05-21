@@ -41,11 +41,11 @@ run:
   run_name: mimic_cxr_2gpu_stage1
 
   lr_sched: "linear_warmup_cosine_lr"
-  init_lr_cls: 2e-4
-  init_lr_q: 2e-4
-  init_lr: 2e-4
-  min_lr: 1e-5
-  warmup_lr: 1e-6
+  init_lr_cls: 5e-5
+  init_lr_q: 5e-5
+  init_lr: 5e-5
+  min_lr: 1e-6
+  warmup_lr: 5e-7
 
   weight_decay: 0.02
   max_epoch: 10
