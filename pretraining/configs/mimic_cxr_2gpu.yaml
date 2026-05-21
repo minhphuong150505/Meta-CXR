@@ -7,6 +7,10 @@ model:
   freeze_vit: True
   vit_model: biovil
   vit_model_cls: [pubmedclip]
+  encoders:
+    biovil: true
+    pubmedclip: true
+    swin: false
   num_query_token: 32
   max_txt_len: 256
 

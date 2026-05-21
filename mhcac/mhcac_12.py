@@ -64,25 +64,28 @@ class DownsamplePatches(nn.Module):
 
 # CrossModalEmbeddingAlignment to project image, text, and query embeddings into a common space
 class CrossModalEmbeddingAlignment(nn.Module):
-    def __init__(self, common_dim, cnn_dim=1408,vit_dim = 768, txt_dim=768, expert_dim=768):
+    def __init__(self, common_dim, cnn_dim=1408, vit_dim=768, swin_dim=768, txt_dim=768, expert_dim=768):
         super(CrossModalEmbeddingAlignment, self).__init__()
         self.vit_proj = nn.Linear(vit_dim, common_dim)
         self.cnn_proj = nn.Linear(cnn_dim, common_dim)
+        self.swin_proj = nn.Linear(swin_dim, common_dim)
         self.text_proj = nn.Linear(txt_dim, common_dim)
         self.expert_proj = nn.Linear(expert_dim, common_dim)
         
-        self.cnn_norm = nn.LayerNorm(common_dim)  # For CNN patches
+        self.cnn_norm = nn.LayerNorm(common_dim)    # For CNN patches
         self.vit_norm = nn.LayerNorm(common_dim)    # For ViT patches
+        self.swin_norm = nn.LayerNorm(common_dim)   # For Swin patches
         self.text_norm = nn.LayerNorm(common_dim)   # For text embeddings
         self.expert_norm = nn.LayerNorm(common_dim) # For expert tokens
 
-    def forward(self, vit_patches = None, cnn_patches = None, text_embeddings = None, expert_tokens = None):
+    def forward(self, vit_patches=None, cnn_patches=None, swin_patches=None, text_embeddings=None, expert_tokens=None):
         # Project image and text embeddings
         vit_proj = F.normalize(self.vit_proj(vit_patches), dim=-1) if vit_patches is not None else None
         cnn_proj = F.normalize(self.cnn_proj(cnn_patches), dim=-1) if cnn_patches is not None else None
+        swin_proj = F.normalize(self.swin_proj(swin_patches), dim=-1) if swin_patches is not None else None
         txt_proj = F.normalize(self.text_proj(text_embeddings), dim=-1) if text_embeddings is not None else None
         expert_proj = self.expert_norm(self.expert_proj(expert_tokens)) if expert_tokens is not None else None
-        return vit_proj, cnn_proj, txt_proj, expert_proj
+        return vit_proj, cnn_proj, swin_proj, txt_proj, expert_proj
 
 # Define trainable positional encoding
 class TrainablePositionalEncoding(nn.Module):
@@ -212,27 +215,40 @@ class AbnormalityClassificationModel(nn.Module):
             nn.init.xavier_uniform_(self.cnn_downsampler.downsampler.weight)
             nn.init.constant_(self.cnn_downsampler.downsampler.bias, 0)
 
-    def forward(self, cnn_patches, vit_patches = None, text_embeddings = None, labels = None):
-        batch_size = cnn_patches.size(0)
+    def forward(self, cnn_patches=None, vit_patches=None, swin_patches=None, text_embeddings=None, labels=None):
+        ref = cnn_patches if cnn_patches is not None else (vit_patches if vit_patches is not None else swin_patches)
+        if ref is None:
+            raise ValueError("At least one of cnn_patches, vit_patches, swin_patches must be provided")
+        batch_size = ref.size(0)
         
         # Initial projection of image, text, and query embeddings
         if vit_patches is not None:
-            vit_patches = vit_patches[:, 1:, :] # here exclude the cls token- > result is 49 patches
+            vit_patches = vit_patches[:, 1:, :]  # strip CLS token -> 49 patches
         
         # Expand expert tokens to match batch size
         expert_tokens = self.expert_tokens.unsqueeze(0).expand(batch_size, -1, -1)  # [B, N_expert, D]
         
-        cnn_patches = self.cnn_downsampler(cnn_patches) # down sample cnn patches from 196 to 49 through a conv layer
-        vit_proj, cnn_proj, txt_proj, expert_tokens = self.embedding_alignment(vit_patches, cnn_patches, text_embeddings, expert_tokens)
+        if cnn_patches is not None:
+            cnn_patches = self.cnn_downsampler(cnn_patches)  # 196 -> 49 patches via conv
+
+        vit_proj, cnn_proj, swin_proj, txt_proj, expert_tokens = self.embedding_alignment(
+            vit_patches=vit_patches,
+            cnn_patches=cnn_patches,
+            swin_patches=swin_patches,
+            text_embeddings=text_embeddings,
+            expert_tokens=expert_tokens,
+        )
         
-        cnn_proj = self.pos_enc(cnn_proj)
-        
-        # cnn_proj = self.w_cnn * cnn_proj
-        if (vit_proj is not None):
-            vit_proj = self.pos_enc(vit_proj)
-            image_patches = torch.cat([cnn_proj, vit_proj], dim=1)  # [batch_size, num_cnn_patches + num_vit_patches, embed_dim]
-        else:
-            image_patches = cnn_proj
+        image_streams = []
+        if cnn_proj is not None:
+            image_streams.append(self.pos_enc(cnn_proj))
+        if vit_proj is not None:
+            image_streams.append(self.pos_enc(vit_proj))
+        if swin_proj is not None:
+            image_streams.append(self.pos_enc(swin_proj))
+        if not image_streams:
+            raise ValueError("No image stream was provided to MHCAC.")
+        image_patches = torch.cat(image_streams, dim=1)
 
         # Pass through multiple attention layers
         attention_weights_list = []
