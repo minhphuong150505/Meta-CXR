@@ -36,23 +36,25 @@ datasets:
 
 run:
   task: image_text_pretrain_eval
-  project_name: meta-cxr
-  wandb_entity:
-  run_name: mimic_cxr_2gpu_stage1
+  project_name: meta-cxr-encoder-comparison
+  wandb_entity: phuongnm150505-uit
+  run_name: 04_biovil_pubmedclip
 
   lr_sched: "linear_warmup_cosine_lr"
-  init_lr_cls: 5e-5
-  init_lr_q: 5e-5
-  init_lr: 5e-5
-  min_lr: 1e-6
-  warmup_lr: 5e-7
+  init_lr_cls: 1e-4
+  init_lr_q: 1e-4
+  init_lr: 1e-4
+  min_lr: 2e-6
+  warmup_lr: 1e-6
 
   weight_decay: 0.02
-  max_epoch: 10
-  save_freq: 3
-  # T4 has 16 GB VRAM; 8/GPU x 2 GPUs x accum_grad_iters=4 = effective batch 64
-  batch_size_train: 8
-  batch_size_eval: 8
+  max_epoch: 15
+  early_stop_patience: 5
+  early_stop_min_delta: 1e-4
+  save_freq: 5
+  # 2/GPU x 2 GPUs x accum_grad_iters=4 = effective batch 16, matching meta-cxr-l4.
+  batch_size_train: 2
+  batch_size_eval: 4
   num_workers: 2
   warmup_steps: 1000
   accum_grad_iters: 4

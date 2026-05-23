@@ -14,10 +14,6 @@ datasets:
     slug: "mimic-cxr-reported"
     cleaned_csv_filename: "mimic_cxr_cleaned.csv"
     txt_glob: "files/**/s*.txt"
-  checkpoints:
-    slug: "meta-cxr-checkpoints"
-    title: "META-CXR training checkpoints"
-    license: "CC0-1.0"
   processed:
     slug: "mimic-cxr-p10-processed"
     title: "MIMIC-CXR p10 Preprocessed (LA-filtered, train/val/test)"

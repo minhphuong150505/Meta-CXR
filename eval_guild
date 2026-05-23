@@ -1,0 +1,59 @@
+ Cách chạy trên VM (sau khi train xong run 01):
+
+  # 1. SSH vào VM
+  gcloud compute ssh meta-cxr-l4 --zone=asia-southeast1-c
+
+  # 2. Pull checkpoint từ GCS về VM
+  mkdir -p ~/META-CXR/pretraining/output/01_biovil_only
+  gsutil cp gs://meta-cxr-checkpoint/01_biovil_only/checkpoint_best.pth \
+      ~/META-CXR/pretraining/output/01_biovil_only/checkpoint_best.pth
+
+  # 3. Chạy eval
+  cd ~/META-CXR
+  python eval_paper_style.py \
+      --cfg-path pretraining/configs/encoder_comparison/01_biovil_only.yaml \
+      --checkpoint pretraining/output/01_biovil_only/checkpoint_best.pth \
+      --split test \
+      --batch-size 32 \
+      --out-json eval_results/01_biovil_only_test.json
+
+  Script làm gì:
+
+  1. Load config + checkpoint qua LAVIS setup_task/build_model (cùng pipeline với
+  pretraining/train.py)
+  2. Build test loader bằng MIMIC_CXR_Dataset(split="test") — đã có sẵn
+  p10_test.csv
+  3. Forward model.forward_image(images, None) → lấy cls_logits (B,14,3)
+  4. Binarize: y_true = (label == 1), y_pred = (argmax == 1) — Positive vs
+  (Negative+Uncertain)
+  5. Tính F1/Prec/Recall per class (zero_division=0) + AUROC từ softmax prob của
+  class P
+  6. In bảng 14 dòng, đánh dấu * cho 5 common, in Mean F1 over 5 common để so trực
+   tiếp Table 5 paper
+
+  Khi train xong tất cả 7 encoders, chạy:
+
+  for cfg in 01_biovil_only 02_pubmedclip_only 03_swin_only \
+             04_biovil_pubmedclip 05_biovil_swin 06_pubmedclip_swin 07_all_three;
+  do
+    gsutil cp gs://meta-cxr-checkpoint/$cfg/checkpoint_best.pth \
+        pretraining/output/$cfg/checkpoint_best.pth
+    python eval_paper_style.py \
+        --cfg-path pretraining/configs/encoder_comparison/$cfg.yaml \
+        --checkpoint pretraining/output/$cfg/checkpoint_best.pth \
+        --split test \
+        --out-json eval_results/${cfg}_test.json
+  done
+
+  Lưu ý (chưa test, có thể cần chỉnh):
+
+  - cfg.config.datasets.mimic_cxr.build_info.images.storage: nếu path images trên
+  VM khác với train config, dùng --vis-root /path/to/images để override.
+  - forward_image signature: nếu encoder dùng cfg khác (vd nhận thêm
+  vis_processor), có thể fail — báo tôi lỗi cụ thể session sau.
+  - Multi-encoder runs (04-07): nếu forward_image cần nhiều input tensors
+  (ResNet50 + Swin batch riêng), check MIMIC_CXR_Dataset.__getitem__ xem nó trả
+  image (single tensor) hay image_dict. Script này dùng batch["image"] — match với
+   pretraining/train.py:171.
+
+  Bạn save lại file này, đợi train xong rồi chạy. Tôi dừng ở đây.

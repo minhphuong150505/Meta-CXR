@@ -1,0 +1,18 @@
+{
+  "id": "phuong20052/meta-cxr-stage2-eval",
+  "title": "META-CXR Stage 2 Eval",
+  "code_file": "META_CXR_eval_kaggle.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_tpu": "false",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "phuong20052/mimic-cxr-jpg-lite",
+    "phuong20052/mimic-cxr-p10-processed",
+    "phuong20052/meta-cxr-checkpoints"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}

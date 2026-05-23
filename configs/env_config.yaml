@@ -11,10 +11,12 @@ paths:
   processed_test_csv:  "/kaggle/input/mimic-cxr-p10-processed/test.csv"
   output_dir: "/kaggle/working/output"
   checkpoint_dir: "/kaggle/working/checkpoints"
+  gcs_bucket: "gs://meta-cxr-checkpoint"
+  gcs_project: "mimic-cxr-jpg-491409"
 
 wandb:
   entity: "phuongnm150505-uit"
-  project: "meta-cxr"
+  project: "meta-cxr-encoder-comparison"
 
 java:
   home: "/usr/lib/jvm/java-8-openjdk-amd64/jre"
