@@ -79,7 +79,7 @@ Sau khi push kernel lần đầu (Bước 5), vào `https://www.kaggle.com/code/
 | `KAGGLE_USERNAME` | `phuong20052` |
 | `KAGGLE_KEY` | (key trong `kaggle.json`) |
 | `WANDB_API_KEY` | từ <https://wandb.ai/authorize> |
-| `GCP_SERVICE_ACCOUNT_JSON` | service-account JSON có quyền ghi `gs://meta-cxr-checkpoint` |
+| `GCS_SERVICE_ACCOUNT` | service-account JSON có quyền ghi `gs://meta-cxr-checkpoint` |
 | `HF_TOKEN` | (chỉ stage 2) từ <https://huggingface.co/settings/tokens> |
 
 ### 5. Chạy stage 1
@@ -107,7 +107,7 @@ Output ở `gs://meta-cxr-checkpoint/stage2/<run-id>/`.
 
 ## Lưu ý quan trọng
 
-**Stage 1 checkpoint**: không dùng Kaggle checkpoint dataset nữa. `kernels/train/kernel-metadata.json` chỉ attach 3 data datasets; checkpoint được đọc/ghi qua GCS bằng Kaggle Secret `GCP_SERVICE_ACCOUNT_JSON`.
+**Stage 1 checkpoint**: không dùng Kaggle checkpoint dataset nữa. `kernels/train/kernel-metadata.json` chỉ attach 3 data datasets; checkpoint được đọc/ghi qua GCS bằng Kaggle Secret `GCS_SERVICE_ACCOUNT`.
 
 **Service account scope**: Nếu `setup_vm.sh` cảnh báo thiếu storage scope:
 1. Stop VM.
