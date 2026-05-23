@@ -420,6 +420,14 @@ class RunnerBase:
         return self.config.run_cfg.get("save_freq", 1)
 
     @property
+    def early_stop_patience(self):
+        return int(self.config.run_cfg.get("early_stop_patience", -1))
+
+    @property
+    def early_stop_min_delta(self):
+        return float(self.config.run_cfg.get("early_stop_min_delta", 0.0))
+
+    @property
     def train_loader(self):
         train_dataloader = self.dataloaders["train"]
 
@@ -524,7 +532,11 @@ class RunnerBase:
 
                     loss_value = eval_stats.get("loss")
                     if not self.evaluate_only:
-                        if loss_value is not None and loss_value < best_agg_metric and split_name == "val":
+                        if (
+                            loss_value is not None
+                            and loss_value < best_agg_metric - self.early_stop_min_delta
+                            and split_name == "val"
+                        ):
                             best_epoch, best_agg_metric = cur_epoch, loss_value
                             self._save_checkpoint(cur_epoch, is_best=True,
                                                   best_agg_metric=best_agg_metric,
@@ -550,6 +562,8 @@ class RunnerBase:
         # resume from checkpoint if specified
         if not self.evaluate_only and self.resume_ckpt_path is not None:
             self._load_checkpoint(self.resume_ckpt_path)
+            if self.config.run_cfg.get("delete_resume_ckpt_after_load", False):
+                self._delete_local_resume_checkpoint_after_load(self.resume_ckpt_path)
             # Restore best-tracking from the checkpoint so we don't overwrite
             # checkpoint_best.pth with a worse score on the first resumed epoch.
             resumed_metric = getattr(self, "_resumed_best_metric", None)
@@ -561,6 +575,7 @@ class RunnerBase:
 
         for cur_epoch in range(self.start_epoch, self.max_epoch):
             custom_epochs = self.datasets['mimic_cxr']['train'].custom_epochs_per_epoch if 'mimic_cxr' in self.datasets else self.datasets['train'].custom_epochs_per_epoch
+            stop_training = False
             for custom_epoch in range(custom_epochs):
                 if 'mimic_cxr' in self.datasets: #before first epoch
                     self.datasets['mimic_cxr']['train'].set_custom_epoch(custom_epoch)
@@ -575,8 +590,41 @@ class RunnerBase:
                 # evaluation phase
                 best_agg_metric, best_epoch = self.validate(cur_epoch, best_agg_metric, best_epoch, wandb_run)
 
+                if (
+                    not self.evaluate_only
+                    and self.early_stop_patience > 0
+                    and len(self.valid_splits) > 0
+                    and cur_epoch - best_epoch >= self.early_stop_patience
+                ):
+                    logging.info(
+                        "Early stopping at epoch %d: best val loss %.6f at epoch %d, "
+                        "patience=%d, min_delta=%g.",
+                        cur_epoch,
+                        best_agg_metric,
+                        best_epoch,
+                        self.early_stop_patience,
+                        self.early_stop_min_delta,
+                    )
+                    try:
+                        wandb_run.log(
+                            {
+                                "early_stop/epoch": cur_epoch,
+                                "early_stop/best_epoch": best_epoch,
+                                "early_stop/best_val_loss": best_agg_metric,
+                            }
+                        )
+                    except Exception:
+                        pass
+                    stop_training = True
+
                 if self.evaluate_only:
                     break
+
+                if stop_training:
+                    break
+
+            if stop_training:
+                break
 
             #dist.barrier()
 
@@ -695,17 +743,19 @@ class RunnerBase:
                 else:
                     sampler = None
 
-                loader = DataLoader(
-                    dataset,
+                loader_kwargs = dict(
                     batch_size=bsz,
                     num_workers=num_workers,
-                    prefetch_factor=2,
                     pin_memory=True,
                     sampler=sampler,
                     shuffle=sampler is None and is_train,
                     collate_fn=collate_fn,
                     drop_last=True if is_train else False,
                 )
+                if num_workers > 0:
+                    loader_kwargs["prefetch_factor"] = 2
+
+                loader = DataLoader(dataset, **loader_kwargs)
                 #loader = PrefetchLoader(loader)
 
                 if is_train:
@@ -894,6 +944,35 @@ class RunnerBase:
                 url_or_filename, self._resumed_best_metric, self._resumed_best_epoch
             )
         )
+
+    def _delete_local_resume_checkpoint_after_load(self, checkpoint_path):
+        if not checkpoint_path or is_url(checkpoint_path) or not os.path.isfile(checkpoint_path):
+            return
+
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
+
+        if is_main_process():
+            try:
+                size_mb = os.path.getsize(checkpoint_path) / (1024 ** 2)
+                os.remove(checkpoint_path)
+                logging.info(
+                    "Deleted local resume checkpoint after load: %s (%.1f MB freed)",
+                    checkpoint_path,
+                    size_mb,
+                )
+
+                parent = Path(checkpoint_path).parent
+                if parent.exists():
+                    try:
+                        next(parent.iterdir())
+                    except StopIteration:
+                        parent.rmdir()
+            except OSError as exc:
+                logging.warning("Could not delete local resume checkpoint %s: %s", checkpoint_path, exc)
+
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
 
     @main_process
     def log_stats(self, stats, split_name, commit=True):

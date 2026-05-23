@@ -1,5 +1,4 @@
-# 2-GPU DDP training on MIMIC-CXR-JPG only (Kaggle 2x T4 setup)
-
+# Auto-generated encoder comparison config: 04_biovil_pubmedclip
 model:
   arch: blip2
   model_type: pretrain
@@ -13,26 +12,17 @@ model:
     swin: false
   num_query_token: 32
   max_txt_len: 256
-
   mhcac:
     threshold_path: "threshold.json"
 
 datasets:
   mimic_cxr:
     vis_processor:
-      train:
-        name: "blip2_image_train"
-        image_size: 448
-      eval:
-        name: "blip_image_eval"
-        image_size: 448
+      train: {name: "blip2_image_train", image_size: 448}
+      eval:  {name: "blip_image_eval",  image_size: 448}
     text_processor:
-      train:
-        name: "my_blip_caption"
-        prompt: ''
-      eval:
-        name: "my_blip_caption"
-        prompt: ''
+      train: {name: "my_blip_caption", prompt: ''}
+      eval:  {name: "my_blip_caption", prompt: ''}
 
 run:
   task: image_text_pretrain_eval
@@ -52,8 +42,7 @@ run:
   early_stop_patience: 5
   early_stop_min_delta: 1e-4
   save_freq: 5
-  # 2/GPU x 2 GPUs x accum_grad_iters=4 = effective batch 16, matching meta-cxr-l4.
-  batch_size_train: 2
+  batch_size_train: 4
   batch_size_eval: 4
   num_workers: 2
   warmup_steps: 1000
@@ -64,16 +53,15 @@ run:
   num_beams: 1
 
   seed: 42
-  output_dir: "/kaggle/working/output"
+  output_dir: "/home/phuong/output/04_biovil_pubmedclip"
 
   amp: True
-
   evaluate: False
   train_splits: ["train"]
   valid_splits: ["val"]
   test_splits: ["test"]
 
   device: "cuda"
-  world_size: 2
+  world_size: 1
   dist_url: "env://"
-  distributed: True
+  distributed: False

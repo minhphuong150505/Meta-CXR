@@ -103,9 +103,10 @@ def main():
     # Only rank 0 logs to wandb; other ranks use disabled mode to silence any stray calls
     if is_main_process():
         try:
+            wandb_entity = cfg.run_cfg.get("wandb_entity", WANDB_ENTITY)
             wandb_run = wandb.init(
                 project=cfg.run_cfg.get("project_name", WANDB_PROJECT),
-                entity=WANDB_ENTITY if WANDB_ENTITY else None,
+                entity=wandb_entity if wandb_entity else None,
                 name=cfg.run_cfg.run_name
             )
         except wandb.errors.UsageError:
@@ -121,25 +122,28 @@ def main():
     # Only MIMIC-CXR-JPG dataset
     datasets = {}
     datasets['mimic_cxr'] = {}
+    truncate_train = cfg.run_cfg.get("truncate_train", None)
+    truncate_val = cfg.run_cfg.get("truncate_val", None)
+    truncate_test = cfg.run_cfg.get("truncate_test", None)
 
     datasets['mimic_cxr']['train'] = MIMIC_CXR_Dataset(
         vis_processor=None, text_processor=None,
         vis_root=VIS_ROOT,
-        split="train", cfg=cfg, truncate=None
+        split="train", cfg=cfg, truncate=truncate_train
     )
 
     if not cfg.run_cfg.evaluate:
         datasets['mimic_cxr']['val'] = MIMIC_CXR_Dataset(
             vis_processor=None, text_processor=None,
             vis_root=VIS_ROOT,
-            split="val", cfg=cfg, truncate=None
+            split="val", cfg=cfg, truncate=truncate_val
         )
 
         if len(cfg.run_cfg.get("test_splits", [])) > 0:
             datasets['mimic_cxr']['test'] = MIMIC_CXR_Dataset(
                 vis_processor=None, text_processor=None,
                 vis_root=VIS_ROOT,
-                split="test", cfg=cfg, truncate=None
+                split="test", cfg=cfg, truncate=truncate_test
             )
 
     model = task.build_model(cfg)
