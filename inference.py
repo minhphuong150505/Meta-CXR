@@ -259,12 +259,10 @@ def classify_abnormalities(
                     best_score = prob
             if best_cls is not None:
                 categorized_abnormalities[best_cls].append(abn)
-                # categorized_abnormalities["uncertain"].append(abn)
-            # else:
-            #     # categorized_abnormalities["uncertain"].append(abn)
-            #     cls_idx = torch.tensor(probs).argmax().item()
-            #     cls = [k for k, v in class_map.items() if v == cls_idx][0]
-            #     categorized_abnormalities[cls].append(abn)
+            else:
+                cls_idx = int(torch.tensor(probs).argmax().item())
+                cls = [k for k, v in class_map.items() if v == cls_idx][0]
+                categorized_abnormalities[cls].append(abn)
         else:
             cls_idx = torch.tensor(probs).argmax().item()
             cls = [k for k, v in class_map.items() if v == cls_idx][0]
