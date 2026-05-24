@@ -342,8 +342,7 @@ def get_response(input_text, dicom):
         logits, qformer_embs = blip_model.forward_image(image[None].to(torch.device('cuda')))
         logits = logits.cpu().detach().squeeze(0)
         qformer_embs = qformer_embs.cpu().detach()
-        # print(f"cfg.config.model.mhcac.threshold_path: {cfg.config.model.mhcac.threshold_path}")
-        classifications = classify_abnormalities(logits, thresholds=cfg.config.model.mhcac.threshold_path)
+        classifications = classify_abnormalities(logits)
         findings, pos_str, neg_str, unc_str = format_findings_dict(classifications)
 
         if gen_report:
