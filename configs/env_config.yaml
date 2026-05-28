@@ -9,8 +9,8 @@ paths:
   processed_train_csv: "/kaggle/input/mimic-cxr-p10-processed/train.csv"
   processed_val_csv:   "/kaggle/input/mimic-cxr-p10-processed/val.csv"
   processed_test_csv:  "/kaggle/input/mimic-cxr-p10-processed/test.csv"
-  output_dir: "/kaggle/working/output"
-  checkpoint_dir: "/kaggle/working/checkpoints"
+  output_dir: "/kaggle/temp/output"
+  checkpoint_dir: "/kaggle/temp/checkpoints"
   gcs_bucket: "gs://meta-cxr-checkpoint"
   gcs_project: "mimic-cxr-jpg-491409"
 

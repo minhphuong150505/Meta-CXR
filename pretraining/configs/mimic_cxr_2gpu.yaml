@@ -55,7 +55,7 @@ run:
   # 2/GPU x 2 GPUs x accum_grad_iters=4 = effective batch 16, matching meta-cxr-l4.
   batch_size_train: 2
   batch_size_eval: 4
-  num_workers: 2
+  num_workers: 4
   warmup_steps: 1000
   accum_grad_iters: 4
 
@@ -64,7 +64,7 @@ run:
   num_beams: 1
 
   seed: 42
-  output_dir: "/kaggle/working/output"
+  output_dir: "/kaggle/temp/output"
 
   amp: True
 

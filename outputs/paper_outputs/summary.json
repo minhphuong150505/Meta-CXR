@@ -1,0 +1,7 @@
+{
+  "dataset": "MIMIC-CXR p10 test",
+  "run_name": "07_all_three",
+  "checkpoint": "/mnt/meta-cxr-checkpoint/07_all_three/checkpoint_best.pth",
+  "table4_dir": "/home/phuong/META-CXR/paper_outputs/07_all_three_test/table4_style",
+  "figure6_dir": "/home/phuong/META-CXR/paper_outputs/07_all_three_test/figure6_style"
+}

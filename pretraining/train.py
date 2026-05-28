@@ -104,10 +104,18 @@ def main():
     if is_main_process():
         try:
             wandb_entity = cfg.run_cfg.get("wandb_entity", WANDB_ENTITY)
+            wandb_run_id = cfg.run_cfg.get("wandb_run_id", None)
+            wandb_resume = cfg.run_cfg.get("wandb_resume", None)
+            wandb_kwargs = {
+                "project": cfg.run_cfg.get("project_name", WANDB_PROJECT),
+                "entity": wandb_entity if wandb_entity else None,
+                "name": cfg.run_cfg.run_name,
+            }
+            if wandb_run_id:
+                wandb_kwargs["id"] = wandb_run_id
+                wandb_kwargs["resume"] = wandb_resume or "allow"
             wandb_run = wandb.init(
-                project=cfg.run_cfg.get("project_name", WANDB_PROJECT),
-                entity=wandb_entity if wandb_entity else None,
-                name=cfg.run_cfg.run_name
+                **wandb_kwargs
             )
         except wandb.errors.UsageError:
             print("wandb: No API key found — logging disabled")

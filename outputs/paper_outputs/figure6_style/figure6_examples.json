@@ -1,0 +1,64 @@
+[
+  {
+    "rank": 1,
+    "dataset_index": 1818,
+    "dicom_id": "f2b70207-cbaf2898-ad2d5d47-f2794ff9-be7f34a4",
+    "image_path": "/mnt/mimic-cxr-data/p10/p10913472/s50576043/f2b70207-cbaf2898-ad2d5d47-f2794ff9-be7f34a4.jpg",
+    "radiograph_png": "/home/phuong/META-CXR/paper_outputs/07_all_three_test/figure6_style/images/example_1_radiograph.png",
+    "attention_png": "/home/phuong/META-CXR/paper_outputs/07_all_three_test/figure6_style/images/example_1_stacked_attention.png",
+    "radiograph_rel": "images/example_1_radiograph.png",
+    "attention_rel": "images/example_1_stacked_attention.png",
+    "ground_truth_groups": {
+      "positive": "Cardiomegaly, Lung Opacity, Lung Lesion, Consolidation, Pleural Effusion, Support Devices",
+      "uncertain": "Edema, Atelectasis",
+      "negative": "Rest"
+    },
+    "pn_groups": {
+      "positive": "Cardiomegaly, Lung Opacity, Atelectasis, Support Devices",
+      "uncertain": "None",
+      "negative": "Rest"
+    },
+    "pnu_groups": {
+      "positive": "Atelectasis, Support Devices",
+      "uncertain": "None",
+      "negative": "Rest"
+    },
+    "ground_truth_report": "ap chest compared to <unk>: the full extent of opacification in the right hemithorax improved between <unk> and <unk> and has not changed appreciably since, including a well-circumscribed mass-like lesion above the level of the right hilus, some of which could be pleural fluid loculated in the fissure. the extent of right lower lobe consolidation has improved since <unk>, but there is probably persistent moderate right pleural effusion. nodular lesions which developed in the left lung on <unk>, are probably small lung abscesses--<unk> either hematogenously or transbronchially--<unk> several appear to be cavitated. they are smaller today than on <unk>. they may have been. peribronchial opacification developing at the base of the left lung is nonspecific. it could be mild edema or atelectasis but needs to be followed to exclude pneumonia, particularly due to aspiration. the heart is, and has been normal size, and mediastinal and pulmonary vasculature are normal. et tube and right internal jugular line are in standard positions. an esophageal manometer ends at the gastroesophageal junction and an upper enteric drainage tube in the upper stomach. no pneumothorax.",
+    "pn_report": "In comparison with the study of ___, there is little overall\r change. Again there is enlargement of the cardiac silhouette with\r some indistinctness of pulmonary vessels consistent with elevated pulmonary\r venous pressure. Bibasilar opacifications are consistent with atelectasis. \r Central catheter etends to the mid-to-lower portion of the SVC.",
+    "pnu_report": "In comparison with the study of ___, there is little overall change. \r Again there is evidence of previous right upper lobectomy with a right chest tube in place. \r There is some increased opacification at the right base, most likely\r reflecting atelectasis.",
+    "ground_truth_text": "Abnormalities:\nPositive: Cardiomegaly, Lung Opacity, Lung Lesion, Consolidation, Pleural Effusion, Support Devices\nUncertain: Edema, Atelectasis\nNegative: Rest\n\nReport:\nap chest compared to <unk>: the full extent\nof opacification in the right hemithorax\nimproved between <unk> and <unk> and has not\nchanged appreciably since, including a well-\ncircumscribed mass-like lesion above the\nlevel of the right hilus, some of which could\nbe pleural fluid loculated in the fissure.\nthe extent of right lower lobe consolidation\nhas improved since <unk>, but there is\nprobably persistent moderate right pleural\neffusion. nodular lesions which developed in\nthe left lung on <unk>, are probably small\nlung abscesses--<unk> either hematogenously\nor transbronchially--<unk> several appear to\nbe cavitated. they are smaller today than on\n<unk>. they may have been. peribronchial\nopacification developing at the base of the\nleft lung is nonspecific. it could be mild\nedema or atelectasis but needs to be followed\nto exclude pneumonia, particularly due to\naspiration. the heart is, an...",
+    "pn_text": "Predicted Abnormalities:\nPositive: Cardiomegaly, Lung Opacity, Atelectasis, Support Devices\nUncertain: None\nNegative: Rest\n\nReport:\nIn comparison with the study of ___, there is\nlittle overall change. Again there is\nenlargement of the cardiac silhouette with\nsome indistinctness of pulmonary vessels\nconsistent with elevated pulmonary venous\npressure. Bibasilar opacifications are\nconsistent with atelectasis. Central catheter\netends to the mid-to-lower portion of the\nSVC.",
+    "pnu_text": "Predicted Abnormalities:\nPositive: Atelectasis, Support Devices\nUncertain: None\nNegative: Rest\n\nReport:\nIn comparison with the study of ___, there is\nlittle overall change. Again there is\nevidence of previous right upper lobectomy\nwith a right chest tube in place. There is\nsome increased opacification at the right\nbase, most likely reflecting atelectasis."
+  },
+  {
+    "rank": 2,
+    "dataset_index": 924,
+    "dicom_id": "1e62289e-b45cfdec-b6cc125c-0daa8361-809edfec",
+    "image_path": "/mnt/mimic-cxr-data/p10/p10438089/s58599506/1e62289e-b45cfdec-b6cc125c-0daa8361-809edfec.jpg",
+    "radiograph_png": "/home/phuong/META-CXR/paper_outputs/07_all_three_test/figure6_style/images/example_2_radiograph.png",
+    "attention_png": "/home/phuong/META-CXR/paper_outputs/07_all_three_test/figure6_style/images/example_2_stacked_attention.png",
+    "radiograph_rel": "images/example_2_radiograph.png",
+    "attention_rel": "images/example_2_stacked_attention.png",
+    "ground_truth_groups": {
+      "positive": "Cardiomegaly, Lung Opacity, Edema, Atelectasis, Pleural Effusion, Support Devices",
+      "uncertain": "None",
+      "negative": "Rest"
+    },
+    "pn_groups": {
+      "positive": "Cardiomegaly, Lung Opacity, Atelectasis, Pleural Effusion, Support Devices",
+      "uncertain": "None",
+      "negative": "Rest"
+    },
+    "pnu_groups": {
+      "positive": "Lung Opacity, Atelectasis, Pleural Effusion, Support Devices",
+      "uncertain": "None",
+      "negative": "Rest"
+    },
+    "ground_truth_report": "compared to chest radiographs since <unk>, and chest ct on <unk>. left lower hemi thorax remains uniformly opacified, probably a combination of left lower lobe collapse and indeterminate volume of left pleural fluid. there is no pneumothorax. apical left pleural drain unchanged in position. cardiac silhouette very large, stable. mild vascular congestion borderline interstitial edema in the right lung are slightly more severe.",
+    "pn_report": "Right-sided PICC terminates in the low SVC without evidence of pneumothora. \r There is persistent blunting of the right costophrenic angle, which may be due to\r a small pleural effusion with overlying atelectasis. Mild basilar atelectasis is\r seen. The cardiac silhouette is mildly enlarged. The aorta is calcified and\nelevated, similar to prior.",
+    "pnu_report": "In comparison with the study of ___, there is little overall\r change. Again there is evidence of prior right upper lobectomy with\r residual opacification at the right base consistent with atelectasis and\r small effusion. The left lung is essentially clear. Central catheter again\nremains in place.",
+    "ground_truth_text": "Abnormalities:\nPositive: Cardiomegaly, Lung Opacity, Edema, Atelectasis, Pleural Effusion, Support Devices\nUncertain: None\nNegative: Rest\n\nReport:\ncompared to chest radiographs since <unk>,\nand chest ct on <unk>. left lower hemi thorax\nremains uniformly opacified, probably a\ncombination of left lower lobe collapse and\nindeterminate volume of left pleural fluid.\nthere is no pneumothorax. apical left pleural\ndrain unchanged in position. cardiac\nsilhouette very large, stable. mild vascular\ncongestion borderline interstitial edema in\nthe right lung are slightly more severe.",
+    "pn_text": "Predicted Abnormalities:\nPositive: Cardiomegaly, Lung Opacity, Atelectasis, Pleural Effusion, Support Devices\nUncertain: None\nNegative: Rest\n\nReport:\nRight-sided PICC terminates in the low SVC\nwithout evidence of pneumothora. There is\npersistent blunting of the right costophrenic\nangle, which may be due to a small pleural\neffusion with overlying atelectasis. Mild\nbasilar atelectasis is seen. The cardiac\nsilhouette is mildly enlarged. The aorta is\ncalcified and elevated, similar to prior.",
+    "pnu_text": "Predicted Abnormalities:\nPositive: Lung Opacity, Atelectasis, Pleural Effusion, Support Devices\nUncertain: None\nNegative: Rest\n\nReport:\nIn comparison with the study of ___, there is\nlittle overall change. Again there is\nevidence of prior right upper lobectomy with\nresidual opacification at the right base\nconsistent with atelectasis and small\neffusion. The left lung is essentially clear.\nCentral catheter again remains in place."
+  }
+]

@@ -1,0 +1,3 @@
+Metric,Model,Mean,Atelectasis,Cardiomegaly,Consolidation,Edema,Pleural Effusion
+AUC,META-CXR (Ours),0.817182,0.766083,0.762822,0.807868,0.86161,0.887525
+F1-Score,META-CXR (Ours),0.354731,0.461634,0.333333,0.037736,0.412371,0.528581

@@ -1,0 +1,80 @@
+{
+  "dataset": "MIMIC-CXR p10 test",
+  "metric_definition": {
+    "AUC": "positive class probability vs positive label, one-vs-rest",
+    "F1-Score": "positive-vs-rest using threshold.json positive threshold per pathology",
+    "alternate_f1": "weighted multiclass F1 over negative/positive/uncertain"
+  },
+  "mean_auc": 0.817182,
+  "mean_f1_positive_threshold": 0.354731,
+  "mean_f1_weighted_multiclass": 0.789491,
+  "per_pathology": [
+    {
+      "pathology": "Atelectasis",
+      "auc_positive_vs_rest": 0.766083,
+      "f1_positive_threshold": 0.461634,
+      "f1_weighted_multiclass": 0.710047,
+      "positive_threshold": 0.16,
+      "support_positive": 433,
+      "support_total": 2042
+    },
+    {
+      "pathology": "Cardiomegaly",
+      "auc_positive_vs_rest": 0.762822,
+      "f1_positive_threshold": 0.333333,
+      "f1_weighted_multiclass": 0.717003,
+      "positive_threshold": 0.11,
+      "support_positive": 346,
+      "support_total": 2042
+    },
+    {
+      "pathology": "Consolidation",
+      "auc_positive_vs_rest": 0.807868,
+      "f1_positive_threshold": 0.037736,
+      "f1_weighted_multiclass": 0.901752,
+      "positive_threshold": 0.5,
+      "support_positive": 100,
+      "support_total": 2042
+    },
+    {
+      "pathology": "Edema",
+      "auc_positive_vs_rest": 0.86161,
+      "f1_positive_threshold": 0.412371,
+      "f1_weighted_multiclass": 0.812006,
+      "positive_threshold": 0.5,
+      "support_positive": 214,
+      "support_total": 2042
+    },
+    {
+      "pathology": "Pleural Effusion",
+      "auc_positive_vs_rest": 0.887525,
+      "f1_positive_threshold": 0.528581,
+      "f1_weighted_multiclass": 0.806649,
+      "positive_threshold": 0.12,
+      "support_positive": 415,
+      "support_total": 2042
+    }
+  ],
+  "paper_rows": [
+    {
+      "Metric": "AUC",
+      "Model": "META-CXR (Ours)",
+      "Mean": 0.817182,
+      "Atelectasis": 0.766083,
+      "Cardiomegaly": 0.762822,
+      "Consolidation": 0.807868,
+      "Edema": 0.86161,
+      "Pleural Effusion": 0.887525
+    },
+    {
+      "Metric": "F1-Score",
+      "Model": "META-CXR (Ours)",
+      "Mean": 0.354731,
+      "Atelectasis": 0.461634,
+      "Cardiomegaly": 0.333333,
+      "Consolidation": 0.037736,
+      "Edema": 0.412371,
+      "Pleural Effusion": 0.528581
+    }
+  ]
+}

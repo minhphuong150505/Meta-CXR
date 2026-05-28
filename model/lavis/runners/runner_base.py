@@ -798,7 +798,8 @@ class RunnerBase:
             if k in param_grad_dic.keys() and not param_grad_dic[k]:
                 # delete parameters that do not require gradient
                 del state_dict[k]
-        optimizer_state = self.optimizer.state_dict()
+        include_training_state = not is_best
+        optimizer_state = self.optimizer.state_dict() if include_training_state else None
         save_to = os.path.join(
             self.output_dir,
             "checkpoint_{}.pth".format("best" if is_best else ("last" if is_last else cur_epoch)),
@@ -808,7 +809,11 @@ class RunnerBase:
         # If model or optimizer state contains NaN/Inf, log and bail out
         # silently so training can keep trying to recover.
         model_bad, model_bad_count = _state_dict_has_non_finite(state_dict)
-        opt_bad, opt_bad_count = _state_dict_has_non_finite(optimizer_state)
+        opt_bad, opt_bad_count = (
+            _state_dict_has_non_finite(optimizer_state)
+            if include_training_state
+            else (False, 0)
+        )
         if model_bad or opt_bad:
             logging.error(
                 f"Refusing to save checkpoint to {save_to}: "
@@ -819,13 +824,14 @@ class RunnerBase:
 
         save_obj = {
             "model": state_dict,
-            "optimizer": optimizer_state,
             "config": self.config.to_dict(),
-            "scaler": self.scaler.state_dict() if self.scaler else None,
             "epoch": cur_epoch,
             "best_agg_metric": best_agg_metric,
             "best_epoch": best_epoch,
         }
+        if include_training_state:
+            save_obj["optimizer"] = optimizer_state
+            save_obj["scaler"] = self.scaler.state_dict() if self.scaler else None
         logging.info("Saving checkpoint at epoch {} to {}.".format(cur_epoch, save_to))
         torch.save(save_obj, save_to)
 
@@ -904,19 +910,24 @@ class RunnerBase:
 
         # Skip loading optimizer state if it contains NaN/Inf (poisoned Adam
         # moments would corrupt model weights on the first update). Letting
-        # Adam re-initialize is safe — first step magnitude is just lr.
-        opt_bad, opt_bad_count = _state_dict_has_non_finite(checkpoint["optimizer"])
-        if opt_bad:
-            logging.warning(
-                f"Optimizer state contains {opt_bad_count} non-finite tensor(s) — "
-                "skipping load. Optimizer will be re-initialized."
-            )
+        # Adam re-initialize is safe; checkpoint_best.pth intentionally omits
+        # optimizer/scaler state to keep Kaggle disk usage low.
+        optimizer_state = checkpoint.get("optimizer")
+        if optimizer_state is None:
+            logging.warning("Optimizer state missing from checkpoint; optimizer will be re-initialized.")
         else:
-            try:
-                optimizer.load_state_dict(checkpoint["optimizer"])
-            except ValueError as e:
-                logging.warning(f"Optimizer state could not be loaded due to: {str(e)}")
-                logging.warning("Proceeding with re-initialized optimizer.")
+            opt_bad, opt_bad_count = _state_dict_has_non_finite(optimizer_state)
+            if opt_bad:
+                logging.warning(
+                    f"Optimizer state contains {opt_bad_count} non-finite tensor(s) — "
+                    "skipping load. Optimizer will be re-initialized."
+                )
+            else:
+                try:
+                    optimizer.load_state_dict(optimizer_state)
+                except ValueError as e:
+                    logging.warning(f"Optimizer state could not be loaded due to: {str(e)}")
+                    logging.warning("Proceeding with re-initialized optimizer.")
 
         if self.scaler and "scaler" in checkpoint and checkpoint["scaler"] is not None:
             scaler_bad, scaler_bad_count = _state_dict_has_non_finite(checkpoint["scaler"])
