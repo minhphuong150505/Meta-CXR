@@ -10,6 +10,9 @@ class Pubmedclip(nn.Module):
         self.aug = aug
         self.model_name = "flaviagiammarino/pubmed-clip-vit-base-patch32"
         self.model = CLIPModel.from_pretrained(self.model_name).to(self.device)
+        for p in self.model.parameters():
+            p.requires_grad = False
+        self.model.eval()
         self.processor = CLIPProcessor.from_pretrained(self.model_name)
         
         # Define the MLP to project patch embeddings to 1408 dimensions
@@ -18,6 +21,11 @@ class Pubmedclip(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(1024, 1408)  # Final projection to 1408 dimensions
         ).to(self.device)
+
+    def train(self, mode=True):
+        super().train(mode)
+        self.model.eval()
+        return self
 
     def forward(self, image, apply_aug = True):
         # Input is already a [0,1] float tensor from dataset ToTensor(); skip
@@ -33,8 +41,8 @@ class Pubmedclip(nn.Module):
              
         # Obtain patch embeddings
         with torch.no_grad():
-            vision_outputs = self.model.vision_model(pixel_values=inputs, output_hidden_states=True)
-            patch_embeddings = vision_outputs.hidden_states[-1]  # Last layer's patch embeddings
+            vision_outputs = self.model.vision_model(pixel_values=inputs)
+            patch_embeddings = vision_outputs.last_hidden_state
         
         # Project the patch embeddings to 1408 dimensions using the MLP
         batch_size, num_patches, embedding_dim = patch_embeddings.shape  # Expected: (batch_size, num_patches, 768)
