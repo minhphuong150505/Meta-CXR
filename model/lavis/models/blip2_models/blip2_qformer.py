@@ -29,6 +29,7 @@ from mhcac.mhcac_12 import AbnormalityClassificationModel
 
 from vision_encoders.pubmedclip.pubmed_clip import Pubmedclip
 from vision_encoders.swin.swin_encoder import SwinEncoder
+from vision_encoders.rad_dino.rad_dino_encoder import RadDinoEncoder
 # from vision_encoders.medclip.medclip import Medclip
 
 from mhcac.utils import compute_metrics_for_tasks
@@ -78,6 +79,15 @@ class Blip2Qformer(Blip2Base):
         use_biovil=True,
         use_pubmedclip=True,
         use_swin=False,
+        swin_model_name="swin_tiny_patch4_window7_224",
+        swin_backend="timm",
+        swin_pretrained=True,
+        swin_frozen=True,
+        swin_normalize=None,
+        use_raddino=False,
+        raddino_model_name="microsoft/rad-dino",
+        raddino_frozen=True,
+        raddino_normalize=True,
     ):
         super().__init__()
 
@@ -86,8 +96,9 @@ class Blip2Qformer(Blip2Base):
         self.use_biovil = bool(use_biovil)
         self.use_pubmedclip = bool(use_pubmedclip)
         self.use_swin = bool(use_swin)
-        if not any([self.use_biovil, self.use_pubmedclip, self.use_swin]):
-            raise ValueError("At least one encoder must be enabled: biovil, pubmedclip, or swin")
+        self.use_raddino = bool(use_raddino)
+        if not any([self.use_biovil, self.use_pubmedclip, self.use_swin, self.use_raddino]):
+            raise ValueError("At least one encoder must be enabled: biovil, pubmedclip, swin, or raddino")
 
         self.vit_model = vit_model
         vis_num_feat = 1408
@@ -136,14 +147,30 @@ class Blip2Qformer(Blip2Base):
 
         self.swin = (
             SwinEncoder(
-                model_name="swin_tiny_patch4_window7_224",
-                pretrained=True,
-                frozen=True,
+                model_name=swin_model_name,
+                pretrained=swin_pretrained,
+                frozen=swin_frozen,
+                backend=swin_backend,
+                normalize=swin_normalize,
             ).eval()
             if self.use_swin
             else None
         )
-        self.swin_qformer_proj = nn.Linear(768, 1408) if self.use_swin else None
+        swin_dim = self.swin.embed_dim if self.use_swin else 768
+        self.swin_qformer_proj = nn.Linear(swin_dim, 1408) if self.use_swin else None
+
+        self.raddino = (
+            RadDinoEncoder(
+                model_name=raddino_model_name,
+                pretrained=True,
+                frozen=raddino_frozen,
+                normalize=raddino_normalize,
+            ).eval()
+            if self.use_raddino
+            else None
+        )
+        raddino_dim = self.raddino.embed_dim if self.use_raddino else 768
+        self.raddino_qformer_proj = nn.Linear(raddino_dim, 1408) if self.use_raddino else None
 
         # self.medclip = Medclip().eval()
         
@@ -234,6 +261,10 @@ class Blip2Qformer(Blip2Base):
         if self.use_swin:
             swin_patches = self.swin(image)
             qformer_streams.append(self.swin_qformer_proj(swin_patches))
+
+        if self.use_raddino:
+            raddino_patches = self.raddino(image)
+            qformer_streams.append(self.raddino_qformer_proj(raddino_patches))
 
         if not qformer_streams:
             raise ValueError("No image encoder stream is enabled.")
@@ -819,6 +850,41 @@ class Blip2Qformer(Blip2Base):
             )
         )
         use_swin = cfg_bool(encoders.get("swin", cfg.get("use_swin", False)))
+        swin_cfg = cfg.get("swin", {}) or {}
+        swin_model_name = cfg.get(
+            "swin_model_name",
+            swin_cfg.get("model_name", "swin_tiny_patch4_window7_224"),
+        )
+        swin_backend = cfg.get("swin_backend", swin_cfg.get("backend", "timm"))
+        swin_pretrained = cfg_bool(
+            cfg.get("swin_pretrained", swin_cfg.get("pretrained", True)),
+            default=True,
+        )
+        swin_frozen = cfg_bool(
+            cfg.get("swin_frozen", swin_cfg.get("frozen", True)),
+            default=True,
+        )
+        swin_normalize_raw = cfg.get("swin_normalize", swin_cfg.get("normalize", None))
+        swin_normalize = (
+            None
+            if swin_normalize_raw is None
+            else cfg_bool(swin_normalize_raw, default=True)
+        )
+
+        use_raddino = cfg_bool(encoders.get("raddino", cfg.get("use_raddino", False)))
+        raddino_cfg = cfg.get("raddino", {}) or {}
+        raddino_model_name = cfg.get(
+            "raddino_model_name",
+            raddino_cfg.get("model_name", "microsoft/rad-dino"),
+        )
+        raddino_frozen = cfg_bool(
+            cfg.get("raddino_frozen", raddino_cfg.get("frozen", True)),
+            default=True,
+        )
+        raddino_normalize = cfg_bool(
+            cfg.get("raddino_normalize", raddino_cfg.get("normalize", True)),
+            default=True,
+        )
 
         model = cls(
             vit_model=vit_model,
@@ -833,6 +899,15 @@ class Blip2Qformer(Blip2Base):
             use_biovil=use_biovil,
             use_pubmedclip=use_pubmedclip,
             use_swin=use_swin,
+            swin_model_name=swin_model_name,
+            swin_backend=swin_backend,
+            swin_pretrained=swin_pretrained,
+            swin_frozen=swin_frozen,
+            swin_normalize=swin_normalize,
+            use_raddino=use_raddino,
+            raddino_model_name=raddino_model_name,
+            raddino_frozen=raddino_frozen,
+            raddino_normalize=raddino_normalize,
         )
         model.load_checkpoint_from_config(cfg)
 

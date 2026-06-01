@@ -1,19 +1,25 @@
-# Auto-generated encoder comparison config: 03_swin_only
+# Encoder comparison config: 09_all_plus_raddino
+# biovil + pubmedclip + SwinV2(MIMIC) + rad-dino — strongest CXR feature set
 model:
   arch: blip2
   model_type: pretrain
   load_pretrained: False
   freeze_vit: True
-  vit_model: swin
+  vit_model: biovil
   vit_model_cls: [pubmedclip]
   encoders:
-    biovil: false
-    pubmedclip: false
+    biovil: true
+    pubmedclip: true
     swin: true
+    raddino: true
   swin:
     backend: hf
     model_name: "ChayanM/SwinV2-GPT2_Mimic"
     pretrained: true
+    frozen: true
+    normalize: true
+  raddino:
+    model_name: "microsoft/rad-dino"
     frozen: true
     normalize: true
   num_query_token: 32
@@ -34,7 +40,7 @@ run:
   task: image_text_pretrain_eval
   project_name: meta-cxr-encoder-comparison
   wandb_entity: phuongnm150505-uit
-  run_name: 03_swin_only
+  run_name: 09_all_plus_raddino
 
   lr_sched: "linear_warmup_cosine_lr"
   init_lr_cls: 1e-4
@@ -59,7 +65,7 @@ run:
   num_beams: 1
 
   seed: 42
-  output_dir: "/home/phuong/output/03_swin_only"
+  output_dir: "/home/phuong/output/09_all_plus_raddino"
 
   amp: True
   evaluate: False
