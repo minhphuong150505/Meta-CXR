@@ -10,6 +10,12 @@ model:
     biovil: false
     pubmedclip: true
     swin: true
+  swin:
+    backend: hf
+    model_name: "ChayanM/SwinV2-GPT2_Mimic"
+    pretrained: true
+    frozen: true
+    normalize: true
   num_query_token: 32
   max_txt_len: 256
   mhcac:
