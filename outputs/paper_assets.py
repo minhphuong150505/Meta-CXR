@@ -159,7 +159,10 @@ def build_model(cfg: Config, checkpoint_path: Path, device: str) -> torch.nn.Mod
     state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
     print(f"[load] {checkpoint_path} missing={len(missing)} unexpected={len(unexpected)}")
-    return model.to(device).eval()
+    model = model.to(device)
+    if getattr(model, "pubmedclip", None) is not None:
+        model.pubmedclip.device = device
+    return model.eval()
 
 
 def make_loader(cfg: Config, split: str, batch_size: int, num_workers: int, truncate=None) -> DataLoader:
@@ -455,11 +458,11 @@ def load_vicuna(device: str):
         truncation_side="left",
         padding_side="left",
     )
-    base = LlamaForCausalLM.from_pretrained(
-        VICUNA_MODEL_ID,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        device_map="auto" if device == "cuda" else None,
-    )
+    llm_dtype = torch.float16 if device == "cuda" else torch.float32
+    llm_kwargs = {"torch_dtype": llm_dtype}
+    if device == "cuda":
+        llm_kwargs["device_map"] = {"": 0}
+    base = LlamaForCausalLM.from_pretrained(VICUNA_MODEL_ID, **llm_kwargs)
     tokenizer.pad_token = tokenizer.unk_token
     base.base_model.img_proj_layer = nn.Linear(768, base.base_model.config.hidden_size).to(
         base.base_model.device
@@ -469,7 +472,7 @@ def load_vicuna(device: str):
     llm = PeftModelForCausalLM.from_pretrained(
         base,
         str(lora_path),
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        torch_dtype=llm_dtype,
         use_ram_optimized_load=False,
     )
     if device == "cuda":
