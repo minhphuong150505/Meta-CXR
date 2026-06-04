@@ -174,7 +174,17 @@ class Blip2Qformer(Blip2Base):
 
         # self.medclip = Medclip().eval()
         
-        self.mhcac = AbnormalityClassificationModel(embed_dim=768, num_abnormalities=14, num_classes=3, num_layers=6, num_commmon_tokens = 14,initial_expert_tokens = None)
+        self._last_raddino_patches = None
+        self.mhcac = AbnormalityClassificationModel(
+            embed_dim=768,
+            num_abnormalities=14,
+            num_classes=3,
+            num_layers=6,
+            num_commmon_tokens=14,
+            initial_expert_tokens=None,
+            swin_dim=swin_dim,
+            raddino_dim=raddino_dim,
+        )
         
         class_weights = [
             torch.tensor([1.0, 1.0, 0.000], dtype=torch.float),  # Class weights for no finding
@@ -240,18 +250,26 @@ class Blip2Qformer(Blip2Base):
         mask = mask.unsqueeze(-1)  # Add dimension for broadcasting
         return embeddings * mask  # Apply mask by element-wise multiplication
 
-    def _encode_image_streams(self, image, apply_aug=False):
+    def _encode_image_streams(self, image, apply_aug=False, cached=None):
+        # ``cached`` holds raw frozen-encoder outputs (before ln_vision /
+        # *_qformer_proj) precomputed by pretraining/precompute_features.py. When
+        # present we skip the frozen encoder forward; the trainable projection
+        # layers below still run so training is identical.
+        cached = cached or {}
         cnn_patches = None
         vit_patches = None
         swin_patches = None
+        raddino_patches = None
         qformer_streams = []
+        self._last_raddino_patches = None
 
         if self.use_biovil:
-            cnn_patches = self.ln_vision(
+            cnn_raw = cached["biovil"] if "biovil" in cached else (
                 self.visual_encoder(image).projected_patch_embeddings.reshape(
                     image.shape[0], -1, 1408
                 )
             )
+            cnn_patches = self.ln_vision(cnn_raw)
             qformer_streams.append(cnn_patches)
 
         if self.use_pubmedclip:
@@ -259,11 +277,12 @@ class Blip2Qformer(Blip2Base):
             qformer_streams.append(pubmed_projection)
 
         if self.use_swin:
-            swin_patches = self.swin(image)
+            swin_patches = cached["swin"] if "swin" in cached else self.swin(image)
             qformer_streams.append(self.swin_qformer_proj(swin_patches))
 
         if self.use_raddino:
-            raddino_patches = self.raddino(image)
+            raddino_patches = cached["raddino"] if "raddino" in cached else self.raddino(image)
+            self._last_raddino_patches = raddino_patches
             qformer_streams.append(self.raddino_qformer_proj(raddino_patches))
 
         if not qformer_streams:
@@ -301,19 +320,27 @@ class Blip2Qformer(Blip2Base):
     
     def forward(self, samples):
         start_time = time()
-        image = samples["image"]
+        image = samples.get("image")
         text = samples["text_output"]
 
+        # Use precomputed frozen-encoder features when the dataset provides them
+        # (run.feature_cache_dir); otherwise run the encoders on the image.
+        cached = {
+            k: samples[f"{k}_feat"]
+            for k in ("biovil", "swin", "raddino")
+            if f"{k}_feat" in samples
+        }
         cnn_patches, vit_patches, swin_patches, qformer_image_embeds = self._encode_image_streams(
-            image, apply_aug=False
+            image, apply_aug=False, cached=cached
         )
+        device = qformer_image_embeds.device
 
         # image_embeds_3 = self.ln_vision(self.medclip(image))
         # image_embeds_3 = self._create_mask(image_embeds_3)  # Mask 20% of patches
 
-        
+
         image_atts = torch.ones(qformer_image_embeds.size()[:-1], dtype=torch.long).to(
-            image.device
+            device
         )
         
         # query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
@@ -341,8 +368,8 @@ class Blip2Qformer(Blip2Base):
             truncation=True,
             max_length=self.max_txt_len,
             return_tensors="pt",
-        ).to(image.device)
-        
+        ).to(device)
+
         text_output = self.Qformer.bert(
             text_tokens.input_ids,
             attention_mask=text_tokens.attention_mask,
@@ -373,6 +400,7 @@ class Blip2Qformer(Blip2Base):
             cnn_patches=cnn_patches,
             vit_patches=vit_patches,
             swin_patches=swin_patches,
+            raddino_patches=self._last_raddino_patches,
             text_embeddings=text_output.last_hidden_state,
             labels=cls_labels,
         )
@@ -644,6 +672,7 @@ class Blip2Qformer(Blip2Base):
             cnn_patches=cnn_patches,
             vit_patches=vit_patches,
             swin_patches=swin_patches,
+            raddino_patches=self._last_raddino_patches,
             text_embeddings=None,
             labels=None,
         )

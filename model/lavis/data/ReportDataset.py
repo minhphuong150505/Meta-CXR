@@ -322,6 +322,42 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
 
         self.evaluator = MIMICEvalCap(self.annotation, self.img_ids)
 
+        # Optional precomputed frozen-encoder feature cache.
+        self._init_feature_cache(cfg)
+
+    def _init_feature_cache(self, cfg):
+        """Open per-encoder feature memmaps if ``run.feature_cache_dir`` is set.
+
+        Cache layout (see pretraining/precompute_features.py):
+            <dir>/<encoder>/<split>_feats.npy   (memmap (N, P, D) float16)
+            <dir>/<encoder>/<split>_ids.json    (list[dicom_id] in row order)
+        When active, ``__getitem__`` returns the cached raw features instead of
+        decoding the JPG, and the model skips the frozen encoder forward.
+        """
+        self.feature_cache = None
+        cache_dir = cfg.run_cfg.get("feature_cache_dir", None)
+        if not cache_dir:
+            return
+        encoders = cfg.model_cfg.get("encoders", {})
+        wanted = [e for e in ("biovil", "swin", "raddino") if encoders.get(e, False)]
+        cache = {}
+        for enc in wanted:
+            feats_path = os.path.join(cache_dir, enc, f"{self.cur_split}_feats.npy")
+            ids_path = os.path.join(cache_dir, enc, f"{self.cur_split}_ids.json")
+            if not (os.path.exists(feats_path) and os.path.exists(ids_path)):
+                raise FileNotFoundError(
+                    f"feature_cache_dir set but cache missing for encoder '{enc}', "
+                    f"split '{self.cur_split}': {feats_path}"
+                )
+            with open(ids_path) as f:
+                row_ids = json.load(f)
+            cache[enc] = {
+                "feats": np.load(feats_path, mmap_mode="r"),
+                "row": {dicom: i for i, dicom in enumerate(row_ids)},
+            }
+        self.feature_cache = cache
+        print(f"[{self.cur_split}] feature cache active for {wanted} from {cache_dir}")
+
     def set_custom_epoch(self, custom_epoch):
         self.current_custom_epoch = custom_epoch
 
@@ -389,8 +425,10 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         marker = "/mimic-cxr-jpg-lite/"
         rel = raw.split(marker, 1)[-1] if marker in raw else raw.lstrip("/")
         image_path = os.path.join(self.vis_root, rel)
-        image = self.load_image(Path(image_path))
-        image = self.general_trans(image)
+        dicom_id = ann["dicom_id"]
+        if self.feature_cache is None:
+            image = self.load_image(Path(image_path))
+            image = self.general_trans(image)
         
         # if self.cur_split == 'train':
         #     if self.vit_model == "biovil":  # old version worked with smaller img and without biovil img processing
@@ -441,8 +479,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         end_time = time()
         # print(f"__getitem__ took {end_time - start_time:.4f} seconds")
         
-        return {
-            "image": image,
+        sample = {
             # "text_input": prompt,
             "text_output": caption,
             "image_id": self.img_ids[ann["dicom_id"]],
@@ -450,6 +487,15 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             "dicom_id": ann["dicom_id"],
             "image_path": str(image_path)
         }
+        if self.feature_cache is None:
+            sample["image"] = image
+        else:
+            for enc, store in self.feature_cache.items():
+                row = store["row"][dicom_id]
+                sample[f"{enc}_feat"] = torch.from_numpy(
+                    np.ascontiguousarray(store["feats"][row])
+                ).float()
+        return sample
 
     def __len__(self):
         return len(self.annotation) // self.custom_epochs_per_epoch
