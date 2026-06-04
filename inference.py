@@ -308,7 +308,9 @@ def init_vicuna():
     use_embs = True
 
     vicuna_tokenizer = LlamaTokenizer.from_pretrained("lmsys/vicuna-7b-v1.3", use_fast=False, truncation_side="left", padding_side="left")
-    lang_model = LlamaForCausalLM.from_pretrained("lmsys/vicuna-7b-v1.3", torch_dtype=torch.float16, device_map='auto')
+    lang_model = LlamaForCausalLM.from_pretrained(
+        "lmsys/vicuna-7b-v1.3", torch_dtype=torch.float16, device_map={"": 0}
+    )
     vicuna_tokenizer.pad_token = vicuna_tokenizer.unk_token
 
     if use_embs:
@@ -338,6 +340,8 @@ def get_response(input_text, dicom):
         dicom = input_text[-1].split('/')[-1].split('.')[0]
 
         blip_model = blip_model.to(torch.device('cuda'))
+        if getattr(blip_model, "pubmedclip", None) is not None:
+            blip_model.pubmedclip.device = "cuda"
        
         logits, qformer_embs = blip_model.forward_image(image[None].to(torch.device('cuda')))
         logits = logits.cpu().detach().squeeze(0)

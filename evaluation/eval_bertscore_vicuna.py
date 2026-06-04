@@ -48,6 +48,11 @@ NUM_WORKERS = 2
 TEST_SAMPLE_LIMIT = 200
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+META_DEVICE = (
+    "cuda:1"
+    if DEVICE == "cuda" and torch.cuda.device_count() >= 2
+    else DEVICE
+)
 
 random.seed(SEED)
 np.random.seed(SEED)
@@ -113,7 +118,9 @@ def build_meta_cxr_model(run_name: str, checkpoint_path: Path):
     state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
     print(f"  {run_name}: loaded {checkpoint_path.name}; missing={len(missing)}, unexpected={len(unexpected)}")
-    model.to(DEVICE)
+    model.to(META_DEVICE)
+    if getattr(model, "pubmedclip", None) is not None:
+        model.pubmedclip.device = META_DEVICE
     model.eval()
     return cfg, model
 
@@ -138,7 +145,7 @@ def make_test_loader(cfg):
 
 @torch.no_grad()
 def forward_image_with_embs(model, batch):
-    image = batch["image"].to(DEVICE, non_blocking=True)
+    image = batch["image"].to(META_DEVICE, non_blocking=True)
     cls_logits, qformer_embs = model.forward_image(image)
     return cls_logits.float().cpu(), qformer_embs.float().cpu()
 
@@ -208,9 +215,11 @@ def get_vicuna():
     tokenizer = LlamaTokenizer.from_pretrained(
         VICUNA_MODEL_ID, use_fast=False, truncation_side="left", padding_side="left"
     )
-    base = LlamaForCausalLM.from_pretrained(
-        VICUNA_MODEL_ID, torch_dtype=torch.float16, device_map="auto"
-    )
+    llm_dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+    llm_kwargs = {"torch_dtype": llm_dtype}
+    if DEVICE == "cuda":
+        llm_kwargs["device_map"] = {"": 0}
+    base = LlamaForCausalLM.from_pretrained(VICUNA_MODEL_ID, **llm_kwargs)
     tokenizer.pad_token = tokenizer.unk_token
 
     base.base_model.img_proj_layer = nn.Linear(768, base.base_model.config.hidden_size).to(
@@ -220,8 +229,10 @@ def get_vicuna():
 
     print(f">>> Attaching LoRA from {LORA_PATH} ...")
     llm = PeftModelForCausalLM.from_pretrained(
-        base, str(LORA_PATH), torch_dtype=torch.float16, use_ram_optimized_load=False
-    ).half()
+        base, str(LORA_PATH), torch_dtype=llm_dtype, use_ram_optimized_load=False
+    )
+    if DEVICE == "cuda":
+        llm = llm.half()
     llm.eval()
 
     _LLM_CACHE["model"] = llm
@@ -234,7 +245,7 @@ def generate_report(prompt, qformer_embs, llm, tokenizer):
     assert qformer_embs.dim() == 3 and qformer_embs.shape[1] == NUM_IMG_TOKENS, (
         f"qformer_embs must be (B, {NUM_IMG_TOKENS}, 768), got {tuple(qformer_embs.shape)}"
     )
-    torch.save(qformer_embs, "current_chat_img.pt")
+    torch.save(qformer_embs.cpu(), "current_chat_img.pt")
 
     inputs = tokenizer(prompt, return_tensors="pt")
     input_ids = inputs["input_ids"].to(llm.device)

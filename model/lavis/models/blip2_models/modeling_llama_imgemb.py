@@ -571,18 +571,28 @@ class LlamaModel(LlamaPreTrainedModel):
         if inputs_embeds is None:
             if dicom is not None or use_img:
                 if past_key_values is None:  # if past_key_values is given, the image embeddings are already in there
+                    proj_device = self.img_proj_layer.weight.device
+                    proj_dtype = self.img_proj_layer.weight.dtype
                     if use_img:
                         # load torch tokens from "current_chat_img.pt"
-                        image_embs = torch.load("current_chat_img.pt").to(self.device).half()
+                        image_embs = torch.load("current_chat_img.pt", map_location="cpu").to(
+                            device=proj_device, dtype=proj_dtype
+                        )
                         image_embs = self.img_proj_layer(image_embs)
                     else:
-                        image_embs = self.img_proj_layer(torch.tensor(np.array([self.blip_embeddings[d] for d in dicom])).to(self.device, dtype=self.img_proj_layer.weight.dtype))
+                        image_embs = self.img_proj_layer(
+                            torch.tensor(np.array([self.blip_embeddings[d] for d in dicom])).to(
+                                device=proj_device, dtype=proj_dtype
+                            )
+                        )
                     # split all elements at last 1 id into two parts
                     left_tensors, right_tensors = self.split_at_img(input_ids)
                     inputs_embeds = []
                     for left, right, img in zip(left_tensors, right_tensors, image_embs):
                         left_embeds = self.embed_tokens(left)
                         right_embeds = self.embed_tokens(right)
+                        img = img.to(device=left_embeds.device, dtype=left_embeds.dtype)
+                        right_embeds = right_embeds.to(device=left_embeds.device, dtype=left_embeds.dtype)
                         inputs_embeds.append(torch.cat([left_embeds, img, right_embeds], dim=0))
 
                     inputs_embeds = torch.stack(inputs_embeds, dim=0)
