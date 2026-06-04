@@ -64,28 +64,48 @@ class DownsamplePatches(nn.Module):
 
 # CrossModalEmbeddingAlignment to project image, text, and query embeddings into a common space
 class CrossModalEmbeddingAlignment(nn.Module):
-    def __init__(self, common_dim, cnn_dim=1408, vit_dim=768, swin_dim=768, txt_dim=768, expert_dim=768):
+    def __init__(
+        self,
+        common_dim,
+        cnn_dim=1408,
+        vit_dim=768,
+        swin_dim=768,
+        raddino_dim=768,
+        txt_dim=768,
+        expert_dim=768,
+    ):
         super(CrossModalEmbeddingAlignment, self).__init__()
         self.vit_proj = nn.Linear(vit_dim, common_dim)
         self.cnn_proj = nn.Linear(cnn_dim, common_dim)
         self.swin_proj = nn.Linear(swin_dim, common_dim)
+        self.raddino_proj = nn.Linear(raddino_dim, common_dim)
         self.text_proj = nn.Linear(txt_dim, common_dim)
         self.expert_proj = nn.Linear(expert_dim, common_dim)
         
         self.cnn_norm = nn.LayerNorm(common_dim)    # For CNN patches
         self.vit_norm = nn.LayerNorm(common_dim)    # For ViT patches
         self.swin_norm = nn.LayerNorm(common_dim)   # For Swin patches
+        self.raddino_norm = nn.LayerNorm(common_dim) # For Rad-DINO patches
         self.text_norm = nn.LayerNorm(common_dim)   # For text embeddings
         self.expert_norm = nn.LayerNorm(common_dim) # For expert tokens
 
-    def forward(self, vit_patches=None, cnn_patches=None, swin_patches=None, text_embeddings=None, expert_tokens=None):
+    def forward(
+        self,
+        vit_patches=None,
+        cnn_patches=None,
+        swin_patches=None,
+        raddino_patches=None,
+        text_embeddings=None,
+        expert_tokens=None,
+    ):
         # Project image and text embeddings
         vit_proj = F.normalize(self.vit_proj(vit_patches), dim=-1) if vit_patches is not None else None
         cnn_proj = F.normalize(self.cnn_proj(cnn_patches), dim=-1) if cnn_patches is not None else None
         swin_proj = F.normalize(self.swin_proj(swin_patches), dim=-1) if swin_patches is not None else None
+        raddino_proj = F.normalize(self.raddino_proj(raddino_patches), dim=-1) if raddino_patches is not None else None
         txt_proj = F.normalize(self.text_proj(text_embeddings), dim=-1) if text_embeddings is not None else None
         expert_proj = self.expert_norm(self.expert_proj(expert_tokens)) if expert_tokens is not None else None
-        return vit_proj, cnn_proj, swin_proj, txt_proj, expert_proj
+        return vit_proj, cnn_proj, swin_proj, raddino_proj, txt_proj, expert_proj
 
 # Define trainable positional encoding
 class TrainablePositionalEncoding(nn.Module):
@@ -157,14 +177,36 @@ class ExpertTokenCrossAttention(nn.Module):
 
 # Main Abnormality Classification Model
 class AbnormalityClassificationModel(nn.Module):
-    def __init__(self, embed_dim=768, num_heads=8, num_abnormalities=14, num_classes=3, num_layers=2, num_commmon_tokens= 8, dropout=0.2, initial_expert_tokens = None):
+    def __init__(
+        self,
+        embed_dim=768,
+        num_heads=8,
+        num_abnormalities=14,
+        num_classes=3,
+        num_layers=2,
+        num_commmon_tokens=8,
+        dropout=0.2,
+        initial_expert_tokens=None,
+        cnn_dim=1408,
+        vit_dim=768,
+        swin_dim=768,
+        raddino_dim=768,
+        target_patch_count=49,
+    ):
         super(AbnormalityClassificationModel, self).__init__()
 
         self.embed_dim = embed_dim
         self.num_abnormalities = num_abnormalities
         self.num_layers = num_layers
+        self.target_patch_count = target_patch_count
         # Initial projection layer to align image, text, and query embeddings
-        self.embedding_alignment = CrossModalEmbeddingAlignment(embed_dim)
+        self.embedding_alignment = CrossModalEmbeddingAlignment(
+            embed_dim,
+            cnn_dim=cnn_dim,
+            vit_dim=vit_dim,
+            swin_dim=swin_dim,
+            raddino_dim=raddino_dim,
+        )
 
         if initial_expert_tokens is not None:
             self.expert_tokens = nn.Parameter(initial_expert_tokens)
@@ -208,22 +250,74 @@ class AbnormalityClassificationModel(nn.Module):
         # self.w_cnn = nn.Parameter(torch.tensor(1.0))
         # self.w_vit = nn.Parameter(torch.tensor(1.0))
         
-        self.pos_enc = TrainablePositionalEncoding(num_patches=49, embed_dim=embed_dim)
-        self.cnn_downsampler = DownsamplePatches(196, 49, 1408, method="conv")
+        self.pos_enc = TrainablePositionalEncoding(num_patches=target_patch_count, embed_dim=embed_dim)
+        self.cnn_downsampler = DownsamplePatches(196, target_patch_count, cnn_dim, method="conv")
         
         if isinstance(self.cnn_downsampler.downsampler, nn.Conv2d):  # Ensure it’s a Conv2d layer
             nn.init.xavier_uniform_(self.cnn_downsampler.downsampler.weight)
             nn.init.constant_(self.cnn_downsampler.downsampler.bias, 0)
 
-    def forward(self, cnn_patches=None, vit_patches=None, swin_patches=None, text_embeddings=None, labels=None):
-        ref = cnn_patches if cnn_patches is not None else (vit_patches if vit_patches is not None else swin_patches)
+    def _resize_patch_sequence(self, patches):
+        if patches is None:
+            return None
+
+        # Drop a CLS token when the remaining tokens form the actual patch grid.
+        num_tokens = patches.size(1)
+        if num_tokens == self.target_patch_count + 1:
+            patches = patches[:, 1:, :]
+        else:
+            without_cls = num_tokens - 1
+            full_grid = int(num_tokens ** 0.5)
+            patch_grid = int(without_cls ** 0.5)
+            if (
+                without_cls > 0
+                and full_grid * full_grid != num_tokens
+                and patch_grid * patch_grid == without_cls
+            ):
+                patches = patches[:, 1:, :]
+
+        if patches.size(1) == self.target_patch_count:
+            return patches
+
+        grid_size = int(patches.size(1) ** 0.5)
+        target_size = int(self.target_patch_count ** 0.5)
+        if grid_size * grid_size == patches.size(1) and target_size * target_size == self.target_patch_count:
+            bsz, _, dim = patches.shape
+            patches = patches.view(bsz, grid_size, grid_size, dim).permute(0, 3, 1, 2)
+            patches = F.adaptive_avg_pool2d(patches, (target_size, target_size))
+            return patches.permute(0, 2, 3, 1).reshape(bsz, self.target_patch_count, dim)
+
+        return F.interpolate(
+            patches.transpose(1, 2),
+            size=self.target_patch_count,
+            mode="linear",
+            align_corners=False,
+        ).transpose(1, 2)
+
+    def forward(
+        self,
+        cnn_patches=None,
+        vit_patches=None,
+        swin_patches=None,
+        raddino_patches=None,
+        text_embeddings=None,
+        labels=None,
+    ):
+        ref = (
+            cnn_patches
+            if cnn_patches is not None
+            else (vit_patches if vit_patches is not None else (swin_patches if swin_patches is not None else raddino_patches))
+        )
         if ref is None:
-            raise ValueError("At least one of cnn_patches, vit_patches, swin_patches must be provided")
+            raise ValueError("At least one image patch stream must be provided")
         batch_size = ref.size(0)
         
-        # Initial projection of image, text, and query embeddings
         if vit_patches is not None:
-            vit_patches = vit_patches[:, 1:, :]  # strip CLS token -> 49 patches
+            vit_patches = self._resize_patch_sequence(vit_patches)
+        if swin_patches is not None:
+            swin_patches = self._resize_patch_sequence(swin_patches)
+        if raddino_patches is not None:
+            raddino_patches = self._resize_patch_sequence(raddino_patches)
         
         # Expand expert tokens to match batch size
         expert_tokens = self.expert_tokens.unsqueeze(0).expand(batch_size, -1, -1)  # [B, N_expert, D]
@@ -231,10 +325,11 @@ class AbnormalityClassificationModel(nn.Module):
         if cnn_patches is not None:
             cnn_patches = self.cnn_downsampler(cnn_patches)  # 196 -> 49 patches via conv
 
-        vit_proj, cnn_proj, swin_proj, txt_proj, expert_tokens = self.embedding_alignment(
+        vit_proj, cnn_proj, swin_proj, raddino_proj, txt_proj, expert_tokens = self.embedding_alignment(
             vit_patches=vit_patches,
             cnn_patches=cnn_patches,
             swin_patches=swin_patches,
+            raddino_patches=raddino_patches,
             text_embeddings=text_embeddings,
             expert_tokens=expert_tokens,
         )
@@ -246,6 +341,8 @@ class AbnormalityClassificationModel(nn.Module):
             image_streams.append(self.pos_enc(vit_proj))
         if swin_proj is not None:
             image_streams.append(self.pos_enc(swin_proj))
+        if raddino_proj is not None:
+            image_streams.append(self.pos_enc(raddino_proj))
         if not image_streams:
             raise ValueError("No image stream was provided to MHCAC.")
         image_patches = torch.cat(image_streams, dim=1)
