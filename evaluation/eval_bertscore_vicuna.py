@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """BERTScore evaluation for Vicuna-7B + LoRA across all 7 encoder runs.
 
-Follows table-6-vicuna.ipynb logic. Runs on GCP L4 VM with gcsfuse-mounted data.
+Follows 10_table6_bertscore_vicuna_per_combo_checkpoints.ipynb logic. Runs on GCP L4 VM with gcsfuse-mounted data.
 Output: CSV table + per-run JSONL files, uploaded to gs://meta-cxr-checkpoint/eval/BERTSCore/Vicuna/
 """
 

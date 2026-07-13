@@ -55,7 +55,7 @@ Thêm 3 secrets sau:
 | mimic-cxr-reported | `mimic-cxr-reported` | `mimic_cxr_cleaned.csv` + `.txt` reports |
 
 > **`mimic_cxr_cleaned.csv` cần có sẵn trong dataset `mimic-cxr-reported`.**  
-> Nếu chưa có, chạy notebook `generate_mimic_cxr_cleaned.ipynb` một lần để tạo, rồi upload lên dataset đó.
+> Nếu chưa có, chạy notebook `01_generate_mimic_cxr_cleaned_csv.ipynb` một lần để tạo, rồi upload lên dataset đó.
 
 ---
 
@@ -176,7 +176,7 @@ kaggle datasets download minhphuong150505/meta-cxr-checkpoints -p ./checkpoints 
 | Cell 6: training không resume | Dataset checkpoint chưa attach | Settings → Add Data → thêm `meta-cxr-checkpoints` |
 | `RuntimeError: iostream error` khi save | Disk full | Tăng `save_freq` (ví dụ 5) để ít checkpoint hơn |
 | `RuntimeError: find_unused_parameters` | DDP bug | Đã fix trong `runner_base.py` — pull code mới nhất |
-| `FileNotFoundError: mimic_cxr_cleaned.csv` | CSV chưa có trong dataset | Chạy `generate_mimic_cxr_cleaned.ipynb` một lần |
+| `FileNotFoundError: mimic_cxr_cleaned.csv` | CSV chưa có trong dataset | Chạy `01_generate_mimic_cxr_cleaned_csv.ipynb` một lần |
 | `CUDA out of memory` | Batch size quá lớn | Giảm `batch_size_train` từ 8 → 4 |
 | Chỉ 1 GPU | Accelerator sai | Settings → Accelerator → **GPU T4 x2** |
 | Cell 3 clone chậm | Network throttle | Bình thường, đợi vài phút |
@@ -188,7 +188,7 @@ kaggle datasets download minhphuong150505/meta-cxr-checkpoints -p ./checkpoints 
 ```
 META-CXR/
 ├── META_CXR_kaggle.ipynb         # Notebook chính — chạy theo thứ tự Cell 1→8
-├── generate_mimic_cxr_cleaned.ipynb  # Chạy 1 lần để tạo mimic_cxr_cleaned.csv
+├── 01_generate_mimic_cxr_cleaned_csv.ipynb  # Chạy 1 lần để tạo mimic_cxr_cleaned.csv
 ├── configs/
 │   ├── kaggle_datasets.yaml      # Slugs datasets, checkpoint config (sửa tại đây)
 │   └── env_config.yaml           # Auto-generated bởi Cell 5 — không sửa trực tiếp

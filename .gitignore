@@ -21,4 +21,7 @@ Thumbs.db
 *.log
 
 # Sensitive configuration files
-.env
+.envdata/
+
+# MIMIC-CXR derived data (PhysioNet credentialed — do NOT redistribute)
+data/

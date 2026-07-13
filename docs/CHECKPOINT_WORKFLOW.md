@@ -199,7 +199,7 @@ if os.environ.get("RESUME_CKPT_PATH"):
 
 - `_save_checkpoint` body — đã đúng, chỉ thay đổi tần suất gọi
 - `_load_checkpoint` — resume mechanism existing đã đủ
-- Cell 4 (CSV loader) và `generate_mimic_cxr_cleaned.ipynb` — không liên quan
+- Cell 4 (CSV loader) và `01_generate_mimic_cxr_cleaned_csv.ipynb` — không liên quan
 - `is_best=True` path — best checkpoint vẫn lưu mỗi khi cải thiện (không bị skip bởi `save_freq`)
 
 ## Verification

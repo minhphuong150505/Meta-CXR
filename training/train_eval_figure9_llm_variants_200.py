@@ -42,12 +42,12 @@ import torch.nn as nn
 from bert_score import score as bert_score_fn
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from nltk.translate.meteor_score import meteor_score
-from peft import LoraConfig, PeftModel, get_peft_model
+from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
 from pycocoevalcap.cider.cider import Cider
 from pycocoevalcap.rouge.rouge import Rouge
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, AutoProcessor, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, AutoProcessor, AutoTokenizer, BitsAndBytesConfig
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
@@ -182,6 +182,13 @@ def filter_state_dict_for_model(model, state_dict: dict) -> dict:
     return filtered
 
 
+def load_state_dict_materializing_meta(model, state_dict: dict):
+    try:
+        return model.load_state_dict(state_dict, strict=False, assign=True)
+    except TypeError:
+        return model.load_state_dict(state_dict, strict=False)
+
+
 def build_stage1_model(checkpoint_root: Path, device: torch.device):
     cfg = build_cfg(RUN_NAME)
     task = tasks.setup_task(cfg)
@@ -190,7 +197,7 @@ def build_stage1_model(checkpoint_root: Path, device: torch.device):
     ckpt = load_torch_checkpoint(ckpt_path)
     state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
     state_dict = filter_state_dict_for_model(model, state_dict)
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    missing, unexpected = load_state_dict_materializing_meta(model, state_dict)
     print(f"[stage1] loaded {ckpt_path}; missing={len(missing)} unexpected={len(unexpected)}")
     model.to(device)
     model.eval()
@@ -346,6 +353,8 @@ class SoftTokenEmbeddingWrapper(nn.Module):
 
     def forward(self, input_ids: torch.Tensor):
         embeds = self.base_embedding(input_ids)
+        if embeds.dtype != self.projected_img_embs.dtype:
+            embeds = embeds.to(dtype=self.projected_img_embs.dtype)
         mask = input_ids == self.img_token_id
         if not mask.any():
             return embeds
@@ -360,10 +369,11 @@ class SoftTokenEmbeddingWrapper(nn.Module):
 
 
 class VariantLLM:
-    def __init__(self, family: str, adapter: str | Path | None = None, train_adapter: bool = False):
+    def __init__(self, family: str, adapter: str | Path | None = None, train_adapter: bool = False, quantize_4bit: bool = False):
         self.family = family
         self.adapter = adapter
         self.train_adapter = train_adapter
+        self.quantize_4bit = quantize_4bit and family != "vicuna"
         self.dtype = preferred_dtype()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -394,25 +404,35 @@ class VariantLLM:
             self.tokenizer = getattr(self.processor, "tokenizer", self.processor)
             if self.tokenizer.pad_token_id is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
+            load_kwargs = dict(
+                torch_dtype=self.dtype,
+                low_cpu_mem_usage=True,
+                attn_implementation="eager",
+                **hf_kwargs(),
+            )
+            if self.quantize_4bit:
+                load_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    bnb_4bit_use_double_quant=True,
+                )
+                load_kwargs["device_map"] = {"": 0}
             try:
-                self.model = AutoModelForImageTextToText.from_pretrained(
-                    self.model_id,
-                    torch_dtype=self.dtype,
-                    low_cpu_mem_usage=True,
-                    **hf_kwargs(),
-                )
+                self.model = AutoModelForImageTextToText.from_pretrained(self.model_id, **load_kwargs)
             except Exception:
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.model_id,
-                    torch_dtype=self.dtype,
-                    low_cpu_mem_usage=True,
-                    **hf_kwargs(),
-                )
+                self.model = AutoModelForCausalLM.from_pretrained(self.model_id, **load_kwargs)
             if self.img_token not in self.tokenizer.get_vocab():
                 self.tokenizer.add_special_tokens({"additional_special_tokens": [self.img_token]})
                 self.model.resize_token_embeddings(len(self.tokenizer))
+            if self.quantize_4bit:
+                self.model = prepare_model_for_kbit_training(
+                    self.model, use_gradient_checkpointing=False
+                )
+                self._align_output_head_dtype()
 
-        self.model.to(self.device)
+        if not self.quantize_4bit:
+            self.model.to(self.device)
         self.img_token_id = self.tokenizer.convert_tokens_to_ids(self.img_token)
         if self.img_token_id is None or self.img_token_id < 0:
             raise RuntimeError(f"could not register image token {self.img_token}")
@@ -438,7 +458,21 @@ class VariantLLM:
         if getattr(self.model, "generation_config", None) is not None:
             self.model.generation_config.pad_token_id = self.tokenizer.pad_token_id
 
-        self.model.to(self.device)
+        if not self.quantize_4bit:
+            self.model.to(self.device)
+        else:
+            self._align_output_head_dtype()
+
+    def _align_output_head_dtype(self) -> None:
+        candidates = [
+            self.model,
+            getattr(self.model, "base_model", None),
+            getattr(getattr(self.model, "base_model", None), "model", None),
+        ]
+        for module in candidates:
+            head = getattr(module, "lm_head", None)
+            if head is not None:
+                head.to(device=self.device, dtype=self.dtype)
 
     def save_adapter(self, out_dir: Path) -> None:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -496,7 +530,10 @@ class VariantLLM:
                     SoftTokenEmbeddingWrapper(old_embedding, self.img_token_id, projected)
                 )
                 try:
-                    out = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+                    forward_kwargs = {"input_ids": input_ids, "labels": labels}
+                    if self.family != "medgemma":
+                        forward_kwargs["attention_mask"] = attention_mask
+                    out = self.model(**forward_kwargs)
                     loss = out.loss / grad_accum
                     loss.backward()
                 finally:
@@ -525,15 +562,17 @@ class VariantLLM:
         old_embedding = self.model.get_input_embeddings()
         self.model.set_input_embeddings(SoftTokenEmbeddingWrapper(old_embedding, self.img_token_id, projected))
         try:
-            seq = self.model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_new_tokens=max_new_tokens,
-                num_beams=1,
-                do_sample=False,
-                pad_token_id=self.tokenizer.pad_token_id,
-                return_dict_in_generate=False,
-            )[0]
+            generate_kwargs = {
+                "input_ids": input_ids,
+                "max_new_tokens": max_new_tokens,
+                "num_beams": 1,
+                "do_sample": False,
+                "pad_token_id": self.tokenizer.pad_token_id,
+                "return_dict_in_generate": False,
+            }
+            if self.family != "medgemma":
+                generate_kwargs["attention_mask"] = attention_mask
+            seq = self.model.generate(**generate_kwargs)[0]
         finally:
             self.model.set_input_embeddings(old_embedding)
         gen_ids = seq[input_ids.shape[1] :] if seq.shape[0] > input_ids.shape[1] else seq

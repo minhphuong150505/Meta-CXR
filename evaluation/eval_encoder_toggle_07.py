@@ -81,6 +81,35 @@ PAPER_F1 = {
     "07mask_all_three": 0.701,
 }
 
+ALLOWED_MISSING_PREFIXES = (
+    "visual_encoder.",
+    "pubmedclip.model.",
+    "swin.model.",
+    # raddino is disabled for 07_all_three (config has no raddino encoder), so the
+    # newly-initialized raddino alignment head is never used at inference and is
+    # legitimately absent from the checkpoint.
+    "mhcac.embedding_alignment.raddino_",
+)
+
+
+def summarize_key_prefixes(keys: list[str]) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    for key in keys:
+        if key.startswith("visual_encoder."):
+            prefix = "visual_encoder"
+        elif key.startswith("pubmedclip.model."):
+            prefix = "pubmedclip.model"
+        elif key.startswith("pubmedclip."):
+            prefix = "pubmedclip"
+        elif key.startswith("swin.model."):
+            prefix = "swin.model"
+        elif key.startswith("swin."):
+            prefix = "swin"
+        else:
+            prefix = key.split(".", 1)[0]
+        summary[prefix] = summary.get(prefix, 0) + 1
+    return dict(sorted(summary.items()))
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -109,6 +138,31 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("output/encoder_toggle_07"),
     )
+    parser.add_argument(
+        "--weighted-zero-division",
+        type=int,
+        choices=[0, 1],
+        default=1,
+        help="zero_division value for weighted multiclass F1.",
+    )
+    parser.add_argument(
+        "--allow-frozen-missing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Allow missing checkpoint keys only for frozen pretrained backbones "
+            "(BioViL-T, PubMedCLIP, Swin)."
+        ),
+    )
+    parser.add_argument(
+        "--write-hydrated-checkpoint",
+        type=Path,
+        default=None,
+        help=(
+            "Optional path to save the loaded model with pretrained frozen "
+            "backbones merged into the checkpoint state_dict."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -124,7 +178,47 @@ def build_cfg(cfg_path: Path) -> Config:
     return Config(args)
 
 
-def build_model(cfg: Config, checkpoint_path: Path, device: str) -> torch.nn.Module:
+def validate_load_result(
+    missing: list[str],
+    unexpected: list[str],
+    allow_frozen_missing: bool,
+) -> dict:
+    load_report = {
+        "missing_count": len(missing),
+        "unexpected_count": len(unexpected),
+        "missing_by_prefix": summarize_key_prefixes(missing),
+        "unexpected_by_prefix": summarize_key_prefixes(unexpected),
+        "allowed_missing_prefixes": list(ALLOWED_MISSING_PREFIXES),
+    }
+    print(
+        "Load report:",
+        json.dumps(load_report, indent=2, sort_keys=True),
+    )
+    if unexpected:
+        raise RuntimeError(f"Unexpected checkpoint keys: {unexpected[:20]}")
+
+    if allow_frozen_missing:
+        invalid_missing = [
+            key for key in missing if not key.startswith(ALLOWED_MISSING_PREFIXES)
+        ]
+        if invalid_missing:
+            raise RuntimeError(
+                "Checkpoint is missing non-frozen/non-backbone keys: "
+                f"{invalid_missing[:20]}"
+            )
+    elif missing:
+        raise RuntimeError(f"Checkpoint is missing keys: {missing[:20]}")
+
+    return load_report
+
+
+def build_model(
+    cfg: Config,
+    checkpoint_path: Path,
+    device: str,
+    allow_frozen_missing: bool,
+    hydrated_checkpoint_path: Path | None,
+) -> tuple[torch.nn.Module, dict]:
     task = tasks.setup_task(cfg)
     model = task.build_model(cfg)
     ckpt = load_torch_checkpoint(checkpoint_path)
@@ -137,9 +231,30 @@ def build_model(cfg: Config, checkpoint_path: Path, device: str) -> torch.nn.Mod
         print("First missing keys:", missing[:10])
     if unexpected:
         print("First unexpected keys:", unexpected[:10])
+    load_report = validate_load_result(
+        missing=list(missing),
+        unexpected=list(unexpected),
+        allow_frozen_missing=allow_frozen_missing,
+    )
     model.to(device)
     model.eval()
-    return model
+    if hydrated_checkpoint_path is not None:
+        hydrated_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "source_checkpoint": str(checkpoint_path),
+                "load_report": load_report,
+                "note": (
+                    "Hydrated checkpoint: pretrained frozen backbones were "
+                    "materialized from their configured upstream sources before "
+                    "saving."
+                ),
+            },
+            hydrated_checkpoint_path,
+        )
+        print("Wrote hydrated checkpoint:", hydrated_checkpoint_path)
+    return model, load_report
 
 
 def make_test_loader(cfg: Config, batch_size: int, num_workers: int, limit: int | None):
@@ -175,8 +290,12 @@ def selected_streams(
     )
 
 
-def weighted_multiclass_f1(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    return float(f1_score(y_true, y_pred, average="weighted", zero_division=1))
+def weighted_multiclass_f1(
+    y_true: np.ndarray, y_pred: np.ndarray, zero_division: int
+) -> float:
+    return float(
+        f1_score(y_true, y_pred, average="weighted", zero_division=zero_division)
+    )
 
 
 def positive_binary_f1(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -186,7 +305,12 @@ def positive_binary_f1(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 
 @torch.no_grad()
-def evaluate(model: torch.nn.Module, loader: DataLoader, device: str) -> tuple[pd.DataFrame, dict]:
+def evaluate(
+    model: torch.nn.Module,
+    loader: DataLoader,
+    device: str,
+    weighted_zero_division: int,
+) -> tuple[pd.DataFrame, dict]:
     preds_by_run = {item["run"]: [] for item in TOGGLE_RUNS}
     labels_all = []
 
@@ -223,7 +347,7 @@ def evaluate(model: torch.nn.Module, loader: DataLoader, device: str) -> tuple[p
         per_task_positive = {}
         for col_idx, task_name in enumerate(FIVE_COMMON_ABNORMALITIES):
             per_task_weighted[task_name] = weighted_multiclass_f1(
-                y_true[:, col_idx], y_pred[:, col_idx]
+                y_true[:, col_idx], y_pred[:, col_idx], weighted_zero_division
             )
             per_task_positive[task_name] = positive_binary_f1(
                 y_true[:, col_idx], y_pred[:, col_idx]
@@ -271,13 +395,29 @@ def main() -> None:
     print("checkpoint  =", checkpoint_path)
     print("device      =", args.device)
     print("limit       =", args.limit)
+    print("weighted_zero_division =", args.weighted_zero_division)
+    print("allow_frozen_missing =", args.allow_frozen_missing)
 
     cfg = build_cfg(cfg_path)
-    model = build_model(cfg, checkpoint_path, args.device)
+    hydrated_checkpoint_path = (
+        args.write_hydrated_checkpoint
+        if args.write_hydrated_checkpoint is None
+        or args.write_hydrated_checkpoint.is_absolute()
+        else project_dir / args.write_hydrated_checkpoint
+    )
+    model, load_report = build_model(
+        cfg,
+        checkpoint_path,
+        args.device,
+        args.allow_frozen_missing,
+        hydrated_checkpoint_path,
+    )
     loader = make_test_loader(cfg, args.batch_size, args.num_workers, args.limit)
     print("test samples =", len(loader.dataset))
 
-    table, details = evaluate(model, loader, args.device)
+    table, details = evaluate(
+        model, loader, args.device, args.weighted_zero_division
+    )
     table_path = out_dir / "encoder_toggle_07_table.csv"
     json_path = out_dir / "encoder_toggle_07_details.json"
     table.to_csv(table_path, index=False)
@@ -288,8 +428,12 @@ def main() -> None:
                 "cfg": str(cfg_path),
                 "limit": args.limit,
                 "num_samples": len(loader.dataset),
-                "metric_primary": "weighted multiclass F1, average='weighted', zero_division=1",
+                "metric_primary": (
+                    "weighted multiclass F1, average='weighted', "
+                    f"zero_division={args.weighted_zero_division}"
+                ),
                 "metric_secondary": "positive-vs-rest binary F1, zero_division=0",
+                "load_report": load_report,
                 "details": details,
             },
             f,

@@ -1,6 +1,0 @@
-pathology,auc_positive_vs_rest,f1_positive_threshold,f1_weighted_multiclass,positive_threshold,support_positive,support_total
-Atelectasis,0.766083,0.461634,0.710047,0.16,433,2042
-Cardiomegaly,0.762822,0.333333,0.717003,0.11,346,2042
-Consolidation,0.807868,0.037736,0.901752,0.5,100,2042
-Edema,0.86161,0.412371,0.812006,0.5,214,2042
-Pleural Effusion,0.887525,0.528581,0.806649,0.12,415,2042
