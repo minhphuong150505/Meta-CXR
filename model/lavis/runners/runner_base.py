@@ -876,7 +876,25 @@ class RunnerBase:
                 f"Model state_dict contains {model_bad_count} non-finite tensor(s); "
                 "loading anyway but training may need to recover via the NaN-loss guard."
             )
-        self.unwrap_dist_model(self.model).load_state_dict(state_dict, strict=False) #opt_model does not need to be loaded (frozen)
+        model = self.unwrap_dist_model(self.model)
+        model_state = model.state_dict()
+        filtered_state_dict = {}
+        mismatched = []
+        for key, value in state_dict.items():
+            if key in model_state and hasattr(value, "shape"):
+                ckpt_shape = tuple(value.shape)
+                model_shape = tuple(model_state[key].shape)
+                if ckpt_shape != model_shape:
+                    mismatched.append((key, ckpt_shape, model_shape))
+                    continue
+            filtered_state_dict[key] = value
+        if mismatched:
+            logging.warning(
+                "Skipping %d checkpoint tensor(s) with shape mismatch. First mismatches: %s",
+                len(mismatched),
+                mismatched[:8],
+            )
+        model.load_state_dict(filtered_state_dict, strict=False) #opt_model does not need to be loaded (frozen)
         
         finetune_classifier = self.config.run_cfg.get("finetune_classifier", False)
         if finetune_classifier:
