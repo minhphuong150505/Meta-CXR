@@ -10,10 +10,10 @@ from torch.nn import functional as F
 class SwinEncoder(nn.Module):
     def __init__(
         self,
-        model_name: str = "swin_tiny_patch4_window7_224",
+        model_name: str = "ChayanM/SwinV2-GPT2_Mimic",
         pretrained: bool = True,
         frozen: bool = True,
-        backend: str = "timm",
+        backend: str = "hf",
         normalize: bool | None = None,
     ) -> None:
         super().__init__()
