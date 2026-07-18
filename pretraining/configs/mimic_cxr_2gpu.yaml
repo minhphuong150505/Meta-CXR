@@ -10,7 +10,7 @@ model:
   encoders:
     biovil: true
     pubmedclip: true
-    swin: false
+    swin: true
     raddino: false
   swin:
     backend: hf
@@ -49,7 +49,7 @@ run:
   task: image_text_pretrain_eval
   project_name: meta-cxr-encoder-comparison
   wandb_entity: phuongnm150505-uit
-  run_name: 04_biovil_pubmedclip
+  run_name: 07_all_three
 
   lr_sched: "linear_warmup_cosine_lr"
   init_lr_cls: 1e-4

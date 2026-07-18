@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Sequentially runs 7 encoder comparison configs.
+# Trains a single model with all three encoders (biovil + pubmedclip + swin).
+# Per-encoder comparison is done by toggling encoders at eval on this one
+# checkpoint (see notebooks/07_table5_f1_encoder_toggle_single_ckpt.ipynb),
+# not by retraining per combination.
 # Uploads checkpoints + final output_dir to gs://meta-cxr-checkpoint/{run_name}/.
 set -e
 
@@ -9,12 +12,6 @@ LOG_DIR="$HOME/logs"
 mkdir -p "$LOG_DIR"
 
 RUNS=(
-  "01_biovil_only"
-  "02_pubmedclip_only"
-  "03_swin_only"
-  "04_biovil_pubmedclip"
-  "05_biovil_swin"
-  "06_pubmedclip_swin"
   "07_all_three"
 )
 
@@ -43,5 +40,5 @@ for RUN in "${RUNS[@]}"; do
 done
 
 echo "================================================================"
-echo "[$(date -Is)] ALL 7 RUNS COMPLETE"
+echo "[$(date -Is)] TRAINING COMPLETE (07_all_three)"
 echo "================================================================"

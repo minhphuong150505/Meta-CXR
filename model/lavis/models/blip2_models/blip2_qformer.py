@@ -79,8 +79,8 @@ class Blip2Qformer(Blip2Base):
         use_biovil=True,
         use_pubmedclip=True,
         use_swin=False,
-        swin_model_name="swin_tiny_patch4_window7_224",
-        swin_backend="timm",
+        swin_model_name="ChayanM/SwinV2-GPT2_Mimic",
+        swin_backend="hf",
         swin_pretrained=True,
         swin_frozen=True,
         swin_normalize=None,
@@ -882,9 +882,9 @@ class Blip2Qformer(Blip2Base):
         swin_cfg = cfg.get("swin", {}) or {}
         swin_model_name = cfg.get(
             "swin_model_name",
-            swin_cfg.get("model_name", "swin_tiny_patch4_window7_224"),
+            swin_cfg.get("model_name", "ChayanM/SwinV2-GPT2_Mimic"),
         )
-        swin_backend = cfg.get("swin_backend", swin_cfg.get("backend", "timm"))
+        swin_backend = cfg.get("swin_backend", swin_cfg.get("backend", "hf"))
         swin_pretrained = cfg_bool(
             cfg.get("swin_pretrained", swin_cfg.get("pretrained", True)),
             default=True,
