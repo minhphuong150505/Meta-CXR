@@ -9,7 +9,11 @@ import math
 
 from model.lavis.common.registry import registry
 
-current_epoch = 5
+# Epoch during which linear warmup applies; every other epoch follows the
+# cosine schedule. 0 = warmup at the start of training (upstream LAVIS
+# behaviour). This was 5, which skipped warmup entirely at epoch 0 and instead
+# dropped the LR back to warmup_lr in the middle of training.
+current_epoch = 0
 
 
 @registry.register_lr_scheduler("linear_warmup_step_lr")

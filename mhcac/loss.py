@@ -379,6 +379,93 @@ class AttentionLoss:
         return total_loss
 
 
+class MultiPositiveContrastiveLoss(nn.Module):
+    """Multi-positive InfoNCE over the pre-fusion visual representations.
+
+    Every image of a study (anchor + its auxiliary views) is pooled to one
+    vector. For each anchor, the auxiliary views of the *same* study are
+    positives and every image of the other studies in the batch is a negative.
+    The number of positives varies per study, hence the multi-positive form:
+
+        L_i = -1/|P(i)| * sum_{p in P(i)} log( exp(s_ip/T) / sum_{a != i} exp(s_ia/T) )
+
+    Anchors with no auxiliary view contribute nothing.
+    """
+
+    def __init__(self, temperature=0.07):
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(self, anchor, aux, aux_mask):
+        """
+        anchor:   [B, P, D]      pre-fusion anchor tokens
+        aux:      [B, N, P, D]   pre-fusion auxiliary tokens (padded)
+        aux_mask: [B, N] bool    True = real view
+        """
+        if aux is None or aux.shape[1] == 0 or aux_mask is None:
+            return anchor.new_zeros(())
+        if not aux_mask.any():
+            return anchor.new_zeros(())
+
+        B, N = aux_mask.shape
+        device = anchor.device
+        aux_mask = aux_mask.to(device=device, dtype=torch.bool)
+
+        a_vec = F.normalize(anchor.mean(dim=1), dim=-1)             # [B, D]
+        x_vec = F.normalize(aux.mean(dim=2), dim=-1).reshape(B * N, -1)  # [B*N, D]
+
+        # Candidate pool: every anchor, then every auxiliary slot.
+        cand = torch.cat([a_vec, x_vec], dim=0)                     # [M, D]
+        cand_study = torch.cat([
+            torch.arange(B, device=device),
+            torch.arange(B, device=device).repeat_interleave(N),
+        ])
+        cand_valid = torch.cat([
+            torch.ones(B, dtype=torch.bool, device=device),
+            aux_mask.reshape(B * N),
+        ])
+
+        sim = (a_vec @ cand.t()) / self.temperature                 # [B, M]
+        rows = torch.arange(B, device=device)
+        is_self = torch.zeros_like(cand_valid).repeat(B, 1)
+        is_self[rows, rows] = True                                  # anchor vs itself
+
+        usable = cand_valid.unsqueeze(0) & ~is_self
+        positives = usable & (cand_study.unsqueeze(0) == rows.unsqueeze(1))
+
+        # log-softmax over the usable candidates only.
+        sim = sim.masked_fill(~usable, float("-inf"))
+        log_prob = sim - torch.logsumexp(sim, dim=1, keepdim=True)
+        log_prob = log_prob.masked_fill(~positives, 0.0)
+
+        n_pos = positives.sum(dim=1)
+        has_pos = n_pos > 0
+        if not has_pos.any():
+            return anchor.new_zeros(())
+        per_anchor = -log_prob.sum(dim=1)[has_pos] / n_pos[has_pos]
+        return per_anchor.mean()
+
+
+def view_consistency_loss(fused_logits, anchor_logits, has_aux):
+    """Symmetric KL between the fused and anchor-only MHCAC predictions.
+
+    Adding views must not change *which* abnormalities are predicted, so the two
+    logit distributions are pulled together. Applied only to studies that
+    actually have an auxiliary view; the rest would contribute an exact zero.
+
+    fused_logits / anchor_logits: [B, num_abnormalities, num_classes]
+    has_aux: [B] bool
+    """
+    if has_aux is None or not has_aux.any():
+        return fused_logits.new_zeros(())
+
+    p = F.log_softmax(fused_logits[has_aux], dim=-1)
+    q = F.log_softmax(anchor_logits[has_aux], dim=-1)
+    kl_pq = F.kl_div(q, p, log_target=True, reduction="none").sum(-1)
+    kl_qp = F.kl_div(p, q, log_target=True, reduction="none").sum(-1)
+    return 0.5 * (kl_pq + kl_qp).mean()
+
+
 
 
 

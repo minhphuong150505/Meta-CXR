@@ -33,8 +33,9 @@ from vision_encoders.rad_dino.rad_dino_encoder import RadDinoEncoder
 # from vision_encoders.medclip.medclip import Medclip
 
 from mhcac.utils import compute_metrics_for_tasks
-from mhcac.loss import ClassificationLoss
+from mhcac.loss import ClassificationLoss, MultiPositiveContrastiveLoss, view_consistency_loss
 from mhcac.aggregator import Aggregator
+from mhcac.view_fusion import ViewFusionModule
 
 chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
                               "Cardiomegaly", "Lung Opacity",
@@ -88,6 +89,10 @@ class Blip2Qformer(Blip2Base):
         raddino_model_name="microsoft/rad-dino",
         raddino_frozen=True,
         raddino_normalize=True,
+        multi_view=False,
+        view_fusion_cfg=None,
+        lambda_mpc=0.0,
+        lambda_view_consistency=0.0,
     ):
         super().__init__()
 
@@ -173,7 +178,43 @@ class Blip2Qformer(Blip2Base):
         self.raddino_qformer_proj = nn.Linear(raddino_dim, 1408) if self.use_raddino else None
 
         # self.medclip = Medclip().eval()
-        
+
+        # Multi-view fusion: one module per enabled encoder, operating on that
+        # encoder's raw (pre-projection) output, so both the MHCAC branch and the
+        # Q-Former concat are built from fused tokens. Zero-init makes this an
+        # exact identity at step 0, hence regression-free against a single-view
+        # checkpoint.
+        self.multi_view = bool(multi_view)
+        self.lambda_mpc = float(lambda_mpc)
+        self.lambda_view_consistency = float(lambda_view_consistency)
+        self.view_fusion = None
+        self.mpc_loss_fn = None
+        # Pre-fusion streams are only stashed when an auxiliary loss consumes
+        # them; otherwise holding the references just wastes memory.
+        self._keep_prefusion = bool(multi_view) and (
+            self.lambda_mpc > 0 or self.lambda_view_consistency > 0
+        )
+        if self.multi_view:
+            vf_cfg = dict(view_fusion_cfg or {})
+            vf_cfg.pop("dim_source", None)
+            stream_dims = {}
+            if self.use_biovil:
+                stream_dims["biovil"] = vis_num_feat
+            if self.use_pubmedclip:
+                stream_dims["pubmedclip"] = 768
+            if self.use_swin:
+                stream_dims["swin"] = swin_dim
+            if self.use_raddino:
+                stream_dims["raddino"] = raddino_dim
+            self.view_fusion = nn.ModuleDict({
+                name: ViewFusionModule(dim=dim, **vf_cfg)
+                for name, dim in stream_dims.items()
+            })
+            self.mpc_loss_fn = (
+                MultiPositiveContrastiveLoss() if self.lambda_mpc > 0 else None
+            )
+            logging.info(f"multi-view fusion enabled for streams: {stream_dims}")
+
         self._last_raddino_patches = None
         self.mhcac = AbnormalityClassificationModel(
             embed_dim=768,
@@ -250,7 +291,81 @@ class Blip2Qformer(Blip2Base):
         mask = mask.unsqueeze(-1)  # Add dimension for broadcasting
         return embeddings * mask  # Apply mask by element-wise multiplication
 
-    def _encode_image_streams(self, image, apply_aug=False, cached=None):
+    def _encode_aux_streams(self, aux_image, cached=None):
+        """[B, N, 3, H, W] -> dict[name, [B, N, P, D]] of raw frozen-encoder output.
+
+        Batched (one encoder call over B*N images, not a per-image loop) and
+        under no_grad. That detaches the auxiliary *features* only -- the fusion
+        module's W_K/W_V are applied outside this block and still get gradient.
+        """
+        cached = cached or {}
+        B, N = aux_image.shape[:2] if aux_image is not None else (0, 0)
+        streams = {}
+
+        def unflatten(x):
+            return x.reshape(B, N, *x.shape[1:])
+
+        # Cached auxiliary features arrive already shaped [B, N, P, D].
+        for name in ("biovil", "swin", "raddino"):
+            if name in cached:
+                streams[name] = cached[name]
+
+        need = [
+            name for name, enabled in (
+                ("biovil", self.use_biovil), ("pubmedclip", self.use_pubmedclip),
+                ("swin", self.use_swin), ("raddino", self.use_raddino),
+            ) if enabled and name not in streams
+        ]
+        if not need:
+            return streams
+        if aux_image is None:
+            # The feature cache only covers biovil/swin/raddino, so an enabled
+            # pubmedclip still needs the raw images -- same constraint the
+            # single-view path already has.
+            raise ValueError(
+                f"aux_image is required to encode auxiliary streams {need}; "
+                "these encoders are not covered by the feature cache."
+            )
+
+        flat = aux_image.flatten(0, 1)
+        with torch.no_grad():
+            if "biovil" in need:
+                streams["biovil"] = unflatten(
+                    self.visual_encoder(flat).projected_patch_embeddings.reshape(
+                        flat.shape[0], -1, 1408
+                    )
+                )
+            if "pubmedclip" in need:
+                # Fuse the 768-dim ViT stream; the 1408 projection is recomputed
+                # from the fused tokens, so the aux projection is discarded here.
+                streams["pubmedclip"] = unflatten(
+                    self.pubmedclip(flat, apply_aug=False)[0]
+                )
+            if "swin" in need:
+                streams["swin"] = unflatten(self.swin(flat))
+            if "raddino" in need:
+                streams["raddino"] = unflatten(self.raddino(flat))
+        return streams
+
+    def _stash_prefusion(self, name, anchor, aux_streams):
+        """Keep the pre-fusion tensors the auxiliary losses need, if any do."""
+        if self._keep_prefusion:
+            self._last_prefusion_streams[name] = (anchor, aux_streams.get(name))
+
+    def _fuse(self, name, anchor, aux_streams, aux_mask, anchor_view_id, aux_view_ids):
+        """Fuse one encoder stream with its auxiliary views, if multi-view is on."""
+        if not self.multi_view or self.view_fusion is None:
+            return anchor
+        aux = aux_streams.get(name)
+        if aux is None:
+            return anchor
+        return self.view_fusion[name](
+            anchor, aux.to(anchor.dtype), aux_mask, anchor_view_id, aux_view_ids
+        )
+
+    def _encode_image_streams(self, image, apply_aug=False, cached=None,
+                              aux_image=None, aux_cached=None, aux_mask=None,
+                              anchor_view_id=None, aux_view_ids=None):
         # ``cached`` holds raw frozen-encoder outputs (before ln_vision /
         # *_qformer_proj) precomputed by pretraining/precompute_features.py. When
         # present we skip the frozen encoder forward; the trainable projection
@@ -262,6 +377,22 @@ class Blip2Qformer(Blip2Base):
         raddino_patches = None
         qformer_streams = []
         self._last_raddino_patches = None
+        self._last_prefusion_streams = {}
+
+        # Multi-view: each stream is fused at its raw, pre-projection output, so
+        # the trainable projections below run once on the fused [B, P, D] tensor
+        # and both the MHCAC and Q-Former branches see fused tokens.
+        # A batch where no study has an auxiliary view (N_max == 0) skips the
+        # auxiliary encode entirely rather than running encoders on empty input.
+        has_aux_input = (
+            aux_image is not None and aux_image.shape[1] > 0
+        ) or any(v is not None and v.shape[1] > 0 for v in (aux_cached or {}).values())
+        fuse_on = self.multi_view and self.view_fusion is not None
+        aux_streams = (
+            self._encode_aux_streams(aux_image, cached=aux_cached)
+            if fuse_on and has_aux_input
+            else {}
+        )
 
         if self.use_biovil:
             cnn_raw = cached["biovil"] if "biovil" in cached else (
@@ -269,19 +400,35 @@ class Blip2Qformer(Blip2Base):
                     image.shape[0], -1, 1408
                 )
             )
+            self._stash_prefusion("biovil", cnn_raw, aux_streams)
+            cnn_raw = self._fuse("biovil", cnn_raw, aux_streams, aux_mask,
+                                 anchor_view_id, aux_view_ids)
             cnn_patches = self.ln_vision(cnn_raw)
             qformer_streams.append(cnn_patches)
 
         if self.use_pubmedclip:
             vit_patches, pubmed_projection = self.pubmedclip(image, apply_aug=apply_aug)
+            self._stash_prefusion("pubmedclip", vit_patches, aux_streams)
+            if fuse_on and "pubmedclip" in aux_streams:
+                vit_patches = self._fuse("pubmedclip", vit_patches, aux_streams,
+                                         aux_mask, anchor_view_id, aux_view_ids)
+                # Recompute the 1408 Q-Former projection from the fused tokens.
+                # nn.Sequential of Linear broadcasts over [B, P, 768].
+                pubmed_projection = self.pubmedclip.mlp(vit_patches)
             qformer_streams.append(pubmed_projection)
 
         if self.use_swin:
             swin_patches = cached["swin"] if "swin" in cached else self.swin(image)
+            self._stash_prefusion("swin", swin_patches, aux_streams)
+            swin_patches = self._fuse("swin", swin_patches, aux_streams, aux_mask,
+                                      anchor_view_id, aux_view_ids)
             qformer_streams.append(self.swin_qformer_proj(swin_patches))
 
         if self.use_raddino:
             raddino_patches = cached["raddino"] if "raddino" in cached else self.raddino(image)
+            self._stash_prefusion("raddino", raddino_patches, aux_streams)
+            raddino_patches = self._fuse("raddino", raddino_patches, aux_streams,
+                                         aux_mask, anchor_view_id, aux_view_ids)
             self._last_raddino_patches = raddino_patches
             qformer_streams.append(self.raddino_qformer_proj(raddino_patches))
 
@@ -330,8 +477,18 @@ class Blip2Qformer(Blip2Base):
             for k in ("biovil", "swin", "raddino")
             if f"{k}_feat" in samples
         }
+        aux_cached = {
+            k: samples[f"aux_{k}_feat"]
+            for k in ("biovil", "swin", "raddino")
+            if f"aux_{k}_feat" in samples
+        }
         cnn_patches, vit_patches, swin_patches, qformer_image_embeds = self._encode_image_streams(
-            image, apply_aug=False, cached=cached
+            image, apply_aug=False, cached=cached,
+            aux_image=samples.get("aux_image"),
+            aux_cached=aux_cached,
+            aux_mask=samples.get("aux_mask"),
+            anchor_view_id=samples.get("anchor_view_id"),
+            aux_view_ids=samples.get("aux_view_ids"),
         )
         device = qformer_image_embeds.device
 
@@ -409,7 +566,37 @@ class Blip2Qformer(Blip2Base):
 
         # Compute abnormality-specific loss
         cls_loss = self.cls_loss_fn(classification_logits, cls_labels)
-        
+
+        ### ---- multi-view auxiliary losses (inert while their lambdas are 0) ----###
+        loss_mpc = cls_loss.new_zeros(())
+        loss_view_consistency = cls_loss.new_zeros(())
+        aux_mask = samples.get("aux_mask")
+        if self.multi_view and aux_mask is not None and aux_mask.any():
+            if self.mpc_loss_fn is not None:
+                terms = [
+                    self.mpc_loss_fn(anchor_raw, aux_raw, aux_mask)
+                    for anchor_raw, aux_raw in self._last_prefusion_streams.values()
+                    if aux_raw is not None
+                ]
+                if terms:
+                    loss_mpc = torch.stack(terms).mean()
+
+            if self.lambda_view_consistency > 0:
+                # Second MHCAC pass on the un-fused anchor. This doubles the
+                # MHCAC forward cost, which is the expensive trainable part.
+                pre = self._last_prefusion_streams
+                anchor_logits, _, _, _, _ = self.mhcac(
+                    cnn_patches=self.ln_vision(pre["biovil"][0]) if "biovil" in pre else None,
+                    vit_patches=pre["pubmedclip"][0] if "pubmedclip" in pre else None,
+                    swin_patches=pre["swin"][0] if "swin" in pre else None,
+                    raddino_patches=pre["raddino"][0] if "raddino" in pre else None,
+                    text_embeddings=text_output.last_hidden_state,
+                    labels=cls_labels,
+                )
+                loss_view_consistency = view_consistency_loss(
+                    classification_logits, anchor_logits, aux_mask.any(dim=1)
+                )
+
         metrics = compute_metrics_for_tasks(classification_logits, cls_labels)
         
          ###============== Image-text Contrastive for Claasifcation ===================###
@@ -581,12 +768,16 @@ class Blip2Qformer(Blip2Base):
         # print(f"forward function took {end_time - start_time:.4f} seconds")
         
         return BlipOutput(
-            loss = cls_loss + contrastive_loss * 0.3 + orth_loss * 0.7 + sparsity_loss * 0.3,
+            loss = cls_loss + contrastive_loss * 0.3 + orth_loss * 0.7 + sparsity_loss * 0.3
+                   + self.lambda_mpc * loss_mpc
+                   + self.lambda_view_consistency * loss_view_consistency,
             # loss = cls_loss,
             loss_cls=cls_loss,
             loss_contrastive = contrastive_loss,
             loss_orthagonal = orth_loss,
             loss_sparsity = sparsity_loss,
+            loss_mpc = loss_mpc,
+            loss_view_consistency = loss_view_consistency,
             average_precision = metrics['average']['precision'],
             average_recall = metrics['average']['recall'],
             average_accuracy = metrics['average']['accuracy'],
@@ -663,9 +854,12 @@ class Blip2Qformer(Blip2Base):
         captions = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
         return captions
 
-    def forward_image(self, image):
+    def forward_image(self, image, aux_image=None, aux_mask=None,
+                      anchor_view_id=None, aux_view_ids=None):
         cnn_patches, vit_patches, swin_patches, concat_image_embeds = self._encode_image_streams(
-            image, apply_aug=False
+            image, apply_aug=False,
+            aux_image=aux_image, aux_mask=aux_mask,
+            anchor_view_id=anchor_view_id, aux_view_ids=aux_view_ids,
         )
 
         classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
@@ -915,6 +1109,22 @@ class Blip2Qformer(Blip2Base):
             default=True,
         )
 
+        # Multi-view. from_config silently drops unknown config blocks, so these
+        # keys must be read explicitly to take effect.
+        multi_view = cfg_bool(cfg.get("multi_view", False))
+        view_fusion_cfg_raw = cfg.get("view_fusion", {}) or {}
+        view_fusion_cfg = {
+            "num_heads": int(view_fusion_cfg_raw.get("num_heads", 8)),
+            "ffn_ratio": int(view_fusion_cfg_raw.get("ffn_ratio", 4)),
+            "num_blocks": int(view_fusion_cfg_raw.get("num_blocks", 1)),
+            "num_view_types": int(view_fusion_cfg_raw.get("num_view_types", 4)),
+            "dropout": float(view_fusion_cfg_raw.get("dropout", 0.1)),
+            "p_view_drop": float(view_fusion_cfg_raw.get("p_view_drop", 0.2)),
+        }
+        loss_cfg = cfg.get("loss", {}) or {}
+        lambda_mpc = float(loss_cfg.get("lambda_mpc", 0.0))
+        lambda_view_consistency = float(loss_cfg.get("lambda_view_consistency", 0.0))
+
         model = cls(
             vit_model=vit_model,
             img_size=img_size,
@@ -937,6 +1147,10 @@ class Blip2Qformer(Blip2Base):
             raddino_model_name=raddino_model_name,
             raddino_frozen=raddino_frozen,
             raddino_normalize=raddino_normalize,
+            multi_view=multi_view,
+            view_fusion_cfg=view_fusion_cfg,
+            lambda_mpc=lambda_mpc,
+            lambda_view_consistency=lambda_view_consistency,
         )
         model.load_checkpoint_from_config(cfg)
 

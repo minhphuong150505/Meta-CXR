@@ -90,8 +90,12 @@ class BlipOutput(ModelOutput):
     
     loss_orthagonal: Optional[torch.FloatTensor] = None
     
-    loss_sparsity: Optional[torch.FloatTensor] = None 
-    
+    loss_sparsity: Optional[torch.FloatTensor] = None
+
+    loss_mpc: Optional[torch.FloatTensor] = None
+
+    loss_view_consistency: Optional[torch.FloatTensor] = None
+
     average_precision: Optional[torch.FloatTensor] = None 
     average_recall: Optional[torch.FloatTensor] = None 
     average_accuracy: Optional[torch.FloatTensor] = None 
