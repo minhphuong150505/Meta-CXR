@@ -35,9 +35,16 @@ require_private_bucket() {
     log "ERROR: gs://$bucket has a public IAM principal; refusing to use it."
     return 1
   fi
+  # gcloud >= ~500 emits these as top-level snake_case keys; older releases nest
+  # them under iamConfiguration. Query both or the check silently reads an empty
+  # string and rejects every bucket, however it is configured.
   local prevention
   prevention=$(gcloud storage buckets describe "gs://$bucket" \
     --format='value(iamConfiguration.publicAccessPrevention)')
+  if [ -z "$prevention" ]; then
+    prevention=$(gcloud storage buckets describe "gs://$bucket" \
+      --format='value(public_access_prevention)')
+  fi
   if [ "$prevention" != "enforced" ]; then
     log "ERROR: gs://$bucket does not enforce public-access prevention."
     return 1
@@ -46,6 +53,10 @@ require_private_bucket() {
   local uniform_access
   uniform_access=$(gcloud storage buckets describe "gs://$bucket" \
     --format='value(iamConfiguration.uniformBucketLevelAccess.enabled)')
+  if [ -z "$uniform_access" ]; then
+    uniform_access=$(gcloud storage buckets describe "gs://$bucket" \
+      --format='value(uniform_bucket_level_access)')
+  fi
   if [ "$uniform_access" != "True" ] && [ "$uniform_access" != "true" ]; then
     log "ERROR: gs://$bucket does not use uniform bucket-level access."
     return 1

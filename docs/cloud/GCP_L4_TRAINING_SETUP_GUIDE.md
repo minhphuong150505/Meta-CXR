@@ -1,8 +1,17 @@
-> **Luu y ve dinh danh.** Bucket `gs://meta-cxr-checkpoint` va project
-> `mimic-cxr-jpg-491409` trong tai lieu nay khong con ton tai. Tao bucket rieng tu
-> moi (uniform bucket-level access + Public Access Prevention) va dat ten qua bien
-> `GCS_BUCKET` / `GCP_PROJECT` trong `cloud/env.sh` thay vi hardcode. Quy trinh
-> tao VM va cai dependency ben duoi van dung.
+> **Cap nhat 2026-07-20.** Tai lieu nay da duoc chinh lai cho full dataset
+> p10-p19. Cac dinh danh duoi day deu da verify bang `gcloud` va dang song:
+>
+> | Hang muc | Gia tri |
+> |---|---|
+> | Project | `$GCP_PROJECT` — dung project dang bat billing |
+> | Zone / region | `us-central1-a` / `us-central1` — chon theo bucket data o US multi-region |
+> | Data bucket | `gs://$GCS_DATA_BUCKET` (US multi-region, PAP enforced) |
+> | Checkpoint bucket | `gs://$GCS_BUCKET` (us-central1, PAP enforced) |
+>
+> Ban cu dung `gs://meta-cxr-checkpoint`, `gs://mimic-cxr-jpg-data` va project
+> `mimic-cxr-jpg-491409` — **da bi xoa hoac tat billing**; moi tham chieu toi chung
+> da duoc thay. Khi chay script van nen truyen ten qua `GCS_BUCKET` / `GCP_PROJECT`
+> trong `cloud/env.sh` thay vi sua cung trong lenh.
 
 # Setup Google Cloud VM L4 de train META-CXR
 
@@ -19,22 +28,22 @@ Muc tieu cu the:
 
 | Hang muc | Gia tri |
 |---|---|
-| GCP project | `mimic-cxr-jpg-491409` |
+| GCP project | `$GCP_PROJECT` |
 | VM name | `meta-cxr-l4` |
-| Zone | `asia-southeast1-c` |
-| Region | `asia-southeast1` |
+| Zone | `us-central1-a` |
+| Region | `us-central1` |
 | Machine type | `g2-standard-8` |
 | GPU | `1 x NVIDIA L4 24GB` |
 | Boot disk | `200GB pd-ssd` |
 | Image | PyTorch GPU image: `pytorch-2-9-cu129-ubuntu-2204-nvidia-580` |
 | VM API scope | `cloud-platform` |
-| Data bucket | `gs://mimic-cxr-jpg-data/` |
-| Checkpoint bucket | `gs://meta-cxr-checkpoint/` |
+| Data bucket | `gs://$GCS_DATA_BUCKET/` |
+| Checkpoint bucket | `gs://$GCS_BUCKET/` |
 | Remote repo path | `~/META-CXR` |
 | Remote data path | `~/data` |
 | Remote logs path | `~/logs` |
 | Remote output path | `~/output` |
-| Wandb entity/project | `phuongnm150505-uit/meta-cxr-encoder-comparison` |
+| Wandb entity/project | `$WANDB_ENTITY/meta-cxr-encoder-comparison` |
 
 ## 1. Chuan bi local
 
@@ -44,7 +53,7 @@ Can co:
 
 ```bash
 gcloud auth login
-gcloud config set project mimic-cxr-jpg-491409
+gcloud config set project "$GCP_PROJECT"
 ```
 
 Enable API neu project moi:
@@ -56,27 +65,34 @@ gcloud services enable compute.googleapis.com storage.googleapis.com
 Kiem tra quota L4:
 
 ```bash
-gcloud compute regions describe asia-southeast1 \
+gcloud compute regions describe us-central1 \
   --format="table(quotas.metric,quotas.limit,quotas.usage)"
 ```
 
-Can quota cho `NVIDIA_L4_GPUS` va CPU trong region `asia-southeast1`.
+Can quota cho `NVIDIA_L4_GPUS` va CPU trong region `us-central1`.
 
 ## 2. Tao bucket checkpoint
 
 Bucket nay de launcher upload checkpoint va log sau moi run.
 
+**Bucket nay da duoc tao san (2026-07-20)** — phan nay giu lai de tai lap khi can.
+Kiem tra truoc:
+
 ```bash
-gcloud storage buckets create gs://meta-cxr-checkpoint \
-  --project=mimic-cxr-jpg-491409 \
-  --location=asia-southeast1 \
-  --uniform-bucket-level-access
+gcloud storage ls gs://$GCS_BUCKET/
 ```
 
-Neu bucket da ton tai:
+Neu can tao lai: `--public-access-prevention` la **bat buoc**, khong phai tuy chon.
+`cloud/lib/common.sh:require_private_bucket` va
+`training/stage2_utils.py:private_bucket_violations` deu tu choi bucket khong
+enforce PAP, nen thieu co nay thi Stage-1 va Stage-2 fail ngay gate dau tien.
 
 ```bash
-gcloud storage ls gs://meta-cxr-checkpoint/
+gcloud storage buckets create gs://$GCS_BUCKET \
+  --project="$GCP_PROJECT" \
+  --location=us-central1 \
+  --uniform-bucket-level-access \
+  --public-access-prevention
 ```
 
 ## 3. Tao VM GPU L4
@@ -85,7 +101,7 @@ Cach de it sai nhat la tao qua Google Cloud Console:
 
 1. Compute Engine -> VM instances -> Create instance.
 2. Name: `meta-cxr-l4`.
-3. Region/zone: `asia-southeast1-c`.
+3. Region/zone: `us-central1-a`.
 4. Machine family: GPU.
 5. Machine type: `g2-standard-8`.
 6. GPU: `NVIDIA L4`, count `1`.
@@ -107,8 +123,8 @@ gcloud compute images list \
 IMAGE_NAME="pytorch-2-9-cu129-ubuntu-2204-nvidia-580"
 
 gcloud compute instances create meta-cxr-l4 \
-  --project=mimic-cxr-jpg-491409 \
-  --zone=asia-southeast1-c \
+  --project="$GCP_PROJECT" \
+  --zone=us-central1-a \
   --machine-type=g2-standard-8 \
   --accelerator=type=nvidia-l4,count=1 \
   --maintenance-policy=TERMINATE \
@@ -124,14 +140,14 @@ Kiem tra VM:
 
 ```bash
 gcloud compute instances describe meta-cxr-l4 \
-  --zone=asia-southeast1-c \
+  --zone=us-central1-a \
   --format='value(status,networkInterfaces[0].accessConfigs[0].natIP)'
 ```
 
 SSH:
 
 ```bash
-gcloud compute ssh meta-cxr-l4 --zone=asia-southeast1-c
+gcloud compute ssh meta-cxr-l4 --zone=us-central1-a
 ```
 
 Tren VM, kiem tra GPU:
@@ -160,9 +176,9 @@ tar --exclude='.git' \
 
 gcloud compute scp /tmp/META-CXR.tar.gz \
   meta-cxr-l4:~/META-CXR.tar.gz \
-  --zone=asia-southeast1-c
+  --zone=us-central1-a
 
-gcloud compute ssh meta-cxr-l4 --zone=asia-southeast1-c --command='
+gcloud compute ssh meta-cxr-l4 --zone=us-central1-a --command='
 rm -rf ~/META-CXR
 tar -xzf ~/META-CXR.tar.gz -C ~
 '
@@ -173,55 +189,117 @@ Neu chi sua mot file va muon sync nhanh:
 ```bash
 gcloud compute scp META-CXR/pretraining/train.py \
   meta-cxr-l4:~/META-CXR/pretraining/train.py \
-  --zone=asia-southeast1-c
+  --zone=us-central1-a
 ```
 
 ## 5. Dong bo data tu GCS ve VM
 
-Tren VM:
+Full dataset (p10-p19) la ~571 GiB anh, khong vua boot disk 200GB. Gan them mot
+Persistent Disk rieng va mirror nguyen bucket vao do.
+
+> **Chon region theo vi tri bucket data.** Bucket data nam o **US multi-region**
+> (kiem tra: `gcloud storage buckets describe gs://$GCS_DATA_BUCKET`). Dat VM va PD
+> trong mot region US -- guide nay dung `us-central1-a` -- thi 571 GiB di trong cung
+> multi-region va khong tinh phi egress. Ban cu dat VM o `asia-southeast1-c`: keo qua
+> chau luc vua cham vua ton egress (~0.12 USD/GB, khoang 70 USD).
+
+> **Kiem tra quota SSD truoc.** `pd-ssd` va `pd-balanced` deu tinh vao
+> `SSD_TOTAL_GB`, mac dinh chi **500GB/region** (da verify:
+> us-central1/us-east1/us-west1/us-west4 deu = 500).
+> Boot disk 200GB pd-ssd + data disk 800GB pd-balanced = 1000GB, **vuot quota**.
+> Chon mot trong hai:
+> - Xin nang `SSD_TOTAL_GB` len >= 1100GB (Console > IAM & Admin > Quotas), hoac
+> - Dung `--type=pd-standard` cho data disk: tinh vao `DISKS_TOTAL_GB` (limit
+>   4096GB, du) va re hon, doi lai HDD doc cham hon dang ke voi 377k file JPEG nho
+>   — dang ke vi feature extraction chay `batch_size=1`, `num_workers=2`.
+>
+> Quota GPU da du: `NVIDIA_L4_GPUS = 1` o ca 4 region US, dung bang nhu cau. Khong
+> can xin them.
 
 ```bash
-mkdir -p ~/data ~/logs
+# Tao + gan PD 800GB (chay tu may local). Doi --type=pd-standard neu chua nang quota SSD.
+gcloud compute disks create meta-cxr-data \
+  --size=800GB --type=pd-balanced --zone=us-central1-a
 
-gcloud storage cp -r gs://mimic-cxr-jpg-data/p10 ~/data/
-gcloud storage cp -r gs://mimic-cxr-jpg-data/processed ~/data/
-gcloud storage cp -r gs://mimic-cxr-jpg-data/csv ~/data/
-gcloud storage cp -r gs://mimic-cxr-jpg-data/report_p10 ~/data/
-
-touch ~/logs/sync_done.marker
-du -sh ~/data/*
+gcloud compute instances attach-disk meta-cxr-l4 \
+  --disk=meta-cxr-data --zone=us-central1-a
 ```
 
-Ket qua da thay trong lan setup:
+Tren VM, format va mount lan dau:
 
-```text
-p10/        ~56GB
-processed/  ~47MB
-report_p10/ ~112MB
-csv/        ~105MB
+```bash
+sudo mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0,discard \
+  /dev/disk/by-id/google-meta-cxr-data
+sudo mkdir -p /mnt/disks/mimic
+sudo mount -o discard,defaults /dev/disk/by-id/google-meta-cxr-data /mnt/disks/mimic
+sudo chown -R "$USER":"$USER" /mnt/disks/mimic
+
+# Tu dong mount lai sau khi reboot
+echo "/dev/disk/by-id/google-meta-cxr-data /mnt/disks/mimic ext4 discard,defaults,nofail 0 2" \
+  | sudo tee -a /etc/fstab
+```
+
+Mirror bucket. **Giu nguyen tien to `files/`** — `image_path` trong processed CSV la
+duong dan tuong doi (`files/p1X/...`) va `ReportDataset._row_visual` noi no vao
+`mimic_cxr_jpg_root`; mat tien to nay thi moi lookup anh deu truot.
+
+```bash
+mkdir -p ~/logs
+BUCKET=gs://$GCS_DATA_BUCKET
+
+# ~571 GiB, chay trong tmux — mat nhieu gio
+gcloud storage rsync -r "$BUCKET/files"     /mnt/disks/mimic/files
+gcloud storage rsync -r "$BUCKET/processed" /mnt/disks/mimic/processed
+gcloud storage cp "$BUCKET"/mimic-cxr-2.0.0-*.csv.gz /mnt/disks/mimic/
+
+# Chi can neu chay lai preprocessing; training doc tu processed/ nen co the bo qua
+gcloud storage rsync -r "$BUCKET/mimic-cxr-reports" /mnt/disks/mimic/mimic-cxr-reports
+
+touch ~/logs/sync_done.marker
+du -sh /mnt/disks/mimic/*
+```
+
+Kiem tra truoc khi train — so dong phai khop split da verify
+(train 365,293 / val 2,963 / test 5,082):
+
+```bash
+wc -l /mnt/disks/mimic/processed/full_allviews/{train,val,test}.csv
+ls /mnt/disks/mimic/files | head    # phai thay p10 .. p19
 ```
 
 ## 6. Tao `configs/env_config.yaml` tren VM
 
-File nay map code voi data path tren VM.
+File nay map code voi data path tren VM. `data_root` la dong duy nhat can doi neu
+ban mount o cho khac.
 
 ```bash
 cat > ~/META-CXR/configs/env_config.yaml <<'YAML'
 paths:
-  data_root: "/home/phuong/data"
-  mimic_cxr_jpg_root: "/home/phuong/data"
-  split_csv: "/home/phuong/data/csv/mimic-cxr-2.0.0-split.csv"
-  reports_csv: "/home/phuong/data/csv/mimic_cxr_cleaned.csv"
-  chexpert_csv: "/home/phuong/data/csv/mimic-cxr-2.0.0-chexpert.csv"
-  metadata_csv: "/home/phuong/data/csv/mimic-cxr-2.0.0-metadata.csv"
-  processed_dir: "/home/phuong/data/processed"
-  processed_train_csv: "/home/phuong/data/processed/train.csv"
-  processed_val_csv: "/home/phuong/data/processed/val.csv"
-  processed_test_csv: "/home/phuong/data/processed/test.csv"
+  data_root: "/mnt/disks/mimic"
+
+  mimic_cxr_jpg_root: "${paths.data_root}"
+
+  # pandas doc .csv.gz truc tiep, khong can giai nen
+  split_csv:    "${paths.data_root}/mimic-cxr-2.0.0-split.csv.gz"
+  chexpert_csv: "${paths.data_root}/mimic-cxr-2.0.0-chexpert.csv.gz"
+  metadata_csv: "${paths.data_root}/mimic-cxr-2.0.0-metadata.csv.gz"
+  # File nay khong ton tai trong bucket va khong code nao doc no; key chi can co
+  # mat de local_config.py khong KeyError.
+  reports_csv:  "${paths.data_root}/mimic_cxr_cleaned.csv"
+
+  processed_dir:       "${paths.data_root}/processed/full_allviews"
+  processed_train_csv: "${paths.processed_dir}/train.csv"
+  processed_val_csv:   "${paths.processed_dir}/val.csv"
+  processed_test_csv:  "${paths.processed_dir}/test.csv"
+
   output_dir: "/home/phuong/output"
   checkpoint_dir: "/home/phuong/checkpoints"
-  gcs_bucket: "gs://meta-cxr-checkpoint"
-  gcs_project: "mimic-cxr-jpg-491409"
+
+  # Heredoc nay quoted ('YAML') nen KHONG expand bien shell -- dien ten that vao
+  # hai dong duoi, trung voi GCS_BUCKET / GCP_PROJECT ban export o cloud/env.local.sh.
+  # Bucket phai co UBLA + public-access prevention enforced.
+  gcs_bucket:  "gs://DIEN-TEN-BUCKET-CHECKPOINT"
+  gcs_project: "DIEN-GCP-PROJECT-ID"
 wandb:
   entity: "phuongnm150505-uit"
   project: "meta-cxr-encoder-comparison"
@@ -229,6 +307,17 @@ java:
   home: "/usr/lib/jvm/java-11-openjdk-amd64"
   path: "/usr/lib/jvm/java-11-openjdk-amd64/bin:"
 YAML
+```
+
+Verify config resolve dung truoc khi train:
+
+```bash
+cd ~/META-CXR && python -c "
+from local_config import PROCESSED_TRAIN_CSV, VIS_ROOT
+import os
+print(PROCESSED_TRAIN_CSV, os.path.isfile(PROCESSED_TRAIN_CSV))
+print(VIS_ROOT, os.path.isdir(os.path.join(VIS_ROOT, 'files')))
+"
 ```
 
 ## 7. Cai dependency
@@ -354,7 +443,7 @@ batch_size_train 4 x accum_grad_iters 4 = 16
 Chay tren local qua SSH:
 
 ```bash
-gcloud compute ssh meta-cxr-l4 --zone=asia-southeast1-c --command='
+gcloud compute ssh meta-cxr-l4 --zone=us-central1-a --command='
 cd ~/META-CXR
 python -c "
 import sys
@@ -387,7 +476,7 @@ Nen chay dry-run truoc khi launch job dai. Trong code hien tai da them ho tro `t
 Tao config tam tren VM:
 
 ```bash
-gcloud compute ssh meta-cxr-l4 --zone=asia-southeast1-c --command='
+gcloud compute ssh meta-cxr-l4 --zone=us-central1-a --command='
 cp ~/META-CXR/pretraining/configs/encoder_comparison/01_biovil_only.yaml /tmp/meta_cxr_dryrun.yaml
 python - <<'"'"'PY'"'"'
 from pathlib import Path
@@ -412,7 +501,7 @@ PY
 Chay dry-run:
 
 ```bash
-gcloud compute ssh meta-cxr-l4 --zone=asia-southeast1-c --command='
+gcloud compute ssh meta-cxr-l4 --zone=us-central1-a --command='
 cd ~/META-CXR
 WANDB_MODE=offline \
 python -m torch.distributed.run --standalone --nproc_per_node=1 \
@@ -452,12 +541,12 @@ No chay tuan tu:
 Sau moi run:
 - Log nam o `~/logs/{run_name}.log`.
 - Output nam o `~/output/{run_name}`.
-- Upload len `gs://meta-cxr-checkpoint/{run_name}/`.
+- Upload len `gs://$GCS_BUCKET/{run_name}/`.
 
 Launch trong `tmux`:
 
 ```bash
-gcloud compute ssh meta-cxr-l4 --zone=asia-southeast1-c --command='
+gcloud compute ssh meta-cxr-l4 --zone=us-central1-a --command='
 rm -rf ~/output/0[1-7]_* ~/logs/0[1-7]_*.log ~/logs/master_run.log
 tmux kill-session -t train 2>/dev/null || true
 tmux new -d -s train "bash ~/META-CXR/cloud/run_encoder_comparison.sh 2>&1 | tee ~/logs/master_run.log"
@@ -471,7 +560,7 @@ tmux ls
 SSH vao VM:
 
 ```bash
-gcloud compute ssh meta-cxr-l4 --zone=asia-southeast1-c
+gcloud compute ssh meta-cxr-l4 --zone=us-central1-a
 ```
 
 Attach tmux:
@@ -508,7 +597,7 @@ ps -eo pid,ppid,cmd | grep -E "pretraining.train|torch.distributed.run|run_encod
 Kiem tra bucket:
 
 ```bash
-gcloud storage ls -r gs://meta-cxr-checkpoint/ | head -50
+gcloud storage ls -r gs://$GCS_BUCKET/ | head -50
 ```
 
 Wandb:
@@ -586,19 +675,19 @@ Early stopping at epoch ...
 Dung xong phai stop VM de tranh ton tien:
 
 ```bash
-gcloud compute instances stop meta-cxr-l4 --zone=asia-southeast1-c
+gcloud compute instances stop meta-cxr-l4 --zone=us-central1-a
 ```
 
 Start lai:
 
 ```bash
-gcloud compute instances start meta-cxr-l4 --zone=asia-southeast1-c
+gcloud compute instances start meta-cxr-l4 --zone=us-central1-a
 ```
 
 Delete hoan toan VM va disk:
 
 ```bash
-gcloud compute instances delete meta-cxr-l4 --zone=asia-southeast1-c
+gcloud compute instances delete meta-cxr-l4 --zone=us-central1-a
 ```
 
 Can than: delete se mat data local tren disk VM neu chua upload len GCS.
@@ -609,7 +698,7 @@ Sau khi train xong:
 
 ```bash
 cd /home/phuong/Documents/KLTN/META_CXR_again
-gcloud storage cp -r gs://meta-cxr-checkpoint/ ./checkpoints_from_vm/
+gcloud storage cp -r gs://$GCS_BUCKET/ ./checkpoints_from_vm/
 ```
 
 ## 18. Checklist ngan gon cho lan sau
