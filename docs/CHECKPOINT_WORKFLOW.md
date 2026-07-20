@@ -1,3 +1,8 @@
+> **KHÔNG CÒN HIỆU LỰC.** Phần auto-push checkpoint lên Kaggle Dataset đã bị gỡ —
+> checkpoint huấn luyện trên MIMIC-CXR là dẫn xuất của dữ liệu credentialed và chỉ
+> được lưu ở bucket GCS riêng tư. Cơ chế `save_freq` / `checkpoint_best.pth` /
+> `run.resume_ckpt_path` mô tả bên dưới vẫn đúng; chỉ phần đích lưu trữ là sai.
+
 # Plan: Train 2 sessions với checkpoint mỗi 3 epoch + auto-push lên Kaggle Dataset
 
 ## Context

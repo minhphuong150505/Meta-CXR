@@ -37,9 +37,12 @@ from model.lavis.common.registry import registry
 from model.lavis.datasets.builders.base_dataset_builder import BaseDatasetBuilder
 from model.lavis.datasets.datasets.base_dataset import BaseDataset
 from model.lavis.datasets.datasets.caption_datasets import __DisplMixin
-
-from transformers import CLIPProcessor
-
+from model.lavis.data.mimic_cxr_utils import (
+    UNKNOWN_VIEW_ID,
+    VIEW_ID_MAP,
+    build_study_index,
+    view_id,
+)
 
 @registry.register_processor("my_blip_caption")
 class MyBlipCaptionProcessor(BaseProcessor):
@@ -222,9 +225,10 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         """
         super().__init__(vis_processor, text_processor, vis_root, ann_paths)
 
-        # Preprocessed CSVs already contain: subject_id, study_id, dicom_id, split,
-        # ViewPosition, image_path, findings_clean, impression_clean,
-        # findings_word_count, has_chexpert_label.
+        # Preprocessed CSVs contain one image row with a FINDINGS-only target,
+        # its provenance/validity, and a CheXpert-label validity flag.  Empty
+        # targets are intentionally retained for classification/distillation
+        # masking rather than being silently dropped here.
         # Produced by preporcessing/preprocess_mimic_cxr.py over the full p10-p19 set.
         # NOTE: as of 2026-07-20 the splits are NOT view-filtered — they keep every
         # ViewPosition (AP/PA/LATERAL/LL/UNKNOWN) so multi-view fusion can use them.
@@ -238,8 +242,44 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         if split not in csv_map:
             raise ValueError(f"Unknown split '{split}' (expected train/val/test)")
         self.reports = pd.read_csv(csv_map[split])
-        self.reports = self.reports.dropna(subset=['findings_clean'])
-        self.reports = self.reports.rename(columns={'findings_clean': 'findings'})
+        required_report_cols = {
+            "subject_id", "study_id", "dicom_id", "image_path", "findings_clean",
+            "extraction_method", "target_valid", "has_chexpert_label",
+        }
+        missing_report_cols = sorted(required_report_cols - set(self.reports.columns))
+        if missing_report_cols:
+            raise ValueError(
+                f"Processed {split} CSV is missing columns: {missing_report_cols}. "
+                "Rebuild it with preporcessing/preprocess_mimic_cxr.py."
+            )
+        self.reports["subject_id"] = self.reports["subject_id"].astype(int)
+        self.reports["study_id"] = self.reports["study_id"].astype(int)
+        if self.reports["dicom_id"].isna().any():
+            raise ValueError(f"Processed {split} CSV has empty dicom_id values.")
+        self.reports["dicom_id"] = self.reports["dicom_id"].astype(str)
+        invalid_path = (
+            self.reports["image_path"].isna()
+            | self.reports["image_path"].astype(str).str.strip().eq("")
+        )
+        if invalid_path.any():
+            raise ValueError(f"Processed {split} CSV has {int(invalid_path.sum())} empty image paths.")
+        self.reports["image_path"] = self.reports["image_path"].astype(str)
+        if self.reports["dicom_id"].duplicated().any():
+            raise ValueError(f"Processed {split} CSV contains duplicate dicom_id rows.")
+        self.reports["findings_clean"] = self.reports["findings_clean"].fillna("")
+        self.reports = self.reports.rename(columns={"findings_clean": "findings"})
+        self.reports["target_valid"] = self._coerce_bool(
+            self.reports["target_valid"], "target_valid"
+        ) & self.reports["findings"].str.strip().ne("")
+        study_key = ["subject_id", "study_id"]
+        inconsistent_targets = (
+            self.reports.groupby(study_key, sort=False)["findings"].nunique(dropna=False) > 1
+        )
+        if inconsistent_targets.any():
+            raise ValueError(
+                f"Processed {split} CSV has {int(inconsistent_targets.sum())} studies "
+                "with inconsistent FINDINGS targets across views."
+            )
 
         self.use_pred_labels = True
 
@@ -253,69 +293,124 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                               "Pleural Effusion", "Pleural Other",
                               "Fracture", "Support Devices"]
 
-        ### This is with uncertain ###
-        # #replace uncertain(-1) label with 2. CE loss do not accept negative labels
-        self.chexpert[self.chexpert_cols] = self.chexpert[self.chexpert_cols].replace(-1, 2)
-        
-        for column in  self.chexpert_cols:
-            if column != 'No Finding':
-                self.chexpert[column].fillna(0.0, inplace=True) # fill with negative class for NaN values
+        required_chexpert_cols = {"subject_id", "study_id", *self.chexpert_cols}
+        missing_chexpert_cols = sorted(required_chexpert_cols - set(self.chexpert.columns))
+        if missing_chexpert_cols:
+            raise ValueError(f"CheXpert CSV is missing columns: {missing_chexpert_cols}")
+        self.chexpert["subject_id"] = self.chexpert["subject_id"].astype(int)
+        self.chexpert["study_id"] = self.chexpert["study_id"].astype(int)
+        label_key = study_key
+        if self.chexpert.duplicated(label_key).any():
+            raise ValueError(
+                "CheXpert CSV is not unique by (subject_id, study_id); refusing "
+                "a many-to-many label merge."
+            )
+        self.chexpert["_has_chexpert_label_raw"] = (
+            self.chexpert[self.chexpert_cols].notna().any(axis=1)
+        )
+        # CE uses 0=negative, 1=positive, 2=uncertain. Zeros in an entirely
+        # unlabelled row are placeholders and are excluded by classification_mask.
+        self.chexpert[self.chexpert_cols] = (
+            self.chexpert[self.chexpert_cols].replace(-1, 2).fillna(0).astype("int8")
+        )
 
-            # Fill NaN values in 'no_finding' with 0.0 (negative)
-            self.chexpert['No Finding'].fillna(0.0, inplace=True)
-        
         print(f"Number of chexpert records: {len(self.chexpert)}")
-         ### fo positve and negative classes       
-        #replace uncertain(-1) label with negative. CE loss do not accept negative labels
-        # self.chexpert[self.chexpert_cols] = self.chexpert[self.chexpert_cols].replace(-1, 0.0)
-        
-        # for column in  self.chexpert_cols:
-        #     self.chexpert[column].fillna(0.0, inplace=True) # fill with uncertain class for NaN values
 
-        self.custom_epochs_per_epoch = 2 if split == 'train' and cfg.run_cfg.task != "image_text_pretrain_eval" and truncate==None else 1
+        # A runner epoch now means exactly one pass over studies. The historical
+        # two custom half-epochs evaluated twice and made scheduler semantics
+        # depend on the dataset implementation.
+        self.custom_epochs_per_epoch = 1
         self.current_custom_epoch = 0
         self.vit_model = cfg.model_cfg['vit_model']
         self.vit_model_cls = cfg.model_cfg['vit_model_cls']
-        self.img_size = cfg.datasets_cfg.mimic_cxr.vis_processor.train.image_size  # should be 224 for coco models, 448 for biovil models
-        self.general_trans = transforms.Compose([Resize((512, 512)), CenterCrop(448), ToTensor(), ExpandChannels()])
-        if split == 'train' or split == 'val':
-            self.vis_augs = transforms.Compose([transforms.RandomAffine(degrees=30, shear=15),
-                                        transforms.ColorJitter(brightness=0.2, contrast=0.2)])
-            
-        else:
-            self.vis_augs = None
-            
+        processor_key = "train" if split == "train" else "eval"
+        processor_cfg = cfg.datasets_cfg.mimic_cxr.vis_processor[processor_key]
+        self.img_size = int(processor_cfg.get("image_size", 448))
+        resize_size = int(processor_cfg.get("resize_size", round(self.img_size * 512 / 448)))
+        aug_cfg = processor_cfg.get("augmentation", {}) or {}
+        augmentation_enabled = split == "train" and bool(aug_cfg.get("enabled", True))
+        if augmentation_enabled and cfg.run_cfg.get("feature_cache_dir", None):
+            raise ValueError(
+                "feature_cache_dir contains deterministic frozen-encoder features, "
+                "so it cannot be combined with train image augmentation. Disable "
+                "datasets.mimic_cxr.vis_processor.train.augmentation.enabled or "
+                "train without the cache."
+            )
+        image_ops = [Resize(resize_size), CenterCrop(self.img_size)]
+        if augmentation_enabled:
+            degrees = float(aug_cfg.get("degrees", 5.0))
+            translate = float(aug_cfg.get("translate", 0.02))
+            scale_delta = float(aug_cfg.get("scale_delta", 0.05))
+            affine_p = float(aug_cfg.get("affine_p", 0.5))
+            jitter_p = float(aug_cfg.get("jitter_p", 0.5))
+            image_ops.extend([
+                transforms.RandomApply([
+                    transforms.RandomAffine(
+                        degrees=degrees,
+                        translate=(translate, translate),
+                        scale=(1.0 - scale_delta, 1.0 + scale_delta),
+                    )
+                ], p=affine_p),
+                transforms.RandomApply([
+                    transforms.ColorJitter(
+                        brightness=float(aug_cfg.get("brightness", 0.1)),
+                        contrast=float(aug_cfg.get("contrast", 0.1)),
+                    )
+                ], p=jitter_p),
+            ])
+        image_ops.extend([ToTensor(), ExpandChannels()])
+        self.general_trans = transforms.Compose(image_ops)
+
         if self.vit_model == 'biovil':
             self.vis_transforms = create_chest_xray_transform_for_inference(512, center_crop_size=self.img_size)
-        
-        # for model in self.vit_model_cls:
-        #     if model == 'pubmedclip':
-        #         self.pubmed_processor = CLIPProcessor.from_pretrained("flaviagiammarino/pubmed-clip-vit-base-patch32")
-        
-                
-        self.img_ids = {img_id: i for i, img_id in enumerate(self.reports['dicom_id'])}
-        self.id_to_dicom = {v: k for k, v in self.img_ids.items()}
 
-        # Split + PA/AP filtering already done at preprocessing time.
-        self.annotation = self.reports
-        if truncate is not None:
-            self.annotation = self.annotation[:truncate]
+        self.annotation = self.reports.copy()
+        self.annotation["findings"] = self.annotation["findings"].str.replace(
+            "\n", " ", regex=False
+        )
+        has_processed_label_flag = "has_chexpert_label" in self.annotation
+        if has_processed_label_flag:
+            self.annotation["_has_chexpert_label_processed"] = self._coerce_bool(
+                self.annotation["has_chexpert_label"], "has_chexpert_label"
+            )
+        labels = self.chexpert[
+            label_key + self.chexpert_cols + ["_has_chexpert_label_raw"]
+        ]
+        self.annotation = self.annotation.merge(
+            labels,
+            how="left",
+            on=label_key,
+            validate="many_to_one",
+            indicator="_chexpert_merge",
+        )
+        raw_has_label = self.annotation["_has_chexpert_label_raw"].fillna(False).astype(bool)
+        if has_processed_label_flag:
+            preprocessed_has_label = self.annotation["_has_chexpert_label_processed"]
+            inconsistent = preprocessed_has_label & ~raw_has_label
+            if inconsistent.any():
+                raise ValueError(
+                    f"{int(inconsistent.sum())} processed rows claim CheXpert labels "
+                    "but no non-null source labels were found."
+                )
+            self.annotation["classification_valid"] = preprocessed_has_label & raw_has_label
+        else:
+            self.annotation["classification_valid"] = raw_has_label
+        self.annotation[self.chexpert_cols] = (
+            self.annotation[self.chexpert_cols].fillna(0).astype("int8")
+        )
+        self.annotation = self.annotation.drop(
+            columns=[
+                "_has_chexpert_label_raw",
+                "_chexpert_merge",
+                *(["_has_chexpert_label_processed"] if has_processed_label_flag else []),
+            ]
+        ).reset_index(drop=True)
 
-        print(f"Number of annotation records: {len(self.annotation)}")
-
-        self.annotation = self.annotation.copy()
-        self.annotation['findings'] = self.annotation['findings'].apply(lambda x: x.replace('\n', ''))
-
-        # subject_id / study_id are already typed int in the preprocessed CSV.
-        self.annotation = pd.merge(self.annotation, self.chexpert, how='inner', on='study_id')
-        
-        print(f"Number of annotation records: {len(self.annotation)}")
-        
-        self.annotation =  self.annotation.reset_index()
-        
-        if self.cur_split == 'train' and truncate is None:
-            print(f"{self.cur_split} annotation saved")
-            self.annotation.to_csv("train_annotation.csv", index=False)
+        self.img_ids = {
+            dicom_id: index for index, dicom_id in enumerate(self.annotation["dicom_id"])
+        }
+        self.id_to_dicom = {value: key for key, value in self.img_ids.items()}
+        print(f"Number of image annotation records: {len(self.annotation)}")
         
         add_findings_in_prompt = cfg.run_cfg.get("add_findings_in_prompt", False)
         self.prompt = cfg.datasets_cfg.mimic_cxr.text_processor.train.prompt if split == 'train' \
@@ -324,25 +419,42 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.text_processor = MyReportProcessor(
             prompt=self.prompt, max_words=1000)
 
-        self.evaluator = MIMICEvalCap(self.annotation, self.img_ids)
-
         # Optional precomputed frozen-encoder feature cache.
         self._init_feature_cache(cfg)
 
-        # Optional multi-view study grouping. When off, nothing below runs and
-        # the dataset behaves exactly as the single-view original.
-        self._init_study_index(cfg)
+        # One training/evaluation sample per study. ``multi_view`` controls
+        # whether its one complementary view is returned, not whether image rows
+        # are allowed to duplicate the report target.
+        self._init_study_index(cfg, truncate=truncate)
+        self.evaluator = MIMICEvalCap(self.annotation, self.img_ids)
 
-    VIEW_ID_MAP = {"PA": 0, "AP": 1, "LATERAL": 2, "LL": 2}
-    UNKNOWN_VIEW_ID = 3
+    VIEW_ID_MAP = VIEW_ID_MAP
+    UNKNOWN_VIEW_ID = UNKNOWN_VIEW_ID
+
+    @staticmethod
+    def _coerce_bool(series, name):
+        """Read bool columns safely (``astype(bool)`` treats "False" as true)."""
+        if pd.api.types.is_bool_dtype(series):
+            return series.fillna(False).astype(bool)
+        mapping = {
+            True: True, False: False, 1: True, 0: False,
+            "true": True, "false": False, "1": True, "0": False,
+        }
+        normalised = series.map(
+            lambda value: value.strip().lower() if isinstance(value, str) else value
+        )
+        result = normalised.map(mapping)
+        invalid = result.isna() & series.notna()
+        if invalid.any():
+            values = sorted({str(value) for value in series[invalid].head(5)})
+            raise ValueError(f"Invalid boolean values in {name}: {values}")
+        return result.fillna(False).astype(bool)
 
     def _view_id(self, view_position):
-        if view_position is None or (isinstance(view_position, float) and np.isnan(view_position)):
-            return self.UNKNOWN_VIEW_ID
-        return self.VIEW_ID_MAP.get(str(view_position).strip().upper(), self.UNKNOWN_VIEW_ID)
+        return view_id(view_position)
 
-    def _init_study_index(self, cfg):
-        """Group rows by ``study_id`` into anchor + auxiliary views.
+    def _init_study_index(self, cfg, truncate=None):
+        """Group rows by ``(subject_id, study_id)`` into anchor + auxiliary views.
 
         Every study keeps exactly one anchor row, and all sample keys that
         existed before (``text_output``, ``image_id``, ``classification_labels``,
@@ -353,54 +465,41 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         view maps to ``unknown`` and the anchor falls back to row order.
         """
         self.multi_view = bool(cfg.model_cfg.get("multi_view", False))
-        self.studies = None
-        if not self.multi_view:
-            return
-
         data_cfg = cfg.model_cfg.get("data", {}) or {}
-        self.max_aux_views = int(data_cfg.get("max_aux_views", 1))
+        self.study_sampling = bool(data_cfg.get("study_sampling", True))
+        self.max_aux_views = int(data_cfg.get("max_aux_views", 1)) if self.multi_view else 0
         anchor_priority = list(data_cfg.get("anchor_priority", ["PA", "AP", "lateral"]))
-        # Priority rank per view id; anything unlisted sorts last.
-        rank = {}
-        for i, name in enumerate(anchor_priority):
-            rank[self._view_id(name)] = i
-        default_rank = len(anchor_priority)
-
-        has_view_col = "ViewPosition" in self.annotation.columns
-        if not has_view_col:
-            print(f"[{self.cur_split}] multi_view on but CSV has no ViewPosition "
-                  f"column; all views treated as 'unknown'")
-
-        view_ids = (
-            self.annotation["ViewPosition"].map(self._view_id).tolist()
-            if has_view_col
-            else [self.UNKNOWN_VIEW_ID] * len(self.annotation)
-        )
-
-        groups = {}
-        for pos, study_id in enumerate(self.annotation["study_id"].tolist()):
-            groups.setdefault(study_id, []).append(pos)
-
-        self.studies = []
-        for study_id, positions in groups.items():
-            # Stable sort on priority keeps the first row among equals.
-            ordered = sorted(
-                positions,
-                key=lambda p: rank.get(view_ids[p], default_rank),
+        rows = self.annotation[
+            ["subject_id", "study_id"]
+            + (["ViewPosition"] if "ViewPosition" in self.annotation else [])
+        ].to_dict("records")
+        if self.study_sampling:
+            self.studies = build_study_index(
+                rows,
+                anchor_priority=anchor_priority,
+                max_aux_views=self.max_aux_views,
             )
-            anchor = ordered[0]
-            aux = ordered[1:1 + self.max_aux_views]
-            self.studies.append({
-                "anchor": anchor,
-                "aux": aux,
-                "anchor_view_id": view_ids[anchor],
-                "aux_view_ids": [view_ids[p] for p in aux],
-            })
+        else:
+            # Explicit escape hatch for building a feature cache over every
+            # DICOM. Full-data train/eval configs should keep study_sampling=true.
+            self.studies = [
+                {
+                    "study_key": (row["subject_id"], row["study_id"]),
+                    "anchor": position,
+                    "aux": [],
+                    "anchor_view_id": view_id(row.get("ViewPosition")),
+                    "aux_view_ids": [],
+                }
+                for position, row in enumerate(rows)
+            ]
+        if truncate is not None:
+            self.studies = self.studies[:int(truncate)]
 
         n_multi = sum(1 for s in self.studies if s["aux"])
-        print(f"[{self.cur_split}] multi-view: {len(self.studies)} studies from "
-              f"{len(self.annotation)} rows, {n_multi} with >=1 auxiliary view "
-              f"(max_aux_views={self.max_aux_views})")
+        sample_unit = "studies" if self.study_sampling else "image rows"
+        print(f"[{self.cur_split}] {len(self.studies)} {sample_unit} from "
+              f"{len(self.annotation)} image rows, {n_multi} with a complementary "
+              f"view (multi_view={self.multi_view}, max_aux_views={self.max_aux_views})")
 
     def _init_feature_cache(self, cfg):
         """Open per-encoder feature memmaps if ``run.feature_cache_dir`` is set.
@@ -416,7 +515,12 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         if not cache_dir:
             return
         encoders = cfg.model_cfg.get("encoders", {})
-        wanted = [e for e in ("biovil", "swin", "raddino") if encoders.get(e, False)]
+        # PubMedCLIP raw patch tokens are [P, 768].  Keeping them in the same
+        # cache protocol avoids decoding/running its frozen ViT on every step.
+        wanted = [
+            encoder for encoder in ("biovil", "pubmedclip", "swin", "raddino")
+            if encoders.get(encoder, False)
+        ]
         cache = {}
         for enc in wanted:
             feats_path = os.path.join(cache_dir, enc, f"{self.cur_split}_feats.npy")
@@ -427,9 +531,17 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                     f"split '{self.cur_split}': {feats_path}"
                 )
             with open(ids_path) as f:
-                row_ids = json.load(f)
+                row_ids = [str(dicom_id) for dicom_id in json.load(f)]
+            if len(row_ids) != len(set(row_ids)):
+                raise ValueError(f"Duplicate dicom_id values in feature cache: {ids_path}")
+            feats = np.load(feats_path, mmap_mode="r")
+            if len(feats) != len(row_ids):
+                raise ValueError(
+                    f"Feature/id length mismatch for {enc} {self.cur_split}: "
+                    f"{len(feats)} != {len(row_ids)}"
+                )
             cache[enc] = {
-                "feats": np.load(feats_path, mmap_mode="r"),
+                "feats": feats,
                 "row": {dicom: i for i, dicom in enumerate(row_ids)},
             }
         self.feature_cache = cache
@@ -466,7 +578,10 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             cutoff: np.ndarray = np.percentile(array, percentiles)
             array = np.clip(array, *cutoff)
         array -= array.min()
-        array /= array.max()
+        value_range = array.max()
+        if value_range == 0:
+            return np.zeros_like(array, dtype=np.uint8)
+        array /= value_range
         array *= 255
         return array.astype(np.uint8)
 
@@ -490,11 +605,22 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
 
     def _row_visual(self, ann):
         """Visual input for one CSV row: decoded image, or cached raw features."""
-        # CSV stores absolute Kaggle path (e.g. /kaggle/input/datasets/<slug>/mimic-cxr-jpg-lite/p10/...).
-        # Re-anchor to the current vis_root so the same code runs locally and on Kaggle.
+        # Canonical full-data CSVs store a relative ``files/p1X/...`` path. Keep
+        # support for the old Kaggle marker, but reject arbitrary absolute/path-
+        # traversal inputs instead of silently escaping ``vis_root``.
         raw = ann["image_path"].replace("\\", "/")
         marker = "/mimic-cxr-jpg-lite/"
-        rel = raw.split(marker, 1)[-1] if marker in raw else raw.lstrip("/")
+        if marker in raw:
+            rel = raw.split(marker, 1)[1]
+        else:
+            if raw.startswith("/") or re.match(r"^[A-Za-z]:/", raw):
+                raise ValueError(
+                    f"image_path must be relative to vis_root, got: {raw}"
+                )
+            rel = raw
+        rel = os.path.normpath(rel)
+        if rel == ".." or rel.startswith(f"..{os.sep}"):
+            raise ValueError(f"image_path escapes vis_root: {raw}")
         image_path = os.path.join(self.vis_root, rel)
 
         out = {"image_path": str(image_path)}
@@ -502,24 +628,22 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             out["image"] = self.general_trans(self.load_image(Path(image_path)))
         else:
             for enc, store in self.feature_cache.items():
-                row = store["row"][ann["dicom_id"]]
+                dicom_id = str(ann["dicom_id"])
+                if dicom_id not in store["row"]:
+                    raise KeyError(
+                        f"DICOM {dicom_id} is absent from the {enc} feature cache "
+                        f"for split {self.cur_split}. Build caches with "
+                        "model.data.study_sampling=false so auxiliary views are included."
+                    )
+                row = store["row"][dicom_id]
                 out[f"{enc}_feat"] = torch.from_numpy(
                     np.ascontiguousarray(store["feats"][row])
                 ).float()
         return out
 
     def __getitem__(self, index):
-        start_time = time()
-        if self.multi_view:
-            subset_size = len(self.studies) // self.custom_epochs_per_epoch
-            study = self.studies[self.current_custom_epoch * subset_size + index]
-            ann = self.annotation.iloc[study["anchor"]]
-        else:
-            study = None
-            subset_size = len(self.annotation) // self.custom_epochs_per_epoch
-            start_index = self.current_custom_epoch * subset_size
-            actual_index = start_index + index
-            ann = self.annotation.iloc[actual_index]
+        study = self.studies[index]
+        ann = self.annotation.iloc[study["anchor"]]
 
         anchor_visual = self._row_visual(ann)
         image_path = anchor_visual.pop("image_path")
@@ -578,12 +702,16 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             "text_output": caption,
             "image_id": self.img_ids[ann["dicom_id"]],
             "classification_labels": torch.tensor(chexpert_labels, dtype=torch.long),  # Convert to tensor
+            "classification_mask": torch.tensor(
+                bool(ann["classification_valid"]), dtype=torch.bool
+            ),
+            "generation_mask": torch.tensor(bool(ann["target_valid"]), dtype=torch.bool),
             "dicom_id": ann["dicom_id"],
             "image_path": str(image_path)
         }
         sample.update(anchor_visual)  # "image", or the cached "<enc>_feat" tensors
 
-        if study is not None:
+        if self.multi_view:
             aux_visuals = [
                 self._row_visual(self.annotation.iloc[p]) for p in study["aux"]
             ]
@@ -597,9 +725,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         return sample
 
     def __len__(self):
-        if self.multi_view:
-            return len(self.studies) // self.custom_epochs_per_epoch
-        return len(self.annotation) // self.custom_epochs_per_epoch
+        return len(self.studies)
 
     def collater(self, samples):
         """Pad ragged auxiliary-view counts to the batch's N_max.
@@ -669,12 +795,9 @@ class MIMICEvalCap:
         self.dicom_to_id = img_id_map
         self.id_to_dicom = {v: k for k, v in img_id_map.items()}
 
-        print('setting up scorers...')
-        self.scorers = [
-            (Bleu(4), ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4"]),
-            (Meteor(), "METEOR"),
-            (Rouge(), "ROUGE_L")
-        ]
+        # METEOR starts a Java process. Construct scorers lazily so every train
+        # dataset/rank does not pay that cost when no caption evaluation occurs.
+        self.scorers = None
 
 
     def preprocess(self, s):
@@ -686,11 +809,18 @@ class MIMICEvalCap:
     def evaluate(self, res):
 
         res = {self.id_to_dicom[elem["image_id"]]: elem["caption"] for elem in res}
-        res_keys_set = set(res.keys())
+        valid_dicom_ids = set(
+            self.gts.loc[self.gts["target_valid"].astype(bool), "dicom_id"].astype(str)
+        ) if "target_valid" in self.gts else set(self.gts["dicom_id"].astype(str))
+        # Invalid/absent FINDINGS targets are kept for classification but must
+        # not enter language metrics.
+        res = {str(dicom_id): caption for dicom_id, caption in res.items()
+               if str(dicom_id) in valid_dicom_ids}
+        res_keys_set = set(res)
         gts = {}
         gts_img_id = {}
         for _, elem in self.gts.iterrows():
-            dicom_id = elem["dicom_id"]
+            dicom_id = str(elem["dicom_id"])
             if dicom_id in res_keys_set:
                 gts[dicom_id] = [elem["findings"]]
                 gts_img_id[self.dicom_to_id[dicom_id]] = [elem["findings"]]
@@ -712,6 +842,14 @@ class MIMICEvalCap:
         # =================================================
         # Compute scores
         # =================================================
+        if self.scorers is None:
+            print('setting up scorers...')
+            self.scorers = [
+                (Bleu(4), ["Bleu_1", "Bleu_2", "Bleu_3", "Bleu_4"]),
+                (Meteor(), "METEOR"),
+                (Rouge(), "ROUGE_L")
+            ]
+
         final_scores = {}
         for scorer, method in self.scorers:
             print('computing %s score...' % (scorer.method()))

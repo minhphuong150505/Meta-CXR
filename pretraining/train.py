@@ -6,24 +6,14 @@
 """
 
 import argparse
-import os
 import random
-import json
 
 import numpy as np
-import pickle
 import torch
 import torch.backends.cudnn as cudnn
-import torch.nn.functional as F
 import wandb
-import pandas as pd
 
 from omegaconf import OmegaConf
-from torch.utils.data import DataLoader
-from torchinfo import summary
-from tqdm import tqdm
-
-from mhcac.utils import save_to_csv, compute_metrics_for_tasks, aggregate_results, query_attention_visualization, expert_atttention_visualization, visualize_images_with_labels
 import model.lavis.tasks as tasks
 from model.lavis.common.config import Config
 from model.lavis.common.dist_utils import get_rank, is_main_process, init_distributed_mode
@@ -134,13 +124,12 @@ def main():
     truncate_val = cfg.run_cfg.get("truncate_val", None)
     truncate_test = cfg.run_cfg.get("truncate_test", None)
 
-    datasets['mimic_cxr']['train'] = MIMIC_CXR_Dataset(
-        vis_processor=None, text_processor=None,
-        vis_root=VIS_ROOT,
-        split="train", cfg=cfg, truncate=truncate_train
-    )
-
     if not cfg.run_cfg.evaluate:
+        datasets['mimic_cxr']['train'] = MIMIC_CXR_Dataset(
+            vis_processor=None, text_processor=None,
+            vis_root=VIS_ROOT,
+            split="train", cfg=cfg, truncate=truncate_train
+        )
         datasets['mimic_cxr']['val'] = MIMIC_CXR_Dataset(
             vis_processor=None, text_processor=None,
             vis_root=VIS_ROOT,
@@ -153,48 +142,32 @@ def main():
                 vis_root=VIS_ROOT,
                 split="test", cfg=cfg, truncate=truncate_test
             )
+    else:
+        eval_splits = list(cfg.run_cfg.get("test_splits", []))
+        if not eval_splits:
+            eval_splits = list(cfg.run_cfg.get("valid_splits", []))
+        if not eval_splits:
+            raise ValueError("evaluate=true requires test_splits or valid_splits")
+        for split in eval_splits:
+            truncate = {
+                "train": truncate_train,
+                "val": truncate_val,
+                "test": truncate_test,
+            }.get(split)
+            datasets['mimic_cxr'][split] = MIMIC_CXR_Dataset(
+                vis_processor=None,
+                text_processor=None,
+                vis_root=VIS_ROOT,
+                split=split,
+                cfg=cfg,
+                truncate=truncate,
+            )
 
     model = task.build_model(cfg)
-
-    if not cfg.run_cfg.evaluate:
-        runner = RunnerBase(
-            cfg=cfg, job_id=job_id, task=task, model=model, datasets=datasets
-        )
-        runner.train(wandb_run)
-
-    else:
-        # Precompute Q-Former output embeddings for all images
-        model.cuda()
-        model.eval()
-
-        split = 'train'
-        dataset = 'mimic_cxr'
-        batch_size = 64
-        dataloader = DataLoader(datasets[dataset][split], batch_size=batch_size, shuffle=False, num_workers=cfg.run_cfg.num_workers)
-        embeddings = {}
-        cls_logits_dict = {}
-
-        dataloader_len = len(dataloader)
-        for i, batch in enumerate(tqdm(dataloader)):
-            qformer_embs, _, cls_logits, attention_weights = model.forward_image(batch['image'].cuda(), None)
-
-            for j, id in enumerate(batch['image_id']):
-                if dataset == 'mimic_cxr':
-                    dicom = datasets['mimic_cxr'][split].id_to_dicom[id.item()]
-                embeddings[dicom] = qformer_embs[j].cpu().detach().numpy()
-                cls_logits_dict[dicom] = cls_logits[j].cpu().detach().numpy()
-
-        os.makedirs("pretraining/cls", exist_ok=True)
-        os.makedirs("pretraining/embs", exist_ok=True)
-
-        with open(f"pretraining/cls/{cfg.run_cfg.run_name}_cls_logits_{dataset}_{split}.pkl", "wb") as f:
-            pickle.dump(cls_logits_dict, f)
-
-        with open(f"pretraining/embs/{cfg.run_cfg.run_name}_embeddings_{dataset}_{split}.pkl", "wb") as f:
-            pickle.dump(embeddings, f)
-
-        with open(f"pretraining/cls/{cfg.run_cfg.run_name}_meta_{dataset}_{split}.json", "w") as f:
-            json.dump({"dataset": dataset, "split": split, "batch_size": batch_size, "model": cfg.run_cfg.run_name}, f)
+    runner = RunnerBase(
+        cfg=cfg, job_id=job_id, task=task, model=model, datasets=datasets
+    )
+    runner.train(wandb_run)
 
 
 if __name__ == "__main__":

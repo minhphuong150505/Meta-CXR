@@ -1,0 +1,146 @@
+# Production Stage-1 recipe for full MIMIC-CXR-JPG p10-p19 on one NVIDIA L4.
+# The processed CSV paths come from configs/env_config.yaml and must point at
+# processed/full_allviews. One epoch is one pass over unique studies (~220k),
+# not one pass over the ~365k duplicated image rows.
+
+model:
+  arch: blip2
+  model_type: pretrain
+  load_finetuned: false
+  load_pretrained: true
+  pretrained: "https://storage.googleapis.com/sfr-vision-language-research/LAVIS/models/BLIP2/blip2_pretrained.pth"
+
+  freeze_vit: true
+  vit_model: biovil
+  vit_model_cls: [pubmedclip]
+  encoders:
+    biovil: true
+    pubmedclip: true
+    swin: true
+    raddino: false
+  swin:
+    backend: hf
+    model_name: "ChayanM/SwinV2-GPT2_Mimic"
+    pretrained: true
+    frozen: true
+    normalize: true
+
+  num_query_token: 32
+  cross_attention_freq: 2
+  max_txt_len: 256
+
+  mhcac:
+    distill_temperature: 2.0
+    text_dropout: 0.2
+    # Defaults are sqrt inverse-frequency weights derived from the full
+    # study-level train split; [] disables weighting for an ablation.
+    label_smoothing: 0.05
+
+  # Teacher receives report text only during training. The deployed student is
+  # image-only and learns both ground-truth classification and teacher logits.
+  loss:
+    lambda_itc: 1.0
+    lambda_itm: 1.0
+    lambda_lm: 1.0
+    lambda_cls: 1.0
+    lambda_teacher_cls: 0.5
+    lambda_distill: 0.5
+    lambda_mhcac_contrastive: 0.1
+    lambda_orthogonality: 0.05
+    lambda_sparsity: 0.01
+    lambda_mpc: 0.1
+    lambda_view_consistency: 0.05
+    # Detached cross-batch negatives make ITC meaningful at microbatch=2.
+    itc_queue_size: 1024
+
+  multi_view: true
+  view_fusion:
+    num_heads: 8
+    ffn_ratio: 4
+    num_blocks: 1
+    num_view_types: 4
+    dropout: 0.1
+    p_view_drop: 0.15
+  data:
+    study_sampling: true
+    anchor_priority: [PA, AP, lateral]
+    max_aux_views: 1
+
+datasets:
+  mimic_cxr:
+    vis_processor:
+      train:
+        name: "blip2_image_train"
+        image_size: 448
+        resize_size: 512
+        augmentation:
+          enabled: true
+          degrees: 5.0
+          translate: 0.02
+          scale_delta: 0.05
+          affine_p: 0.5
+          jitter_p: 0.5
+          brightness: 0.1
+          contrast: 0.1
+      eval:
+        name: "blip_image_eval"
+        image_size: 448
+        resize_size: 512
+    text_processor:
+      train: {name: "my_blip_caption", prompt: ""}
+      eval: {name: "my_blip_caption", prompt: ""}
+
+run:
+  task: image_text_pretrain_eval
+  project_name: meta-cxr-full
+  wandb_entity: ""
+  run_name: mimic_cxr_full_l4_blip2
+
+  lr_sched: linear_warmup_cosine_lr
+  init_lr: 1.0e-4
+  init_lr_q: 1.0e-4
+  init_lr_cls: 1.0e-4
+  min_lr: 1.0e-6
+  warmup_lr: 1.0e-6
+  # Optimizer updates, not microbatches: ~3% of a three-epoch full run.
+  warmup_steps: 300
+  weight_decay: 0.02
+  max_grad_norm: 1.0
+
+  max_epoch: 3
+  # Full validation F1 is stable enough to select the image-only student;
+  # patience 2 still permits all three planned epochs when epoch 1 is noisy.
+  early_stop_patience: 2
+  early_stop_min_delta: 1.0e-4
+  selection_metric: f1_positive_macro
+  selection_mode: max
+  # checkpoint_last and checkpoint_best are always kept; avoid duplicate large
+  # epoch snapshots unless explicitly overridden.
+  save_freq: 0
+
+  # 2 x accumulation 32 = effective batch 64. Contrastive negatives come from
+  # the live microbatch plus the queue, not from gradient accumulation.
+  batch_size_train: 2
+  batch_size_eval: 2
+  accum_grad_iters: 32
+  num_workers: 4
+
+  max_len: 256
+  min_len: 8
+  num_beams: 1
+  seed: 42
+  output_dir: "pretraining/outputs"
+
+  amp: true
+  evaluate: false
+  train_splits: [train]
+  valid_splits: [val]
+  # Held out by RunnerBase and evaluated once from checkpoint_best after train.
+  test_splits: [test]
+  save_text_predictions: false
+
+  device: cuda
+  world_size: 1
+  distributed: false
+  find_unused_parameters: false
+  use_dist_eval_sampler: false

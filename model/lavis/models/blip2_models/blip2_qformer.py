@@ -5,18 +5,14 @@
  For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
 """
 import logging
-from time import time
 
 import torch
 import torch.distributed as dist
 import torch.nn as nn
 from torch.nn import functional as F
 
-from torchvision import transforms
-from torchvision.transforms import Compose, Resize, ToTensor, CenterCrop
-
 from model.lavis.common.registry import registry
-from model.lavis.models.base_model import all_gather_with_grad, concat_all_gather
+from model.lavis.models.base_model import concat_all_gather
 from model.lavis.models.blip2_models.blip2 import (
     Blip2Base,
     compute_sim_matrix,
@@ -32,9 +28,12 @@ from vision_encoders.swin.swin_encoder import SwinEncoder
 from vision_encoders.rad_dino.rad_dino_encoder import RadDinoEncoder
 # from vision_encoders.medclip.medclip import Medclip
 
-from mhcac.utils import compute_metrics_for_tasks
-from mhcac.loss import ClassificationLoss, MultiPositiveContrastiveLoss, view_consistency_loss
-from mhcac.aggregator import Aggregator
+from mhcac.loss import (
+    ClassificationLoss,
+    MultiPositiveContrastiveLoss,
+    soft_target_kl_loss,
+    view_consistency_loss,
+)
 from mhcac.view_fusion import ViewFusionModule
 
 chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
@@ -93,6 +92,20 @@ class Blip2Qformer(Blip2Base):
         view_fusion_cfg=None,
         lambda_mpc=0.0,
         lambda_view_consistency=0.0,
+        lambda_itc=1.0,
+        lambda_itm=1.0,
+        lambda_lm=1.0,
+        lambda_cls=1.0,
+        lambda_teacher_cls=0.5,
+        lambda_distill=0.5,
+        lambda_mhcac_contrastive=0.1,
+        lambda_orthogonality=0.05,
+        lambda_sparsity=0.01,
+        distill_temperature=2.0,
+        mhcac_text_dropout=0.2,
+        class_weights=None,
+        cls_label_smoothing=0.05,
+        itc_queue_size=1024,
     ):
         super().__init__()
 
@@ -139,16 +152,46 @@ class Blip2Qformer(Blip2Base):
         self.temp = nn.Parameter(0.07 * torch.ones([]))
 
         self.max_txt_len = max_txt_len
+        self.lambda_itc = float(lambda_itc)
+        self.lambda_itm = float(lambda_itm)
+        self.lambda_lm = float(lambda_lm)
+        self.lambda_cls = float(lambda_cls)
+        self.lambda_teacher_cls = float(lambda_teacher_cls)
+        self.lambda_distill = float(lambda_distill)
+        self.lambda_mhcac_contrastive = float(lambda_mhcac_contrastive)
+        self.lambda_orthogonality = float(lambda_orthogonality)
+        self.lambda_sparsity = float(lambda_sparsity)
+        self.distill_temperature = float(distill_temperature)
+        self.itc_queue_size = int(itc_queue_size)
+        if self.itc_queue_size < 0:
+            raise ValueError("itc_queue_size must be non-negative")
+        # A detached cross-batch queue makes ITC meaningful for the L4 recipe's
+        # microbatch of two.  fp16 keeps a 1,024 x 32 x 256 image queue ~16 MB.
+        self.register_buffer(
+            "itc_image_queue",
+            torch.zeros(
+                self.itc_queue_size,
+                num_query_token,
+                embed_dim,
+                dtype=torch.float16,
+            ),
+            persistent=False,
+        )
+        self.register_buffer(
+            "itc_text_queue",
+            torch.zeros(self.itc_queue_size, embed_dim, dtype=torch.float16),
+            persistent=False,
+        )
+        self.register_buffer(
+            "itc_queue_ptr", torch.zeros((), dtype=torch.long), persistent=False
+        )
+        self.register_buffer(
+            "itc_queue_filled", torch.zeros((), dtype=torch.long), persistent=False
+        )
         
-        self.vis_augs = Compose([transforms.RandomAffine(degrees=30, shear=15),
-                                        transforms.ColorJitter(brightness=0.2, contrast=0.2)])
-        
-        self.vis_transforms = Compose([Resize((224, 224)),
-                                        ToTensor()])
-        
-        self.vit_projection = nn.Linear(768, 1408)
-
-        self.pubmedclip = Pubmedclip(aug=self.vis_augs).eval() if self.use_pubmedclip else None
+        # Spatial/intensity augmentation is applied once in ReportDataset so
+        # every encoder sees the same mildly transformed radiograph.
+        self.pubmedclip = Pubmedclip(aug=None).eval() if self.use_pubmedclip else None
 
         self.swin = (
             SwinEncoder(
@@ -225,56 +268,41 @@ class Blip2Qformer(Blip2Base):
             initial_expert_tokens=None,
             swin_dim=swin_dim,
             raddino_dim=raddino_dim,
+            text_dropout_rate=mhcac_text_dropout,
+            use_cnn=self.use_biovil,
+            use_vit=self.use_pubmedclip,
+            use_swin=self.use_swin,
+            use_raddino=self.use_raddino,
         )
-        
-        class_weights = [
-            torch.tensor([1.0, 1.0, 0.000], dtype=torch.float),  # Class weights for no finding
-            torch.tensor([1.0, 10.0, 10.0], dtype=torch.float),  # Class weights for Enlarged Cardiomediastinum
-            torch.tensor([1.0, 5.0, 10.0], dtype=torch.float),  # Class weights for Cardiomegaly
-            torch.tensor([1.0, 4.0, 10.0], dtype=torch.float),  # Class weights for Lung Opacity
-            torch.tensor([1.0, 5.0, 10.0], dtype=torch.float),  # Class weights for Lung Lesion
-            torch.tensor([1.0, 5.0, 10.0], dtype=torch.float),   # Edema
-            torch.tensor([1.0, 5.0, 10.0], dtype=torch.float),  # Consolidation
-            torch.tensor([1.0, 10.0, 10.0], dtype=torch.float),   # Class weights for Pneumonia
-            torch.tensor([1.0, 4.0, 10.0], dtype=torch.float),   # Class weights for Atelectasis 
-            torch.tensor([1.0, 5.0, 10.0], dtype=torch.float),  #  Pneumothorax 
-            torch.tensor([1.0, 4.0, 10.0], dtype=torch.float),  # Class weights for Pleural Effusion 
-            torch.tensor([1.0, 10.0, 10.0], dtype=torch.float), # Class weights for Pleural Other 
-            torch.tensor([1.0, 10.0, 10.0], dtype=torch.float),  # Fracture 
-            torch.tensor([1.0, 3.0, 0.0], dtype=torch.float)  # Class weights for Support Devices
-        ]  #negative(0),positive(1),uncertain(2)
-        
-        # class_weights = [
-        #     torch.tensor([10.0, 10.0], dtype=torch.float),  # Class weights for no finding
-        #     torch.tensor([1.0, 10.0], dtype=torch.float),  # Class weights for Enlarged Cardiomediastinum
-        #     torch.tensor([2.0, 10.0], dtype=torch.float),  # Class weights for Cardiomegaly
-        #     torch.tensor([4.0, 10.0], dtype=torch.float),  # Class weights for Lung Opacity
-        #     torch.tensor([4.0, 10.0], dtype=torch.float),  # Class weights for Lung Lesion
-        #     torch.tensor([1.0, 10.0], dtype=torch.float),   # Edema
-        #     torch.tensor([1.0, 10.0], dtype=torch.float),  # Consolidation
-        #     torch.tensor([1.0, 10.0], dtype=torch.float),   # Class weights for Pneumonia
-        #     torch.tensor([5.0, 10.0], dtype=torch.float),   # Class weights for Atelectasis 
-        #     torch.tensor([1.0, 10.0], dtype=torch.float),  #  Pneumothorax 
-        #     torch.tensor([2.0, 10.0], dtype=torch.float),  # Class weights for Pleural Effusion 
-        #     torch.tensor([5.0, 10.0], dtype=torch.float), # Class weights for Pleural Other 
-        #     torch.tensor([2.0, 10.0], dtype=torch.float),  # Fracture 
-        #     torch.tensor([5.0, 10.0], dtype=torch.float)  # Class weights for Support Devices
-        # ]
-        
-        # print(f"class weights are {class_weights}")
 
-        """
-        chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
-                              "Cardiomegaly", "Lung Opacity",
-                              "Lung Lesion", "Edema",
-                              "Consolidation", "Pneumonia",
-                              "Atelectasis", "Pneumothorax",
-                              "Pleural Effusion", "Pleural Other",
-                              "Fracture", "Support Devices"]
-                             
-        """
-        # Instantiate the loss function with abnormality-specific class weights
-        self.cls_loss_fn = ClassificationLoss(penalty_weight=0.1, class_weights=class_weights, num_abnormalities=14)  #negative(0),positive(1),uncertain(2)
+        # sqrt(negative prevalence / class prevalence), capped at 10, computed
+        # from the full study-level training cohort (negative, positive, uncertain).
+        default_class_weights = [
+            [1.0, 1.40, 0.0],
+            [1.0, 5.56, 4.79],
+            [1.0, 2.00, 5.47],
+            [1.0, 1.85, 6.80],
+            [1.0, 6.01, 10.0],
+            [1.0, 2.67, 3.81],
+            [1.0, 4.50, 7.17],
+            [1.0, 3.44, 3.28],
+            [1.0, 1.95, 4.14],
+            [1.0, 4.61, 10.0],
+            [1.0, 1.78, 5.45],
+            [1.0, 10.0, 10.0],
+            [1.0, 7.20, 10.0],
+            [1.0, 1.57, 10.0],
+        ]
+
+        if class_weights is None:
+            class_weights = default_class_weights
+        elif len(class_weights) == 0:
+            class_weights = None
+        self.cls_loss_fn = ClassificationLoss(
+            class_weights=class_weights,
+            num_abnormalities=14,
+            label_smoothing=cls_label_smoothing,
+        )
         
 
     def _create_mask(self, embeddings, mask_ratio=0.1):
@@ -306,7 +334,7 @@ class Blip2Qformer(Blip2Base):
             return x.reshape(B, N, *x.shape[1:])
 
         # Cached auxiliary features arrive already shaped [B, N, P, D].
-        for name in ("biovil", "swin", "raddino"):
+        for name in ("biovil", "pubmedclip", "swin", "raddino"):
             if name in cached:
                 streams[name] = cached[name]
 
@@ -319,12 +347,9 @@ class Blip2Qformer(Blip2Base):
         if not need:
             return streams
         if aux_image is None:
-            # The feature cache only covers biovil/swin/raddino, so an enabled
-            # pubmedclip still needs the raw images -- same constraint the
-            # single-view path already has.
             raise ValueError(
                 f"aux_image is required to encode auxiliary streams {need}; "
-                "these encoders are not covered by the feature cache."
+                "the requested encoders are not covered by the feature cache."
             )
 
         flat = aux_image.flatten(0, 1)
@@ -407,7 +432,13 @@ class Blip2Qformer(Blip2Base):
             qformer_streams.append(cnn_patches)
 
         if self.use_pubmedclip:
-            vit_patches, pubmed_projection = self.pubmedclip(image, apply_aug=apply_aug)
+            if "pubmedclip" in cached:
+                vit_patches = cached["pubmedclip"]
+                pubmed_projection = self.pubmedclip.mlp(vit_patches)
+            else:
+                vit_patches, pubmed_projection = self.pubmedclip(
+                    image, apply_aug=apply_aug
+                )
             self._stash_prefusion("pubmedclip", vit_patches, aux_streams)
             if fuse_on and "pubmedclip" in aux_streams:
                 vit_patches = self._fuse("pubmedclip", vit_patches, aux_streams,
@@ -465,59 +496,308 @@ class Blip2Qformer(Blip2Base):
         return embeddings
         
     
+    @staticmethod
+    def _batch_mask(samples, key, batch_size, device, fallback_key=None, default=True):
+        value = samples.get(key)
+        if value is None and fallback_key is not None:
+            value = samples.get(fallback_key)
+        if value is None:
+            return torch.full((batch_size,), default, dtype=torch.bool, device=device)
+        mask = torch.as_tensor(value, dtype=torch.bool, device=device)
+        if mask.ndim == 0:
+            mask = mask.expand(batch_size)
+        mask = mask.reshape(-1)
+        if mask.numel() != batch_size:
+            raise ValueError(f"{key} must contain one boolean per batch item")
+        return mask
+
+    @staticmethod
+    def _gather_with_local_grad(tensor):
+        """Gather equal-sized DDP batches while preserving this rank's gradient.
+
+        Remote features are constants on each rank; DDP later combines the
+        parameter gradients produced where each feature was local.  This also
+        avoids a backward collective deadlock when one rank has no valid report.
+        """
+        if not dist.is_available() or not dist.is_initialized():
+            return tensor
+        gathered = concat_all_gather(tensor.detach())
+        batch_size = tensor.shape[0]
+        start = dist.get_rank() * batch_size
+        return torch.cat(
+            [gathered[:start], tensor, gathered[start + batch_size :]], dim=0
+        )
+
+    @torch.no_grad()
+    def _update_itc_queue(self, image_features, text_features, valid_mask):
+        if self.itc_queue_size == 0 or not self.training:
+            return
+        images = concat_all_gather(image_features.detach())
+        texts = concat_all_gather(text_features.detach())
+        valid = concat_all_gather(valid_mask).bool()
+        images = images[valid]
+        texts = texts[valid]
+        if images.shape[0] == 0:
+            return
+        if images.shape[0] >= self.itc_queue_size:
+            images = images[-self.itc_queue_size :]
+            texts = texts[-self.itc_queue_size :]
+
+        count = images.shape[0]
+        pointer = int(self.itc_queue_ptr.item())
+        first = min(count, self.itc_queue_size - pointer)
+        self.itc_image_queue[pointer : pointer + first].copy_(
+            images[:first].to(self.itc_image_queue.dtype)
+        )
+        self.itc_text_queue[pointer : pointer + first].copy_(
+            texts[:first].to(self.itc_text_queue.dtype)
+        )
+        remaining = count - first
+        if remaining:
+            self.itc_image_queue[:remaining].copy_(
+                images[first:].to(self.itc_image_queue.dtype)
+            )
+            self.itc_text_queue[:remaining].copy_(
+                texts[first:].to(self.itc_text_queue.dtype)
+            )
+        self.itc_queue_ptr.fill_((pointer + count) % self.itc_queue_size)
+        self.itc_queue_filled.fill_(
+            min(self.itc_queue_size, int(self.itc_queue_filled.item()) + count)
+        )
+
+    def _image_text_contrastive(self, image_features, text_features, valid_mask):
+        image_features_all = self._gather_with_local_grad(image_features)
+        text_features_all = self._gather_with_local_grad(text_features)
+        valid_all = concat_all_gather(valid_mask)
+
+        current_count = valid_all.numel()
+        # The queue is a training-only source of negatives. Validation must not
+        # depend on whichever train samples happened to fill the ring buffer at
+        # the end of an epoch.
+        queue_filled = int(self.itc_queue_filled.item()) if self.training else 0
+        if queue_filled:
+            # clone() decouples autograd's saved operands from the ring-buffer
+            # update performed later in this same forward pass.
+            image_features_all = torch.cat(
+                [
+                    image_features_all,
+                    self.itc_image_queue[:queue_filled]
+                    .to(image_features_all.dtype)
+                    .clone(),
+                ],
+                dim=0,
+            )
+            text_features_all = torch.cat(
+                [
+                    text_features_all,
+                    self.itc_text_queue[:queue_filled]
+                    .to(text_features_all.dtype)
+                    .clone(),
+                ],
+                dim=0,
+            )
+            candidate_valid = torch.cat(
+                [
+                    valid_all,
+                    torch.ones(queue_filled, dtype=torch.bool, device=valid_all.device),
+                ]
+            )
+        else:
+            candidate_valid = valid_all
+
+        temperature = self.temp.clamp(min=1e-3, max=0.5)
+        sim_i2t = torch.einsum(
+            "bqd,nd->bnq", image_features, text_features_all
+        ).amax(dim=-1) / temperature
+        sim_t2i = torch.einsum(
+            "bd,nqd->bnq", text_features, image_features_all
+        ).amax(dim=-1) / temperature
+        sim_i2t = sim_i2t.masked_fill(
+            ~candidate_valid.unsqueeze(0), float("-inf")
+        )
+        sim_t2i = sim_t2i.masked_fill(
+            ~candidate_valid.unsqueeze(0), float("-inf")
+        )
+
+        zero = image_features.sum() * 0.0
+        if not valid_mask.any():
+            return (
+                zero,
+                sim_i2t[:, :current_count],
+                sim_t2i[:, :current_count],
+                valid_all,
+            )
+        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+        targets = rank * image_features.shape[0] + torch.arange(
+            image_features.shape[0], device=image_features.device
+        )
+        loss_itc = 0.5 * (
+            F.cross_entropy(sim_i2t[valid_mask], targets[valid_mask])
+            + F.cross_entropy(sim_t2i[valid_mask], targets[valid_mask])
+        )
+        # ITM needs raw images/token ids, which the lightweight ITC queue does
+        # not retain, so hard-negative mining uses the current global batch.
+        return (
+            loss_itc,
+            sim_i2t[:, :current_count],
+            sim_t2i[:, :current_count],
+            valid_all,
+        )
+
+    def _image_text_matching(
+        self,
+        image_embeds,
+        text_tokens,
+        valid_mask,
+        valid_all,
+        sim_i2t,
+        sim_t2i,
+    ):
+        zero = image_embeds.sum() * 0.0
+        if not valid_mask.any() or valid_all.sum() < 2:
+            return zero
+
+        image_embeds_all = self._gather_with_local_grad(image_embeds)
+        text_ids_all_ranks = concat_all_gather(text_tokens.input_ids)
+        text_atts_all_ranks = concat_all_gather(text_tokens.attention_mask)
+        batch_size = image_embeds.shape[0]
+        rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+        positive_indices = rank * batch_size + torch.arange(
+            batch_size, device=image_embeds.device
+        )
+
+        with torch.no_grad():
+            weights_t2i = F.softmax(sim_t2i, dim=1)
+            weights_i2t = F.softmax(sim_i2t, dim=1)
+            weights_t2i[:, ~valid_all] = 0
+            weights_i2t[:, ~valid_all] = 0
+            rows = torch.arange(batch_size, device=image_embeds.device)
+            weights_t2i[rows, positive_indices] = 0
+            weights_i2t[rows, positive_indices] = 0
+            weights_t2i = weights_t2i / weights_t2i.sum(dim=1, keepdim=True).clamp_min(1e-12)
+            weights_i2t = weights_i2t / weights_i2t.sum(dim=1, keepdim=True).clamp_min(1e-12)
+
+        local_indices = valid_mask.nonzero(as_tuple=True)[0]
+        negative_image_indices = torch.stack(
+            [torch.multinomial(weights_t2i[i], 1).squeeze(0) for i in local_indices]
+        )
+        negative_text_indices = torch.stack(
+            [torch.multinomial(weights_i2t[i], 1).squeeze(0) for i in local_indices]
+        )
+
+        image_pos = image_embeds[local_indices]
+        image_neg = image_embeds_all[negative_image_indices]
+        text_ids_pos = text_tokens.input_ids[local_indices]
+        text_atts_pos = text_tokens.attention_mask[local_indices]
+        text_ids_neg = text_ids_all_ranks[negative_text_indices]
+        text_atts_neg = text_atts_all_ranks[negative_text_indices]
+
+        # positive, negative-image, negative-text triples
+        text_ids = torch.cat([text_ids_pos, text_ids_pos, text_ids_neg], dim=0)
+        text_atts = torch.cat([text_atts_pos, text_atts_pos, text_atts_neg], dim=0)
+        image_inputs = torch.cat([image_pos, image_neg, image_pos], dim=0)
+        query_tokens = self.query_tokens.expand(text_ids.shape[0], -1, -1)
+        query_atts = torch.ones(
+            query_tokens.shape[:-1], dtype=torch.long, device=image_embeds.device
+        )
+        output = self.Qformer.bert(
+            text_ids,
+            query_embeds=query_tokens,
+            attention_mask=torch.cat([query_atts, text_atts], dim=1),
+            encoder_hidden_states=image_inputs,
+            encoder_attention_mask=torch.ones(
+                image_inputs.shape[:-1], dtype=torch.long, device=image_embeds.device
+            ),
+            return_dict=True,
+        )
+        vl_embeddings = output.last_hidden_state[:, : query_tokens.shape[1]]
+        logits = self.itm_head(vl_embeddings).mean(dim=1)
+        num_positive = local_indices.numel()
+        labels = torch.cat(
+            [
+                torch.ones(num_positive, dtype=torch.long, device=image_embeds.device),
+                torch.zeros(2 * num_positive, dtype=torch.long, device=image_embeds.device),
+            ]
+        )
+        return F.cross_entropy(logits, labels)
+
+    def _language_modeling(self, text_tokens, query_tokens, query_output, valid_mask):
+        zero = query_output.last_hidden_state.sum() * 0.0
+        if not valid_mask.any():
+            return zero
+
+        decoder_input_ids = text_tokens.input_ids.clone()
+        decoder_input_ids[:, 0] = self.tokenizer.bos_token_id
+        labels = decoder_input_ids.masked_fill(
+            decoder_input_ids == self.tokenizer.pad_token_id, -100
+        )
+        labels[~valid_mask] = -100
+        query_atts = torch.ones(
+            query_tokens.shape[:-1], dtype=torch.long, device=query_tokens.device
+        )
+        output = self.Qformer(
+            decoder_input_ids,
+            attention_mask=torch.cat([query_atts, text_tokens.attention_mask], dim=1),
+            past_key_values=query_output.past_key_values,
+            return_dict=True,
+            labels=labels,
+            reduction="none",
+        )
+        token_count = (labels[:, 1:] != -100).sum()
+        if token_count == 0:
+            return zero
+        return output.loss.sum() / token_count
+
     def forward(self, samples):
-        start_time = time()
         image = samples.get("image")
         text = samples["text_output"]
-
-        # Use precomputed frozen-encoder features when the dataset provides them
-        # (run.feature_cache_dir); otherwise run the encoders on the image.
         cached = {
             k: samples[f"{k}_feat"]
-            for k in ("biovil", "swin", "raddino")
+            for k in ("biovil", "pubmedclip", "swin", "raddino")
             if f"{k}_feat" in samples
         }
         aux_cached = {
             k: samples[f"aux_{k}_feat"]
-            for k in ("biovil", "swin", "raddino")
+            for k in ("biovil", "pubmedclip", "swin", "raddino")
             if f"aux_{k}_feat" in samples
         }
-        cnn_patches, vit_patches, swin_patches, qformer_image_embeds = self._encode_image_streams(
-            image, apply_aug=False, cached=cached,
+        cnn_patches, vit_patches, swin_patches, image_embeds = self._encode_image_streams(
+            image,
+            apply_aug=False,
+            cached=cached,
             aux_image=samples.get("aux_image"),
             aux_cached=aux_cached,
             aux_mask=samples.get("aux_mask"),
             anchor_view_id=samples.get("anchor_view_id"),
             aux_view_ids=samples.get("aux_view_ids"),
         )
-        device = qformer_image_embeds.device
-
-        # image_embeds_3 = self.ln_vision(self.medclip(image))
-        # image_embeds_3 = self._create_mask(image_embeds_3)  # Mask 20% of patches
-
-
-        image_atts = torch.ones(qformer_image_embeds.size()[:-1], dtype=torch.long).to(
-            device
+        device = image_embeds.device
+        batch_size = image_embeds.shape[0]
+        classification_mask = self._batch_mask(
+            samples,
+            "classification_mask",
+            batch_size,
+            device,
+            fallback_key="has_chexpert_label",
         )
-        
-        # query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
-        
+        generation_mask = self._batch_mask(
+            samples, "generation_mask", batch_size, device
+        )
 
-        # query_output = self.Qformer.bert(
-        #     query_embeds=query_tokens,
-        #     encoder_hidden_states=image_embeds,
-        #     encoder_attention_mask=image_atts,
-        #     use_cache=True,
-        #     return_dict=True,
-        # )
-
-        # cls_image_feat = F.normalize(
-        #     self.vision_proj(query_output.last_hidden_state[:, 0, :]), dim=-1
-        # )
-        
-        # image_feats = F.normalize(
-        #     self.vision_proj(query_output.last_hidden_state), dim=-1
-        # )
+        image_atts = torch.ones(
+            image_embeds.shape[:-1], dtype=torch.long, device=device
+        )
+        query_tokens = self.query_tokens.expand(batch_size, -1, -1)
+        query_output = self.Qformer.bert(
+            query_embeds=query_tokens,
+            encoder_hidden_states=image_embeds,
+            encoder_attention_mask=image_atts,
+            use_cache=True,
+            return_dict=True,
+        )
+        image_features = F.normalize(
+            self.vision_proj(query_output.last_hidden_state), dim=-1
+        )
 
         text_tokens = self.tokenizer(
             text,
@@ -526,48 +806,76 @@ class Blip2Qformer(Blip2Base):
             max_length=self.max_txt_len,
             return_tensors="pt",
         ).to(device)
-
         text_output = self.Qformer.bert(
             text_tokens.input_ids,
             attention_mask=text_tokens.attention_mask,
             return_dict=True,
         )
-        # text_feat = F.normalize(
-        #     self.text_proj(text_output.last_hidden_state[:, 0, :]), dim=-1
-        # )
-        
-        # image_patches = self.image_embed_proj_norm(self.image_embed_proj(image_embeds))
-        # txt_cls_token = self.text_cls_proj_norm(self.text_cls_proj(text_output.last_hidden_state[:, 0, :]))
-        
-        # image_patches_norm =  F.normalize(image_patches, dim=-1)
-        # txt_cls_token_norm =  F.normalize(txt_cls_token, dim=-1)
-        
-        # Hook to log gradient norms to a file
-        def log_grad_to_file(grad, filename="gradient_log.txt"):
-            with open(filename, 'a') as f:
-                f.write(f"Expert token gradient norm: {grad.norm().item()}\n")
+        text_features = F.normalize(
+            self.text_proj(text_output.last_hidden_state[:, 0]), dim=-1
+        )
 
-        # Register the hook
-        self.mhcac.expert_tokens.register_hook(lambda grad: log_grad_to_file(grad))
-        
-        ### ---- classification loss ----###
-        
-        cls_labels = samples["classification_labels"]  # Ground truth labels for abnormalities
-        classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
+        loss_itc, sim_i2t, sim_t2i, generation_mask_all = (
+            self._image_text_contrastive(
+                image_features, text_features, generation_mask
+            )
+        )
+        loss_itm = self._image_text_matching(
+            image_embeds,
+            text_tokens,
+            generation_mask,
+            generation_mask_all,
+            sim_i2t,
+            sim_t2i,
+        )
+        loss_lm = self._language_modeling(
+            text_tokens, query_tokens, query_output, generation_mask
+        )
+        self._update_itc_queue(image_features, text_features, generation_mask)
+
+        cls_labels = samples["classification_labels"]
+        student_logits, _, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
             cnn_patches=cnn_patches,
             vit_patches=vit_patches,
             swin_patches=swin_patches,
             raddino_patches=self._last_raddino_patches,
-            text_embeddings=text_output.last_hidden_state,
+            text_embeddings=None,
             labels=cls_labels,
+            sample_mask=classification_mask,
+        )
+        cls_loss = self.cls_loss_fn(
+            student_logits, cls_labels, sample_mask=classification_mask
         )
 
-        # classification_logits,vit_attention, cnn_attention = self.mhcac(cnn_patches = image_embeds, vit_patches = image_embeds_2, labels = None)  # Output from your MHCAC module
+        # The teacher may read only a valid FINDINGS target.  The image-only
+        # student remains the sole classification path exported at inference.
+        teacher_mask = classification_mask & generation_mask
+        loss_teacher_cls = student_logits.sum() * 0.0
+        loss_distill = student_logits.sum() * 0.0
+        if teacher_mask.any() and (
+            self.lambda_teacher_cls > 0 or self.lambda_distill > 0
+        ):
+            teacher_logits, _, _, _, _ = self.mhcac(
+                cnn_patches=cnn_patches,
+                vit_patches=vit_patches,
+                swin_patches=swin_patches,
+                raddino_patches=self._last_raddino_patches,
+                text_embeddings=text_output.last_hidden_state,
+                text_attention_mask=text_tokens.attention_mask,
+                # Teacher supervision is applied by ClassificationLoss below;
+                # do not duplicate the O(B^2) token contrastive calculation.
+                labels=None,
+            )
+            loss_teacher_cls = self.cls_loss_fn(
+                teacher_logits, cls_labels, sample_mask=teacher_mask
+            )
+            loss_distill = soft_target_kl_loss(
+                student_logits,
+                teacher_logits,
+                sample_mask=teacher_mask,
+                temperature=self.distill_temperature,
+            )
 
-        # Compute abnormality-specific loss
-        cls_loss = self.cls_loss_fn(classification_logits, cls_labels)
-
-        ### ---- multi-view auxiliary losses (inert while their lambdas are 0) ----###
         loss_mpc = cls_loss.new_zeros(())
         loss_view_consistency = cls_loss.new_zeros(())
         aux_mask = samples.get("aux_mask")
@@ -580,216 +888,53 @@ class Blip2Qformer(Blip2Base):
                 ]
                 if terms:
                     loss_mpc = torch.stack(terms).mean()
-
             if self.lambda_view_consistency > 0:
-                # Second MHCAC pass on the un-fused anchor. This doubles the
-                # MHCAC forward cost, which is the expensive trainable part.
                 pre = self._last_prefusion_streams
                 anchor_logits, _, _, _, _ = self.mhcac(
-                    cnn_patches=self.ln_vision(pre["biovil"][0]) if "biovil" in pre else None,
-                    vit_patches=pre["pubmedclip"][0] if "pubmedclip" in pre else None,
-                    swin_patches=pre["swin"][0] if "swin" in pre else None,
-                    raddino_patches=pre["raddino"][0] if "raddino" in pre else None,
-                    text_embeddings=text_output.last_hidden_state,
-                    labels=cls_labels,
+                    cnn_patches=(
+                        self.ln_vision(pre["biovil"][0])
+                        if "biovil" in pre
+                        else None
+                    ),
+                    vit_patches=(pre["pubmedclip"][0] if "pubmedclip" in pre else None),
+                    swin_patches=(pre["swin"][0] if "swin" in pre else None),
+                    raddino_patches=(pre["raddino"][0] if "raddino" in pre else None),
+                    text_embeddings=None,
+                    labels=None,
                 )
                 loss_view_consistency = view_consistency_loss(
-                    classification_logits, anchor_logits, aux_mask.any(dim=1)
+                    student_logits, anchor_logits, aux_mask.any(dim=1)
                 )
 
-        metrics = compute_metrics_for_tasks(classification_logits, cls_labels)
-        
-         ###============== Image-text Contrastive for Claasifcation ===================###
-        # sim_q2t = torch.matmul(
-        #     image_patches_norm.unsqueeze(1), txt_cls_token_norm.unsqueeze(-1)
-        # ).squeeze()
-
-        # # image-text similarity: aggregate across all query tokens
-        # sim_i2t, _ = sim_q2t.max(-1)
-        # sim_i2t = sim_i2t / self.temp
-
-        # # text-query similarity
-        # sim_t2q = torch.matmul(
-        #     txt_cls_token_norm.unsqueeze(1).unsqueeze(1), image_patches_norm.permute(0, 2, 1)
-        # ).squeeze()
-
-        # # text-image similarity: aggregate across all query tokens
-        # sim_t2i, _ = sim_t2q.max(-1)
-        # sim_t2i = sim_t2i / self.temp
-
-        # bs = image.size(0)
-        # targets = torch.arange(bs, dtype=torch.long).to(image.device)
-
-        # loss_itc = (
-        #                    F.cross_entropy(sim_i2t, targets, label_smoothing=0.1)
-        #                    + F.cross_entropy(sim_t2i, targets, label_smoothing=0.1)
-                #    ) / 2
-        
-        
-        ###============== Image-text Contrastive ===================###
-        
-        # # Compute the similarity between CLS image and CLS text tokens
-        # sim_q2t = torch.matmul(cls_image_feat, cls_text_feat.T)  # [batch_size, batch_size]
-
-        # # Apply temperature scaling
-        # sim_q2t = sim_q2t / self.temp
-
-        # # sim_i2t represents the similarity from image to text, sim_t2i from text to image
-        # # These matrices should be symmetrical, but we'll compute both for clarity
-        # sim_i2t = sim_q2t  # Image-to-Text similarity
-        # sim_t2i = sim_q2t.T  # Text-to-Image similarity
-
-        # # Create target indices for positive pairs
-        # bs = image.size(0)
-        # targets = torch.arange(bs, dtype=torch.long).to(image.device)
-
-        # # Calculate Image-Text Contrastive Loss (ITC)
-        # loss_itc = (
-        #     F.cross_entropy(sim_i2t, targets)  # Image-to-Text contrastive loss
-        #     + F.cross_entropy(sim_t2i, targets)  # Text-to-Image contrastive loss
-        # ) / 2
-        
-        ###============== Image-text Contrastive ===================###
-        # sim_q2t = torch.matmul(
-        #     image_feats.unsqueeze(1), text_feat.unsqueeze(-1)
-        # ).squeeze()
-
-        # # image-text similarity: aggregate across all query tokens
-        # sim_i2t, _ = sim_q2t.max(-1)
-        # sim_i2t = sim_i2t / self.temp
-
-        # # text-query similarity
-        # sim_t2q = torch.matmul(
-        #     text_feat.unsqueeze(1).unsqueeze(1), image_feats.permute(0, 2, 1)
-        # ).squeeze()
-
-        # # text-image similarity: aggregate across all query tokens
-        # sim_t2i, _ = sim_t2q.max(-1)
-        # sim_t2i = sim_t2i / self.temp
-
-        # bs = image.size(0)
-        # targets = torch.arange(bs, dtype=torch.long).to(image.device)
-
-        # loss_itc = (
-        #                    F.cross_entropy(sim_i2t, targets, label_smoothing=0.1)
-        #                    + F.cross_entropy(sim_t2i, targets, label_smoothing=0.1)
-        #            ) / 2
-        
-        ###============== Image-text Matching ===================###
-        # with torch.no_grad():
-        #     weights_t2i = F.softmax(sim_t2i, dim=1) + 1e-4
-        #     weights_t2i.fill_diagonal_(0)
-        #     weights_i2t = F.softmax(sim_i2t, dim=1) + 1e-4
-        #     weights_i2t.fill_diagonal_(0)
-
-        # # select a negative image for each text
-        # image_embeds_neg = []
-        # for b in range(bs):
-        #     clamped_weight = torch.clamp(weights_t2i[b], min=1e-6)
-        #     neg_idx = torch.multinomial(clamped_weight, 1).item()
-        #     image_embeds_neg.append(image_embeds[neg_idx])
-        # image_embeds_neg = torch.stack(image_embeds_neg, dim=0)
-
-        # # select a negative text for each image
-        # text_ids_neg = []
-        # text_atts_neg = []
-        # for b in range(bs):
-        #     clamped_weight = torch.clamp(weights_i2t[b], min=1e-6)
-        #     neg_idx = torch.multinomial(weights_i2t[b], 1).item()
-        #     text_ids_neg.append(text_tokens.input_ids[neg_idx])
-        #     text_atts_neg.append(text_tokens.attention_mask[neg_idx])
-
-        # text_ids_neg = torch.stack(text_ids_neg, dim=0)
-        # text_atts_neg = torch.stack(text_atts_neg, dim=0)
-
-        # text_ids_all = torch.cat(
-        #     [text_tokens.input_ids, text_tokens.input_ids, text_ids_neg], dim=0
-        # )  # pos, pos, neg
-        # text_atts_all = torch.cat(
-        #     [text_tokens.attention_mask, text_tokens.attention_mask, text_atts_neg],
-        #     dim=0,
-        # )
-
-        # query_tokens_itm = self.query_tokens.expand(text_ids_all.shape[0], -1, -1)
-        # query_atts_itm = torch.ones(query_tokens_itm.size()[:-1], dtype=torch.long).to(
-        #     image.device
-        # )
-        # attention_mask_all = torch.cat([query_atts_itm, text_atts_all], dim=1)
-
-        # image_embeds_all = torch.cat(
-        #     [image_embeds, image_embeds_neg, image_embeds], dim=0
-        # )  # pos, neg, pos
-        # image_atts_all = torch.ones(image_embeds_all.size()[:-1], dtype=torch.long).to(
-        #     image.device
-        # )
-
-        # output_itm = self.Qformer.bert(
-        #     text_ids_all,
-        #     query_embeds=query_tokens_itm,
-        #     attention_mask=attention_mask_all,
-        #     encoder_hidden_states=image_embeds_all,
-        #     encoder_attention_mask=image_atts_all,
-        #     return_dict=True,
-        # )
-
-        # vl_embeddings = output_itm.last_hidden_state[:, : query_tokens_itm.size(1), :]
-        # vl_output = self.itm_head(vl_embeddings)
-        # logits = vl_output.mean(dim=1)
-
-        # itm_labels = torch.cat(
-        #     [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
-        #     dim=0,
-        # ).to(image.device)
-        # loss_itm = F.cross_entropy(logits, itm_labels)
-
-        # ##================= Image Captioning ========================##
-        # decoder_input_ids = text_tokens.input_ids.clone()
-        # decoder_input_ids[:, 0] = self.tokenizer.bos_token_id
-        # labels = decoder_input_ids.masked_fill(
-        #     decoder_input_ids == self.tokenizer.pad_token_id, -100
-        # )
-
-        # query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(
-        #     image.device
-        # )
-        # attention_mask = torch.cat([query_atts, text_tokens.attention_mask], dim=1)
-        # lm_output = self.Qformer(
-        #     decoder_input_ids,
-        #     attention_mask=attention_mask,
-        #     past_key_values=query_output.past_key_values,
-        #     return_dict=True,
-        #     labels=labels,
-        # )
-
-        # loss_lm = lm_output.loss
-        # # print(self.tokenizer.decode(torch.argmax(lm_output.logits, dim=-1)[0]))
-        # loss_lm = 0.0
-        end_time = time()
-        # print(f"forward function took {end_time - start_time:.4f} seconds")
-        
-        return BlipOutput(
-            loss = cls_loss + contrastive_loss * 0.3 + orth_loss * 0.7 + sparsity_loss * 0.3
-                   + self.lambda_mpc * loss_mpc
-                   + self.lambda_view_consistency * loss_view_consistency,
-            # loss = cls_loss,
-            loss_cls=cls_loss,
-            loss_contrastive = contrastive_loss,
-            loss_orthagonal = orth_loss,
-            loss_sparsity = sparsity_loss,
-            loss_mpc = loss_mpc,
-            loss_view_consistency = loss_view_consistency,
-            average_precision = metrics['average']['precision'],
-            average_recall = metrics['average']['recall'],
-            average_accuracy = metrics['average']['accuracy'],
-            average_f1_score = metrics['average']['f1_score'],
+        total_loss = (
+            self.lambda_itc * loss_itc
+            + self.lambda_itm * loss_itm
+            + self.lambda_lm * loss_lm
+            + self.lambda_cls * cls_loss
+            + self.lambda_teacher_cls * loss_teacher_cls
+            + self.lambda_distill * loss_distill
+            + self.lambda_mhcac_contrastive * contrastive_loss
+            + self.lambda_orthogonality * orth_loss
+            + self.lambda_sparsity * sparsity_loss
+            + self.lambda_mpc * loss_mpc
+            + self.lambda_view_consistency * loss_view_consistency
         )
-        
-        # return BlipOutput(
-        #     loss=loss_itm + loss_itc*1.5 + loss_lm,
-        #     loss_itc=loss_itc*1.5,
-        #     loss_itm=loss_itm,
-        #     loss_lm=loss_lm,
-        # )
+        return BlipOutput(
+            loss=total_loss,
+            loss_itc=loss_itc,
+            loss_itm=loss_itm,
+            loss_lm=loss_lm,
+            loss_cls=cls_loss,
+            loss_teacher_cls=loss_teacher_cls,
+            loss_distill=loss_distill,
+            loss_contrastive=contrastive_loss,
+            loss_orthagonal=orth_loss,
+            loss_sparsity=sparsity_loss,
+            loss_mpc=loss_mpc,
+            loss_view_consistency=loss_view_consistency,
+            classification_logits=student_logits,
+            classification_mask=classification_mask,
+        )
 
     @torch.no_grad()
     def generate(
@@ -816,15 +961,36 @@ class Blip2Qformer(Blip2Base):
         Returns:
             captions (list): A list of strings of length batch_size * num_captions.
         """
-        image = samples["image"].cuda()
-        _, _, _, image_embeds = self._encode_image_streams(image, apply_aug=False)
+        image = samples.get("image")
+        cached = {
+            k: samples[f"{k}_feat"]
+            for k in ("biovil", "pubmedclip", "swin", "raddino")
+            if f"{k}_feat" in samples
+        }
+        aux_cached = {
+            k: samples[f"aux_{k}_feat"]
+            for k in ("biovil", "pubmedclip", "swin", "raddino")
+            if f"aux_{k}_feat" in samples
+        }
+        _, _, _, image_embeds = self._encode_image_streams(
+            image,
+            apply_aug=False,
+            cached=cached,
+            aux_image=samples.get("aux_image"),
+            aux_cached=aux_cached,
+            aux_mask=samples.get("aux_mask"),
+            anchor_view_id=samples.get("anchor_view_id"),
+            aux_view_ids=samples.get("aux_view_ids"),
+        )
+        batch_size = image_embeds.shape[0]
+        device = image_embeds.device
 
         if not use_nucleus_sampling:
             image_embeds = image_embeds.repeat_interleave(num_beams, dim=0)
         else:
             num_beams = 1
-        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(
-            image.device
+        image_atts = torch.ones(
+            image_embeds.shape[:-1], dtype=torch.long, device=device
         )
 
         model_kwargs = {
@@ -833,9 +999,9 @@ class Blip2Qformer(Blip2Base):
         }
 
         input_ids = (
-            torch.LongTensor(image.size(0), 1)
+            torch.LongTensor(batch_size, 1)
             .fill_(self.tokenizer.bos_token_id)
-            .to(image.device)
+            .to(device)
         )
         query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
 
@@ -847,6 +1013,7 @@ class Blip2Qformer(Blip2Base):
             num_beams=num_beams,
             do_sample=use_nucleus_sampling,
             top_p=top_p,
+            repetition_penalty=repetition_penalty,
             eos_token_id=self.tokenizer.sep_token_id,
             pad_token_id=self.tokenizer.pad_token_id,
             **model_kwargs
@@ -856,9 +1023,35 @@ class Blip2Qformer(Blip2Base):
 
     def forward_image(self, image, aux_image=None, aux_mask=None,
                       anchor_view_id=None, aux_view_ids=None):
+        """Return image-only classification logits and learned Q-Former tokens.
+
+        ``image`` may be a tensor (legacy API) or a complete samples dict.  The
+        dict form supports the frozen-feature cache and study auxiliary view.
+        Report text is intentionally ignored: this is the student/inference path.
+        """
+        cached = {}
+        aux_cached = {}
+        if isinstance(image, dict):
+            samples = image
+            image = samples.get("image")
+            aux_image = samples.get("aux_image", aux_image)
+            aux_mask = samples.get("aux_mask", aux_mask)
+            anchor_view_id = samples.get("anchor_view_id", anchor_view_id)
+            aux_view_ids = samples.get("aux_view_ids", aux_view_ids)
+            cached = {
+                k: samples[f"{k}_feat"]
+                for k in ("biovil", "pubmedclip", "swin", "raddino")
+                if f"{k}_feat" in samples
+            }
+            aux_cached = {
+                k: samples[f"aux_{k}_feat"]
+                for k in ("biovil", "pubmedclip", "swin", "raddino")
+                if f"aux_{k}_feat" in samples
+            }
         cnn_patches, vit_patches, swin_patches, concat_image_embeds = self._encode_image_streams(
-            image, apply_aug=False,
+            image, apply_aug=False, cached=cached,
             aux_image=aux_image, aux_mask=aux_mask,
+            aux_cached=aux_cached,
             anchor_view_id=anchor_view_id, aux_view_ids=aux_view_ids,
         )
 
@@ -871,8 +1064,10 @@ class Blip2Qformer(Blip2Base):
             labels=None,
         )
 
-        image_atts = torch.ones(concat_image_embeds.size()[:-1], dtype=torch.long).to(
-            image.device
+        image_atts = torch.ones(
+            concat_image_embeds.shape[:-1],
+            dtype=torch.long,
+            device=concat_image_embeds.device,
         )
 
         query_tokens = self.query_tokens.expand(concat_image_embeds.shape[0], -1, -1)
@@ -881,7 +1076,6 @@ class Blip2Qformer(Blip2Base):
             query_embeds=query_tokens,
             encoder_hidden_states=concat_image_embeds,
             encoder_attention_mask=image_atts,
-            output_attentions=True,
             return_dict=True,
         )
     
@@ -1124,6 +1318,26 @@ class Blip2Qformer(Blip2Base):
         loss_cfg = cfg.get("loss", {}) or {}
         lambda_mpc = float(loss_cfg.get("lambda_mpc", 0.0))
         lambda_view_consistency = float(loss_cfg.get("lambda_view_consistency", 0.0))
+        lambda_itc = float(loss_cfg.get("lambda_itc", 1.0))
+        lambda_itm = float(loss_cfg.get("lambda_itm", 1.0))
+        lambda_lm = float(loss_cfg.get("lambda_lm", 1.0))
+        lambda_cls = float(loss_cfg.get("lambda_cls", 1.0))
+        lambda_teacher_cls = float(loss_cfg.get("lambda_teacher_cls", 0.5))
+        lambda_distill = float(loss_cfg.get("lambda_distill", 0.5))
+        lambda_mhcac_contrastive = float(
+            loss_cfg.get("lambda_mhcac_contrastive", 0.1)
+        )
+        lambda_orthogonality = float(loss_cfg.get("lambda_orthogonality", 0.05))
+        lambda_sparsity = float(loss_cfg.get("lambda_sparsity", 0.01))
+        itc_queue_size = int(loss_cfg.get("itc_queue_size", 1024))
+
+        mhcac_cfg = cfg.get("mhcac", {}) or {}
+        distill_temperature = float(mhcac_cfg.get("distill_temperature", 2.0))
+        mhcac_text_dropout = float(mhcac_cfg.get("text_dropout", 0.2))
+        class_weights = mhcac_cfg.get("class_weights", None)
+        if class_weights is not None:
+            class_weights = [list(weights) for weights in class_weights]
+        cls_label_smoothing = float(mhcac_cfg.get("label_smoothing", 0.05))
 
         model = cls(
             vit_model=vit_model,
@@ -1151,6 +1365,20 @@ class Blip2Qformer(Blip2Base):
             view_fusion_cfg=view_fusion_cfg,
             lambda_mpc=lambda_mpc,
             lambda_view_consistency=lambda_view_consistency,
+            lambda_itc=lambda_itc,
+            lambda_itm=lambda_itm,
+            lambda_lm=lambda_lm,
+            lambda_cls=lambda_cls,
+            lambda_teacher_cls=lambda_teacher_cls,
+            lambda_distill=lambda_distill,
+            lambda_mhcac_contrastive=lambda_mhcac_contrastive,
+            lambda_orthogonality=lambda_orthogonality,
+            lambda_sparsity=lambda_sparsity,
+            distill_temperature=distill_temperature,
+            mhcac_text_dropout=mhcac_text_dropout,
+            class_weights=class_weights,
+            cls_label_smoothing=cls_label_smoothing,
+            itc_queue_size=itc_queue_size,
         )
         model.load_checkpoint_from_config(cfg)
 

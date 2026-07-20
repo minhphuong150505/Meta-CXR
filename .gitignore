@@ -22,6 +22,45 @@ Thumbs.db
 
 # Sensitive configuration files
 .envdata/
+configs/env_config.yaml
+.kaggle/
+**/kaggle.json
+application_default_credentials.json
+cloud/outputs/
+**/.ipynb_checkpoints/
 
 # MIMIC-CXR derived data (PhysioNet credentialed — do NOT redistribute)
 data/
+Report/
+reports/
+processed/
+train_annotation.csv
+*.jsonl
+# Executed preprocessing notebooks: their outputs carry real subject_id/study_id
+# rows, CheXpert label tables, and report snippets.
+preporcessing/preprocessing_walkthrough.ipynb
+preporcessing/kltn-data-preprocessing.ipynb
+predictions*.csv
+references*.csv
+
+# Generated training/evaluation artifacts. These may contain de-identified
+# DICOM/study identifiers or report text and belong only in private storage.
+outputs/
+pretraining/outputs/
+pretraining/cls/
+pretraining/embs/
+training/outputs/
+gradient_log*
+.sensitive_stage1_cache/
+.sensitive_predictions/
+**/.sensitive_stage1_cache/
+**/.sensitive_predictions/
+
+# Model weights and adapters are external artifacts, never Git payloads.
+checkpoints/**
+!checkpoints/.gitkeep
+*.bin
+*.ckpt
+*.pth
+*.pt
+*.safetensors

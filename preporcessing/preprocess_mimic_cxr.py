@@ -8,11 +8,12 @@ per-study report .txt tree, emits the split CSVs consumed by
 
 Only CSVs and reports are touched — images are never read.
 
-Two deliberate deviations from the notebook, both documented in
-`plan/full-dataset-preprocessing.md`:
-  * FINDINGS/IMPRESSION are extracted at study level (~227k rows) and merged onto the
-    image level (~377k rows) afterwards, instead of merging the raw report text first.
-    Identical output, several GB less peak RAM.
+Important differences from the superseded notebook:
+  * A FINDINGS-only target is parsed at study level (~227k rows) and merged onto the
+    image level afterwards. IMPRESSION is never emitted as a target. Studies without
+    usable FINDINGS remain available with ``target_valid=false``.
+  * Target-length bounds are derived only from train-study lexical-token counts;
+    invalid targets are blanked so a teacher branch cannot consume them accidentally.
   * `image_path` is written RELATIVE (`files/p1X/pXXXXXXXX/sYYYYYYY/<dicom>.jpg`) because
     `ReportDataset._row_visual` re-anchors it with `os.path.join(vis_root, rel)`.
 """
@@ -20,14 +21,27 @@ Two deliberate deviations from the notebook, both documented in
 from __future__ import annotations
 
 import argparse
-import os
-import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
+try:
+    from .mimic_report_parser import (
+        clean_report_text,
+        count_lexical_tokens,
+        extract_sections,
+        get_target_text,
+    )
+except ImportError:  # Direct execution: python preporcessing/preprocess_mimic_cxr.py
+    from mimic_report_parser import (  # type: ignore
+        clean_report_text,
+        count_lexical_tokens,
+        extract_sections,
+        get_target_text,
+    )
 
 # split.csv uses "validate"; the pipeline expects val.csv
 SPLIT_TO_FILENAME = {"train": "train", "validate": "val", "test": "test"}
@@ -46,8 +60,9 @@ def parse_args() -> argparse.Namespace:
                    help="'all' keeps every ViewPosition (NaN -> UNKNOWN); "
                         "'frontal' keeps only PA/AP")
     p.add_argument("--workers", type=int, default=16, help="threads for reading reports")
-    p.add_argument("--min-words", type=int, default=3,
-                   help="drop rows whose findings have fewer words than this")
+    p.add_argument("--min-tokens", "--min-words", dest="min_tokens", type=int, default=3,
+                   help="mask generative targets with fewer lexical tokens than this "
+                        "(--min-words is retained as a deprecated alias)")
     p.add_argument("--upper-quantile", type=float, default=0.99,
                    help="drop rows above this quantile of findings length")
     p.add_argument("--limit-studies", type=int, default=None,
@@ -61,10 +76,14 @@ def clean_chexpert(chexpert_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     chexpert_df["subject_id"] = chexpert_df["subject_id"].astype(int)
     chexpert_df["study_id"] = chexpert_df["study_id"].astype(int)
 
-    dup_count = int(chexpert_df["study_id"].duplicated().sum())
-    print(f"[chexpert] duplicated study_id: {dup_count}")
+    key_cols = ["subject_id", "study_id"]
+    dup_count = int(chexpert_df.duplicated(key_cols).sum())
+    print(f"[chexpert] duplicated (subject_id, study_id): {dup_count}")
     if dup_count:
-        chexpert_df = chexpert_df.drop_duplicates(subset=["study_id"], keep="first")
+        raise ValueError(
+            "CheXpert rows are not unique by (subject_id, study_id); refusing a "
+            "many-to-many label merge."
+        )
 
     label_cols = [c for c in chexpert_df.columns if c not in ("subject_id", "study_id")]
     print(f"[chexpert] label columns: {len(label_cols)}")
@@ -97,6 +116,13 @@ def clean_metadata(metadata_df: pd.DataFrame, views: str) -> pd.DataFrame:
     before = metadata_df.shape
     metadata_df = metadata_df.drop_duplicates().reset_index(drop=True)
     print(f"[metadata] {before} -> {metadata_df.shape} after dropping fully-identical rows")
+
+    key_cols = ["dicom_id", "subject_id", "study_id"]
+    if metadata_df.duplicated(key_cols).any():
+        raise ValueError(
+            "Metadata is not unique by (dicom_id, subject_id, study_id); refusing "
+            "a many-to-many split merge."
+        )
 
     if metadata_df["ViewPosition"].dtype == object:
         metadata_df["ViewPosition"] = metadata_df["ViewPosition"].str.strip()
@@ -131,53 +157,30 @@ def clean_split(split_df: pd.DataFrame) -> pd.DataFrame:
 
     split_df["split"] = split_df["split"].str.strip().str.lower()
 
-    leakage = int((split_df.groupby("subject_id")["split"].nunique() > 1).sum())
-    print(f"[split] subjects appearing in more than one split (expect 0): {leakage}")
-    if leakage:
-        print("[split] WARNING: patient-level leakage detected — investigate before training")
+    expected = set(SPLIT_TO_FILENAME)
+    unexpected = sorted(set(split_df["split"].dropna()) - expected)
+    if unexpected:
+        raise ValueError(f"Unexpected split values: {unexpected}")
+
+    key_cols = ["dicom_id", "subject_id", "study_id"]
+    if split_df.duplicated(key_cols).any():
+        raise ValueError(
+            "Split rows are not unique by (dicom_id, subject_id, study_id)."
+        )
+
+    subject_leakage = int((split_df.groupby("subject_id")["split"].nunique() > 1).sum())
+    study_leakage = int((split_df.groupby(["subject_id", "study_id"])["split"].nunique() > 1).sum())
+    print(f"[split] subjects appearing in more than one split (expect 0): {subject_leakage}")
+    print(f"[split] studies appearing in more than one split (expect 0): {study_leakage}")
+    if subject_leakage or study_leakage:
+        raise ValueError(
+            "Patient/study leakage detected across train/validate/test; refusing "
+            "to produce training files."
+        )
 
     print("[split] distribution:")
     print(split_df["split"].value_counts().to_string())
     return split_df
-
-
-def extract_sections(report_text: str) -> tuple[str, str]:
-    """Notebook cell 32."""
-    if not isinstance(report_text, str):
-        return "", ""
-    findings_match = re.search(r"FINDINGS:(.*?)(?=IMPRESSION:|$)", report_text,
-                              re.DOTALL | re.IGNORECASE)
-    impression_match = re.search(r"IMPRESSION:(.*?)(?=\n\n|\Z)", report_text,
-                                 re.DOTALL | re.IGNORECASE)
-    findings = findings_match.group(1).strip() if findings_match else ""
-    impression = impression_match.group(1).strip() if impression_match else ""
-    return findings, impression
-
-
-def get_target_text(report_text: str) -> tuple[str, str, str]:
-    """Notebook cell 32: FINDINGS with two fallbacks when the tag is absent."""
-    findings, impression = extract_sections(report_text)
-    if findings:
-        return findings, impression, "FINDINGS_TAG"
-    if not isinstance(report_text, str):
-        return "", impression, "EMPTY"
-    fallback = re.search(r"(?:reviewed in comparison to[^.]*\.\s*)(.*)", report_text,
-                         re.DOTALL | re.IGNORECASE)
-    if fallback:
-        return fallback.group(1).strip(), impression, "FALLBACK_COMPARISON"
-    return report_text.strip(), impression, "FALLBACK_RAW"
-
-
-def clean_report_text(text: str) -> str:
-    """Notebook cell 34."""
-    if not isinstance(text, str):
-        return ""
-    text = re.sub(r"\n+", " ", text)
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"_{2,}", "", text)
-    text = re.sub(r"\[\*\*.*?\*\*\]", "", text)
-    text = re.sub(r"\s+([.,;:])", r"\1", text)
-    return text.strip()
 
 
 def report_path(reports_root: Path, subject_id: int, study_id: int) -> Path:
@@ -218,8 +221,8 @@ def build_study_text(studies: pd.DataFrame, reports_root: Path, workers: int) ->
 
     out = pd.DataFrame(records)
     out["findings_clean"] = [clean_report_text(p[0]) for p in parsed]
-    out["impression_clean"] = [clean_report_text(p[1]) for p in parsed]
     out["extraction_method"] = [p[2] for p in parsed]
+    out["target_valid"] = out["findings_clean"].str.len().gt(0)
     del parsed
 
     print("[reports] extraction method distribution:")
@@ -235,6 +238,14 @@ def build_image_path(subject_id: int, study_id: int, dicom_id: str) -> str:
 
 def main() -> None:
     args = parse_args()
+    if args.workers < 1:
+        raise ValueError("--workers must be at least 1")
+    if args.min_tokens < 0:
+        raise ValueError("--min-tokens must be non-negative")
+    if not 0 < args.upper_quantile <= 1:
+        raise ValueError("--upper-quantile must be in (0, 1]")
+    if args.limit_studies is not None and args.limit_studies < 1:
+        raise ValueError("--limit-studies must be positive")
     raw_dir = Path(args.raw_dir)
     reports_root = Path(args.reports_root)
     out_dir = Path(args.output_dir)
@@ -261,11 +272,24 @@ def main() -> None:
     print("\n=== merge ===")
     # metadata carries many DICOM columns we do not need downstream; keep it narrow
     meta_cols = ["dicom_id", "subject_id", "study_id", "ViewPosition"]
-    merged = split_clean.merge(metadata_clean[meta_cols],
-                               on=["dicom_id", "subject_id", "study_id"], how="inner")
+    merged = split_clean.merge(
+        metadata_clean[meta_cols],
+        on=["dicom_id", "subject_id", "study_id"],
+        how="inner",
+        validate="one_to_one",
+    )
     print(f"after split+metadata: {merged.shape}")
-    merged = merged.merge(chexpert_clean[["subject_id", "study_id", "has_chexpert_label"]],
-                          on=["subject_id", "study_id"], how="inner")
+    merged = merged.merge(
+        chexpert_clean[["subject_id", "study_id", "has_chexpert_label"]],
+        on=["subject_id", "study_id"],
+        how="left",
+        validate="many_to_one",
+    )
+    missing_chexpert = int(merged["has_chexpert_label"].isna().sum())
+    if missing_chexpert:
+        print(f"[chexpert] {missing_chexpert} image rows have no CheXpert record; "
+              "kept with classification masked")
+    merged["has_chexpert_label"] = merged["has_chexpert_label"].fillna(False).astype(bool)
     print(f"after chexpert: {merged.shape}")
     print(f"unique studies: {merged['study_id'].nunique()} (paper reports 227,835)")
     del metadata_clean, split_clean, chexpert_clean
@@ -277,33 +301,57 @@ def main() -> None:
         print(f"[debug] limited to {len(studies)} studies")
     study_text = build_study_text(studies, reports_root, args.workers)
 
-    merged = merged.merge(study_text[["subject_id", "study_id", "findings_clean",
-                                      "impression_clean"]],
-                          on=["subject_id", "study_id"], how="inner")
+    merged = merged.merge(
+        study_text[["subject_id", "study_id", "findings_clean",
+                    "extraction_method", "target_valid"]],
+        on=["subject_id", "study_id"],
+        how="inner",
+        validate="many_to_one",
+    )
     print(f"after attaching report text: {merged.shape}")
     del study_text
 
-    print("\n=== length filter ===")
+    print("\n=== target length mask ===")
+    merged["findings_token_count"] = merged["findings_clean"].map(count_lexical_tokens).astype(int)
+    # Retain the old diagnostic column for downstream notebooks, but do not use
+    # its whitespace count for filtering.
     merged["findings_word_count"] = merged["findings_clean"].str.split().str.len().fillna(0).astype(int)
-    print(merged["findings_word_count"].describe().to_string())
-    before = merged.shape[0]
-    merged = merged[merged["findings_word_count"] >= args.min_words]
-    upper = merged["findings_word_count"].quantile(args.upper_quantile)
-    merged = merged[merged["findings_word_count"] <= upper].reset_index(drop=True)
-    print(f"{before} -> {merged.shape[0]} rows "
-          f"(min_words={args.min_words}, upper q{args.upper_quantile}={upper:.0f})")
+    study_targets = merged.drop_duplicates(["subject_id", "study_id"])
+    train_lengths = study_targets.loc[
+        (study_targets["split"] == "train") & study_targets["target_valid"],
+        "findings_token_count",
+    ]
+    if train_lengths.empty:
+        raise ValueError("No valid train FINDINGS targets; check report parsing and split inputs.")
+    upper = int(np.ceil(train_lengths.quantile(args.upper_quantile)))
+    too_short = merged["target_valid"] & (merged["findings_token_count"] < args.min_tokens)
+    too_long = merged["target_valid"] & (merged["findings_token_count"] > upper)
+    merged["target_filter_reason"] = np.select(
+        [~merged["target_valid"], too_short, too_long],
+        ["NO_FINDINGS", "TOO_SHORT", "TOO_LONG"],
+        default="VALID",
+    )
+    merged.loc[too_short | too_long, "target_valid"] = False
+    # An invalid target is blanked, not merely masked in metadata, so teacher
+    # branches cannot accidentally consume impression/preamble text.
+    merged.loc[~merged["target_valid"], "findings_clean"] = ""
+    print(train_lengths.describe().to_string())
+    print(f"train-derived token bounds: [{args.min_tokens}, {upper}] "
+          f"(upper q={args.upper_quantile})")
+    print(merged["target_filter_reason"].value_counts().to_string())
 
     print("\n=== image_path ===")
     merged["image_path"] = [
         build_image_path(s, st, d)
         for s, st, d in zip(merged["subject_id"], merged["study_id"], merged["dicom_id"])
     ]
-    print(f"example: {merged['image_path'].iloc[0]}")
+    print(f"generated {len(merged)} relative image paths")
 
     print("\n=== save ===")
     final_cols = ["subject_id", "study_id", "dicom_id", "split", "ViewPosition",
-                  "image_path", "findings_clean", "impression_clean",
-                  "findings_word_count", "has_chexpert_label"]
+                  "image_path", "findings_clean", "extraction_method", "target_valid",
+                  "target_filter_reason", "findings_token_count", "findings_word_count",
+                  "has_chexpert_label"]
     processed = merged[final_cols]
 
     for split_name, out_name in SPLIT_TO_FILENAME.items():
