@@ -37,22 +37,26 @@ run:
   run_name: 07_all_three
 
   lr_sched: "linear_warmup_cosine_lr"
-  init_lr_cls: 1e-4
-  init_lr_q: 1e-4
+  # Verbatim from upstream blip2_pretrain_stage1_emb.yaml. Valid only because
+  # accum_grad_iters below restores upstream's effective batch of 128.
+  init_lr_cls: 2e-4
+  init_lr_q: 2e-4
   init_lr: 1e-4
-  min_lr: 2e-6
-  warmup_lr: 1e-6
+  min_lr: 1e-5
+  warmup_lr: 5e-5
 
   weight_decay: 0.02
-  max_epoch: 15
+  max_epoch: 10
   early_stop_patience: 5
   early_stop_min_delta: 1e-4
   save_freq: 5
   batch_size_train: 4
   batch_size_eval: 4
   num_workers: 2
-  warmup_steps: 1000
-  accum_grad_iters: 4
+  # 4 samples per micro-batch x 32 = effective batch 128, as upstream.
+  # Warmup matched by sample count: upstream 4000 x 32 = 128k -> 32000 x 4.
+  warmup_steps: 32000
+  accum_grad_iters: 32
 
   max_len: 256
   min_len: 8

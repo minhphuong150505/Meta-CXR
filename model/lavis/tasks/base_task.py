@@ -5,6 +5,7 @@
  For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
 """
 
+import contextlib
 import logging
 import os
 
@@ -221,21 +222,45 @@ class BaseTask:
 
             # Skip iter if loss is NaN/Inf so corruption can't propagate through
             # accumulated grads; AMP overflow handling alone doesn't clear .grad.
-            if not torch.isfinite(loss):
+            #
+            # Finiteness is a per-rank observation, but backward() drives a
+            # collective. If one rank skipped while another did not, their
+            # all_reduces would pair up across different micro-batches and
+            # silently mix those gradients, so the ranks must agree first.
+            skip_iter = torch.tensor(
+                float(not torch.isfinite(loss)), device=loss.device
+            )
+            if is_dist_avail_and_initialized():
+                dist.all_reduce(skip_iter, op=dist.ReduceOp.MAX)
+            if skip_iter.item() > 0:
                 logging.warning(
-                    f"Non-finite loss at iter {i} (value={loss.item()}); skipping step."
+                    f"Non-finite loss at iter {i} on at least one rank "
+                    f"(local value={loss.item()}); skipping step on all ranks."
                 )
                 optimizer.zero_grad(set_to_none=True)
                 continue
 
             # after_train_step()
-            if use_amp:
-                scaler.scale(loss).backward()
-            else:
-                loss.backward()
+            # DDP all-reduces gradients on every backward(). While accumulating,
+            # only the last micro-batch of the window needs to sync -- reducing
+            # the intermediate ones just ships partial gradients that are added
+            # to again immediately. Skipping them cuts gradient traffic by
+            # accum_grad_iters, which dominates step time on the PCIe-connected
+            # 2x T4 setup (no NVLink).
+            is_sync_step = (i + 1) % accum_grad_iters == 0
+            sync_ctx = (
+                contextlib.nullcontext()
+                if is_sync_step or not hasattr(model, "no_sync")
+                else model.no_sync()
+            )
+            with sync_ctx:
+                if use_amp:
+                    scaler.scale(loss).backward()
+                else:
+                    loss.backward()
 
             # update gradients every accum_grad_iters iterations
-            if (i + 1) % accum_grad_iters == 0:
+            if is_sync_step:
                 max_norm = 1.0  # Set this value based on your needs
                 if use_amp:
                     # First unscale the gradients before clipping

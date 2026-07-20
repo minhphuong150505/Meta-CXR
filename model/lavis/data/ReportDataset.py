@@ -325,6 +325,79 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         # Optional precomputed frozen-encoder feature cache.
         self._init_feature_cache(cfg)
 
+        # Optional multi-view study grouping. When off, nothing below runs and
+        # the dataset behaves exactly as the single-view original.
+        self._init_study_index(cfg)
+
+    VIEW_ID_MAP = {"PA": 0, "AP": 1, "LATERAL": 2, "LL": 2}
+    UNKNOWN_VIEW_ID = 3
+
+    def _view_id(self, view_position):
+        if view_position is None or (isinstance(view_position, float) and np.isnan(view_position)):
+            return self.UNKNOWN_VIEW_ID
+        return self.VIEW_ID_MAP.get(str(view_position).strip().upper(), self.UNKNOWN_VIEW_ID)
+
+    def _init_study_index(self, cfg):
+        """Group rows by ``study_id`` into anchor + auxiliary views.
+
+        Every study keeps exactly one anchor row, and all sample keys that
+        existed before (``text_output``, ``image_id``, ``classification_labels``,
+        ``dicom_id``, ``image_path``, ``image``) continue to come from that
+        anchor row, so ``MIMICEvalCap`` keeps working untouched.
+
+        Degrades gracefully when the CSV has no ``ViewPosition`` column: every
+        view maps to ``unknown`` and the anchor falls back to row order.
+        """
+        self.multi_view = bool(cfg.model_cfg.get("multi_view", False))
+        self.studies = None
+        if not self.multi_view:
+            return
+
+        data_cfg = cfg.model_cfg.get("data", {}) or {}
+        self.max_aux_views = int(data_cfg.get("max_aux_views", 1))
+        anchor_priority = list(data_cfg.get("anchor_priority", ["PA", "AP", "lateral"]))
+        # Priority rank per view id; anything unlisted sorts last.
+        rank = {}
+        for i, name in enumerate(anchor_priority):
+            rank[self._view_id(name)] = i
+        default_rank = len(anchor_priority)
+
+        has_view_col = "ViewPosition" in self.annotation.columns
+        if not has_view_col:
+            print(f"[{self.cur_split}] multi_view on but CSV has no ViewPosition "
+                  f"column; all views treated as 'unknown'")
+
+        view_ids = (
+            self.annotation["ViewPosition"].map(self._view_id).tolist()
+            if has_view_col
+            else [self.UNKNOWN_VIEW_ID] * len(self.annotation)
+        )
+
+        groups = {}
+        for pos, study_id in enumerate(self.annotation["study_id"].tolist()):
+            groups.setdefault(study_id, []).append(pos)
+
+        self.studies = []
+        for study_id, positions in groups.items():
+            # Stable sort on priority keeps the first row among equals.
+            ordered = sorted(
+                positions,
+                key=lambda p: rank.get(view_ids[p], default_rank),
+            )
+            anchor = ordered[0]
+            aux = ordered[1:1 + self.max_aux_views]
+            self.studies.append({
+                "anchor": anchor,
+                "aux": aux,
+                "anchor_view_id": view_ids[anchor],
+                "aux_view_ids": [view_ids[p] for p in aux],
+            })
+
+        n_multi = sum(1 for s in self.studies if s["aux"])
+        print(f"[{self.cur_split}] multi-view: {len(self.studies)} studies from "
+              f"{len(self.annotation)} rows, {n_multi} with >=1 auxiliary view "
+              f"(max_aux_views={self.max_aux_views})")
+
     def _init_feature_cache(self, cfg):
         """Open per-encoder feature memmaps if ``run.feature_cache_dir`` is set.
 
@@ -411,25 +484,42 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         return Image.fromarray(image).convert("L")
 
 
-    def __getitem__(self, index):
-        start_time = time()
-        subset_size = len(self.annotation) // self.custom_epochs_per_epoch
-        start_index = self.current_custom_epoch * subset_size
-        actual_index = start_index + index
-
-        ann = self.annotation.iloc[actual_index]
-
+    def _row_visual(self, ann):
+        """Visual input for one CSV row: decoded image, or cached raw features."""
         # CSV stores absolute Kaggle path (e.g. /kaggle/input/datasets/<slug>/mimic-cxr-jpg-lite/p10/...).
         # Re-anchor to the current vis_root so the same code runs locally and on Kaggle.
         raw = ann["image_path"].replace("\\", "/")
         marker = "/mimic-cxr-jpg-lite/"
         rel = raw.split(marker, 1)[-1] if marker in raw else raw.lstrip("/")
         image_path = os.path.join(self.vis_root, rel)
-        dicom_id = ann["dicom_id"]
+
+        out = {"image_path": str(image_path)}
         if self.feature_cache is None:
-            image = self.load_image(Path(image_path))
-            image = self.general_trans(image)
-        
+            out["image"] = self.general_trans(self.load_image(Path(image_path)))
+        else:
+            for enc, store in self.feature_cache.items():
+                row = store["row"][ann["dicom_id"]]
+                out[f"{enc}_feat"] = torch.from_numpy(
+                    np.ascontiguousarray(store["feats"][row])
+                ).float()
+        return out
+
+    def __getitem__(self, index):
+        start_time = time()
+        if self.multi_view:
+            subset_size = len(self.studies) // self.custom_epochs_per_epoch
+            study = self.studies[self.current_custom_epoch * subset_size + index]
+            ann = self.annotation.iloc[study["anchor"]]
+        else:
+            study = None
+            subset_size = len(self.annotation) // self.custom_epochs_per_epoch
+            start_index = self.current_custom_epoch * subset_size
+            actual_index = start_index + index
+            ann = self.annotation.iloc[actual_index]
+
+        anchor_visual = self._row_visual(ann)
+        image_path = anchor_visual.pop("image_path")
+
         # if self.cur_split == 'train':
         #     if self.vit_model == "biovil":  # old version worked with smaller img and without biovil img processing
         #         image_biovil = self.vis_transforms(image)
@@ -487,18 +577,73 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             "dicom_id": ann["dicom_id"],
             "image_path": str(image_path)
         }
-        if self.feature_cache is None:
-            sample["image"] = image
-        else:
-            for enc, store in self.feature_cache.items():
-                row = store["row"][dicom_id]
-                sample[f"{enc}_feat"] = torch.from_numpy(
-                    np.ascontiguousarray(store["feats"][row])
-                ).float()
+        sample.update(anchor_visual)  # "image", or the cached "<enc>_feat" tensors
+
+        if study is not None:
+            aux_visuals = [
+                self._row_visual(self.annotation.iloc[p]) for p in study["aux"]
+            ]
+            sample["anchor_view_id"] = study["anchor_view_id"]
+            sample["aux_view_ids"] = list(study["aux_view_ids"])
+            if self.feature_cache is None:
+                sample["aux_image"] = [a["image"] for a in aux_visuals]
+            else:
+                for enc in self.feature_cache:
+                    sample[f"aux_{enc}_feat"] = [a[f"{enc}_feat"] for a in aux_visuals]
         return sample
 
     def __len__(self):
+        if self.multi_view:
+            return len(self.studies) // self.custom_epochs_per_epoch
         return len(self.annotation) // self.custom_epochs_per_epoch
+
+    def collater(self, samples):
+        """Pad ragged auxiliary-view counts to the batch's N_max.
+
+        Pre-existing keys are delegated to the default collate untouched, so a
+        ``multi_view=False`` batch is byte-identical to the original.
+        """
+        if not self.multi_view:
+            return super().collater(samples)
+
+        aux_keys = [
+            k for k in samples[0]
+            if k == "aux_image" or (k.startswith("aux_") and k.endswith("_feat"))
+        ]
+        skip = set(aux_keys) | {"aux_view_ids"}
+        batch = super().collater(
+            [{k: v for k, v in s.items() if k not in skip} for s in samples]
+        )
+
+        B = len(samples)
+        n_max = max(len(s["aux_view_ids"]) for s in samples)
+        aux_mask = torch.zeros(B, n_max, dtype=torch.bool)
+        aux_view_ids = torch.full(
+            (B, n_max), self.UNKNOWN_VIEW_ID, dtype=torch.long
+        )
+        for i, s in enumerate(samples):
+            n = len(s["aux_view_ids"])
+            if n:
+                aux_mask[i, :n] = True
+                aux_view_ids[i, :n] = torch.tensor(s["aux_view_ids"], dtype=torch.long)
+        batch["aux_mask"] = aux_mask
+        batch["aux_view_ids"] = aux_view_ids
+
+        for key in aux_keys:
+            anchor_key = "image" if key == "aux_image" else key[len("aux_"):]
+            template = samples[0][anchor_key]
+            if n_max == 0:
+                batch[key] = torch.zeros(
+                    (B, 0) + tuple(template.shape), dtype=template.dtype
+                )
+                continue
+            rows = []
+            for s in samples:
+                items = list(s[key])
+                items += [torch.zeros_like(s[anchor_key])] * (n_max - len(items))
+                rows.append(torch.stack(items, dim=0))
+            batch[key] = torch.stack(rows, dim=0)
+        return batch
 
 
 @registry.register_builder("mimic_cxr")

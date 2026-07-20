@@ -28,6 +28,25 @@ model:
   mhcac:
     threshold_path: "threshold.json"
 
+  # Multi-view: false reproduces the single-view baseline exactly. At true the
+  # fusion modules are zero-init identities, so step 0 is still identical.
+  multi_view: false
+  view_fusion:
+    num_heads: 8
+    ffn_ratio: 4
+    num_blocks: 1
+    num_view_types: 4
+    dropout: 0.1
+    p_view_drop: 0.2
+  loss:
+    lambda_mpc: 0.0
+    lambda_view_consistency: 0.0
+  # Study-grouping options live under model: because Config only merges the
+  # run / model / datasets blocks -- a top-level data: block would be dropped.
+  data:
+    anchor_priority: [PA, AP, lateral]
+    max_aux_views: 1
+
 datasets:
   mimic_cxr:
     vis_processor:
@@ -52,23 +71,32 @@ run:
   run_name: 07_all_three
 
   lr_sched: "linear_warmup_cosine_lr"
-  init_lr_cls: 1e-4
-  init_lr_q: 1e-4
+  # Verbatim from upstream blip2_pretrain_stage1_emb.yaml (DasithEdirisinghe/META-CXR).
+  # These are only valid because accum_grad_iters below restores the effective
+  # batch of 128 that upstream trained at -- do not change one without the other.
+  # Note the classifier and Q-Former run at 2x the backbone LR, by design.
+  init_lr_cls: 2e-4
+  init_lr_q: 2e-4
   init_lr: 1e-4
-  min_lr: 2e-6
-  warmup_lr: 1e-6
+  min_lr: 1e-5
+  warmup_lr: 5e-5
 
   weight_decay: 0.02
-  max_epoch: 15
+  max_epoch: 10
   early_stop_patience: 5
   early_stop_min_delta: 1e-4
   save_freq: 5
-  # 2/GPU x 2 GPUs x accum_grad_iters=4 = effective batch 16, matching meta-cxr-l4.
+  # 2/GPU x 2 GPUs x accum_grad_iters=32 = effective batch 128, matching upstream.
+  # Upstream reached 128 as 32 x accum 4 on one GPU; a T4 16GB cannot hold 32 at
+  # 448px, so the same total is reassembled from a smaller per-GPU batch.
   batch_size_train: 2
   batch_size_eval: 4
   num_workers: 4
-  warmup_steps: 1000
-  accum_grad_iters: 4
+  # Upstream warms up over 4000 micro-batches of 32 = 128k samples. One
+  # micro-batch here is 4 samples, so the same sample count is 32000 steps.
+  # Must stay below iters_per_epoch (see "iters per inner epoch" in the log).
+  warmup_steps: 32000
+  accum_grad_iters: 32
 
   max_len: 256
   min_len: 8

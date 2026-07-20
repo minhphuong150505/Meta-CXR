@@ -454,6 +454,31 @@ class RunnerBase:
         self.result_dir = result_dir
         self.output_dir = output_dir
 
+    def _reduce_eval_stats(self, eval_stats):
+        """Average eval stats across DDP ranks.
+
+        Each rank evaluates only its own shard of the split, so the loss it
+        computes is rank-local. Checkpoint selection and early stopping both
+        branch on that value, so without this reduction the ranks can disagree
+        on when to stop -- one breaks out of the training loop while the others
+        block forever on the next collective.
+
+        DistributedSampler pads every rank to the same length, so a plain mean
+        is the correct aggregate.
+        """
+        if not (self.use_distributed and dist.is_available() and dist.is_initialized()):
+            return eval_stats
+
+        # Sorted keys so every rank packs the tensor in the same order.
+        keys = sorted(eval_stats.keys())
+        values = torch.tensor(
+            [eval_stats[k] for k in keys], dtype=torch.float64, device=self.device
+        )
+        dist.all_reduce(values, op=dist.ReduceOp.SUM)
+        values /= get_world_size()
+
+        return dict(zip(keys, (float(v) for v in values.tolist())))
+
     def validate(self, cur_epoch, best_agg_metric, best_epoch, wandb_run):
         eval_splits = []
         for split_name in list(self.valid_splits) + list(self.test_splits):
@@ -527,6 +552,10 @@ class RunnerBase:
                         eval_stats = {k: float(v) for k, v in loss.items()}
                     else:
                         eval_stats = {"loss": float(loss)}
+
+                    # Must run on every rank before the value drives checkpoint
+                    # selection and early stopping below.
+                    eval_stats = self._reduce_eval_stats(eval_stats)
 
                     self.log_stats(eval_stats, split_name)
 
@@ -905,7 +934,15 @@ class RunnerBase:
             # Unfreeze MHCAC module
             for param in self.model.mhcac.parameters():
                 param.requires_grad = True
-            
+
+            # The multi-view fusion modules are new trainable params and would
+            # otherwise stay frozen by the blanket freeze above.
+            view_fusion = getattr(self.unwrap_dist_model(self.model), "view_fusion", None)
+            if view_fusion is not None:
+                print("Unfreezing view_fusion parameters.")
+                for param in view_fusion.parameters():
+                    param.requires_grad = True
+
             # for param in self.model.image_embed_proj.parameters():
             #     param.requires_grad = True
             
