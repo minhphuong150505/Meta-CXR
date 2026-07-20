@@ -222,9 +222,13 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         """
         super().__init__(vis_processor, text_processor, vis_root, ann_paths)
 
-        # Preprocessed CSVs already contain: dicom_id, subject_id, study_id,
-        # image_path, findings_clean, impression_clean, findings_len, split.
-        # Splits are pre-filtered to PA/AP views with cleaned findings.
+        # Preprocessed CSVs already contain: subject_id, study_id, dicom_id, split,
+        # ViewPosition, image_path, findings_clean, impression_clean,
+        # findings_word_count, has_chexpert_label.
+        # Produced by preporcessing/preprocess_mimic_cxr.py over the full p10-p19 set.
+        # NOTE: as of 2026-07-20 the splits are NOT view-filtered — they keep every
+        # ViewPosition (AP/PA/LATERAL/LL/UNKNOWN) so multi-view fusion can use them.
+        # Filter on ViewPosition here if a run needs frontal-only.
         self.cur_split = split
         csv_map = {
             "train": PROCESSED_TRAIN_CSV,

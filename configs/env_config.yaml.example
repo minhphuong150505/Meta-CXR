@@ -1,20 +1,46 @@
 # Copy this file to configs/env_config.yaml and fill in your own paths.
+#
+# Layout assumption: `data_root` mirrors the GCS bucket
+# gs://mimic-cxr-jpg-dataset-phuongnm, i.e. it directly contains:
+#
+#   data_root/
+#   ├── files/p1X/pXXXXXXXX/sYYYYYYY/<dicom>.jpg    <- images (571 GiB full set)
+#   ├── mimic-cxr-2.0.0-{split,chexpert,metadata}.csv.gz
+#   ├── mimic-cxr-reports/files/p1X/pXXXXXXXX/sYYYYYYY.txt
+#   └── processed/full_allviews/{train,val,test}.csv
+#
+# This matters: `image_path` in the processed CSVs is RELATIVE ("files/p1X/...")
+# and ReportDataset._row_visual joins it onto mimic_cxr_jpg_root. If you mount or
+# copy only part of the bucket, keep the `files/` prefix intact or every image
+# lookup will miss.
 
 paths:
-  data_root: "/your/local/path/to/data"
-  mimic_cxr_jpg_root: "${paths.data_root}/mimic-cxr-jpg/2.1.0"
-  split_csv: "${paths.mimic_cxr_jpg_root}/mimic-cxr-2.0.0-split.csv"
-  reports_csv: "${paths.data_root}/mimic-cxr/report_processed/mimic_cxr_cleaned.csv"
-  chexpert_csv: "${paths.data_root}/data/data_files/mimic-cxr-2.0.0-chexpert.csv"
-  metadata_csv: "${paths.data_root}/data/data_files/mimic-cxr-2.0.0-metadata.csv"
-  processed_dir: "${paths.data_root}/mimic-cxr-p10-processed"
+  # The only line most machines need to change.
+  data_root: "/your/local/mirror/of/mimic-cxr-jpg-dataset-phuongnm"
+
+  mimic_cxr_jpg_root: "${paths.data_root}"
+
+  # pandas reads .csv.gz directly — no need to decompress these.
+  split_csv:    "${paths.data_root}/mimic-cxr-2.0.0-split.csv.gz"
+  chexpert_csv: "${paths.data_root}/mimic-cxr-2.0.0-chexpert.csv.gz"
+  metadata_csv: "${paths.data_root}/mimic-cxr-2.0.0-metadata.csv.gz"
+  reports_csv:  "${paths.data_root}/mimic_cxr_cleaned.csv"
+
+  # Output of preporcessing/preprocess_mimic_cxr.py, mirrored from
+  # gs://mimic-cxr-jpg-dataset-phuongnm/processed/full_allviews/
+  # Point at processed/full_frontal/ instead if you regenerate with --views frontal.
+  processed_dir:       "${paths.data_root}/processed/full_allviews"
   processed_train_csv: "${paths.processed_dir}/train.csv"
   processed_val_csv:   "${paths.processed_dir}/val.csv"
   processed_test_csv:  "${paths.processed_dir}/test.csv"
+
   output_dir: "/your/output/dir"
   checkpoint_dir: "/your/checkpoint/dir"
-  gcs_bucket: "gs://mimic-cxr-jpg-lite"
-  gcs_project: "mimic-cxr-jpg-491409"
+
+  # NOTE: gs://meta-cxr-checkpoint was deleted. Create a new bucket and put its
+  # name here before starting any run that saves checkpoints.
+  gcs_bucket:  "gs://your-checkpoint-bucket"
+  gcs_project: "inner-cinema-500306-t3"
 
 wandb:
   entity: ""        # your wandb entity/username
