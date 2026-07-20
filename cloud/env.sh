@@ -7,9 +7,18 @@ export GCP_ZONE="${GCP_ZONE:-us-central1-a}"
 export GCP_REGION="${GCP_REGION:-us-central1}"
 export VM_INSTANCE="${VM_INSTANCE:-}"
 
-# Bucket names do not include gs://. Both buckets must have uniform access and
-# public-access prevention enabled.
-export GCS_DATA_BUCKET="${GCS_DATA_BUCKET:-mimic-cxr-jpg-dataset-phuongnm}"
+# Bucket names do not include gs://. Both buckets must have uniform bucket-level
+# access AND public-access prevention enforced -- require_private_bucket rejects
+# them otherwise. This repository is public, so the real names stay out of it:
+# export them from an untracked local wrapper, e.g.
+#
+#   # cloud/env.local.sh  (git-ignored)
+#   export GCP_PROJECT=...
+#   export GCS_DATA_BUCKET=...    # holds MIMIC-CXR, PhysioNet credentialed access
+#   export GCS_BUCKET=...         # checkpoints and logs
+#
+# then `source cloud/env.local.sh` before running the launchers.
+export GCS_DATA_BUCKET="${GCS_DATA_BUCKET:-}"
 export GCS_BUCKET="${GCS_BUCKET:-}"
 
 export STAGE1_CONFIG="${STAGE1_CONFIG:-pretraining/configs/mimic_cxr_full_l4.yaml}"
