@@ -160,7 +160,9 @@ class RunnerBase:
                 if self._wrapped_model is None:
                     self._wrapped_model = DDP(
                         self._model, device_ids=[self.config.run_cfg.gpu],
-                        find_unused_parameters=True
+                        find_unused_parameters=bool(
+                            self.config.run_cfg.get("find_unused_parameters", False)
+                        ),
                     )
             else:
                 self._wrapped_model = self._model
@@ -172,37 +174,52 @@ class RunnerBase:
         # TODO make optimizer class and configurations
         if self._optimizer is None:
             num_parameters = 0
-            p_wd, p_non_wd, p_cls_wd = [], [], []
+            grouped_params = {
+                "classifier_decay": [],
+                "classifier_no_decay": [],
+                "qformer_decay": [],
+                "qformer_no_decay": [],
+            }
             for n, p in self.model.named_parameters():
                 if not p.requires_grad:
                     continue  # frozen weights
-                if p.ndim < 2 or "bias" in n or "ln" in n or "bn" in n:
-                    p_non_wd.append(p)
-                elif 'mhcac' in n or 'aggregator' in n or 'cls_loss_fn' in n:
-                    print(f"name of the params {n}")
-                    p_cls_wd.append(p)
-                else:
-                    p_wd.append(p)
+                is_classifier = any(
+                    token in n
+                    for token in ("mhcac", "aggregator", "cls_loss_fn")
+                )
+                no_decay = p.ndim < 2 or n.endswith(".bias") or any(
+                    token in n.lower() for token in ("layernorm", "layer_norm", ".ln", ".bn")
+                )
+                prefix = "classifier" if is_classifier else "qformer"
+                suffix = "no_decay" if no_decay else "decay"
+                grouped_params[f"{prefix}_{suffix}"].append(p)
                 num_parameters += p.data.nelement()
             logging.info("number of trainable parameters: %d" % num_parameters)
-            optim_params = [
-                {
-                    "params": p_cls_wd,
-                    "weight_decay": float(self.config.run_cfg.weight_decay),
-                    "lr": float(self.config.run_cfg.init_lr_cls)
-                },
-                {
-                    "params": p_wd,
-                    "weight_decay": float(self.config.run_cfg.weight_decay),
-                    "lr": float(self.config.run_cfg.init_lr_q)
-                },
-                {"params": p_non_wd, "weight_decay": 0},
-            ]
+            base_lr = float(self.config.run_cfg.init_lr)
+            if base_lr <= 0:
+                raise ValueError("run.init_lr must be positive")
+            cls_lr = float(self.config.run_cfg.get("init_lr_cls", base_lr))
+            qformer_lr = float(self.config.run_cfg.get("init_lr_q", base_lr))
+            weight_decay = float(self.config.run_cfg.weight_decay)
+            optim_params = []
+            for name, params in grouped_params.items():
+                if not params:
+                    continue
+                group_lr = cls_lr if name.startswith("classifier") else qformer_lr
+                optim_params.append(
+                    {
+                        "name": name,
+                        "params": params,
+                        "weight_decay": 0.0 if name.endswith("no_decay") else weight_decay,
+                        "lr": group_lr,
+                        "lr_scale": group_lr / base_lr,
+                    }
+                )
             beta2 = self.config.run_cfg.get("beta2", 0.999)
             self._optimizer = torch.optim.AdamW(
                 optim_params,
-                lr=float(self.config.run_cfg.init_lr_q),
-                weight_decay=float(self.config.run_cfg.weight_decay),
+                lr=base_lr,
+                weight_decay=weight_decay,
                 betas=(0.9, beta2),
             )
 
@@ -214,7 +231,10 @@ class RunnerBase:
 
         if amp:
             if self._scaler is None:
-                self._scaler = torch.amp.GradScaler(device="cuda")
+                try:
+                    self._scaler = torch.amp.GradScaler("cuda")
+                except (AttributeError, TypeError):
+                    self._scaler = torch.cuda.amp.GradScaler()
 
         return self._scaler
 
@@ -417,7 +437,11 @@ class RunnerBase:
 
     @property
     def save_freq(self):
-        return self.config.run_cfg.get("save_freq", 1)
+        return int(self.config.run_cfg.get("save_freq", 1))
+
+    @property
+    def max_grad_norm(self):
+        return float(self.config.run_cfg.get("max_grad_norm", 1.0))
 
     @property
     def early_stop_patience(self):
@@ -428,6 +452,25 @@ class RunnerBase:
         return float(self.config.run_cfg.get("early_stop_min_delta", 0.0))
 
     @property
+    def selection_metric(self):
+        return str(self.config.run_cfg.get("selection_metric", "loss"))
+
+    @property
+    def selection_mode(self):
+        configured = self.config.run_cfg.get("selection_mode", None)
+        if configured is None:
+            configured = "min" if "loss" in self.selection_metric else "max"
+        configured = str(configured).lower()
+        if configured not in {"min", "max"}:
+            raise ValueError("run.selection_mode must be either 'min' or 'max'")
+        return configured
+
+    def _metric_improved(self, value, best):
+        if self.selection_mode == "min":
+            return value < best - self.early_stop_min_delta
+        return value > best + self.early_stop_min_delta
+
+    @property
     def train_loader(self):
         train_dataloader = self.dataloaders["train"]
 
@@ -436,7 +479,7 @@ class RunnerBase:
     def setup_output_dir(self):
         base_dir = Path(self.config.run_cfg.get("output_dir", "pretraining/outputs"))
 
-        output_dir = base_dir / self.run_name
+        output_dir = base_dir if base_dir.name == self.run_name else base_dir / self.run_name
         if os.path.exists(output_dir) and not self.evaluate_only:
             output_dir = base_dir / "{}_{}".format(
                 self.run_name, datetime.datetime.now().strftime("%m%d_%H%M%S")
@@ -480,8 +523,11 @@ class RunnerBase:
         return dict(zip(keys, (float(v) for v in values.tolist())))
 
     def validate(self, cur_epoch, best_agg_metric, best_epoch, wandb_run):
+        # The test set is held out until training and checkpoint selection are
+        # complete.  Evaluate-only runs may explicitly request test splits.
+        requested_splits = self.test_splits if self.evaluate_only else self.valid_splits
         eval_splits = []
-        for split_name in list(self.valid_splits) + list(self.test_splits):
+        for split_name in requested_splits:
             if split_name not in eval_splits:
                 eval_splits.append(split_name)
 
@@ -492,7 +538,9 @@ class RunnerBase:
                 val_log, results, gts, loss = self.eval_epoch(
                     split_name=split_name, cur_epoch=cur_epoch
                 )
-                if self.evaluate_only:
+                if self.evaluate_only and self.config.run_cfg.get(
+                    "save_text_predictions", False
+                ):
                     # save free-text predictions and corresponding gt
                     # create folder
                     if not os.path.exists(self.output_dir / "predictions"):
@@ -516,7 +564,7 @@ class RunnerBase:
 
                         agg_metrics = val_log["agg_metrics"]
                         if not self.evaluate_only and split_name == "val": #dont save for train_val
-                            if agg_metrics > best_agg_metric:
+                            if self._metric_improved(agg_metrics, best_agg_metric):
                                 best_epoch, best_agg_metric = cur_epoch, agg_metrics
                                 self._save_checkpoint(cur_epoch, is_best=True,
                                                       best_agg_metric=best_agg_metric,
@@ -526,26 +574,9 @@ class RunnerBase:
                         val_log.update({"best_epoch": best_epoch})
                         self.log_stats(val_log, split_name)
 
-                        data = []
-                        for i in range(min(len(results), 5)):
-                            data.append([str(cur_epoch), results[i]["caption"], gts[results[i]["image_id"]]])
-                        html = '<table border="1" cellpadding="5" cellspacing="0">'
-                        html += "<tr>"
-                        for col in ["Epoch", "Predicted", "GT"]:
-                            html += f"<th>{col}</th>"
-                        html += "</tr>"
-
-                        for row in data:
-                            html += "<tr>"
-                            for cell in row:
-                                html += f"<td>{cell}</td>"
-                            html += "</tr>"
-                        html += "</table>"
-
-                        try:
-                            wandb_run.log({f"text_predictions_{split_name}": wandb.Html(html)})
-                        except Exception as e:
-                            pass
+                        # Never send MIMIC report text or predictions to W&B.
+                        # Numeric metrics are logged below; text artifacts stay
+                        # within explicitly configured private storage.
 
                 if loss is not None:
                     if isinstance(loss, dict):
@@ -559,34 +590,58 @@ class RunnerBase:
 
                     self.log_stats(eval_stats, split_name)
 
-                    loss_value = eval_stats.get("loss")
+                    selection_value = eval_stats.get(self.selection_metric)
                     if not self.evaluate_only:
                         if (
-                            loss_value is not None
-                            and loss_value < best_agg_metric - self.early_stop_min_delta
+                            selection_value is not None
+                            and self._metric_improved(selection_value, best_agg_metric)
                             and split_name == "val"
                         ):
-                            best_epoch, best_agg_metric = cur_epoch, loss_value
+                            best_epoch, best_agg_metric = cur_epoch, selection_value
                             self._save_checkpoint(cur_epoch, is_best=True,
                                                   best_agg_metric=best_agg_metric,
                                                   best_epoch=best_epoch)
-                            logging.info("Saving best model at epoch {} (val loss {:.4f})".format(cur_epoch, loss_value))
+                            logging.info(
+                                "Saving best model at epoch %d (val %s %.6f)",
+                                cur_epoch,
+                                self.selection_metric,
+                                selection_value,
+                            )
+                        elif selection_value is None and split_name == "val":
+                            raise KeyError(
+                                f"selection metric '{self.selection_metric}' is absent; "
+                                f"available metrics: {sorted(eval_stats)}"
+                            )
 
         # Always save `checkpoint_last.pth` at end of every epoch (resume anchor).
         if not self.evaluate_only:
             self._save_checkpoint(cur_epoch, is_best=False, is_last=True,
                                   best_agg_metric=best_agg_metric,
                                   best_epoch=best_epoch)
+            if self.save_freq > 0 and (cur_epoch + 1) % self.save_freq == 0:
+                self._save_checkpoint(cur_epoch, is_best=False,
+                                      best_agg_metric=best_agg_metric,
+                                      best_epoch=best_epoch)
 
         return best_agg_metric, best_epoch
 
     def train(self, wandb_run):
         start_time = time.time()
-        # Lower-is-better for loss-based selection; higher-is-better paths overwrite anyway.
-        best_agg_metric = float("inf")
+        best_agg_metric = (
+            float("inf") if self.selection_mode == "min" else float("-inf")
+        )
         best_epoch = 0
 
         self.log_config()
+
+        if self.evaluate_only:
+            self.validate(
+                cur_epoch="provided",
+                best_agg_metric=best_agg_metric,
+                best_epoch=0,
+                wandb_run=wandb_run,
+            )
+            return
 
         # resume from checkpoint if specified
         if not self.evaluate_only and self.resume_ckpt_path is not None:
@@ -626,9 +681,10 @@ class RunnerBase:
                     and cur_epoch - best_epoch >= self.early_stop_patience
                 ):
                     logging.info(
-                        "Early stopping at epoch %d: best val loss %.6f at epoch %d, "
+                        "Early stopping at epoch %d: best val %s %.6f at epoch %d, "
                         "patience=%d, min_delta=%g.",
                         cur_epoch,
+                        self.selection_metric,
                         best_agg_metric,
                         best_epoch,
                         self.early_stop_patience,
@@ -639,7 +695,7 @@ class RunnerBase:
                             {
                                 "early_stop/epoch": cur_epoch,
                                 "early_stop/best_epoch": best_epoch,
-                                "early_stop/best_val_loss": best_agg_metric,
+                                f"early_stop/best_val_{self.selection_metric}": best_agg_metric,
                             }
                         )
                     except Exception:
@@ -660,6 +716,24 @@ class RunnerBase:
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         logging.info("Training time {}".format(total_time_str))
+
+        # Run the held-out test split exactly once using the selected validation
+        # checkpoint.  This avoids tuning epochs, thresholds, or hyperparameters
+        # on test performance.
+        if not self.evaluate_only and self.test_splits:
+            best_path = self.output_dir / "checkpoint_best.pth"
+            if best_path.exists():
+                for split_name in self.test_splits:
+                    logging.info("Final evaluation on held-out %s split.", split_name)
+                    _, _, _, test_stats = self.eval_epoch(
+                        split_name=split_name, cur_epoch="best"
+                    )
+                    if test_stats is not None:
+                        self.log_stats(test_stats, f"final_{split_name}")
+            else:
+                logging.warning(
+                    "No checkpoint_best.pth exists; skipping final held-out test evaluation."
+                )
 
 
     def evaluate(self, cur_epoch="best", skip_reload=False):
@@ -687,6 +761,7 @@ class RunnerBase:
             cuda_enabled=self.cuda_enabled,
             log_freq=self.log_freq,
             accum_grad_iters=self.accum_grad_iters,
+            max_grad_norm=self.max_grad_norm,
         )
 
     @torch.no_grad()
@@ -705,7 +780,7 @@ class RunnerBase:
         assert data_loader, "data_loader for split {} is None.".format(split_name)
 
         model = self.unwrap_dist_model(self.model)
-        if not skip_reload and cur_epoch == "best" or self.evaluate_only:
+        if (not skip_reload and cur_epoch == "best"):
             model = self._reload_best_model(model)
         model.eval()
 

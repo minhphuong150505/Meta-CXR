@@ -1,3 +1,8 @@
+> **KHÔNG publish feature cache.** Các đoạn bên dưới hướng dẫn đưa `<cache_dir>`
+> lên Kaggle Dataset — đừng làm. Feature là dẫn xuất trực tiếp từ ảnh MIMIC-CXR và
+> PhysioNet DUA cấm phân phối lại; cache chỉ được đặt ở đĩa cục bộ của VM hoặc
+> bucket GCS riêng tư. Phần lập luận về chi phí và cách precompute vẫn đúng.
+
 # Frozen-Encoder Feature Cache
 
 All vision encoders (BioViL, Swin, rad-dino) are **frozen** and the training

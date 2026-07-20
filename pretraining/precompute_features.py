@@ -1,6 +1,6 @@
 """Precompute frozen vision-encoder features for the MIMIC-CXR pretraining set.
 
-All vision encoders (BioViL, Swin, rad-dino) are frozen and run in eval mode,
+All vision encoders (BioViL, PubMedCLIP, Swin, rad-dino) are frozen and run in eval mode,
 and the training transform is fully deterministic (no augmentation), so the raw
 output of each frozen encoder is identical for a given image across every epoch.
 This script runs each enabled encoder once over the dataset and writes the raw
@@ -12,21 +12,26 @@ Caches are written per encoder so any encoder-toggle combination can reuse them:
 
     <output_dir>/biovil/<split>_feats.npy   (memmap, (N, P, D) float16)
     <output_dir>/biovil/<split>_ids.json    (list[str] dicom_id, row order)
+    <output_dir>/pubmedclip/...             (raw ViT patches, P x 768)
     <output_dir>/swin/...
     <output_dir>/raddino/...
 
-Run single-process (no DDP). Example::
+Run single-process (no DDP) on a private GCP VM. Example::
 
     python -m pretraining.precompute_features \
-        --cfg-path pretraining/configs/mimic_cxr_2gpu.yaml \
-        --output-dir /kaggle/temp/feat_cache \
+        --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml \
+        --output-dir /mnt/private-feature-cache \
         --splits train val \
-        --batch-size 32 \
-        --options model.encoders.biovil=true model.encoders.swin=true \
+        --batch-size 8 \
+        --options model.encoders.biovil=true model.encoders.pubmedclip=true \
+                  model.encoders.swin=true \
                   model.encoders.raddino=true run.distributed=false run.world_size=1
 
-Then publish ``<output_dir>`` as a Kaggle Dataset and attach it for training,
-passing ``run.feature_cache_dir=/kaggle/input/<your-cache-slug>``.
+Keep ``<output_dir>`` only on an access-controlled local disk or private GCS/GCP
+volume, then pass its mounted local path as ``run.feature_cache_dir``. Feature IDs
+are derived from credentialed MIMIC-CXR and must not be published. Because cache
+features are deterministic, disable training image augmentation when consuming a
+cache; ``ReportDataset`` rejects that incompatible combination explicitly.
 """
 
 import argparse
@@ -43,6 +48,7 @@ from model.lavis.common.config import Config
 from model.lavis.data.ReportDataset import MIMIC_CXR_Dataset
 from model.lavis.datasets.builders import *  # noqa: F401,F403  (registers builders/models)
 from local_config import VIS_ROOT
+from omegaconf import OmegaConf
 
 
 def parse_args():
@@ -72,6 +78,8 @@ def extract_raw_features(model, image, enabled):
         out["biovil"] = model.visual_encoder(image).projected_patch_embeddings.reshape(
             image.shape[0], -1, 1408
         )
+    if enabled.get("pubmedclip"):
+        out["pubmedclip"] = model.pubmedclip(image, apply_aug=False)[0]
     if enabled.get("swin"):
         out["swin"] = model.swin(image)
     if enabled.get("raddino"):
@@ -118,19 +126,41 @@ def precompute_split(model, dataset, split, output_dir, enabled, batch_size, num
 
 def main():
     args = parse_args()
+    if str(args.output_dir).startswith("gs://"):
+        raise ValueError(
+            "--output-dir must be a mounted private filesystem path, not a gs:// URI. "
+            "Upload the completed cache with private GCS tooling afterwards."
+        )
+    if not torch.cuda.is_available():
+        raise RuntimeError("Feature precomputation requires a CUDA GPU.")
 
     cfg = Config(argparse.Namespace(cfg_path=args.cfg_path, options=args.options))
     enabled = {
         "biovil": bool(cfg.config.model.encoders.get("biovil", False)),
+        "pubmedclip": bool(cfg.config.model.encoders.get("pubmedclip", False)),
         "swin": bool(cfg.config.model.encoders.get("swin", False)),
         "raddino": bool(cfg.config.model.encoders.get("raddino", False)),
     }
+    if not any(enabled.values()):
+        raise ValueError("Enable at least one frozen vision encoder before precomputing.")
     print(f"Enabled encoders to cache: {[k for k, v in enabled.items() if v]}")
 
     task = tasks.setup_task(cfg)
     model = task.build_model(cfg)
     model.cuda()
     model.eval()
+
+    # Training samples one anchor per study, but its auxiliary DICOM must also
+    # be present in every cache. Switch only dataset construction to image-row
+    # mode after the model has consumed its multi-view configuration.
+    OmegaConf.update(cfg.config, "model.data.study_sampling", False, merge=False)
+    OmegaConf.update(cfg.config, "model.multi_view", False, merge=False)
+    OmegaConf.update(
+        cfg.config,
+        "datasets.mimic_cxr.vis_processor.train.augmentation.enabled",
+        False,
+        merge=False,
+    )
 
     for split in args.splits:
         dataset = MIMIC_CXR_Dataset(

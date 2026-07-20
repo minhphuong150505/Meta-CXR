@@ -7,6 +7,7 @@
 
 import contextlib
 import logging
+import math
 import os
 
 import torch
@@ -111,6 +112,7 @@ class BaseTask:
         cuda_enabled=False,
         log_freq=50,
         accum_grad_iters=1,
+        max_grad_norm=1.0,
     ):
         return self._train_inner_loop(
             epoch=epoch,
@@ -123,6 +125,7 @@ class BaseTask:
             log_freq=log_freq,
             cuda_enabled=cuda_enabled,
             accum_grad_iters=accum_grad_iters,
+            max_grad_norm=max_grad_norm,
         )
 
     def train_iters(
@@ -138,6 +141,7 @@ class BaseTask:
         cuda_enabled=False,
         log_freq=50,
         accum_grad_iters=1,
+        max_grad_norm=1.0,
     ):
         return self._train_inner_loop(
             epoch=epoch,
@@ -151,6 +155,7 @@ class BaseTask:
             log_freq=log_freq,
             cuda_enabled=cuda_enabled,
             accum_grad_iters=accum_grad_iters,
+            max_grad_norm=max_grad_norm,
         )
 
     def _train_inner_loop(
@@ -166,6 +171,7 @@ class BaseTask:
         log_freq=50,
         cuda_enabled=False,
         accum_grad_iters=1,
+        max_grad_norm=1.0,
     ):
         """
         An inner training loop compatible with both epoch-based and iter-based training.
@@ -198,6 +204,14 @@ class BaseTask:
             inner_epoch = start_iters // iters_per_epoch
             header = header + "; inner epoch [{}]".format(inner_epoch)
 
+        if accum_grad_iters < 1:
+            raise ValueError("accum_grad_iters must be >= 1")
+        updates_per_epoch = math.ceil(iters_per_epoch / accum_grad_iters)
+        optimizer.zero_grad(set_to_none=True)
+        window_had_nonfinite = False
+        current_lr = optimizer.param_groups[0]["lr"]
+        loss_dict = {}
+
         for i in metric_logger.log_every(range(iters_per_epoch), log_freq, header):
             # if using iter-based runner, we stop after iters_per_epoch iterations.
             if i >= iters_per_epoch:
@@ -214,63 +228,95 @@ class BaseTask:
                 }
             )
 
-            lr_scheduler.step(cur_epoch=inner_epoch, cur_step=i)
+            window_start = (i // accum_grad_iters) * accum_grad_iters
+            window_size = min(accum_grad_iters, iters_per_epoch - window_start)
+            is_sync_step = i + 1 == window_start + window_size
+            if i == window_start:
+                try:
+                    lr_scheduler.step(
+                        cur_epoch=inner_epoch,
+                        cur_step=i // accum_grad_iters,
+                        steps_per_epoch=updates_per_epoch,
+                    )
+                except TypeError:
+                    # Backward compatibility for third-party schedulers using
+                    # the original two-argument LAVIS interface.
+                    lr_scheduler.step(
+                        cur_epoch=inner_epoch,
+                        cur_step=i // accum_grad_iters,
+                    )
 
-            with torch.amp.autocast(device_type="cuda", enabled=use_amp):
-                loss, loss_dict = self.train_step(model=model, samples=samples)
-                loss /= accum_grad_iters #TODO: not affect loss_dict values for logging
-
-            # Skip iter if loss is NaN/Inf so corruption can't propagate through
-            # accumulated grads; AMP overflow handling alone doesn't clear .grad.
-            #
-            # Finiteness is a per-rank observation, but backward() drives a
-            # collective. If one rank skipped while another did not, their
-            # all_reduces would pair up across different micro-batches and
-            # silently mix those gradients, so the ranks must agree first.
-            skip_iter = torch.tensor(
-                float(not torch.isfinite(loss)), device=loss.device
-            )
-            if is_dist_avail_and_initialized():
-                dist.all_reduce(skip_iter, op=dist.ReduceOp.MAX)
-            if skip_iter.item() > 0:
-                logging.warning(
-                    f"Non-finite loss at iter {i} on at least one rank "
-                    f"(local value={loss.item()}); skipping step on all ranks."
-                )
-                optimizer.zero_grad(set_to_none=True)
-                continue
-
-            # after_train_step()
-            # DDP all-reduces gradients on every backward(). While accumulating,
-            # only the last micro-batch of the window needs to sync -- reducing
-            # the intermediate ones just ships partial gradients that are added
-            # to again immediately. Skipping them cuts gradient traffic by
-            # accum_grad_iters, which dominates step time on the PCIe-connected
-            # 2x T4 setup (no NVLink).
-            is_sync_step = (i + 1) % accum_grad_iters == 0
             sync_ctx = (
                 contextlib.nullcontext()
                 if is_sync_step or not hasattr(model, "no_sync")
                 else model.no_sync()
             )
             with sync_ctx:
-                if use_amp:
-                    scaler.scale(loss).backward()
+                # DDP's no_sync must encompass *both* forward and backward;
+                # entering it only for backward still schedules the all-reduce
+                # from DDP's forward hooks.
+                if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+                    amp_context = torch.amp.autocast(
+                        device_type="cuda", enabled=use_amp
+                    )
+                elif use_amp:
+                    amp_context = torch.cuda.amp.autocast()
                 else:
-                    loss.backward()
+                    amp_context = contextlib.nullcontext()
+                with amp_context:
+                    loss, loss_dict = self.train_step(model=model, samples=samples)
+                    # The final accumulation window is often shorter on the full
+                    # dataset. Divide by its actual size so its update has the same
+                    # scale as every complete window.
+                    scaled_loss = loss / window_size
+
+                # Skip iter if loss is NaN/Inf so corruption can't propagate through
+                # accumulated grads; AMP overflow handling alone doesn't clear .grad.
+                # Finiteness is a per-rank observation, but backward() drives a
+                # collective, so every rank makes the same decision first.
+                skip_iter = torch.tensor(
+                    float(not torch.isfinite(loss)), device=loss.device
+                )
+                if is_dist_avail_and_initialized():
+                    dist.all_reduce(skip_iter, op=dist.ReduceOp.MAX)
+                if skip_iter.item() > 0:
+                    logging.warning(
+                        f"Non-finite loss at iter {i} on at least one rank "
+                        f"(local value={loss.item()}); skipping step on all ranks."
+                    )
+                    optimizer.zero_grad(set_to_none=True)
+                    window_had_nonfinite = True
+                    if is_sync_step:
+                        window_had_nonfinite = False
+                    continue
+
+                if window_had_nonfinite:
+                    # Discard the complete accumulation window on every rank. A
+                    # partial update after one non-finite micro-batch is biased and
+                    # has the wrong effective scale.
+                    if is_sync_step:
+                        optimizer.zero_grad(set_to_none=True)
+                        window_had_nonfinite = False
+                    continue
+
+                if use_amp:
+                    scaler.scale(scaled_loss).backward()
+                else:
+                    scaled_loss.backward()
 
             # update gradients every accum_grad_iters iterations
             if is_sync_step:
-                max_norm = 1.0  # Set this value based on your needs
                 if use_amp:
                     # First unscale the gradients before clipping
                     scaler.unscale_(optimizer)
-                    clip_grad_norm_(model.parameters(), max_norm)
+                    if max_grad_norm > 0:
+                        clip_grad_norm_(model.parameters(), max_grad_norm)
                     scaler.step(optimizer)
                     scaler.update()
                 else:
                     # Directly clip the gradients for non-AMP training
-                    clip_grad_norm_(model.parameters(), max_norm)
+                    if max_grad_norm > 0:
+                        clip_grad_norm_(model.parameters(), max_grad_norm)
                     optimizer.step()
                 # Clear grads after each optimizer step; without this, residual
                 # inf/NaN from an AMP overflow persist across iters and corrupt
@@ -284,8 +330,6 @@ class BaseTask:
 
         # after train_epoch()
         # gather the stats from all processes
-        print(f"current lr is {current_lr}")
-        print(f"loss dict is {loss_dict}")
         metric_logger.synchronize_between_processes()
         logging.info("Averaged stats: " + str(metric_logger.global_avg()))
         return {

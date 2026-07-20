@@ -1,3 +1,11 @@
+> **KHÔNG CÒN HIỆU LỰC.** Đường chạy Kaggle đã bị gỡ: MIMIC-CXR và mọi dẫn xuất
+> (report đã làm sạch, split CSV, feature, prediction, checkpoint) không được
+> publish thành Kaggle Dataset — PhysioNet DUA cấm phân phối lại. Xem
+> `configs/kaggle_datasets.yaml` (`policy.storage: private-gcs-only`). Đường chạy
+> được hỗ trợ là 1 GPU L4 với `pretraining/configs/mimic_cxr_full_l4.yaml` và
+> `cloud/run_stage1.sh` / `cloud/run_stage2.sh`, ghi vào bucket GCS riêng tư.
+> Giữ file này chỉ để tham chiếu lịch sử.
+
 # META-CXR — Hướng Dẫn Chạy Training Trên Kaggle
 
 ## Tổng Quan Pipeline
