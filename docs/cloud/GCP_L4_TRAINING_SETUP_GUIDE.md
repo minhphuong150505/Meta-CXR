@@ -1,3 +1,9 @@
+> **Luu y ve dinh danh.** Bucket `gs://meta-cxr-checkpoint` va project
+> `mimic-cxr-jpg-491409` trong tai lieu nay khong con ton tai. Tao bucket rieng tu
+> moi (uniform bucket-level access + Public Access Prevention) va dat ten qua bien
+> `GCS_BUCKET` / `GCP_PROJECT` trong `cloud/env.sh` thay vi hardcode. Quy trinh
+> tao VM va cai dependency ben duoi van dung.
+
 # Setup Google Cloud VM L4 de train META-CXR
 
 File nay ghi lai quy trinh tao may ao Google Cloud va train model truc tiep tren VM GPU, dua tren lan setup `meta-cxr-l4` cho META-CXR.

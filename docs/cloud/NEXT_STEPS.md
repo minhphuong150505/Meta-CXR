@@ -1,3 +1,6 @@
+> **KHÔNG CÒN HIỆU LỰC.** Checklist này đi qua Kaggle. Đường chạy hiện tại là
+> local → VM GPU → GCS riêng tư, không có bước Kaggle nào.
+
 # Những việc bạn cần làm tiếp theo
 
 Checklist tuần tự từ máy local → VM → Kaggle → GCS. Mỗi bước có lệnh copy-paste sẵn.

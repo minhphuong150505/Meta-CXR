@@ -33,54 +33,108 @@ import torch.nn.functional as F
 #         return total_loss
 
 class ClassificationLoss(nn.Module):
-    def __init__(self, penalty_weight=0.2, class_weights=None, num_abnormalities=14):
-        super(ClassificationLoss, self).__init__()
-        self.penalty_weight = penalty_weight  # Weight for penalty for incorrect classes
+    """Per-abnormality weighted cross entropy with sample-level masking.
+
+    ``penalty_weight`` remains in the signature for old configs.  The previous
+    implementation computed that penalty and then discarded it, so it is no
+    longer evaluated.
+    """
+
+    def __init__(
+        self,
+        penalty_weight=0.0,
+        class_weights=None,
+        num_abnormalities=14,
+        label_smoothing=0.0,
+    ):
+        super().__init__()
+        self.penalty_weight = float(penalty_weight)
         if class_weights is not None:
-            assert isinstance(class_weights, list), "class_weights should be a list of tensors, one for each abnormality"
-            self.cross_entropy_loss_list = nn.ModuleList(
-                [nn.CrossEntropyLoss(weight=w, label_smoothing=0.1) for w in class_weights]
-            )  # List of cross-entropy losses, one per abnormality
+            if not isinstance(class_weights, (list, tuple)):
+                raise TypeError("class_weights must contain one tensor per abnormality")
+            if len(class_weights) != num_abnormalities:
+                raise ValueError(
+                    f"expected {num_abnormalities} class-weight vectors, "
+                    f"got {len(class_weights)}"
+                )
+            weights = [torch.as_tensor(w, dtype=torch.float) for w in class_weights]
         else:
-            self.cross_entropy_loss_list = nn.ModuleList(
-                [nn.CrossEntropyLoss(label_smoothing=0.1) for _ in range(num_abnormalities)]
+            weights = [None] * num_abnormalities
+        self.cross_entropy_loss_list = nn.ModuleList(
+            [
+                nn.CrossEntropyLoss(weight=w, label_smoothing=label_smoothing)
+                for w in weights
+            ]
+        )
+
+    def forward(self, logits, true_labels, sample_mask=None):
+        if logits.ndim != 3 or true_labels.ndim != 2:
+            raise ValueError("expected logits [B,A,C] and labels [B,A]")
+        if logits.shape[:2] != true_labels.shape:
+            raise ValueError(
+                f"logit/label shape mismatch: {tuple(logits.shape)} vs "
+                f"{tuple(true_labels.shape)}"
             )
 
-    def forward(self, logits, true_labels):
-        num_abnormalities = logits.shape[1]
-        batch_size = logits.shape[0]
-        total_loss = 0.0
-        penalty_values = 0.0
-        
-        # Loop through each abnormality and compute the loss separately
-        for i in range(num_abnormalities):
-            logits_i = logits[:, i, :]  # Shape: [batch_size, num_classes]
-            labels_i = true_labels[:, i]  # Shape: [batch_size]
-            
-            # Compute cross-entropy loss
-            ce_loss = self.cross_entropy_loss_list[i](logits_i, labels_i)
-            
-            # Use log_softmax for numerical stability
-            probs = torch.softmax(logits_i, dim=1).clamp(min=1e-7, max=1.0 - 1e-7)  # Avoid 0 and 1 values
-            
-            # Create a mask to ignore the correct class for abnormality i
-            correct_class_mask = torch.zeros_like(probs)
-            correct_class_mask[torch.arange(batch_size), labels_i] = 1
-            
-            # Penalize the incorrect class probabilities
-            incorrect_probs = probs * (1 - correct_class_mask)
-            penalty_values += incorrect_probs.sum(dim=1).mean()
-            
-            total_loss += ce_loss
+        if sample_mask is None:
+            sample_mask = torch.ones(
+                logits.shape[0], dtype=torch.bool, device=logits.device
+            )
+        else:
+            sample_mask = torch.as_tensor(
+                sample_mask, device=logits.device, dtype=torch.bool
+            ).reshape(-1)
+            if sample_mask.numel() != logits.shape[0]:
+                raise ValueError("sample_mask must contain one value per batch item")
 
-        mean_loss = total_loss / num_abnormalities
-        # final_loss = mean_loss + penalty_values * self.penalty_weight
-        final_loss = mean_loss
-        
-        # Clipping the loss to avoid extremely high values
-        # final_loss = torch.clamp(final_loss, min=-1e4, max=1e4)
+        losses = []
+        for abnormality_idx, loss_fn in enumerate(self.cross_entropy_loss_list):
+            labels_i = true_labels[:, abnormality_idx].long()
+            # Also accept -100 for future partially-labelled annotations.
+            valid = sample_mask & (labels_i >= 0) & (labels_i < logits.shape[-1])
+            if valid.any():
+                losses.append(loss_fn(logits[valid, abnormality_idx], labels_i[valid]))
 
-        return final_loss
+        if not losses:
+            # Keep the zero connected to the graph for backward/DDP.
+            return logits.sum() * 0.0
+        return torch.stack(losses).mean()
+
+
+def soft_target_kl_loss(
+    student_logits, teacher_logits, sample_mask=None, temperature=2.0
+):
+    """Distil detached teacher probabilities into image-only student logits."""
+    if student_logits.shape != teacher_logits.shape:
+        raise ValueError("student and teacher logits must have identical shapes")
+    if temperature <= 0:
+        raise ValueError("temperature must be positive")
+
+    if sample_mask is None:
+        sample_mask = torch.ones(
+            student_logits.shape[0], dtype=torch.bool, device=student_logits.device
+        )
+    else:
+        sample_mask = torch.as_tensor(
+            sample_mask, dtype=torch.bool, device=student_logits.device
+        ).reshape(-1)
+    if sample_mask.numel() != student_logits.shape[0]:
+        raise ValueError("sample_mask must contain one value per batch item")
+    if not sample_mask.any():
+        return student_logits.sum() * 0.0
+
+    student_log_prob = F.log_softmax(
+        student_logits[sample_mask] / temperature, dim=-1
+    )
+    teacher_prob = F.softmax(
+        teacher_logits[sample_mask].detach() / temperature, dim=-1
+    )
+    return (
+        F.kl_div(student_log_prob, teacher_prob, reduction="none")
+        .sum(dim=-1)
+        .mean()
+        * temperature**2
+    )
 
 # class InfoNCELoss(nn.Module):
 #     def __init__(self, temperature=0.07, margin=0.5):
@@ -197,7 +251,11 @@ class AbnormalitySpecificLoss(nn.Module):
         similarity_matrix = torch.einsum("bnd,bmd->bnm", common_representations, common_representations)  # [batch_size, num_tokens, num_tokens]
 
         # Compute Frobenius norm loss to enforce orthogonality
-        off_diagonal_mask = 1 - torch.eye(num_tokens, device=common_representations.device).unsqueeze(0)  # [1, num_tokens, num_tokens]
+        off_diagonal_mask = 1 - torch.eye(
+            num_tokens,
+            device=common_representations.device,
+            dtype=common_representations.dtype,
+        ).unsqueeze(0)
         # Penalize only off-diagonal elements
         orth_loss = torch.mean((similarity_matrix * off_diagonal_mask) ** 2)
         return orth_loss
@@ -217,7 +275,15 @@ class AbnormalitySpecificLoss(nn.Module):
         num_layers = len(attention_weights_list)
         
         # Assign higher weights to deeper layers
-        layer_weights = torch.sigmoid(torch.linspace(-2, 2, steps=num_layers))  # Linearly increasing weights
+        layer_weights = torch.sigmoid(
+            torch.linspace(
+                -2,
+                2,
+                steps=num_layers,
+                device=attention_weights_list[0].device,
+                dtype=attention_weights_list[0].dtype,
+            )
+        )
 
         for i, layer_attention_weights in enumerate(attention_weights_list):
             # Compute sparsity loss for this layer
@@ -234,7 +300,13 @@ class AbnormalitySpecificLoss(nn.Module):
         return sparsity_loss
 
 
-    def forward(self, common_representations, attention_weights_list, labels = None):
+    def forward(
+        self,
+        common_representations,
+        attention_weights_list,
+        labels=None,
+        sample_mask=None,
+    ):
         """
         Args:
             common_representations: Tensor of shape [batch_size, num_tokens, d_embedding]
@@ -247,18 +319,34 @@ class AbnormalitySpecificLoss(nn.Module):
         orth_loss = self.orthogonality_loss(common_representations)
         sparsity_loss = self.compute_weighted_sparsity_loss(attention_weights_list)
         
+        zero = common_representations.sum() * 0.0
         if labels is None:
-            return pooled_representations_, orth_loss, None, sparsity_loss
-        
-        batch_size, num_abnormalities, d_embedding = pooled_representations_.shape
-        pooled_representations = F.normalize(pooled_representations_, dim=-1)  # Normalize embeddings
+            return pooled_representations_, orth_loss, zero, sparsity_loss
 
-        contrastive_loss = 0.0
+        if sample_mask is not None:
+            sample_mask = torch.as_tensor(
+                sample_mask, dtype=torch.bool, device=labels.device
+            ).reshape(-1)
+            if sample_mask.numel() != labels.shape[0]:
+                raise ValueError("sample_mask must contain one value per batch item")
+            pooled_for_loss = pooled_representations_[sample_mask]
+            labels_for_loss = labels[sample_mask]
+        else:
+            pooled_for_loss = pooled_representations_
+            labels_for_loss = labels
+
+        if pooled_for_loss.shape[0] == 0:
+            return pooled_representations_, orth_loss, zero, sparsity_loss
+
+        batch_size, num_abnormalities, d_embedding = pooled_for_loss.shape
+        pooled_representations = F.normalize(pooled_for_loss, dim=-1)
+
+        contrastive_loss = zero
 
         # Loop over each abnormality
         for a in range(num_abnormalities):
             tokens = pooled_representations[:, a, :]  # [batch_size, d_embedding]
-            token_labels = labels[:, a]  # [batch_size]
+            token_labels = labels_for_loss[:, a]  # [batch_size]
 
             # Masks
             pos_mask = (token_labels == 1).float()
@@ -277,7 +365,7 @@ class AbnormalitySpecificLoss(nn.Module):
                 pos_neg_similarity = similarity_matrix[pos_indices][:, neg_indices]  # [num_pos, num_neg]
                 pos_neg_loss = torch.relu(self.margin - (1 - pos_neg_similarity)).mean()
             else:
-                pos_neg_loss = 0.0
+                pos_neg_loss = zero
             
             # Uncertain Alignment
             if len(unc_indices) > 0 and len(pos_indices) > 0 and len(neg_indices) > 0:
@@ -285,7 +373,7 @@ class AbnormalitySpecificLoss(nn.Module):
                 neg_unc_similarity = similarity_matrix[unc_indices][:, neg_indices].mean(dim=1)
                 unc_loss = torch.abs(pos_unc_similarity - neg_unc_similarity).mean()
             else:
-                unc_loss = 0.0
+                unc_loss = zero
 
             contrastive_loss += (pos_neg_loss + unc_loss)
 
@@ -485,4 +573,3 @@ loss = loss_fn(logits, true_labels)
 
 print(f"Loss with class weighting: {loss.item()}")
 """
-

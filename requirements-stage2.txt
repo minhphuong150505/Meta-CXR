@@ -1,0 +1,9 @@
+# Install in a dedicated environment. This includes Stage-1 because Q-Former
+# soft-token extraction remains part of the main Stage-2 training path.
+-r requirements-stage1.txt
+accelerate==1.8.1
+bitsandbytes==0.46.0
+peft==0.15.2
+safetensors==0.5.3
+sentencepiece==0.2.0
+bert-score==0.3.13

@@ -75,18 +75,15 @@ class CrossModalEmbeddingAlignment(nn.Module):
         expert_dim=768,
     ):
         super(CrossModalEmbeddingAlignment, self).__init__()
-        self.vit_proj = nn.Linear(vit_dim, common_dim)
-        self.cnn_proj = nn.Linear(cnn_dim, common_dim)
-        self.swin_proj = nn.Linear(swin_dim, common_dim)
-        self.raddino_proj = nn.Linear(raddino_dim, common_dim)
+        self.vit_proj = nn.Linear(vit_dim, common_dim) if vit_dim is not None else None
+        self.cnn_proj = nn.Linear(cnn_dim, common_dim) if cnn_dim is not None else None
+        self.swin_proj = nn.Linear(swin_dim, common_dim) if swin_dim is not None else None
+        self.raddino_proj = (
+            nn.Linear(raddino_dim, common_dim) if raddino_dim is not None else None
+        )
         self.text_proj = nn.Linear(txt_dim, common_dim)
         self.expert_proj = nn.Linear(expert_dim, common_dim)
         
-        self.cnn_norm = nn.LayerNorm(common_dim)    # For CNN patches
-        self.vit_norm = nn.LayerNorm(common_dim)    # For ViT patches
-        self.swin_norm = nn.LayerNorm(common_dim)   # For Swin patches
-        self.raddino_norm = nn.LayerNorm(common_dim) # For Rad-DINO patches
-        self.text_norm = nn.LayerNorm(common_dim)   # For text embeddings
         self.expert_norm = nn.LayerNorm(common_dim) # For expert tokens
 
     def forward(
@@ -118,12 +115,26 @@ class TrainablePositionalEncoding(nn.Module):
     
 # ExpertTokenCrossAttention layer that performs both image and query cross-attention in a single pass
 class ExpertTokenCrossAttention(nn.Module):
-    def __init__(self, embed_dim, num_heads, num_abnormalities=14, dropout=0.1, text_dropout_rate = 0.0):
+    def __init__(
+        self,
+        embed_dim,
+        num_heads,
+        num_abnormalities=14,
+        dropout=0.1,
+        text_dropout_rate=0.2,
+        use_text_attention=True,
+    ):
         super(ExpertTokenCrossAttention, self).__init__()
         
         # Expert-to-image cross-attention
         self.expert_to_image_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-        self.expert_to_text_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+        self.expert_to_text_attention = (
+            nn.MultiheadAttention(
+                embed_dim, num_heads, dropout=dropout, batch_first=True
+            )
+            if use_text_attention
+            else None
+        )
 
         # Feed-forward networks for modality-specific features
         self.ffn_expert = nn.Sequential(
@@ -138,22 +149,44 @@ class ExpertTokenCrossAttention(nn.Module):
         self.self_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
 
         # Layer normalization for residual connections
-        self.norm_expert_text = nn.LayerNorm(embed_dim)
+        self.norm_expert_text = (
+            nn.LayerNorm(embed_dim) if use_text_attention else None
+        )
         self.norm_self_attention = nn.LayerNorm(embed_dim)
         self.norm_expert_image = nn.LayerNorm(embed_dim)
         self.norm_ff = nn.LayerNorm(embed_dim)
         
         self.text_dropout_rate = text_dropout_rate
 
-    def forward(self, expert_tokens, image_patches, text_embeddings = None):
-        if text_embeddings is not None:
-            # Apply dropout to text embeddings conditionally during training
-            dropout_mask = (torch.rand(text_embeddings.size(0), 1, 1) > self.text_dropout_rate).float().to(text_embeddings.device)
-            text_embeddings = text_embeddings * dropout_mask
+    def forward(
+        self,
+        expert_tokens,
+        image_patches,
+        text_embeddings=None,
+        text_attention_mask=None,
+    ):
+        if text_embeddings is not None and self.expert_to_text_attention is not None:
+            # Report text is privileged teacher information.  Whole-report
+            # dropout prevents that branch from ignoring the image entirely.
+            if self.training and self.text_dropout_rate > 0:
+                keep_text = torch.rand(
+                    text_embeddings.size(0), 1, 1, device=text_embeddings.device
+                ) >= self.text_dropout_rate
+                text_embeddings = text_embeddings * keep_text.to(text_embeddings.dtype)
             
             # Cross-attend image patches with text embeddings
             expert_text, _ = self.expert_to_text_attention(
-                query=expert_tokens, key=text_embeddings, value=text_embeddings
+                query=expert_tokens,
+                key=text_embeddings,
+                value=text_embeddings,
+                # PyTorch MHA expects True for positions to ignore.  Without
+                # this, the privileged-text teacher attended BERT padding and
+                # learnt a length-dependent shortcut instead of report content.
+                key_padding_mask=(
+                    ~text_attention_mask.to(dtype=torch.bool)
+                    if text_attention_mask is not None
+                    else None
+                ),
             )
             expert_text = self.norm_expert_text(expert_text + expert_tokens)  # Residual connection
         
@@ -191,7 +224,14 @@ class AbnormalityClassificationModel(nn.Module):
         vit_dim=768,
         swin_dim=768,
         raddino_dim=768,
+        txt_dim=768,
         target_patch_count=49,
+        text_dropout_rate=0.2,
+        num_text_teacher_layers=2,
+        use_cnn=True,
+        use_vit=True,
+        use_swin=True,
+        use_raddino=True,
     ):
         super(AbnormalityClassificationModel, self).__init__()
 
@@ -199,13 +239,20 @@ class AbnormalityClassificationModel(nn.Module):
         self.num_abnormalities = num_abnormalities
         self.num_layers = num_layers
         self.target_patch_count = target_patch_count
+        if not 0 <= num_text_teacher_layers <= num_layers:
+            raise ValueError("num_text_teacher_layers must be between 0 and num_layers")
         # Initial projection layer to align image, text, and query embeddings
         self.embedding_alignment = CrossModalEmbeddingAlignment(
             embed_dim,
-            cnn_dim=cnn_dim,
-            vit_dim=vit_dim,
-            swin_dim=swin_dim,
-            raddino_dim=raddino_dim,
+            cnn_dim=cnn_dim if use_cnn else None,
+            vit_dim=vit_dim if use_vit else None,
+            swin_dim=swin_dim if use_swin else None,
+            raddino_dim=raddino_dim if use_raddino else None,
+            txt_dim=txt_dim,
+            # Expert tokens are allocated at embed_dim below, so their projection
+            # must read embed_dim -- not the 768 default, which only happened to
+            # match because the shipped config also uses embed_dim=768.
+            expert_dim=embed_dim,
         )
 
         if initial_expert_tokens is not None:
@@ -215,10 +262,19 @@ class AbnormalityClassificationModel(nn.Module):
             nn.init.xavier_uniform_(self.expert_tokens)
 
         # Stack multiple ExpertTokenCrossAttention layers
-        self.attention_layers = nn.ModuleList([
-            ExpertTokenCrossAttention(embed_dim, num_heads, num_abnormalities, dropout)
-            for _ in range(num_layers)
-        ])
+        self.attention_layers = nn.ModuleList(
+            [
+                ExpertTokenCrossAttention(
+                    embed_dim,
+                    num_heads,
+                    num_abnormalities,
+                    dropout,
+                    text_dropout_rate=text_dropout_rate,
+                    use_text_attention=layer_idx < num_text_teacher_layers,
+                )
+                for layer_idx in range(num_layers)
+            ]
+        )
 
         # Classification heads for each expert token
         # self.classifiers = nn.ModuleList([
@@ -241,19 +297,29 @@ class AbnormalityClassificationModel(nn.Module):
             for _ in range(num_abnormalities)
         ])
 
-        self.expert_loss = AbnormalitySpecificLoss(temperature=0.05, margin=0.5)
+        self.expert_loss = AbnormalitySpecificLoss(
+            temperature=0.05,
+            margin=0.5,
+            d_embedding=embed_dim,
+            num_abnormalities=num_abnormalities,
+        )
         # self.attention_loss = AttentionLoss(lambda_sparsity=0.3)
         
-        self.norm_vit = nn.LayerNorm(embed_dim)
         self.expert_token_norm = nn.LayerNorm(embed_dim)
         
         # self.w_cnn = nn.Parameter(torch.tensor(1.0))
         # self.w_vit = nn.Parameter(torch.tensor(1.0))
         
         self.pos_enc = TrainablePositionalEncoding(num_patches=target_patch_count, embed_dim=embed_dim)
-        self.cnn_downsampler = DownsamplePatches(196, target_patch_count, cnn_dim, method="conv")
+        self.cnn_downsampler = (
+            DownsamplePatches(196, target_patch_count, cnn_dim, method="conv")
+            if use_cnn
+            else None
+        )
         
-        if isinstance(self.cnn_downsampler.downsampler, nn.Conv2d):  # Ensure it’s a Conv2d layer
+        if self.cnn_downsampler is not None and isinstance(
+            self.cnn_downsampler.downsampler, nn.Conv2d
+        ):
             nn.init.xavier_uniform_(self.cnn_downsampler.downsampler.weight)
             nn.init.constant_(self.cnn_downsampler.downsampler.bias, 0)
 
@@ -301,7 +367,9 @@ class AbnormalityClassificationModel(nn.Module):
         swin_patches=None,
         raddino_patches=None,
         text_embeddings=None,
+        text_attention_mask=None,
         labels=None,
+        sample_mask=None,
     ):
         ref = (
             cnn_patches
@@ -323,6 +391,8 @@ class AbnormalityClassificationModel(nn.Module):
         expert_tokens = self.expert_tokens.unsqueeze(0).expand(batch_size, -1, -1)  # [B, N_expert, D]
         
         if cnn_patches is not None:
+            if self.cnn_downsampler is None:
+                raise ValueError("cnn_patches were provided but the CNN stream is disabled")
             cnn_patches = self.cnn_downsampler(cnn_patches)  # 196 -> 49 patches via conv
 
         vit_proj, cnn_proj, swin_proj, raddino_proj, txt_proj, expert_tokens = self.embedding_alignment(
@@ -350,8 +420,13 @@ class AbnormalityClassificationModel(nn.Module):
         # Pass through multiple attention layers
         attention_weights_list = []
         for i, layer in enumerate(self.attention_layers):
-            if i in [0, 1]:
-                expert_tokens, attention_weights = layer(expert_tokens, image_patches, txt_proj)
+            if layer.expert_to_text_attention is not None:
+                expert_tokens, attention_weights = layer(
+                    expert_tokens,
+                    image_patches,
+                    txt_proj,
+                    text_attention_mask=text_attention_mask,
+                )
             elif i == self.num_layers - 2: #last before layer
                 normalized_expert_tokens = self.expert_token_norm(self.expert_tokens)
                 # Add normalized initial expert tokens back
@@ -362,7 +437,12 @@ class AbnormalityClassificationModel(nn.Module):
                 
             attention_weights_list.append(attention_weights)
 
-        pooled_representations, orth_loss, contrastive_loss, sparsity_loss = self.expert_loss(expert_tokens, attention_weights_list, labels)
+        pooled_representations, orth_loss, contrastive_loss, sparsity_loss = self.expert_loss(
+            expert_tokens,
+            attention_weights_list,
+            labels,
+            sample_mask=sample_mask,
+        )
         
         # Classification for each abnormality
         logits = []

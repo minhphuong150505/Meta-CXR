@@ -96,6 +96,14 @@ class BlipOutput(ModelOutput):
 
     loss_view_consistency: Optional[torch.FloatTensor] = None
 
+    loss_teacher_cls: Optional[torch.FloatTensor] = None
+
+    loss_distill: Optional[torch.FloatTensor] = None
+
+    classification_logits: Optional[torch.FloatTensor] = None
+
+    classification_mask: Optional[torch.BoolTensor] = None
+
     average_precision: Optional[torch.FloatTensor] = None 
     average_recall: Optional[torch.FloatTensor] = None 
     average_accuracy: Optional[torch.FloatTensor] = None 

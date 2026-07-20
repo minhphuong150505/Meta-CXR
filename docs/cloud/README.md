@@ -1,3 +1,8 @@
+> **KHÔNG CÒN HIỆU LỰC.** Orchestration qua Kaggle CLI đã bị gỡ (PhysioNet DUA cấm
+> phân phối lại MIMIC-CXR). `cloud/run_stage1.sh` và `cloud/run_stage2.sh` giờ chạy
+> trực tiếp trên VM GPU và chỉ đồng bộ với bucket GCS riêng tư; định danh
+> project/bucket lấy từ biến môi trường trong `cloud/env.sh`, không hardcode.
+
 # META-CXR Kaggle Orchestration
 
 Pipeline tự động hóa: **GCP VM** dùng **Kaggle CLI** push 2 notebook lên Kaggle chạy bằng GPU T4×2, pull output về VM rồi mirror lên **Google Cloud Storage**.

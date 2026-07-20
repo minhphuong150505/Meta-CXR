@@ -1,39 +1,16 @@
-# Kaggle dataset config — sửa file này khi:
-#   - Đổi slug dataset (vd. dùng dataset mới)
-#   - Kaggle thay đổi cấu trúc mount (/kaggle/input/datasets/ → khác)
-#   - Đổi tên file CSV pre-built hoặc các metadata CSV
+# Legacy Kaggle integration is intentionally disabled.
+#
+# MIMIC-CXR and derivatives (including cleaned reports, split CSVs, features,
+# predictions, and checkpoints trained on them) must not be published as a
+# Kaggle Dataset or assigned an open-data licence such as CC0. This repository's
+# supported full-data path is a credentialed local mirror or a private GCS
+# bucket in the authorised GCP project.
 
-datasets:
-  images:
-    # STALE for full-dataset runs: this slug is the p10-only downsized "lite" set.
-    # Since 2026-07-20 images come from gs://mimic-cxr-jpg-dataset-phuongnm (571 GiB,
-    # p10-p19) — that does not fit Kaggle disk, so Kaggle can only be used with a
-    # subset. The metadata CSVs below live in the bucket as .csv.gz.
-    slug: "mimic-cxr-jpg-lite"
-    required_files:
-      - "mimic-cxr-2.0.0-split.csv"
-      - "mimic-cxr-2.0.0-chexpert.csv"
-      - "mimic-cxr-2.0.0-metadata.csv"
-  reports:
-    slug: "mimic-cxr-reported"
-    cleaned_csv_filename: "mimic_cxr_cleaned.csv"
-    txt_glob: "files/**/s*.txt"
-  processed:
-    # Canonical copy lives at
-    # gs://mimic-cxr-jpg-dataset-phuongnm/processed/full_allviews/ (built 2026-07-20).
-    # This Kaggle slug is only a mirror; re-upload it if you train on Kaggle.
-    slug: "mimic-cxr-full-processed"
-    title: "MIMIC-CXR full p10-p19 Preprocessed (all views, train/val/test)"
-    license: "CC0-1.0"
-    required_files:
-      - "train.csv"
-      - "val.csv"
-      - "test.csv"
+policy:
+  enabled: false
+  storage: "private-gcs-only"
+  canonical_data_uri: "gs://mimic-cxr-jpg-dataset-phuongnm"
+  processed_prefix: "processed/full_allviews"
+  reason: "MIMIC-CXR PhysioNet DUA: redistribution is prohibited"
 
-# Thứ tự tìm mount point — path đầu tiên tồn tại sẽ được dùng.
-mount_search_roots:
-  - "/kaggle/input/datasets"
-  - "/kaggle/input"
-
-working:
-  cleaned_csv_path: "/kaggle/working/mimic_cxr_cleaned.csv"
+datasets: {}
