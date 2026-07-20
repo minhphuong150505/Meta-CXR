@@ -5,6 +5,10 @@
 
 datasets:
   images:
+    # STALE for full-dataset runs: this slug is the p10-only downsized "lite" set.
+    # Since 2026-07-20 images come from gs://mimic-cxr-jpg-dataset-phuongnm (571 GiB,
+    # p10-p19) — that does not fit Kaggle disk, so Kaggle can only be used with a
+    # subset. The metadata CSVs below live in the bucket as .csv.gz.
     slug: "mimic-cxr-jpg-lite"
     required_files:
       - "mimic-cxr-2.0.0-split.csv"
@@ -15,8 +19,11 @@ datasets:
     cleaned_csv_filename: "mimic_cxr_cleaned.csv"
     txt_glob: "files/**/s*.txt"
   processed:
-    slug: "mimic-cxr-p10-processed"
-    title: "MIMIC-CXR p10 Preprocessed (LA-filtered, train/val/test)"
+    # Canonical copy lives at
+    # gs://mimic-cxr-jpg-dataset-phuongnm/processed/full_allviews/ (built 2026-07-20).
+    # This Kaggle slug is only a mirror; re-upload it if you train on Kaggle.
+    slug: "mimic-cxr-full-processed"
+    title: "MIMIC-CXR full p10-p19 Preprocessed (all views, train/val/test)"
     license: "CC0-1.0"
     required_files:
       - "train.csv"
