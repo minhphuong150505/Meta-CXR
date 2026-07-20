@@ -37,10 +37,10 @@ paths:
   output_dir: "/your/output/dir"
   checkpoint_dir: "/your/checkpoint/dir"
 
-  # NOTE: gs://meta-cxr-checkpoint was deleted. Create a new bucket and put its
-  # name here before starting any run that saves checkpoints.
-  gcs_bucket:  "gs://your-checkpoint-bucket"
-  gcs_project: "inner-cinema-500306-t3"
+  # Use a dedicated private bucket with uniform bucket-level access and Public
+  # Access Prevention enforced. Never publish reports or model artifacts.
+  gcs_bucket:  "gs://your-private-checkpoint-bucket"
+  gcs_project: "your-gcp-project-id"
 
 wandb:
   entity: ""        # your wandb entity/username
