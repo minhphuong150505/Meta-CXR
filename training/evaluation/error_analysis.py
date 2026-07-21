@@ -23,14 +23,12 @@ prior -- the flag is a screening signal, not a verdict.
 from __future__ import annotations
 
 import logging
-import re
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
 from safety.claims import (
     ABNORMALITY_SYNONYMS,
-    LOCATION_TERMS,
     NEGATION_CUES,
     SEVERITY_TERMS,
     split_sentences,

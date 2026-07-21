@@ -460,7 +460,7 @@ def evaluate_classification(
     specificities = [m.specificity for m in macro_metrics]
     balanced = [
         (s + sp) / 2.0
-        for s, sp in zip(sensitivities, specificities)
+        for s, sp in zip(sensitivities, specificities, strict=True)
         if not (np.isnan(s) or np.isnan(sp))
     ]
 
@@ -593,7 +593,7 @@ def _three_class_aggregates(
             float("nan")
             if (np.isnan(p) or np.isnan(r))
             else _harmonic(p, r)
-            for p, r in zip(precisions, recalls)
+            for p, r in zip(precisions, recalls, strict=True)
         ]
 
         per_pathology_precision.append(_nanmean(precisions))

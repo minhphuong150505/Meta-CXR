@@ -10,7 +10,7 @@
 ![status](https://img.shields.io/badge/stage%201-code%20complete-blue)
 ![status](https://img.shields.io/badge/stage%202-code%20complete-blue)
 ![gpu](https://img.shields.io/badge/da%20chay%20GPU-chua-red)
-![tests](https://img.shields.io/badge/CPU%20tests-328%20passing-brightgreen)
+![tests](https://img.shields.io/badge/CPU%20tests-430%20passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![data](https://img.shields.io/badge/MIMIC--CXR-p10--p19-lightgrey)
 
@@ -20,7 +20,7 @@
 
 > [!WARNING]
 > **Trạng thái thật của repo.** Codebase này đã khác rất nhiều so với bài báo đã công bố.
-> Stage 1 và Stage 2 đã **hoàn chỉnh về mã nguồn và được phủ bởi 328 CPU test**, nhưng
+> Stage 1 và Stage 2 đã **hoàn chỉnh về mã nguồn và được phủ bởi 430 CPU test**, nhưng
 > **chưa có phần nào của bản viết lại hiện tại từng chạy trên GPU.** Mọi shape, câu lệnh và con số
 > chi phí bên dưới đều được suy ra từ source code, **không** phải từ một lần train quan sát được.
 > Các chỉ số ở mục [📊 Kết quả](#-kết-quả) là số **của bài báo** cho kiến trúc **cũ** và **chưa**
@@ -36,6 +36,7 @@
 - [Stage 2 — sinh báo cáo](#-stage-2--sinh-báo-cáo)
 - [Nhánh MedGemma ngoài](#-nhánh-medgemma-ngoài)
 - [Tầng an toàn & XAI](#-tầng-an-toàn--xai)
+- [Đánh giá](#-đánh-giá)
 - [Pipeline dữ liệu](#-pipeline-dữ-liệu)
 - [Bắt đầu nhanh](#-bắt-đầu-nhanh)
 - [Bản đồ repository](#-bản-đồ-repository)
@@ -64,7 +65,7 @@ kiểm chứng vốn không tồn tại lúc công bố.
 | **Kiểm soát ảo giác** | ❌ không có | ✅ **verify → reconcile → abstain ở mức mệnh đề** |
 | **Kiểm toán phụ thuộc ảnh** | ❌ không có | ✅ **bộ nhiễu loạn phản thực (counterfactual)** |
 | **Clinical metrics** | có báo cáo | ❌ **đã gỡ** — repo không cài đặt cái nào; giờ gọi tới là **báo lỗi** |
-| **Test** | — | **328 CPU test**, không cần GPU hay dữ liệu |
+| **Test** | — | **430 CPU test**, không cần GPU hay dữ liệu |
 
 <details>
 <summary><b>Vì sao đổi decoder</b></summary>
@@ -391,6 +392,166 @@ hay báo cáo tham chiếu**. `sample_key` là một digest đã salt. Output an
 
 ---
 
+## 📏 Đánh giá
+
+> [!WARNING]
+> **Các kết quả trong README gốc hoặc trong bài báo KHÔNG phải kết quả thực nghiệm của repository
+> này**, nếu chưa được chạy lại và xác nhận. Xem [📊 Kết quả](#-kết-quả).
+> Chưa có lần inference nào trên MIMIC-CXR được thực hiện với code hiện tại.
+
+### Vì sao accuracy là một chỉ số gây hiểu lầm
+
+Trên MIMIC-CXR phần lớn cặp (study, pathology) là âm tính. Một mô hình **không bao giờ dự đoán
+positive** vẫn đạt accuracy rất cao. Số đo thật từ [`docs/evaluator_validation.md`](evaluator_validation.md),
+với prevalence 5%:
+
+```
+binary_accuracy    = 0.9617   ← trông rất tốt
+positive_macro_f1  = 0.0000   ← không phát hiện được gì cả
+```
+
+Vì vậy evaluator **luôn** in kèm bảng baseline. Nếu accuracy của mô hình xấp xỉ hàng
+`all_negative` trong khi positive macro F1 gần 0, mô hình chưa học được gì — bất kể con số
+accuracy nói gì.
+
+### Vì sao dùng positive macro F1, và vì sao cần AUPRC
+
+| Chỉ số | Vai trò |
+|---|---|
+| **Positive macro F1** | Chỉ tính class positive, trung bình **theo pathology** — nên pathology hiếm có trọng số ngang pathology phổ biến. Đây là selection metric của Stage 1. |
+| **AUPRC** | Với positive hiếm, AUROC vẫn đẹp trong khi AUPRC lộ ra sự thật. Đo thật ở prevalence 1%: **AUROC = 0.7525** nhưng **AUPRC = 0.5100**. |
+| **Macro vs micro** | Macro = trung bình theo pathology; micro = gộp tp/fp/fn. Đo thật: **macro 0.5000 vs micro 0.6667** trên cùng dữ liệu. |
+
+> [!IMPORTANT]
+> **Một pathology không có mẫu positive nào trong split sẽ bị LOẠI khỏi macro**, không bị tính là
+> 0. Evaluator cũ tính nó thành 0, khiến `f1_positive_macro` dịch chuyển theo phân bố của split và
+> val/test không so sánh được. Chiều ngược lại cũng được chặn: pathology *có* positive mà mô hình
+> không dự đoán gì vẫn giữ F1 = 0 và **ở lại** trong macro — nếu không, một mô hình dự đoán rỗng
+> sẽ đạt macro hoàn hảo.
+
+### Threshold calibration — và vì sao không bao giờ calibrate trên test
+
+Mỗi pathology có một threshold riêng cho class positive, **chỉ fit trên validation**.
+
+```
+threshold 0.5    → positive_macro_f1 = 0.0000
+calibrated 0.350 → positive_macro_f1 = 1.0000
+```
+
+Threshold fit trên test là một siêu tham số fit trên test — mọi chỉ số test sau đó đều bị lệch lạc
+quan. Hai lớp chặn được cài cứng:
+
+- `calibrate_thresholds()` **từ chối** một split tên là `test` (CLI trả exit code 2).
+- `load_thresholds()` **từ chối** file threshold có metadata ghi `split: test`.
+
+### Chạy đánh giá
+
+```bash
+# 1. Calibrate ngưỡng trên VALIDATION
+python scripts/calibrate_thresholds.py \
+    --predictions outputs/validation_predictions.npz \
+    --objective f1 --uncertain-policy ignore_uncertain \
+    --split validation --output outputs/thresholds.json
+
+# 2. Đánh giá TEST bằng ngưỡng đã lưu
+python scripts/evaluate_stage1.py \
+    --predictions outputs/test_predictions.npz \
+    --thresholds outputs/thresholds.json \
+    --uncertain-policy ignore_uncertain \
+    --bootstrap-samples 1000 \
+    --output-dir outputs/stage1_evaluation
+
+# 3. Đánh giá báo cáo sinh ra
+python scripts/evaluate_stage2.py \
+    --predictions outputs/generated_reports.jsonl \
+    --metrics bleu,rouge,meteor,cider,bertscore \
+    --skip-clinical-metrics \
+    --bootstrap-samples 1000 \
+    --output-dir outputs/stage2_evaluation
+```
+
+Bật `run.save_predictions: true` trong config Stage 1 để ghi file `.npz`. Sau đó **mọi lần đánh
+giá lại đều không cần GPU, không cần model, không cần dataset** — đổi uncertain policy hay
+threshold rồi chạy lại chỉ tốn vài giây.
+
+<details>
+<summary><b>Tuỳ chọn thường dùng</b></summary>
+
+| Cờ | Tác dụng |
+|---|---|
+| `--uncertain-policy` | `three_class` (mặc định) · `uncertain_as_positive` · `uncertain_as_negative` · `ignore_uncertain` |
+| `--include-meta-labels` | Đưa `No Finding` + `Support Devices` vào macro (mặc định loại) |
+| `--no-bootstrap` / `--no-plots` | Chạy nhanh khi debug |
+| `--bootstrap-samples N` | Mặc định 1000, resample **theo study** |
+| `--evaluation-seed N` | Tái lập; cùng seed → kết quả trùng khớp |
+| `--clinical-metrics` / `--skip-clinical-metrics` | Bật/tắt CheXbert, RadGraph |
+| `--include-text` | Ghi text báo cáo vào per-sample output (mặc định **tắt** — dữ liệu hạn chế) |
+
+</details>
+
+### Lexical metrics ≠ clinical metrics
+
+Đây là điểm quan trọng nhất khi đọc bảng kết quả Stage 2. Hai báo cáo **đối lập hoàn toàn về lâm
+sàng**, đo thật:
+
+| | |
+|---|---|
+| Reference | `There is no pneumothorax.` |
+| Generated | `There is a pneumothorax.` |
+| **BLEU-1** | **0.8000** |
+| **ROUGE-L** | **0.8000** |
+| Cờ phát hiện | `possible_negation_error`, `possible_false_positive_finding` |
+
+BLEU/ROUGE/METEOR/CIDEr/BERTScore đo **trùng lặp bề mặt**. Chúng không đo đúng sai lâm sàng.
+**Một bảng chỉ có các chỉ số này không chứng minh được tính đúng đắn lâm sàng.**
+
+### Metric thiếu dependency không bao giờ thành điểm 0
+
+```
+corpus keys      = ['bleu_1', 'bleu_2', 'bleu_3', 'bleu_4']
+unavailable keys = ['bertscore', 'cider', 'meteor']
+```
+
+Metric thiếu package **không xuất hiện** trong kết quả — nó nằm trong `unavailable` kèm câu lệnh
+cài đặt. Evaluator cũ (`compute_nlg`) dùng `except Exception: rouge_l = 0.0`, biến lỗi dependency
+thành một con số 0 nằm trên bảng kết quả, không phân biệt được với "mô hình kém".
+
+```bash
+pip install -e ".[eval-generation]"   # nltk, pycocoevalcap, bert-score
+pip install -e ".[eval-plots]"        # matplotlib
+```
+
+**CheXbert / RadGraph / RadCliQ / RadFact chưa được implement** — `training/evaluation/clinical.py`
+là interface, raise lỗi tường minh thay vì trả số giả. Xem [🚫 Những gì cố tình không có](#-những-gì-cố-tình-không-có-ở-đây).
+
+### Đọc output
+
+```
+outputs/stage1_evaluation/
+├── evaluation_report.md        # metadata + baseline + per-pathology + CI + limitations
+├── metrics.json                # không chứa NaN — giá trị undefined là `null` kèm lý do
+├── summary.csv
+├── per_pathology_metrics.csv
+├── confusion_matrices/         # 1 heatmap / pathology
+└── plots/                      # ROC, PR, bar F1, prevalence, histogram, reliability
+```
+
+`evaluation_report.md` ghi git commit, checkpoint, split, seed, uncertain policy, nguồn threshold
+và **version của từng package metric** — một bảng số không truy được về run đã sinh ra nó thì
+không dùng được trong khóa luận.
+
+### Tái lập
+
+```bash
+python -m pytest tests/     # 430 test, ~7s, không cần GPU/dữ liệu
+```
+
+Cùng `--evaluation-seed` → kết quả trùng khớp từng chữ số (có test kiểm chứng).
+Chi tiết audit evaluator cũ: [`docs/evaluator_audit.md`](evaluator_audit.md).
+Kết quả kiểm chứng thủ công: [`docs/evaluator_validation.md`](evaluator_validation.md).
+
+---
+
 ## 📊 Pipeline dữ liệu
 
 **Phạm vi là toàn bộ dataset — p10–p19**, không phải tập con p10. Tiền xử lý đã **xong**.
@@ -461,7 +622,7 @@ cp configs/env_config.yaml.example configs/env_config.yaml
 <summary><b>🧪 Test CPU — không cần GPU, không cần dữ liệu</b></summary>
 
 ```bash
-python -m pytest tests/        # 328 test, ~3 giây
+python -m pytest tests/        # 430 test, ~7 giây
 ```
 </details>
 
@@ -580,7 +741,12 @@ META-CXR/
 │   ├── run_medgemma_qlora.py       entrypoint Stage 2
 │   ├── dataio/                     manifest.py + validate_manifest.py
 │   ├── medgemma/                   soft_tokens.py + capabilities.py
-│   ├── evaluation/                 counterfactual.py · perturbations.py · clinical.py
+│   ├── evaluation/                 📏 bộ đánh giá đầy đủ
+│   │                               ├─ classification_metrics · threshold_calibration
+│   │                               ├─ bootstrap · baselines · uncertain_policy
+│   │                               ├─ generation_metrics · error_analysis
+│   │                               ├─ subgroup_analysis · visualization · report_writer
+│   │                               └─ counterfactual · perturbations · clinical (interface)
 │   ├── trainer/                    state.py + checkpointing.py
 │   └── stage1/                     lavis_loader.py
 │
@@ -588,7 +754,8 @@ META-CXR/
 ├── 🌍 medgemma_inference/          runner cho checkpoint ngoài + CLI có kiểm soát ngân sách
 ├── ⏱  runtime/                     budget.py · device.py
 │
-├── 🧪 tests/                       328 CPU test
+├── 🧪 tests/                       430 CPU test
+├── 📏 scripts/                     evaluate_stage1 · evaluate_stage2 · calibrate_thresholds
 ├── ☁️  cloud/                       triển khai GCP (đã bỏ nhánh Kaggle)
 └── 📖 docs/                        file này + 20 tài liệu làm việc
 ```
@@ -618,7 +785,7 @@ Các tài liệu thời Kaggle trong `docs/` đều có banner deprecated; đừ
 ## 🧪 Kiểm thử
 
 ```bash
-python -m pytest tests/     # 328 passed, ~3 giây
+python -m pytest tests/     # 430 passed, ~7 giây
 ```
 
 Không cần GPU, không cần dataset, không cần mạng. Test suite thực sự canh giữ những gì:

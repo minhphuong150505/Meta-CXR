@@ -9,12 +9,31 @@ from model.lavis.common.registry import registry
 from model.lavis.tasks.base_task import BaseTask
 from model.lavis.datasets.data_utils import move_to_cuda
 from model.lavis.common.dist_utils import is_dist_avail_and_initialized
+import logging
 import torch
 import torch.distributed as dist
+
+logger = logging.getLogger(__name__)
 
 
 @registry.register_task("image_text_pretrain_eval")
 class ImageTextPretrainTask(BaseTask):
+    """Stage-1 validation.
+
+    The confusion-matrix metrics below are kept **bit-identical** to their
+    historical behaviour: ``f1_positive_macro`` is the checkpoint selection
+    metric, and changing its value would silently change which checkpoint a
+    resumed run selects. Its known defect -- a pathology with no positive
+    samples contributes 0 to the macro instead of being excluded -- is fixed in
+    ``training/evaluation/classification_metrics.py`` and surfaced here under
+    separate ``*_defined_only`` keys.
+
+    Set ``run.save_predictions: true`` in the run config to additionally write a
+    prediction ``.npz``, which lets the full offline evaluator
+    (``scripts/evaluate_stage1.py``) recompute AUROC/AUPRC, calibrate
+    thresholds and bootstrap without another GPU pass.
+    """
+
     def __init__(self):
         super().__init__()
 
@@ -22,6 +41,13 @@ class ImageTextPretrainTask(BaseTask):
         loss_sums = {}
         example_count = 0
         confusion = None
+
+        save_predictions = bool(
+            getattr(getattr(self, "cfg", None), "save_predictions", False)
+        )
+        collected_logits = []
+        collected_labels = []
+        collected_keys = []
 
         for batch in data_loader:
             if cuda_enabled:
@@ -77,6 +103,17 @@ class ImageTextPretrainTask(BaseTask):
             )
             confusion += counts.reshape(num_abnormalities, num_classes, num_classes)
 
+            if save_predictions:
+                # Labels are masked to -1 where the sample carries no CheXpert
+                # annotation, so the offline evaluator skips exactly the rows
+                # this loop skipped. Without it, an unlabelled row would be
+                # read back as a true negative.
+                masked_labels = labels.clone()
+                masked_labels[~valid] = -1
+                collected_logits.append(logits.detach().float().cpu())
+                collected_labels.append(masked_labels.detach().cpu())
+                collected_keys.extend(_sample_keys(batch, labels.shape[0]))
+
         device = next(model.parameters()).device
         loss_names = sorted(loss_sums)
         totals = torch.tensor(
@@ -126,4 +163,96 @@ class ImageTextPretrainTask(BaseTask):
                     }
                 )
 
+                # Same quantities, averaged over pathologies that actually have
+                # positive samples in this split. The keys above dilute the
+                # macro with a hard 0 for every pathology with zero positive
+                # support, which makes them shift with split composition; these
+                # do not. Reported alongside rather than instead, so the
+                # selection metric and every historical log stay comparable.
+                has_positive = support[:, 1] > 0
+                num_defined = int(has_positive.sum().item())
+                if num_defined:
+                    stats.update(
+                        {
+                            "precision_positive_macro_defined_only": precision[has_positive, 1].mean().item(),
+                            "recall_positive_macro_defined_only": recall[has_positive, 1].mean().item(),
+                            "f1_positive_macro_defined_only": f1[has_positive, 1].mean().item(),
+                            "num_pathologies_with_positives": float(num_defined),
+                        }
+                    )
+                if num_defined < confusion.shape[0]:
+                    logger.info(
+                        "%d/%d pathologies have no positive samples in this split; "
+                        "they drag f1_positive_macro down but are excluded from "
+                        "f1_positive_macro_defined_only",
+                        confusion.shape[0] - num_defined,
+                        confusion.shape[0],
+                    )
+
+        if save_predictions and collected_logits:
+            self._save_predictions(
+                collected_logits, collected_labels, collected_keys, model
+            )
+
         return stats
+
+    @staticmethod
+    def _save_predictions(logits_chunks, label_chunks, keys, model):
+        """Write a prediction .npz for offline re-evaluation.
+
+        Best-effort: a failure here must not lose a completed validation pass,
+        so it is logged rather than raised.
+        """
+        try:
+            import numpy as np
+
+            from model.lavis.models.blip2_models.blip2_qformer import chexpert_cols
+            from training.evaluation.schemas import ClassificationPredictions
+
+            if is_dist_avail_and_initialized() and dist.get_world_size() > 1:
+                logger.warning(
+                    "save_predictions collects rank-local batches only; with "
+                    "world_size>1 the written file covers this rank's shard"
+                )
+
+            logits = torch.cat(logits_chunks, dim=0).numpy()
+            labels = torch.cat(label_chunks, dim=0).numpy()
+            probabilities = torch.softmax(
+                torch.from_numpy(logits), dim=-1
+            ).numpy()
+
+            names = tuple(chexpert_cols)
+            if len(names) != labels.shape[1]:
+                names = tuple(f"abnormality_{i}" for i in range(labels.shape[1]))
+                logger.warning(
+                    "chexpert_cols has %d entries but logits have %d columns; "
+                    "falling back to positional names",
+                    len(chexpert_cols),
+                    labels.shape[1],
+                )
+
+            predictions = ClassificationPredictions(
+                labels=labels,
+                probabilities=probabilities,
+                logits=logits,
+                pathology_names=names,
+                sample_keys=np.asarray(keys[: labels.shape[0]], dtype="U"),
+            )
+            registry_output = registry.get_path("result_dir") or "."
+            path = f"{registry_output}/validation_predictions.npz"
+            predictions.save(path)
+            logger.info("saved %d predictions to %s", labels.shape[0], path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("could not save predictions (metrics unaffected): %s", exc)
+
+
+def _sample_keys(batch, batch_size):
+    """Opaque per-study keys, preferring an identifier the batch already carries."""
+    for field in ("study_id", "image_id", "dicom_id"):
+        values = batch.get(field)
+        if values is None:
+            continue
+        if torch.is_tensor(values):
+            values = values.detach().cpu().tolist()
+        return [str(v) for v in list(values)[:batch_size]]
+    return [""] * batch_size
