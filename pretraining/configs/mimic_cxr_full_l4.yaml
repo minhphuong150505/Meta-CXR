@@ -102,21 +102,24 @@ run:
   init_lr_cls: 1.0e-4
   min_lr: 1.0e-6
   warmup_lr: 1.0e-6
-  # Optimizer updates, not microbatches: ~3% of a three-epoch full run.
+  # Optimizer updates, not microbatches: ~0.9% of a ten-epoch full run.
   warmup_steps: 300
   weight_decay: 0.02
   max_grad_norm: 1.0
 
-  max_epoch: 3
-  # Full validation F1 is stable enough to select the image-only student;
-  # patience 2 still permits all three planned epochs when epoch 1 is noisy.
-  early_stop_patience: 2
+  max_epoch: 10
+  # Full validation F1 is stable enough to select the image-only student.
+  # patience 10 == max_epoch, so early stopping can never fire within this run:
+  # all ten epochs are intended to be paid for. checkpoint_best still tracks the
+  # best epoch, so a late plateau costs GPU hours but never costs quality.
+  early_stop_patience: 10
   early_stop_min_delta: 1.0e-4
   selection_metric: f1_positive_macro
   selection_mode: max
-  # checkpoint_last and checkpoint_best are always kept; avoid duplicate large
-  # epoch snapshots unless explicitly overridden.
-  save_freq: 0
+  # checkpoint_last (every epoch) and checkpoint_best are always kept. save_freq 3
+  # adds retained snapshots checkpoint_2/5/8.pth so a run that has to be rebuilt
+  # can restart from a fixed point rather than only from the rolling last.
+  save_freq: 3
 
   # 2 x accumulation 32 = effective batch 64. Contrastive negatives come from
   # the live microbatch plus the queue, not from gradient accumulation.
