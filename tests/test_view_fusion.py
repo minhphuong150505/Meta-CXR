@@ -6,6 +6,7 @@ import torch
 
 from mhcac.view_fusion import ViewFusionModule
 
+
 B, P, D = 3, 7, 32
 
 

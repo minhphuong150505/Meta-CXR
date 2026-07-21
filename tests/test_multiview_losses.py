@@ -6,6 +6,7 @@ import torch
 
 from mhcac.loss import MultiPositiveContrastiveLoss, view_consistency_loss
 
+
 B, N, P, D = 4, 2, 5, 16
 
 
