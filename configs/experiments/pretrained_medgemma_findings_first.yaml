@@ -1,0 +1,54 @@
+# Findings-first inference over an EXTERNAL, pre-fine-tuned MedGemma checkpoint.
+#
+# Provenance: erjui/medgemma-4b-srrg-* are third-party checkpoints fine-tuned
+# from google/medgemma-4b-it on the csrrg_ift dataset (derived from MIMIC-CXR
+# and CheXpert+). They were NOT fine-tuned by this project and were NOT trained
+# on this repository's splits. Any metric produced here must be reported as an
+# external-baseline evaluation on our controlled split.
+#
+# This file configures MedGemma inference only. Stage-1 META-CXR/MHCAC training
+# config is a separate namespace under pretraining/configs/ and is unaffected.
+
+pipeline:
+  mode: pretrained_medgemma_findings_first
+
+models:
+  findings:
+    model_id: erjui/medgemma-4b-srrg-findings
+    revision: main
+    enabled: true
+    max_new_tokens: 512
+    do_sample: false      # deterministic: a cost estimate must be reproducible
+    num_beams: 1
+    device: auto          # resolved at runtime; nothing pins cuda:0
+    dtype: auto           # bfloat16 where supported (Ampere+, incl. RTX 3090)
+    load_in_4bit: false   # set true only if VRAM forces it; needs bitsandbytes
+
+  # PHASE 2 -- NOT RUN. Declared here so the model id is reviewable, but the
+  # runner asserts both flags below are false before it loads anything, and
+  # there is no flag that bypasses that guard.
+  impression:
+    model_id: erjui/medgemma-4b-srrg-impression
+    enabled: false
+    max_new_tokens: 256
+    do_sample: false
+    num_beams: 1
+
+runtime:
+  hourly_cost_usd: 0.40
+  budget_limit_usd: 20.0
+  max_runtime_hours: 50
+  stop_on_budget_limit: true
+  load_one_model_at_a_time: true
+  log_every: 10
+
+evaluation:
+  section: findings
+  save_predictions: true
+  run_counterfactual_audit: true
+  run_impression: false
+
+privacy:
+  save_identifiers: false
+  save_absolute_paths: false
+  save_reference_reports: false

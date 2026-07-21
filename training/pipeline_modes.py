@@ -84,6 +84,35 @@ TEXT_ONLY_LANGUAGE_PRIOR_ABLATION = PipelineMode(
     ),
 )
 
+PRETRAINED_MEDGEMMA_FINDINGS_FIRST = PipelineMode(
+    name="pretrained_medgemma_findings_first",
+    image_mode="native",
+    requires_stage1=False,
+    uses_mhcac_prompt=False,
+    description=(
+        "Inference only over the EXTERNAL erjui/medgemma-4b-srrg-findings "
+        "checkpoint. Fine-tuned by a third party from google/medgemma-4b-it on "
+        "MIMIC-CXR + CheXpert+ derived data, not by this project and not on "
+        "this repository's splits. Generates FINDINGS only; Impression is a "
+        "separate unbudgeted phase. Run via "
+        "medgemma_inference.run_pretrained_findings."
+    ),
+)
+
+PRETRAINED_MEDGEMMA_IMPRESSION_PHASE2 = PipelineMode(
+    name="pretrained_medgemma_impression_phase2",
+    image_mode="native",
+    requires_stage1=False,
+    uses_mhcac_prompt=False,
+    description=(
+        "DECLARED BUT DISABLED. Phase-2 Impression generation over the external "
+        "erjui/medgemma-4b-srrg-impression checkpoint. Blocked by a runtime "
+        "guard until the Findings pilot cost is measured and the additional "
+        "spend is explicitly approved. There is no implementation behind this "
+        "name yet."
+    ),
+)
+
 PIPELINE_MODES = {
     mode.name: mode
     for mode in (
@@ -91,6 +120,8 @@ PIPELINE_MODES = {
         META_CXR_QFORMER,
         META_CXR_QFORMER_WITH_MHCAC_PROMPT,
         TEXT_ONLY_LANGUAGE_PRIOR_ABLATION,
+        PRETRAINED_MEDGEMMA_FINDINGS_FIRST,
+        PRETRAINED_MEDGEMMA_IMPRESSION_PHASE2,
     )
 }
 
@@ -107,7 +138,22 @@ LEGACY_IMAGE_MODE_ALIASES = {
     "both": ABLATION_MODE,
 }
 
-CHOICES = (*PIPELINE_MODES, ABLATION_MODE)
+#: Modes served by ``medgemma_inference/``, not by this Stage-2 entrypoint.
+#: They are registered above so the architecture list is complete and
+#: documented in one place, but they are deliberately excluded from ``CHOICES``
+#: and rejected by ``resolve_pipeline_modes``: an external inference run must
+#: not be reachable through a fine-tuning CLI.
+EXTERNAL_INFERENCE_MODES = frozenset(
+    {
+        PRETRAINED_MEDGEMMA_FINDINGS_FIRST.name,
+        PRETRAINED_MEDGEMMA_IMPRESSION_PHASE2.name,
+    }
+)
+
+CHOICES = (
+    *(name for name in PIPELINE_MODES if name not in EXTERNAL_INFERENCE_MODES),
+    ABLATION_MODE,
+)
 
 
 def resolve_pipeline_modes(selection: str) -> list[PipelineMode]:
@@ -116,6 +162,13 @@ def resolve_pipeline_modes(selection: str) -> list[PipelineMode]:
     ``both_for_ablation`` runs the primary pipeline first so a crash during the
     ablation still leaves the primary result on disk.
     """
+    if selection in EXTERNAL_INFERENCE_MODES:
+        raise ValueError(
+            f"{selection!r} is an external-checkpoint inference mode and is not "
+            "runnable from this entrypoint. Use: python -m "
+            "medgemma_inference.run_pretrained_findings --config "
+            "configs/experiments/pretrained_medgemma_findings_first.yaml"
+        )
     if selection == ABLATION_MODE:
         return [MEDGEMMA_DIRECT, META_CXR_QFORMER]
     if selection in PIPELINE_MODES:
