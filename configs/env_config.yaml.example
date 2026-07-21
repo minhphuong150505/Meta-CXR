@@ -49,3 +49,52 @@ wandb:
 java:
   home: "/usr/lib/jvm/java-8-openjdk-amd64/jre"   # adjust to your Java installation
   path: "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin:"
+
+# ---------------------------------------------------------------------------
+# Evaluation. Validated by training/evaluation/config.py before a run starts,
+# so an unknown metric name fails immediately instead of after hours of training.
+# ---------------------------------------------------------------------------
+evaluation:
+  # three_class | uncertain_as_positive | uncertain_as_negative | ignore_uncertain
+  # Default reproduces the existing pipeline's behaviour.
+  uncertain_policy: three_class
+
+  # Stage 1. f1_positive_macro is the legacy key and stays the default so
+  # existing checkpoints remain comparable; f1_positive_macro_defined_only is
+  # the corrected variant that excludes pathologies with no positive samples.
+  selection_metric: f1_positive_macro
+
+  # default = 0.5 everywhere; calibrated = read scripts/calibrate_thresholds.py
+  # output. Thresholds are only ever fitted on validation.
+  threshold_mode: default
+  threshold_objective: f1        # f1|youden_j|balanced_accuracy|recall_at_precision|precision_at_recall
+
+  # "No Finding" and "Support Devices" are not pathologies; excluded from macro
+  # averages by default, always reported per-label.
+  include_meta_labels: false
+
+  bootstrap:
+    enabled: true
+    samples: 1000
+    confidence: 0.95
+    seed: 42
+
+  classification_metrics:
+    - accuracy
+    - balanced_accuracy
+    - macro_f1
+    - micro_f1
+    - positive_macro_f1
+    - positive_macro_recall
+    - macro_auroc
+    - macro_auprc
+
+  generation_metrics: [bleu, rouge, meteor, cider, bertscore]
+
+  # Interfaces only. Reported as unavailable unless the dependency is installed
+  # AND the adapter has been wired; never reported as 0.
+  clinical_metrics: []
+
+  save_predictions: true
+  save_plots: true
+  save_per_sample_results: true

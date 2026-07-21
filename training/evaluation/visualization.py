@@ -192,7 +192,7 @@ def plot_per_pathology_bars(
 
     figure, axis = plt.subplots(figsize=(max(6, len(names) * 0.6), 4.5))
     bars = axis.bar(range(len(names)), heights, color="#4C72B0")
-    for bar, is_undefined in zip(bars, undefined):
+    for bar, is_undefined in zip(bars, undefined, strict=True):
         if is_undefined:
             bar.set_color("#CCCCCC")
             bar.set_hatch("//")
@@ -311,7 +311,7 @@ def plot_reliability_diagram(
 
     edges = np.linspace(0, 1, bins + 1)
     centres, observed = [], []
-    for low, high in zip(edges[:-1], edges[1:]):
+    for low, high in zip(edges[:-1], edges[1:], strict=True):
         in_bin = (flat_scores >= low) & (flat_scores < high)
         if not np.any(in_bin):
             continue

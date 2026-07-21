@@ -14,6 +14,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from tests.test_classification_metrics import make_predictions  # noqa: E402
 from training.evaluation.baselines import (  # noqa: E402
     ALL_NEGATIVE,
     compute_baselines,
@@ -28,17 +29,15 @@ from training.evaluation.classification_metrics import (  # noqa: E402
 )
 from training.evaluation.threshold_calibration import (  # noqa: E402
     BALANCED_ACCURACY,
-    CalibrationError,
     F1,
     PRECISION_AT_RECALL,
     RECALL_AT_PRECISION,
     YOUDEN_J,
+    CalibrationError,
     calibrate_one,
     calibrate_thresholds,
     load_thresholds,
 )
-from tests.test_classification_metrics import make_predictions  # noqa: E402
-
 
 # --------------------------------------------------------------------------
 # Calibration must never touch test data

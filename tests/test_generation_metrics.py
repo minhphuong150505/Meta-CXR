@@ -41,7 +41,6 @@ from training.evaluation.schemas import (  # noqa: E402
     load_generation_records,
 )
 
-
 # --------------------------------------------------------------------------
 # Normalisation must not destroy clinical meaning
 # --------------------------------------------------------------------------

@@ -16,6 +16,32 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["ruff>=0.6", "pytest>=8.0"]
 
+# The evaluator core (classification metrics, AUROC/AUPRC, threshold
+# calibration, bootstrap, BLEU/ROUGE, error analysis) needs only numpy, so it
+# runs anywhere the test suite does. These extras are for the parts that do not.
+eval-plots = ["matplotlib>=3.7"]
+
+# Reference implementations for the metrics this repo deliberately does not
+# reimplement. Without them those metrics are reported as unavailable with an
+# install command -- never as a score of 0.
+eval-generation = [
+    "nltk>=3.9",
+    "pycocoevalcap>=1.2",
+    "bert-score>=0.3.13",
+]
+
+# Clinical metrics are deliberately NOT listed as installable extras.
+#
+# CheXbert, RadGraph, RadCliQ and RadFact are distributed as research code with
+# model weights behind separate licences, not as versioned PyPI packages that
+# resolve reproducibly. Writing a plausible-looking pin here would imply this
+# project had installed and validated them; it has not. The adapters in
+# training/evaluation/clinical.py raise MissingOptionalDependency naming the
+# package, and NotImplementedError if the package is present but the adapter
+# has not been wired and validated against published reference scores.
+#
+# See docs/evaluator_validation.md ("Những gì KHÔNG được kiểm chứng").
+
 # The repo is not yet a src-layout package; modules are imported by path from
 # the repo root. Declaring packages here would misrepresent that. This file
 # exists for tooling configuration, not for distribution.

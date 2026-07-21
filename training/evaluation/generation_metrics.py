@@ -136,7 +136,7 @@ def corpus_bleu(
 
     numerators = [0] * (max_n + 1)
     denominators = [0] * (max_n + 1)
-    for prediction, reference in zip(tokenized_predictions, tokenized_references):
+    for prediction, reference in zip(tokenized_predictions, tokenized_references, strict=True):
         for n in range(1, max_n + 1):
             prediction_ngrams = _ngrams(prediction, n)
             reference_ngrams = _ngrams(reference, n)
@@ -232,7 +232,7 @@ def _meteor(predictions: list[str], references: list[str]) -> list[float]:
         ) from exc
     return [
         float(meteor_score([tokenize(reference)], tokenize(prediction)))
-        for prediction, reference in zip(predictions, references)
+        for prediction, reference in zip(predictions, references, strict=True)
     ]
 
 
@@ -372,9 +372,9 @@ def compute_generation_metrics(
         }
 
     if ROUGE in metrics:
-        per_sample_l = [rouge_l(p, r) for p, r in zip(predictions, references)]
-        per_sample_1 = [rouge_n(p, r, 1) for p, r in zip(predictions, references)]
-        per_sample_2 = [rouge_n(p, r, 2) for p, r in zip(predictions, references)]
+        per_sample_l = [rouge_l(p, r) for p, r in zip(predictions, references, strict=True)]
+        per_sample_1 = [rouge_n(p, r, 1) for p, r in zip(predictions, references, strict=True)]
+        per_sample_2 = [rouge_n(p, r, 2) for p, r in zip(predictions, references, strict=True)]
         suite.per_sample["rouge_l"] = per_sample_l
         suite.per_sample["rouge_1"] = per_sample_1
         suite.per_sample["rouge_2"] = per_sample_2
