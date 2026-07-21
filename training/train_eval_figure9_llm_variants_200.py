@@ -94,9 +94,11 @@ except ImportError:  # ``python -m training...``
     )
 
 try:
+    from medgemma.soft_tokens import SoftTokenEmbeddingWrapper
     from run_context import Stage1Context
     from torch_io import load_torch_checkpoint
 except ImportError:  # ``python -m training...``
+    from training.medgemma.soft_tokens import SoftTokenEmbeddingWrapper
     from training.run_context import Stage1Context
     from training.torch_io import load_torch_checkpoint
 
@@ -559,39 +561,6 @@ def preferred_dtype() -> torch.dtype:
     return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
 
-class SoftTokenEmbeddingWrapper(nn.Module):
-    def __init__(self, base_embedding: nn.Module, img_token_id: int, projected_img_embs: torch.Tensor):
-        super().__init__()
-        self.base_embedding = base_embedding
-        self.img_token_id = int(img_token_id)
-        self.projected_img_embs = projected_img_embs
-
-    @property
-    def weight(self):
-        return getattr(self.base_embedding, "weight", None)
-
-    def forward(self, input_ids: torch.Tensor):
-        embeds = self.base_embedding(input_ids)
-        mask = input_ids == self.img_token_id
-        if not mask.any():
-            return embeds
-        embeds = embeds.clone()
-        for batch_idx in range(input_ids.shape[0]):
-            positions = mask[batch_idx].nonzero(as_tuple=False).flatten()
-            # Fails closed on any batch/embedding mismatch. The previous
-            # ``min(batch_idx, n - 1)`` clamp silently fed one study's image
-            # features to a different study's report.
-            validate_soft_token_batch(
-                self.projected_img_embs.shape[0],
-                input_ids.shape[0],
-                len(positions),
-                NUM_IMG_TOKENS,
-            )
-            img = self.projected_img_embs[batch_idx]
-            embeds[batch_idx, positions, :] = img.to(device=embeds.device, dtype=embeds.dtype)
-        return embeds
-
-
 class RecordDataset(Dataset):
     def __init__(self, records: list[dict]):
         self.records = records
@@ -1001,7 +970,9 @@ class VariantLLM:
             projected = self.img_proj(qformer.float())
             old_embedding = self.model.get_input_embeddings()
             self.model.set_input_embeddings(
-                SoftTokenEmbeddingWrapper(old_embedding, self.img_token_id, projected)
+                SoftTokenEmbeddingWrapper(
+                    old_embedding, self.img_token_id, projected, NUM_IMG_TOKENS
+                )
             )
         try:
             return self.model(**moved)
@@ -1244,7 +1215,11 @@ class VariantLLM:
             qformer = record["qformer_embs"].unsqueeze(0).to(self.device, dtype=torch.float32)
             projected = self.img_proj(qformer)
             old_embedding = self.model.get_input_embeddings()
-            self.model.set_input_embeddings(SoftTokenEmbeddingWrapper(old_embedding, self.img_token_id, projected))
+            self.model.set_input_embeddings(
+                SoftTokenEmbeddingWrapper(
+                    old_embedding, self.img_token_id, projected, NUM_IMG_TOKENS
+                )
+            )
         try:
             generate_kwargs = {
                 **model_inputs,
