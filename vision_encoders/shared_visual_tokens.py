@@ -24,7 +24,6 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-
 # Fixed concatenation order. Stable across runs and independent of dict
 # insertion order, so a checkpoint's token positions keep their meaning.
 CANONICAL_STREAM_ORDER = ("biovil", "pubmedclip", "swin", "raddino")
@@ -63,7 +62,7 @@ class SharedVisualTokens:
         mask[self.spans[name]] = True
         return mask
 
-    def without(self, *names: str) -> "SharedVisualTokens":
+    def without(self, *names: str) -> SharedVisualTokens:
         """Ablate encoders by zeroing their tokens in place of a per-stream rerun.
 
         Spans are preserved so the token axis keeps its length and meaning; only

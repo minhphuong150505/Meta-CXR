@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meta-cxr"
+version = "0.1.0"
+description = "Abnormality-guided vision-language model for chest X-ray report generation"
+requires-python = ">=3.10"
+# Runtime dependencies deliberately live in requirements-stage1.txt and
+# requirements-stage2.txt: the two stages pin incompatible torch/transformers
+# versions and are installed into separate environments. Listing them here
+# would imply one resolvable set, which does not exist.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6", "pytest>=8.0"]
+
+# The repo is not yet a src-layout package; modules are imported by path from
+# the repo root. Declaring packages here would misrepresent that. This file
+# exists for tooling configuration, not for distribution.
+[tool.setuptools]
+py-modules = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Import mode prepends the rootdir, which is how the path-based imports in
+# tests/conftest.py resolve model/ and model/lavis/ without executing
+# model/lavis/__init__.py.
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [
+    # Vendored fork of Salesforce LAVIS. Reformatting it would make every
+    # future upstream diff unreadable.
+    "model/lavis",
+    # Legacy MHCAC variants 8-11, kept for reference; only mhcac_12 is wired.
+    "mhcac/mhcac_8.py",
+    "mhcac/mhcac_9.py",
+    "mhcac/mhcac_10.py",
+    "mhcac/mhcac_11.py",
+    "notebooks",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",   # line length is handled by the formatter, not the linter
+    "B008",   # FastAPI-style default-call pattern is not used here
+    "UP038",  # isinstance tuple form is still faster on 3.10
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests bootstrap sys.path before importing repo modules, so imports cannot
+# all sit at the top of the file.
+"tests/*" = ["E402"]
+"training/run_medgemma_qlora.py" = ["E402"]
+"training/train_eval_figure9_llm_variants_200.py" = ["E402"]
+# LAVIS registry population genuinely requires the star imports.
+"pretraining/train.py" = ["F401", "F403"]
+"pretraining/precompute_features.py" = ["F401", "F403"]
