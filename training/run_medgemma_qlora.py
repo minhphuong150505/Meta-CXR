@@ -41,10 +41,11 @@ from pipeline_modes import (  # noqa: E402
 from pipeline_modes import requires_stage1 as modes_require_stage1  # noqa: E402
 from run_context import Stage1Context  # noqa: E402
 
-# NOTE: this still pulls in LAVIS/torch/transformers even for medgemma_direct,
-# because VariantLLM and the evaluation helpers live in the Figure-9 module.
-# Extracting them into training/trainers/ is the next refactor step; the *data*
-# path and the Stage-1 config requirement are already fully decoupled below.
+# VariantLLM and the evaluation helpers still live in the Figure-9 module, so
+# this pulls in torch/transformers/peft -- which medgemma_direct needs anyway.
+# It no longer pulls in LAVIS, the vision encoders, the Q-Former or MHCAC:
+# those are confined to training/stage1/lavis_loader.py and imported only from
+# inside build_stage1_records(). Enforced by tests/test_native_independence.py.
 import train_eval_figure9_llm_variants_200 as fig9  # noqa: E402
 
 
@@ -415,18 +416,15 @@ def main() -> None:
             )
         print(f"[stage1] train limit={args.train_limit or 'all'}", flush=True)
         train_records = fig9.build_stage1_records(
-            context, checkpoint_root, root, "train", args.train_limit, args.num_workers,
-            include_stage1_features=True,
+            context, checkpoint_root, root, "train", args.train_limit, args.num_workers
         )
         print(f"[stage1] validation limit={args.val_limit or 'all'}", flush=True)
         val_records = fig9.build_stage1_records(
-            context, checkpoint_root, root, "val", args.val_limit, args.num_workers,
-            include_stage1_features=True,
+            context, checkpoint_root, root, "val", args.val_limit, args.num_workers
         )
         print(f"[stage1] held-out test limit={args.test_limit or 'all'}", flush=True)
         test_records = fig9.build_stage1_records(
-            context, checkpoint_root, root, "test", args.test_limit, args.num_workers,
-            include_stage1_features=True,
+            context, checkpoint_root, root, "test", args.test_limit, args.num_workers
         )
     else:
         print(

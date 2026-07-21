@@ -25,7 +25,6 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -96,8 +95,10 @@ except ImportError:  # ``python -m training...``
 
 try:
     from run_context import Stage1Context
+    from torch_io import load_torch_checkpoint
 except ImportError:  # ``python -m training...``
     from training.run_context import Stage1Context
+    from training.torch_io import load_torch_checkpoint
 
 try:
     from dataio.manifest import (
@@ -114,20 +115,18 @@ except ImportError:  # ``python -m training...``
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
-sys.path.insert(0, str(PROJECT_DIR / "model"))
 
-import model.lavis.tasks as tasks  # noqa: E402
+# NOTE: LAVIS, the vision encoders, the Q-Former and MHCAC are imported ONLY by
+# training/stage1/lavis_loader.py, and only from inside the Stage-1 branch of
+# build_stage1_records(). Do not add a module-scope Stage-1 import here: it
+# would make `medgemma_direct` -- which by definition uses none of that -- fail
+# to start on a machine that has no Stage-1 stack installed.
 from local_config import (  # noqa: E402
     PROCESSED_TEST_CSV,
     PROCESSED_TRAIN_CSV,
     PROCESSED_VAL_CSV,
     VIS_ROOT,
 )
-from model.lavis.common.config import Config  # noqa: E402
-from model.lavis.common.registry import registry  # noqa: E402
-from model.lavis.data.ReportDataset import MIMIC_CXR_Dataset  # noqa: E402
-
-registry.mapping["paths"]["cache_root"] = "."
 
 try:
     nltk.data.find("corpora/wordnet")
@@ -285,77 +284,38 @@ def read_gcs_csv(gcs_path: str, local_dir: Path) -> pd.DataFrame:
     return pd.read_csv(local)
 
 
+def _stage1():
+    """Import the Stage-1 stack, lazily and loudly.
+
+    Kept out of module scope so that a ``medgemma_direct`` run -- which uses no
+    Stage-1 checkpoint, config, encoder, Q-Former or MHCAC -- never imports
+    LAVIS. Only the Q-Former branch of ``build_stage1_records`` calls this.
+    """
+    from training.stage1 import lavis_loader
+
+    return lavis_loader
+
+
 def default_stage1_config_path(run_name: str) -> Path:
+    # Mirrors lavis_loader.default_stage1_config_path without importing it, so
+    # that fingerprinting a cohort does not drag in the Stage-1 stack.
     return PROJECT_DIR / "pretraining/configs/encoder_comparison" / f"{run_name}.yaml"
 
 
-def build_cfg(context: Stage1Context) -> Config:
-    cfg_path = context.resolve_config_path(default_stage1_config_path(context.run_name))
-    return Config(SimpleNamespace(cfg_path=str(cfg_path), options=None))
+def build_cfg(context: Stage1Context):
+    return _stage1().build_cfg(context)
 
 
 def stage1_checkpoint_path(context: Stage1Context, checkpoint_root: Path) -> Path:
     return context.resolve_checkpoint_path(checkpoint_root)
 
 
-def load_torch_checkpoint(path: Path):
-    try:
-        return torch.load(str(path), map_location="cpu", weights_only=False)
-    except TypeError:
-        return torch.load(str(path), map_location="cpu")
-
-
-def filter_state_dict_for_model(model, state_dict: dict) -> dict:
-    model_state = model.state_dict()
-    filtered = {}
-    for key, value in state_dict.items():
-        if key in model_state and hasattr(value, "shape") and tuple(value.shape) != tuple(model_state[key].shape):
-            continue
-        filtered[key] = value
-    return filtered
-
-
-def load_state_dict_materializing_meta(model, state_dict: dict):
-    try:
-        return model.load_state_dict(state_dict, strict=False, assign=True)
-    except TypeError:
-        return model.load_state_dict(state_dict, strict=False)
-
-
 def build_stage1_model(context: Stage1Context, checkpoint_root: Path, device: torch.device):
-    cfg = build_cfg(context)
-    task = tasks.setup_task(cfg)
-    model = task.build_model(cfg)
-    ckpt_path = stage1_checkpoint_path(context, checkpoint_root)
-    ckpt = load_torch_checkpoint(ckpt_path)
-    state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
-    state_dict = filter_state_dict_for_model(model, state_dict)
-    missing, unexpected = load_state_dict_materializing_meta(model, state_dict)
-    print(f"[stage1] loaded {ckpt_path}; missing={len(missing)} unexpected={len(unexpected)}")
-    model.to(device)
-    model.eval()
-    for param in model.parameters():
-        param.requires_grad_(False)
-    return cfg, model
+    return _stage1().build_stage1_model(context, checkpoint_root, device)
 
 
-def make_stage1_loader(cfg: Config, split: str, sample_limit: int | None, num_workers: int) -> DataLoader:
-    dataset = MIMIC_CXR_Dataset(
-        vis_processor=None,
-        text_processor=None,
-        vis_root=VIS_ROOT,
-        split=split,
-        cfg=cfg,
-        truncate=sample_limit if sample_limit and sample_limit > 0 else None,
-    )
-    return DataLoader(
-        dataset,
-        batch_size=1,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=torch.cuda.is_available(),
-        collate_fn=dataset.collater,
-    )
+def make_stage1_loader(cfg, split: str, sample_limit: int | None, num_workers: int):
+    return _stage1().make_stage1_loader(cfg, split, sample_limit, num_workers)
 
 
 def field_value(field, index: int = 0) -> str:
@@ -489,9 +449,15 @@ def build_stage1_records(
     split: str,
     sample_limit: int | None,
     num_workers: int,
-    *,
-    include_stage1_features: bool = True,
 ) -> list[dict]:
+    """Build Q-Former records. Stage-1 only -- native MedGemma must not call this.
+
+    ``medgemma_direct`` records come from ``training/dataio/manifest.py`` via
+    ``run_medgemma_qlora.build_native_records``, which reads the split CSVs
+    directly. This function loads a Stage-1 checkpoint and iterates
+    ``MIMIC_CXR_Dataset``, so routing native mode through it would reintroduce
+    exactly the Stage-1 coupling the pipeline split exists to remove.
+    """
     cohort_id, cohort = stage1_cohort_fingerprint(
         context, checkpoint_root, split, sample_limit
     )
@@ -499,8 +465,7 @@ def build_stage1_records(
     # This local-only cache necessarily contains target report text and image
     # paths. Upload functions intentionally never include this directory.
     cache_dir = output_dir / ".sensitive_stage1_cache"
-    record_mode = "qformer" if include_stage1_features else "native"
-    cache_path = cache_dir / f"{context.run_name}_{split}_{record_mode}_{limit_name}_{cohort_id}.pt"
+    cache_path = cache_dir / f"{context.run_name}_{split}_qformer_{limit_name}_{cohort_id}.pt"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     if cache_path.exists():
         print(f"[stage1] reusing {cache_path}")
@@ -509,16 +474,8 @@ def build_stage1_records(
             return cached["records"]
         print("[stage1] cache manifest mismatch; rebuilding")
 
-    model = None
-    device = None
-    if include_stage1_features:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        cfg, model = build_stage1_model(context, checkpoint_root, device)
-    else:
-        # A native MedGemma run must not require or consume a Stage-1
-        # checkpoint.  We still use the same canonical study-level dataset so
-        # its cohort and FINDINGS target are directly comparable to Q-Former.
-        cfg = build_cfg(context)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    cfg, model = build_stage1_model(context, checkpoint_root, device)
     loader = make_stage1_loader(cfg, split, sample_limit, num_workers)
     records = []
     skipped_invalid_targets = 0
@@ -557,15 +514,14 @@ def build_stage1_records(
             "ref": target,
             "image_path": field_value(batch.get("image_path", "")),
         }
-        if model is not None:
-            model_inputs = {
-                key: value.to(device, non_blocking=True)
-                for key, value in batch.items()
-                if key in image_input_keys and torch.is_tensor(value)
-            }
-            logits, qformer = model.forward_image(model_inputs)
-            record["pred_groups"] = classify_with_thresholds(context, logits[0].detach().cpu())
-            record["qformer_embs"] = qformer[0].detach().cpu().to(torch.float16)
+        model_inputs = {
+            key: value.to(device, non_blocking=True)
+            for key, value in batch.items()
+            if key in image_input_keys and torch.is_tensor(value)
+        }
+        logits, qformer = model.forward_image(model_inputs)
+        record["pred_groups"] = classify_with_thresholds(context, logits[0].detach().cpu())
+        record["qformer_embs"] = qformer[0].detach().cpu().to(torch.float16)
         records.append(record)
     tmp_path = cache_path.with_suffix(".tmp")
     torch.save(
@@ -583,8 +539,7 @@ def build_stage1_records(
         f"[stage1] wrote {cache_path} ({len(records)} valid FINDINGS records; "
         f"skipped {skipped_invalid_targets} invalid targets)"
     )
-    if model is not None:
-        del model
+    del model
     clear_memory()
     return records
 
