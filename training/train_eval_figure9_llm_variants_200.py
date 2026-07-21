@@ -40,11 +40,12 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from PIL import Image
+import transformers
 from bert_score import score as bert_score_fn
 from nltk.translate.bleu_score import SmoothingFunction, corpus_bleu
 from nltk.translate.meteor_score import meteor_score
 from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
+from PIL import Image
 from pycocoevalcap.cider.cider import Cider
 from pycocoevalcap.rouge.rouge import Rouge
 from torch.utils.data import DataLoader, Dataset
@@ -92,10 +93,18 @@ except ImportError:  # ``python -m training...``
     )
 
 try:
+    from medgemma.capabilities import (
+        MultimodalModelLoadError,
+        validate_multimodal_capability,
+    )
     from medgemma.soft_tokens import SoftTokenEmbeddingWrapper
     from run_context import Stage1Context
     from torch_io import load_torch_checkpoint
 except ImportError:  # ``python -m training...``
+    from training.medgemma.capabilities import (
+        MultimodalModelLoadError,
+        validate_multimodal_capability,
+    )
     from training.medgemma.soft_tokens import SoftTokenEmbeddingWrapper
     from training.run_context import Stage1Context
     from training.torch_io import load_torch_checkpoint
@@ -582,10 +591,14 @@ class VariantLLM:
         lora_alpha: int = 16,
         gradient_checkpointing: bool = True,
     ):
-        if image_mode not in {"qformer", "native"}:
-            raise ValueError("image_mode must be 'qformer' or 'native'")
-        if image_mode == "native" and family != "medgemma":
-            raise ValueError("native image ablation is only supported for MedGemma")
+        if image_mode not in {"qformer", "native", "text_only"}:
+            raise ValueError("image_mode must be 'qformer', 'native' or 'text_only'")
+        if image_mode in {"native", "text_only"} and family != "medgemma":
+            raise ValueError(f"{image_mode} image mode is only supported for MedGemma")
+        # ``text_only`` is reachable only via the explicitly-named
+        # text_only_language_prior_ablation pipeline mode. It is never a
+        # fallback and never a default.
+        self.capability = None
         self.family = family
         self.adapter = adapter
         self.train_adapter = train_adapter
@@ -643,10 +656,36 @@ class VariantLLM:
                 load_kwargs["device_map"] = {
                     "": torch.cuda.current_device() if torch.cuda.is_available() else "cpu"
                 }
-            try:
-                self.model = AutoModelForImageTextToText.from_pretrained(self.model_id, **load_kwargs)
-            except Exception:
-                self.model = AutoModelForCausalLM.from_pretrained(self.model_id, **load_kwargs)
+            # NO SILENT FALLBACK. This used to be a try/except that dropped to
+            # AutoModelForCausalLM on any failure, which turned a vision run
+            # into a language-prior run under a vision run's name. See
+            # training/medgemma/capabilities.py for why that invalidates the
+            # ablation rather than merely degrading it.
+            if self.image_mode == "text_only":
+                # Reached only when the user explicitly selected
+                # text_only_language_prior_ablation.
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.model_id, **load_kwargs
+                )
+            else:
+                try:
+                    self.model = AutoModelForImageTextToText.from_pretrained(
+                        self.model_id, **load_kwargs
+                    )
+                except Exception as exc:
+                    raise MultimodalModelLoadError(
+                        model_id=self.model_id,
+                        revision=load_kwargs.get("revision"),
+                        transformers_version=getattr(transformers, "__version__", None),
+                        original=exc,
+                    ) from exc
+                self.capability = validate_multimodal_capability(
+                    self.model,
+                    self.processor,
+                    model_id=self.model_id,
+                    revision=load_kwargs.get("revision"),
+                    transformers_version=getattr(transformers, "__version__", None),
+                )
             if self.image_mode == "qformer" and self.img_token not in self.tokenizer.get_vocab():
                 self.tokenizer.add_special_tokens({"additional_special_tokens": [self.img_token]})
                 self.model.resize_token_embeddings(len(self.tokenizer))
@@ -791,6 +830,13 @@ class VariantLLM:
             "img_token_id": self.img_token_id,
             "num_img_tokens": NUM_IMG_TOKENS,
             "image_mode": self.image_mode,
+            # Recorded so a checkpoint can never be mistaken later for a vision
+            # run when it was in fact the language-prior ablation.
+            **(
+                self.capability.as_metadata()
+                if self.capability is not None
+                else {"multimodal": False, "capability_checks": {}, "capability_failures": []}
+            ),
         }
         (out_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
         manifest = {

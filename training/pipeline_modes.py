@@ -30,6 +30,10 @@ class PipelineMode:
     requires_stage1: bool
     uses_mhcac_prompt: bool
     description: str
+    #: Whether the model must genuinely consume pixels. Only the deliberate
+    #: language-prior ablation sets this False; every other mode fails closed if
+    #: the loaded model turns out to be text-only.
+    requires_multimodal: bool = True
 
 
 MEDGEMMA_DIRECT = PipelineMode(
@@ -65,12 +69,28 @@ META_CXR_QFORMER_WITH_MHCAC_PROMPT = PipelineMode(
     ),
 )
 
+TEXT_ONLY_LANGUAGE_PRIOR_ABLATION = PipelineMode(
+    name="text_only_language_prior_ablation",
+    image_mode="text_only",
+    requires_stage1=False,
+    uses_mhcac_prompt=False,
+    requires_multimodal=False,
+    description=(
+        "DIAGNOSTIC ABLATION, NOT A VISION PIPELINE. Gemma decoder with no image "
+        "input at all: measures how much of the report is recoverable from the "
+        "language prior and the prompt alone. This is the floor that a real "
+        "vision pipeline must beat. It must never be reported as 'native "
+        "MedGemma' or compared as though it used the image."
+    ),
+)
+
 PIPELINE_MODES = {
     mode.name: mode
     for mode in (
         MEDGEMMA_DIRECT,
         META_CXR_QFORMER,
         META_CXR_QFORMER_WITH_MHCAC_PROMPT,
+        TEXT_ONLY_LANGUAGE_PRIOR_ABLATION,
     )
 }
 
@@ -110,3 +130,14 @@ def resolve_pipeline_modes(selection: str) -> list[PipelineMode]:
 def requires_stage1(modes: list[PipelineMode]) -> bool:
     """True when any selected mode needs a Stage-1 checkpoint and config."""
     return any(mode.requires_stage1 for mode in modes)
+
+
+def requires_multimodal(mode: PipelineMode) -> bool:
+    """True when the loaded model must genuinely accept pixels.
+
+    False only for ``text_only_language_prior_ablation``, which a user has to
+    name explicitly. There is no path by which a mode silently becomes
+    text-only: ``both_for_ablation`` does not include it, and it is not the
+    default.
+    """
+    return mode.requires_multimodal
