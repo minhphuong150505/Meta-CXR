@@ -39,6 +39,7 @@ from pipeline_modes import (  # noqa: E402
     resolve_pipeline_modes,
 )
 from pipeline_modes import requires_stage1 as modes_require_stage1  # noqa: E402
+from run_context import Stage1Context  # noqa: E402
 
 # NOTE: this still pulls in LAVIS/torch/transformers even for medgemma_direct,
 # because VariantLLM and the evaluation helpers live in the Figure-9 module.
@@ -198,6 +199,7 @@ def upload_safe_run(root: Path, adapter_dirs: list[Path], gcs_output: str) -> No
 
 
 def train_mode(
+    context: Stage1Context,
     args: argparse.Namespace,
     mode: PipelineMode,
     train_records: list[dict],
@@ -266,7 +268,7 @@ def train_mode(
     llm.load_img_proj_if_present(adapter_dir)
     val_eval_records = deterministic_subset(val_records, args.val_generation_limit, fig9.SEED + 1)
     val_cohort, _ = fig9.stage1_cohort_fingerprint(
-        Path(args.checkpoint_root), "val", args.val_limit
+        context, Path(args.checkpoint_root), "val", args.val_limit
     )
     val_metrics = fig9.evaluate_variant(
         "medgemma",
@@ -277,6 +279,7 @@ def train_mode(
         args.max_new_tokens,
         "fine",
         section_mode=args.section_mode,
+        context=context,
         cohort_id=fig9.stable_fingerprint(
             {"full_val_cohort": val_cohort, "sample_keys": [r["sample_key"] for r in val_eval_records]}
         ),
@@ -284,7 +287,7 @@ def train_mode(
     test_metrics = None
     if not args.skip_test:
         test_cohort, _ = fig9.stage1_cohort_fingerprint(
-            Path(args.checkpoint_root), "test", args.test_limit
+            context, Path(args.checkpoint_root), "test", args.test_limit
         )
         test_metrics = fig9.evaluate_variant(
             "medgemma",
@@ -295,6 +298,7 @@ def train_mode(
             args.max_new_tokens,
             "fine",
             section_mode=args.section_mode,
+            context=context,
             cohort_id=test_cohort,
         )
     del llm
@@ -374,10 +378,12 @@ def main() -> None:
     args = parse_args()
     modes = resolve_pipeline_modes(args.pipeline_mode)
     needs_stage1 = modes_require_stage1(modes)
-    fig9.RUN_NAME = args.stage1_run
-    fig9.STAGE1_CONFIG_PATH_OVERRIDE = args.stage1_config
-    fig9.STAGE1_CHECKPOINT_PATH_OVERRIDE = args.stage1_checkpoint
-    fig9.THRESHOLDS = fig9.load_thresholds(args.threshold_path)
+    context = Stage1Context(
+        run_name=args.stage1_run,
+        config_path=args.stage1_config,
+        checkpoint_path=args.stage1_checkpoint,
+        thresholds=fig9.load_thresholds(args.threshold_path),
+    )
     fig9.set_seed(fig9.SEED)
     root = Path(args.output_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -401,7 +407,7 @@ def main() -> None:
     if needs_stage1:
         if not Path(args.stage1_config).is_file():
             raise FileNotFoundError(f"Stage-1 config not found: {args.stage1_config}")
-        resolved_stage1_checkpoint = fig9.stage1_checkpoint_path(checkpoint_root)
+        resolved_stage1_checkpoint = fig9.stage1_checkpoint_path(context, checkpoint_root)
         if not resolved_stage1_checkpoint.is_file():
             raise FileNotFoundError(
                 f"Stage-1 checkpoint not found: {resolved_stage1_checkpoint}. "
@@ -409,17 +415,17 @@ def main() -> None:
             )
         print(f"[stage1] train limit={args.train_limit or 'all'}", flush=True)
         train_records = fig9.build_stage1_records(
-            checkpoint_root, root, "train", args.train_limit, args.num_workers,
+            context, checkpoint_root, root, "train", args.train_limit, args.num_workers,
             include_stage1_features=True,
         )
         print(f"[stage1] validation limit={args.val_limit or 'all'}", flush=True)
         val_records = fig9.build_stage1_records(
-            checkpoint_root, root, "val", args.val_limit, args.num_workers,
+            context, checkpoint_root, root, "val", args.val_limit, args.num_workers,
             include_stage1_features=True,
         )
         print(f"[stage1] held-out test limit={args.test_limit or 'all'}", flush=True)
         test_records = fig9.build_stage1_records(
-            checkpoint_root, root, "test", args.test_limit, args.num_workers,
+            context, checkpoint_root, root, "test", args.test_limit, args.num_workers,
             include_stage1_features=True,
         )
     else:
@@ -439,7 +445,7 @@ def main() -> None:
     adapter_dirs: list[Path] = []
     for mode in modes:
         results[mode.name], adapter_dir = train_mode(
-            args, mode, train_records, val_records, test_records, root
+            context, args, mode, train_records, val_records, test_records, root
         )
         adapter_dirs.append(adapter_dir)
 
@@ -449,7 +455,7 @@ def main() -> None:
         "pipeline_mode": args.pipeline_mode,
         "primary_model": modes[0].name,
         "ablation": [mode.name for mode in modes[1:]] or None,
-        "stage1_checkpoint": fig9.RUN_NAME if needs_stage1 else None,
+        "stage1_checkpoint": context.run_name if needs_stage1 else None,
         "section_mode": args.section_mode,
         "target_section": args.section_mode.replace("_", " ").upper(),
         "max_new_tokens": args.max_new_tokens,

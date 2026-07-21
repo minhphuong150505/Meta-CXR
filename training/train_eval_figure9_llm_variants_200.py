@@ -95,6 +95,11 @@ except ImportError:  # ``python -m training...``
     )
 
 try:
+    from run_context import Stage1Context
+except ImportError:  # ``python -m training...``
+    from training.run_context import Stage1Context
+
+try:
     from dataio.manifest import (
         FINDINGS_AND_IMPRESSION,
         FINDINGS_ONLY,
@@ -130,9 +135,7 @@ except LookupError:
     nltk.download("wordnet", quiet=True)
 
 SEED = 16
-RUN_NAME = "07_all_three"
-STAGE1_CONFIG_PATH_OVERRIDE: Path | None = None
-STAGE1_CHECKPOINT_PATH_OVERRIDE: Path | None = None
+DEFAULT_RUN_NAME = "07_all_three"
 NUM_IMG_TOKENS = 32
 BERTSCORE_MODEL = "microsoft/deberta-xlarge-mnli"
 SMOOTH = SmoothingFunction().method1
@@ -168,7 +171,6 @@ CLASS_MAP = {"negative": 0, "positive": 1, "uncertain": 2}
 # Image-only argmax is the safe default. Historical ``threshold.json`` values
 # have no Stage-1 checkpoint/validation provenance and must never be loaded
 # implicitly. A caller may opt in to a separately calibrated file.
-THRESHOLDS: dict[str, dict[str, float]] = {}
 
 
 def parse_args() -> argparse.Namespace:
@@ -283,17 +285,17 @@ def read_gcs_csv(gcs_path: str, local_dir: Path) -> pd.DataFrame:
     return pd.read_csv(local)
 
 
-def build_cfg(run_name: str) -> Config:
-    cfg_path = STAGE1_CONFIG_PATH_OVERRIDE or (
-        PROJECT_DIR / "pretraining/configs/encoder_comparison" / f"{run_name}.yaml"
-    )
+def default_stage1_config_path(run_name: str) -> Path:
+    return PROJECT_DIR / "pretraining/configs/encoder_comparison" / f"{run_name}.yaml"
+
+
+def build_cfg(context: Stage1Context) -> Config:
+    cfg_path = context.resolve_config_path(default_stage1_config_path(context.run_name))
     return Config(SimpleNamespace(cfg_path=str(cfg_path), options=None))
 
 
-def stage1_checkpoint_path(checkpoint_root: Path) -> Path:
-    return STAGE1_CHECKPOINT_PATH_OVERRIDE or (
-        checkpoint_root / RUN_NAME / "checkpoint_best.pth"
-    )
+def stage1_checkpoint_path(context: Stage1Context, checkpoint_root: Path) -> Path:
+    return context.resolve_checkpoint_path(checkpoint_root)
 
 
 def load_torch_checkpoint(path: Path):
@@ -320,11 +322,11 @@ def load_state_dict_materializing_meta(model, state_dict: dict):
         return model.load_state_dict(state_dict, strict=False)
 
 
-def build_stage1_model(checkpoint_root: Path, device: torch.device):
-    cfg = build_cfg(RUN_NAME)
+def build_stage1_model(context: Stage1Context, checkpoint_root: Path, device: torch.device):
+    cfg = build_cfg(context)
     task = tasks.setup_task(cfg)
     model = task.build_model(cfg)
-    ckpt_path = stage1_checkpoint_path(checkpoint_root)
+    ckpt_path = stage1_checkpoint_path(context, checkpoint_root)
     ckpt = load_torch_checkpoint(ckpt_path)
     state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
     state_dict = filter_state_dict_for_model(model, state_dict)
@@ -365,7 +367,7 @@ def field_value(field, index: int = 0) -> str:
         return str(field)
 
 
-def classify_with_thresholds(logits: torch.Tensor) -> dict[str, list[str]]:
+def classify_with_thresholds(context: Stage1Context, logits: torch.Tensor) -> dict[str, list[str]]:
     probs = torch.softmax(logits, dim=-1).tolist()
     out = {"positive": [], "negative": [], "uncertain": []}
     for abn, p in zip(ABNORMALITIES_14, probs):
@@ -373,7 +375,7 @@ def classify_with_thresholds(logits: torch.Tensor) -> dict[str, list[str]]:
             continue
         best_cls = select_threshold_class(
             p,
-            THRESHOLDS.get(abn, {}),
+            context.threshold_for(abn),
             tuple(CLASS_MAP),
         )
         out[best_cls].append(abn)
@@ -459,21 +461,21 @@ def data_object_identity(path: str | Path) -> dict[str, Any]:
 
 
 def stage1_cohort_fingerprint(
-    checkpoint_root: Path, split: str, sample_limit: int | None
+    context: Stage1Context, checkpoint_root: Path, split: str, sample_limit: int | None
 ) -> tuple[str, dict[str, Any]]:
-    ckpt_path = stage1_checkpoint_path(checkpoint_root)
-    cfg_path = STAGE1_CONFIG_PATH_OVERRIDE or (
-        PROJECT_DIR / "pretraining/configs/encoder_comparison" / f"{RUN_NAME}.yaml"
+    ckpt_path = stage1_checkpoint_path(context, checkpoint_root)
+    cfg_path = context.resolve_config_path(
+        default_stage1_config_path(context.run_name)
     )
     payload = {
         "schema_version": SCHEMA_VERSION,
-        "run_name": RUN_NAME,
+        "run_name": context.run_name,
         "split": split,
         "sample_limit": sample_limit if sample_limit and sample_limit > 0 else "all",
         "checkpoint": file_identity(ckpt_path),
         "stage1_config": file_identity(cfg_path),
         "split_csv": data_object_identity(_split_csv_for(split)),
-        "thresholds": stable_fingerprint(THRESHOLDS, length=32),
+        "thresholds": stable_fingerprint(context.fingerprint_payload()["thresholds"], length=32),
         "vis_root_name": Path(VIS_ROOT).name,
     }
     return stable_fingerprint(payload), payload
@@ -481,6 +483,7 @@ def stage1_cohort_fingerprint(
 
 @torch.no_grad()
 def build_stage1_records(
+    context: Stage1Context,
     checkpoint_root: Path,
     output_dir: Path,
     split: str,
@@ -489,13 +492,15 @@ def build_stage1_records(
     *,
     include_stage1_features: bool = True,
 ) -> list[dict]:
-    cohort_id, cohort = stage1_cohort_fingerprint(checkpoint_root, split, sample_limit)
+    cohort_id, cohort = stage1_cohort_fingerprint(
+        context, checkpoint_root, split, sample_limit
+    )
     limit_name = str(sample_limit) if sample_limit and sample_limit > 0 else "all"
     # This local-only cache necessarily contains target report text and image
     # paths. Upload functions intentionally never include this directory.
     cache_dir = output_dir / ".sensitive_stage1_cache"
     record_mode = "qformer" if include_stage1_features else "native"
-    cache_path = cache_dir / f"{RUN_NAME}_{split}_{record_mode}_{limit_name}_{cohort_id}.pt"
+    cache_path = cache_dir / f"{context.run_name}_{split}_{record_mode}_{limit_name}_{cohort_id}.pt"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     if cache_path.exists():
         print(f"[stage1] reusing {cache_path}")
@@ -508,12 +513,12 @@ def build_stage1_records(
     device = None
     if include_stage1_features:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        cfg, model = build_stage1_model(checkpoint_root, device)
+        cfg, model = build_stage1_model(context, checkpoint_root, device)
     else:
         # A native MedGemma run must not require or consume a Stage-1
         # checkpoint.  We still use the same canonical study-level dataset so
         # its cohort and FINDINGS target are directly comparable to Q-Former.
-        cfg = build_cfg(RUN_NAME)
+        cfg = build_cfg(context)
     loader = make_stage1_loader(cfg, split, sample_limit, num_workers)
     records = []
     skipped_invalid_targets = 0
@@ -559,7 +564,7 @@ def build_stage1_records(
                 if key in image_input_keys and torch.is_tensor(value)
             }
             logits, qformer = model.forward_image(model_inputs)
-            record["pred_groups"] = classify_with_thresholds(logits[0].detach().cpu())
+            record["pred_groups"] = classify_with_thresholds(context, logits[0].detach().cpu())
             record["qformer_embs"] = qformer[0].detach().cpu().to(torch.float16)
         records.append(record)
     tmp_path = cache_path.with_suffix(".tmp")
@@ -1430,6 +1435,7 @@ def evaluate_variant(
     cohort_id: str | None = None,
     include_sensitive_fields: bool = False,
     section_mode: str = FINDINGS_ONLY,
+    context: Stage1Context,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     cohort_id = cohort_id or stable_fingerprint(
@@ -1445,7 +1451,7 @@ def evaluate_variant(
             "schema_version": SCHEMA_VERSION,
             "family": family,
             "variant": variant,
-            "run": RUN_NAME,
+            "run": context.run_name,
             "image_mode": llm.image_mode,
             "cohort_id": cohort_id,
             "adapter": adapter_manifest,
@@ -1453,7 +1459,7 @@ def evaluate_variant(
             "prompt_style": prompt_style,
         }
     )
-    stem = f"{family}_{variant}_{llm.image_mode}_{RUN_NAME}_{eval_id}"
+    stem = f"{family}_{variant}_{llm.image_mode}_{context.run_name}_{eval_id}"
     # Generated text is a MIMIC derivative. Keep it in an explicitly sensitive
     # local resume cache; upload callers only copy aggregate files in out_dir.
     prediction_cache = out_dir / ".sensitive_predictions"
@@ -1506,7 +1512,7 @@ def evaluate_variant(
             "Family": family,
             "SectionMode": section_mode,
             "Variant": variant,
-            "Run": RUN_NAME,
+            "Run": context.run_name,
             "ImageMode": llm.image_mode,
             "N": len(records),
             "MaxNewTokens": max_new_tokens,
@@ -1521,13 +1527,13 @@ def evaluate_variant(
     return metrics
 
 
-def instruction_metrics(family: str, work_dir: Path) -> dict:
+def instruction_metrics(context: Stage1Context, family: str, work_dir: Path) -> dict:
     table = read_gcs_csv(INSTRUCTION_TABLES[family], work_dir)
-    row = table[table["Run"] == RUN_NAME].iloc[0]
+    row = table[table["Run"] == context.run_name].iloc[0]
     return {
         "Family": family,
         "Variant": "instruction",
-        "Run": RUN_NAME,
+        "Run": context.run_name,
         "N": 200,
         "BLEU-1": float(row["BLEU-1"]),
         "BLEU-2": float(row["BLEU-2"]),
@@ -1581,7 +1587,7 @@ def plot_family(family: str, metrics_df: pd.DataFrame, out_dir: Path) -> dict:
     return {"figure_png": str(png), "figure_pdf": str(pdf)}
 
 
-def run_family(args: argparse.Namespace, family: str, train_records: list[dict], test_records: list[dict], root: Path) -> dict:
+def run_family(context: Stage1Context, args: argparse.Namespace, family: str, train_records: list[dict], test_records: list[dict], root: Path) -> dict:
     family_dir = root / family
     adapters_dir = family_dir / "adapters"
     eval_dir = family_dir / "eval"
@@ -1590,14 +1596,14 @@ def run_family(args: argparse.Namespace, family: str, train_records: list[dict],
 
     metrics = []
 
-    if (not args.skip_existing_eval) or not (eval_dir / f"metrics_{family}_base_{RUN_NAME}.json").exists():
+    if (not args.skip_existing_eval) or not (eval_dir / f"metrics_{family}_base_{context.run_name}.json").exists():
         print(f"[{family}] evaluating base")
         llm = VariantLLM(family)
-        metrics.append(evaluate_variant(family, "base", llm, test_records, eval_dir, args.max_new_tokens, "fine"))
+        metrics.append(evaluate_variant(family, "base", llm, test_records, eval_dir, args.max_new_tokens, "fine", context=context))
         del llm
         clear_memory()
     else:
-        metrics.append(json.loads((eval_dir / f"metrics_{family}_base_{RUN_NAME}.json").read_text(encoding="utf-8")))
+        metrics.append(json.loads((eval_dir / f"metrics_{family}_base_{context.run_name}.json").read_text(encoding="utf-8")))
 
     if not args.skip_train and (args.force or not adapter_is_complete(fine_adapter_dir, "qformer")):
         print(f"[{family}] training fine LoRA -> {fine_adapter_dir}")
@@ -1615,11 +1621,11 @@ def run_family(args: argparse.Namespace, family: str, train_records: list[dict],
     usable_adapter = fine_adapter_dir if adapter_is_complete(fine_adapter_dir, "qformer") else None
     llm = VariantLLM(family, adapter=usable_adapter)
     llm.load_img_proj_if_present(fine_adapter_dir)
-    metrics.append(evaluate_variant(family, "fine", llm, test_records, eval_dir, args.max_new_tokens, "fine"))
+    metrics.append(evaluate_variant(family, "fine", llm, test_records, eval_dir, args.max_new_tokens, "fine", context=context))
     del llm
     clear_memory()
 
-    metrics.append(instruction_metrics(family, family_dir))
+    metrics.append(instruction_metrics(context, family, family_dir))
 
     df = pd.DataFrame(metrics)
     csv_path = family_dir / f"figure9_{family}_three_llm_types_200_metrics.csv"
@@ -1655,13 +1661,17 @@ def main() -> None:
     root = Path(args.output_dir)
     root.mkdir(parents=True, exist_ok=True)
     checkpoint_root = Path(args.checkpoint_root)
+    context = Stage1Context(
+        run_name=DEFAULT_RUN_NAME,
+        thresholds=load_thresholds(getattr(args, "threshold_path", None)),
+    )
 
-    train_records = build_stage1_records(checkpoint_root, root, "train", args.sample_limit, args.num_workers)
-    test_records = build_stage1_records(checkpoint_root, root, "test", args.sample_limit, args.num_workers)
+    train_records = build_stage1_records(context, checkpoint_root, root, "train", args.sample_limit, args.num_workers)
+    test_records = build_stage1_records(context, checkpoint_root, root, "test", args.sample_limit, args.num_workers)
 
     summaries = {}
     for family in args.models:
-        summaries[family] = run_family(args, family, train_records, test_records, root)
+        summaries[family] = run_family(context, args, family, train_records, test_records, root)
 
     summary_path = root / "figure9_llm_variants_200_summary.json"
     summary_path.write_text(json.dumps(summaries, indent=2), encoding="utf-8")
