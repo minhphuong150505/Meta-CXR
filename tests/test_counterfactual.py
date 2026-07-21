@@ -299,8 +299,14 @@ def test_audit_output_carries_no_identifiers():
 
 
 def test_privacy_check_finds_a_deeply_nested_identifier():
-    """Top-level-only checking would miss this."""
-    payload = {"records": [{"meta": {"inner": [{"subject_id": 10000032}]}}]}
+    """Top-level-only checking would miss this.
+
+    The value is a deliberately non-MIMIC-shaped placeholder. Real MIMIC subject
+    ids are 8-digit integers beginning with 1; embedding one here -- even in a
+    test asserting it gets rejected -- would put a credentialed-data-shaped
+    identifier into a public repository.
+    """
+    payload = {"records": [{"meta": {"inner": [{"subject_id": "SYNTHETIC-NOT-A-REAL-ID"}]}}]}
     assert privacy_violations(payload) == ["records[0].meta.inner[0].subject_id"]
     with pytest.raises(ValueError, match="subject_id"):
         assert_shareable(payload)
