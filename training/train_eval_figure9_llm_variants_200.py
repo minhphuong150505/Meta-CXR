@@ -73,7 +73,6 @@ try:
         section_omission_rate,
         select_threshold_class,
         stable_fingerprint,
-        validate_soft_token_batch,
     )
 except ImportError:  # ``python -m training...``
     from training.stage2_utils import (
@@ -90,7 +89,6 @@ except ImportError:  # ``python -m training...``
         section_omission_rate,
         select_threshold_class,
         stable_fingerprint,
-        validate_soft_token_batch,
     )
 
 try:
