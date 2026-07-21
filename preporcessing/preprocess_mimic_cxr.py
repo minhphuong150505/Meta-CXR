@@ -9,11 +9,14 @@ per-study report .txt tree, emits the split CSVs consumed by
 Only CSVs and reports are touched — images are never read.
 
 Important differences from the superseded notebook:
-  * A FINDINGS-only target is parsed at study level (~227k rows) and merged onto the
-    image level afterwards. IMPRESSION is never emitted as a target. Studies without
-    usable FINDINGS remain available with ``target_valid=false``.
-  * Target-length bounds are derived only from train-study lexical-token counts;
-    invalid targets are blanked so a teacher branch cannot consume them accidentally.
+  * FINDINGS and IMPRESSION are parsed at study level (~227k rows) and merged onto the
+    image level afterwards, each with its own validity flag (``target_valid`` /
+    ``impression_valid``). Neither section is ever substituted for the other, so a
+    ``findings_and_impression`` target must check both flags. Studies without usable
+    FINDINGS remain available with ``target_valid=false``.
+  * Target-length bounds are derived only from train-study lexical-token counts, and
+    FINDINGS and IMPRESSION get separate bounds because their length distributions
+    differ; invalid targets are blanked so a teacher branch cannot consume them.
   * `image_path` is written RELATIVE (`files/p1X/pXXXXXXXX/sYYYYYYY/<dicom>.jpg`) because
     `ReportDataset._row_visual` re-anchors it with `os.path.join(vis_root, rel)`.
 """
@@ -195,38 +198,54 @@ def build_study_text(studies: pd.DataFrame, reports_root: Path, workers: int) ->
     report_raw is dropped before returning so it never reaches the image-level frame.
     """
     records = studies.to_dict("records")
-    print(f"[reports] reading {len(records)} studies with {workers} threads")
+    print(f"[reports] reading + parsing {len(records)} studies with {workers} threads")
 
-    def read_one(rec: dict) -> str | None:
+    def read_and_parse(rec: dict) -> tuple[str, str, str] | None:
+        """Read, section and clean one study, returning only short strings.
+
+        Parsing inside the worker lets each report's raw text be freed as soon
+        as it is consumed. Materialising all 227,835 raw reports (~1.2 GB) and
+        their parse output at the same time exhausted memory on a 16 GB box.
+        """
         path = report_path(reports_root, rec["subject_id"], rec["study_id"])
         try:
-            return path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8")
         except (FileNotFoundError, UnicodeDecodeError):
             return None
+        findings, impression, method = get_target_text(text)
+        return clean_report_text(findings), clean_report_text(impression), method
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        raw = list(tqdm(ex.map(read_one, records), total=len(records), desc="reports"))
+        parsed = list(
+            tqdm(ex.map(read_and_parse, records), total=len(records), desc="reports")
+        )
 
-    n_missing = sum(r is None for r in raw)
-    fail_rate = n_missing / len(raw) * 100 if raw else 0.0
-    print(f"[reports] read ok: {len(raw) - n_missing}, missing: {n_missing} ({fail_rate:.2f}%)")
+    n_missing = sum(p is None for p in parsed)
+    fail_rate = n_missing / len(parsed) * 100 if parsed else 0.0
+    print(f"[reports] read ok: {len(parsed) - n_missing}, missing: {n_missing} ({fail_rate:.2f}%)")
     if fail_rate > 5:
         raise SystemExit(
             f"[reports] {fail_rate:.2f}% of reports unreadable — check --reports-root "
             f"structure before trusting this output"
         )
 
-    parsed = [get_target_text(r) for r in tqdm(raw, desc="sections")]
-    del raw
-
     out = pd.DataFrame(records)
-    out["findings_clean"] = [clean_report_text(p[0]) for p in parsed]
-    out["extraction_method"] = [p[2] for p in parsed]
-    out["target_valid"] = out["findings_clean"].str.len().gt(0)
+    # IMPRESSION is parsed from an explicit IMPRESSION/CONCLUSION tag only. It is
+    # never recovered from the narrative body, so an empty value here means the
+    # report genuinely had no impression section rather than a parse miss.
+    out["findings_clean"] = [p[0] if p else "" for p in parsed]
+    out["impression_clean"] = [p[1] if p else "" for p in parsed]
+    out["extraction_method"] = [p[2] if p else "MISSING_REPORT" for p in parsed]
     del parsed
+    out["target_valid"] = out["findings_clean"].str.len().gt(0)
+    out["impression_valid"] = out["impression_clean"].str.len().gt(0)
 
     print("[reports] extraction method distribution:")
     print(out["extraction_method"].value_counts().to_string())
+    print(f"[reports] impression present: {int(out['impression_valid'].sum())}/{len(out)} "
+          f"({out['impression_valid'].mean() * 100:.2f}%)")
+    print(f"[reports] findings+impression both present: "
+          f"{int((out['target_valid'] & out['impression_valid']).sum())}")
     return out
 
 
@@ -302,8 +321,8 @@ def main() -> None:
     study_text = build_study_text(studies, reports_root, args.workers)
 
     merged = merged.merge(
-        study_text[["subject_id", "study_id", "findings_clean",
-                    "extraction_method", "target_valid"]],
+        study_text[["subject_id", "study_id", "findings_clean", "impression_clean",
+                    "extraction_method", "target_valid", "impression_valid"]],
         on=["subject_id", "study_id"],
         how="inner",
         validate="many_to_one",
@@ -340,6 +359,38 @@ def main() -> None:
           f"(upper q={args.upper_quantile})")
     print(merged["target_filter_reason"].value_counts().to_string())
 
+    # IMPRESSION is filtered on its own train-derived length distribution.
+    # Reusing the FINDINGS bounds would discard most impressions, which are
+    # legitimately much shorter (often a single sentence).
+    merged["impression_token_count"] = (
+        merged["impression_clean"].map(count_lexical_tokens).astype(int)
+    )
+    impression_studies = merged.drop_duplicates(["subject_id", "study_id"])
+    impression_lengths = impression_studies.loc[
+        (impression_studies["split"] == "train") & impression_studies["impression_valid"],
+        "impression_token_count",
+    ]
+    if impression_lengths.empty:
+        raise ValueError(
+            "No valid train IMPRESSION sections; check report parsing before "
+            "training a findings_and_impression target."
+        )
+    impression_upper = int(np.ceil(impression_lengths.quantile(args.upper_quantile)))
+    merged.loc[
+        merged["impression_valid"]
+        & (
+            (merged["impression_token_count"] < args.min_tokens)
+            | (merged["impression_token_count"] > impression_upper)
+        ),
+        "impression_valid",
+    ] = False
+    merged.loc[~merged["impression_valid"], "impression_clean"] = ""
+    print(f"impression token bounds: [{args.min_tokens}, {impression_upper}] "
+          f"(upper q={args.upper_quantile})")
+    print(f"impression usable after length filter: {int(merged['impression_valid'].sum())} rows; "
+          f"findings+impression usable: "
+          f"{int((merged['target_valid'] & merged['impression_valid']).sum())} rows")
+
     print("\n=== image_path ===")
     merged["image_path"] = [
         build_image_path(s, st, d)
@@ -349,9 +400,10 @@ def main() -> None:
 
     print("\n=== save ===")
     final_cols = ["subject_id", "study_id", "dicom_id", "split", "ViewPosition",
-                  "image_path", "findings_clean", "extraction_method", "target_valid",
+                  "image_path", "findings_clean", "impression_clean",
+                  "extraction_method", "target_valid", "impression_valid",
                   "target_filter_reason", "findings_token_count", "findings_word_count",
-                  "has_chexpert_label"]
+                  "impression_token_count", "has_chexpert_label"]
     processed = merged[final_cols]
 
     for split_name, out_name in SPLIT_TO_FILENAME.items():

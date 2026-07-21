@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Full-data MedGemma QLoRA pipeline for META-CXR Stage 2.
 
-The primary mode injects Stage-1 Q-Former embeddings as trainable soft tokens.
-``--image-mode native`` is the MedGemma image-tower ablation and ``both`` runs
-the two experiments sequentially on one GPU. Validation chooses checkpoints;
-the test cohort is generated exactly once after training.
+The default pipeline is ``medgemma_direct``: MedGemma's own image tower and
+multimodal projector, with no Stage-1 checkpoint, no Q-Former, no MHCAC and no
+structured findings in the prompt. ``meta_cxr_qformer`` is the hybrid ablation
+that injects Stage-1 Q-Former embeddings as trainable soft tokens, and
+``both_for_ablation`` runs the two sequentially on one GPU.
+
+Validation chooses checkpoints; the test cohort is generated exactly once after
+training.
+
+Single-process, single-GPU by design. Multi-GPU would require DDP, which this
+script does not implement.
 """
 
 from __future__ import annotations
@@ -17,6 +24,26 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dataio.manifest import (  # noqa: E402
+    DEFAULT_SECTION_MODE,
+    FINDINGS_AND_IMPRESSION,
+    SECTION_MODES,
+    assert_no_leakage,
+    build_records,
+)
+from pipeline_modes import (  # noqa: E402
+    CHOICES,
+    DEFAULT_PIPELINE_MODE,
+    LEGACY_IMAGE_MODE_ALIASES,
+    PipelineMode,
+    resolve_pipeline_modes,
+)
+from pipeline_modes import requires_stage1 as modes_require_stage1  # noqa: E402
+
+# NOTE: this still pulls in LAVIS/torch/transformers even for medgemma_direct,
+# because VariantLLM and the evaluation helpers live in the Figure-9 module.
+# Extracting them into training/trainers/ is the next refactor step; the *data*
+# path and the Stage-1 config requirement are already fully decoupled below.
 import train_eval_figure9_llm_variants_200 as fig9  # noqa: E402
 
 
@@ -46,10 +73,31 @@ def parse_args() -> argparse.Namespace:
         help="Optional Stage-1 validation-calibrated thresholds; default is image-only argmax.",
     )
     parser.add_argument(
+        "--pipeline-mode",
+        choices=list(CHOICES),
+        default=DEFAULT_PIPELINE_MODE,
+        help=(
+            "medgemma_direct (default): native MedGemma image tower, no Stage-1. "
+            "meta_cxr_qformer: Q-Former soft-token hybrid ablation. "
+            "both_for_ablation: primary then ablation."
+        ),
+    )
+    parser.add_argument(
         "--image-mode",
         choices=["qformer", "native", "both"],
-        default="qformer",
-        help="Q-Former soft-token primary model, native MedGemma image ablation, or both.",
+        dest="legacy_image_mode",
+        help="Deprecated alias for --pipeline-mode; kept so existing runbooks work.",
+    )
+    parser.add_argument(
+        "--section-mode",
+        choices=list(SECTION_MODES),
+        default=DEFAULT_SECTION_MODE,
+        help="Report sections to train and evaluate on (default: findings_and_impression).",
+    )
+    parser.add_argument(
+        "--require-image",
+        action="store_true",
+        help="Skip manifest rows whose JPG is absent instead of failing at load time.",
     )
     parser.add_argument("--train-limit", type=int, default=0, help="0 uses the complete train cohort")
     parser.add_argument("--val-limit", type=int, default=0, help="0 uses the complete validation cohort")
@@ -71,7 +119,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-ratio", type=float, default=0.03)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--max-length", type=int, default=768)
-    parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=0,
+        help="0 auto-sizes: 512 for findings_and_impression, 256 for a single section.",
+    )
     parser.add_argument("--patience", type=int, default=1)
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
@@ -87,6 +140,21 @@ def parse_args() -> argparse.Namespace:
         parser.error("--train-epochs must be positive")
     if not 0 <= args.warmup_ratio < 1:
         parser.error("--warmup-ratio must be in [0, 1)")
+    if args.legacy_image_mode:
+        if args.pipeline_mode != DEFAULT_PIPELINE_MODE:
+            parser.error(
+                "pass either --pipeline-mode or the deprecated --image-mode, not both"
+            )
+        args.pipeline_mode = LEGACY_IMAGE_MODE_ALIASES[args.legacy_image_mode]
+        print(
+            f"[deprecated] --image-mode {args.legacy_image_mode} "
+            f"-> --pipeline-mode {args.pipeline_mode}",
+            flush=True,
+        )
+    if args.max_new_tokens <= 0:
+        args.max_new_tokens = (
+            512 if args.section_mode == FINDINGS_AND_IMPRESSION else 256
+        )
     return args
 
 
@@ -131,13 +199,14 @@ def upload_safe_run(root: Path, adapter_dirs: list[Path], gcs_output: str) -> No
 
 def train_mode(
     args: argparse.Namespace,
-    image_mode: str,
+    mode: PipelineMode,
     train_records: list[dict],
     val_records: list[dict],
     test_records: list[dict],
     root: Path,
 ) -> tuple[dict, Path]:
-    adapter_dir = root / "adapters" / f"medgemma_qlora_{image_mode}"
+    image_mode = mode.image_mode
+    adapter_dir = root / "adapters" / f"medgemma_qlora_{mode.name}"
     last_dir = adapter_dir / "checkpoints" / "last"
     training_summary: dict = {}
     complete = fig9.adapter_is_complete(adapter_dir, image_mode)
@@ -151,7 +220,7 @@ def train_mode(
             resume_dir = last_dir
         if resume_dir is not None and not resumable_adapter(Path(resume_dir), image_mode):
             raise RuntimeError(f"incomplete --resume-from checkpoint: {resume_dir}")
-        print(f"[train:{image_mode}] adapter -> {adapter_dir}", flush=True)
+        print(f"[train:{mode.name}] adapter -> {adapter_dir}", flush=True)
         llm = fig9.VariantLLM(
             "medgemma",
             adapter=resume_dir,
@@ -181,7 +250,7 @@ def train_mode(
         del llm
         fig9.clear_memory()
     else:
-        print(f"[train:{image_mode}] reusing complete adapter {adapter_dir}", flush=True)
+        print(f"[train:{mode.name}] reusing complete adapter {adapter_dir}", flush=True)
         training_summary = json.loads(
             (adapter_dir / "manifest.json").read_text(encoding="utf-8")
         ).get("training_config", {})
@@ -201,7 +270,7 @@ def train_mode(
     )
     val_metrics = fig9.evaluate_variant(
         "medgemma",
-        "qlora_validation",
+        f"{mode.name}_validation",
         llm,
         val_eval_records,
         root / "eval",
@@ -218,7 +287,7 @@ def train_mode(
         )
         test_metrics = fig9.evaluate_variant(
             "medgemma",
-            "qlora_test",
+            f"{mode.name}_test",
             llm,
             test_records,
             root / "eval",
@@ -230,7 +299,11 @@ def train_mode(
     fig9.clear_memory()
     return (
         {
+            "pipeline_mode": mode.name,
             "image_mode": image_mode,
+            "architecture": mode.description,
+            "requires_stage1": mode.requires_stage1,
+            "section_mode": args.section_mode,
             "method": (
                 "QLoRA NF4 + Q-Former soft tokens + trainable projector"
                 if image_mode == "qformer"
@@ -245,8 +318,60 @@ def train_mode(
     )
 
 
+def load_split_frame(split: str, cache_dir: Path):
+    """Read one preprocessed split CSV, downloading it first when it is on GCS."""
+    import pandas as pd
+
+    path = fig9._split_csv_for(split)
+    if str(path).startswith("gs://"):
+        return fig9.read_gcs_csv(str(path), cache_dir)
+    return pd.read_csv(path)
+
+
+def build_native_records(
+    args: argparse.Namespace, root: Path
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Build medgemma_direct records straight from the split manifests.
+
+    No Stage-1 model, config, checkpoint, Q-Former or MHCAC is touched here.
+    """
+    cache_dir = root / ".sensitive_stage1_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    frames = {split: load_split_frame(split, cache_dir) for split in ("train", "val", "test")}
+    # Re-check the invariant on the CSVs this run actually consumes, not just at
+    # the time the splits were generated.
+    assert_no_leakage(frames)
+    print("[manifest] no subject/study/image overlap across splits", flush=True)
+    limits = {"train": args.train_limit, "val": args.val_limit, "test": args.test_limit}
+    records = []
+    for split in ("train", "val", "test"):
+        cohort_id = fig9.stable_fingerprint(
+            {
+                "split": split,
+                "section_mode": args.section_mode,
+                "limit": limits[split],
+                "source": fig9.data_object_identity(fig9._split_csv_for(split)),
+            }
+        )
+        records.append(
+            build_records(
+                frames[split],
+                split=split,
+                section_mode=args.section_mode,
+                vis_root=fig9.VIS_ROOT,
+                cohort_id=cohort_id,
+                limit=limits[split],
+                seed=fig9.SEED,
+                require_image=args.require_image,
+            )
+        )
+    return tuple(records)  # type: ignore[return-value]
+
+
 def main() -> None:
     args = parse_args()
+    modes = resolve_pipeline_modes(args.pipeline_mode)
+    needs_stage1 = modes_require_stage1(modes)
     fig9.RUN_NAME = args.stage1_run
     fig9.STAGE1_CONFIG_PATH_OVERRIDE = args.stage1_config
     fig9.STAGE1_CHECKPOINT_PATH_OVERRIDE = args.stage1_checkpoint
@@ -256,44 +381,53 @@ def main() -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "eval").mkdir(parents=True, exist_ok=True)
     checkpoint_root = Path(args.checkpoint_root)
-    if not Path(args.stage1_config).is_file():
-        raise FileNotFoundError(f"Stage-1 config not found: {args.stage1_config}")
-    modes = ["qformer", "native"] if args.image_mode == "both" else [args.image_mode]
-    requires_stage1 = "qformer" in modes
-    resolved_stage1_checkpoint = fig9.stage1_checkpoint_path(checkpoint_root)
-    if requires_stage1 and not resolved_stage1_checkpoint.is_file():
-        raise FileNotFoundError(
-            f"Stage-1 checkpoint not found: {resolved_stage1_checkpoint}. "
-            "Pass --stage1-checkpoint or mount --checkpoint-root."
+
+    print(f"[pipeline] {args.pipeline_mode} -> {[mode.name for mode in modes]}", flush=True)
+    for mode in modes:
+        print(f"[pipeline]   {mode.name}: {mode.description}", flush=True)
+
+    # The Stage-1 Q-Former records come from ReportDataset, whose text_output is
+    # the FINDINGS target only. Refuse rather than silently training the hybrid
+    # on a different target than the primary pipeline.
+    if needs_stage1 and args.section_mode != "findings_only":
+        raise SystemExit(
+            f"--section-mode {args.section_mode} is not available for a Stage-1 "
+            "Q-Former mode: ReportDataset emits FINDINGS only. Use "
+            "--section-mode findings_only, or run --pipeline-mode medgemma_direct."
         )
 
-    print(f"[stage1] train limit={args.train_limit or 'all'}", flush=True)
-    train_records = fig9.build_stage1_records(
-        checkpoint_root,
-        root,
-        "train",
-        args.train_limit,
-        args.num_workers,
-        include_stage1_features=requires_stage1,
-    )
-    print(f"[stage1] validation limit={args.val_limit or 'all'}", flush=True)
-    val_records = fig9.build_stage1_records(
-        checkpoint_root,
-        root,
-        "val",
-        args.val_limit,
-        args.num_workers,
-        include_stage1_features=requires_stage1,
-    )
-    print(f"[stage1] held-out test limit={args.test_limit or 'all'}", flush=True)
-    test_records = fig9.build_stage1_records(
-        checkpoint_root,
-        root,
-        "test",
-        args.test_limit,
-        args.num_workers,
-        include_stage1_features=requires_stage1,
-    )
+    if needs_stage1:
+        if not Path(args.stage1_config).is_file():
+            raise FileNotFoundError(f"Stage-1 config not found: {args.stage1_config}")
+        resolved_stage1_checkpoint = fig9.stage1_checkpoint_path(checkpoint_root)
+        if not resolved_stage1_checkpoint.is_file():
+            raise FileNotFoundError(
+                f"Stage-1 checkpoint not found: {resolved_stage1_checkpoint}. "
+                "Pass --stage1-checkpoint or mount --checkpoint-root."
+            )
+        print(f"[stage1] train limit={args.train_limit or 'all'}", flush=True)
+        train_records = fig9.build_stage1_records(
+            checkpoint_root, root, "train", args.train_limit, args.num_workers,
+            include_stage1_features=True,
+        )
+        print(f"[stage1] validation limit={args.val_limit or 'all'}", flush=True)
+        val_records = fig9.build_stage1_records(
+            checkpoint_root, root, "val", args.val_limit, args.num_workers,
+            include_stage1_features=True,
+        )
+        print(f"[stage1] held-out test limit={args.test_limit or 'all'}", flush=True)
+        test_records = fig9.build_stage1_records(
+            checkpoint_root, root, "test", args.test_limit, args.num_workers,
+            include_stage1_features=True,
+        )
+    else:
+        print(
+            "[pipeline] medgemma_direct: no Stage-1 checkpoint, config, Q-Former "
+            "or MHCAC is loaded; the image is the only clinical input",
+            flush=True,
+        )
+        train_records, val_records, test_records = build_native_records(args, root)
+
     print(
         f"[data] train={len(train_records)} val={len(val_records)} test={len(test_records)}",
         flush=True,
@@ -301,20 +435,24 @@ def main() -> None:
 
     results: dict[str, dict] = {}
     adapter_dirs: list[Path] = []
-    for image_mode in modes:
-        results[image_mode], adapter_dir = train_mode(
-            args, image_mode, train_records, val_records, test_records, root
+    for mode in modes:
+        results[mode.name], adapter_dir = train_mode(
+            args, mode, train_records, val_records, test_records, root
         )
         adapter_dirs.append(adapter_dir)
 
     summary = {
         "schema_version": fig9.SCHEMA_VERSION,
         "model": fig9.MEDGEMMA_MODEL_ID,
-        "primary_model": "qformer" if "qformer" in modes else modes[0],
-        "ablation": "native MedGemma image tower" if "native" in modes else None,
-        "stage1_checkpoint": fig9.RUN_NAME if requires_stage1 else None,
-        "target_section": "FINDINGS",
+        "pipeline_mode": args.pipeline_mode,
+        "primary_model": modes[0].name,
+        "ablation": [mode.name for mode in modes[1:]] or None,
+        "stage1_checkpoint": fig9.RUN_NAME if needs_stage1 else None,
+        "section_mode": args.section_mode,
+        "target_section": args.section_mode.replace("_", " ").upper(),
+        "max_new_tokens": args.max_new_tokens,
         "selection_split": "val",
+        "selection_metric": "validation_cross_entropy",
         "test_used_for_selection": False,
         "train_samples": len(train_records),
         "val_samples": len(val_records),
@@ -327,7 +465,10 @@ def main() -> None:
         "status": "complete",
         "private_data_cache": ".sensitive_stage1_cache (local only; excluded from upload)",
         "uploaded_artifacts_contain_references": False,
-        "image_modes": modes,
+        "pipeline_modes": [mode.name for mode in modes],
+        "image_modes": [mode.image_mode for mode in modes],
+        "section_mode": args.section_mode,
+        "stage1_required": needs_stage1,
     }
     (root / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2), encoding="utf-8")
     print("[done]", json.dumps(summary, indent=2), flush=True)
