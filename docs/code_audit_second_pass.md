@@ -149,3 +149,23 @@ trainer cannot be extracted before the reporter split.
    S6.
 
 Each step lands as its own commit with its own test run.
+
+## 5. Status at the end of round 2
+
+| ID | Sev | Status | Evidence |
+|---|---|---|---|
+| S1 | Critical | **Closed** | `5d572d8`. LAVIS imports confined to `training/stage1/lavis_loader.py`, imported lazily. `tests/test_native_independence.py` (6 tests) fails the build if reintroduced. |
+| S4 | High | **Closed** | `5d572d8`. `include_stage1_features=False` removed; the parameter's absence is asserted. |
+| S2 | Critical | **Partial** | 1685 → 1615 lines. Stage-1 imports and the soft-token injector are out. The trainer, collators, prompts and NLG blocks remain. See `docs/refactor_hotspots.md` for the sequenced plan and what each move is blocked on. |
+| S3 | High | **Partial** | `VariantLLM` still holds ~10 responsibilities. `training/trainer/` and `training/medgemma/` now exist to receive them. |
+| S5 | High | **Closed for the state layer, open for the loop** | `103fb95`. `TrainingState`, `RngSnapshot` and `CheckpointManager` are implemented and tested, including a bit-exact resume-equivalence test. Not yet wired into `train_fine`, which cannot be executed here. |
+| S6 | High | **Closed** | `e3e3564`. Counterfactual evaluator (31 tests) and clinical adapters (17 tests). |
+| S7 | Medium | Open | `field_value` still catches bare `Exception`. |
+| S8 | Medium | Open | Silent `AutoModelForImageTextToText` → `AutoModelForCausalLM` fallback. This one matters: it can turn the native *vision* baseline into a language-prior baseline without saying so. Fix requires the transformers env to test the failure path. |
+| S9 | Medium | Open | Nested bare excepts in `compute_nlg`. |
+| S10 | Medium | Open | Dead `UP038` ignore; no mypy config. |
+| S11–S13 | Low | Open | `inference.py` GPU-0 pin, `precompute_features.py` `.cuda()`, encoder-code whitespace. |
+
+Round-2 goals P5 (distributed) and P7 (full documentation of a distributed run)
+were **not started**. No distributed code was written and no two-GPU claim is
+made anywhere in this branch.
