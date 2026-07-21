@@ -113,4 +113,11 @@ checkpoints/**
 *.pth
 *.pt
 *.safetensors
+
+# Hugging Face cache for the external MedGemma checkpoints (~8 GB), in case
+# HF_HOME is ever pointed inside the working tree.
+hf_cache/
+.hf_cache/
+**/models--*/
+
 cloud/env.local.sh
