@@ -30,6 +30,22 @@ full; findings there are limited to what the greps showed and are marked as such
 
 ---
 
+## Status after round 1
+
+Resolved in this round (see the commit list at the end):
+
+| Finding | Status |
+|---|---|
+| Critical — no shared visual merge | **Fixed.** `SharedVisualTokenProjector` is the single merge point; MHCAC and META-Former both read its output. Spans preserve per-encoder ablation and Figure-8 heatmaps. |
+| High — section metrics never computed | **Fixed.** `Findings/*`, `Impression/*` and omission rates are emitted for `findings_and_impression`. |
+| High — global mutable state | **Fixed.** `Stage1Context` frozen dataclass; the four `fig9` globals are deleted. |
+| Low — test inside `training/` | **Fixed.** Moved to `tests/`. |
+| Low — no tooling | **Partly fixed.** `pyproject.toml` added with ruff/pytest config; 430 pre-existing ruff findings remain repo-wide. |
+
+Still open: god-script split (§VI), native/Stage-1 import decoupling (§VII), safety/XAI
+(§XVI–XVIII), counterfactual audit (§XVII), clinical metrics (§XVIII), DDP (§XIV),
+`preporcessing` rename (§XXII), mypy. See "Remaining limitations" in the session report.
+
 ## Findings
 
 | Sev | Component | File / symbol | Problem | Consequence | Reproduce | Fix direction | Test to add |
