@@ -64,45 +64,40 @@ class DownsamplePatches(nn.Module):
 
 # CrossModalEmbeddingAlignment to project image, text, and query embeddings into a common space
 class CrossModalEmbeddingAlignment(nn.Module):
+    """Aligns the shared visual tokens, report text and expert tokens to ``common_dim``.
+
+    The image side is a **single** projection from ``visual_dim``. It used to hold
+    one Linear per encoder (cnn/vit/swin/raddino), which meant MHCAC re-projected
+    the raw encoder outputs itself and therefore trained on a different visual
+    representation than META-Former. Encoders are now merged once, upstream, by
+    ``SharedVisualTokenProjector``.
+    """
+
     def __init__(
         self,
         common_dim,
-        cnn_dim=1408,
-        vit_dim=768,
-        swin_dim=768,
-        raddino_dim=768,
+        visual_dim=1408,
         txt_dim=768,
         expert_dim=768,
     ):
         super(CrossModalEmbeddingAlignment, self).__init__()
-        self.vit_proj = nn.Linear(vit_dim, common_dim) if vit_dim is not None else None
-        self.cnn_proj = nn.Linear(cnn_dim, common_dim) if cnn_dim is not None else None
-        self.swin_proj = nn.Linear(swin_dim, common_dim) if swin_dim is not None else None
-        self.raddino_proj = (
-            nn.Linear(raddino_dim, common_dim) if raddino_dim is not None else None
-        )
+        self.visual_proj = nn.Linear(visual_dim, common_dim)
         self.text_proj = nn.Linear(txt_dim, common_dim)
         self.expert_proj = nn.Linear(expert_dim, common_dim)
-        
+
         self.expert_norm = nn.LayerNorm(common_dim) # For expert tokens
 
     def forward(
         self,
-        vit_patches=None,
-        cnn_patches=None,
-        swin_patches=None,
-        raddino_patches=None,
+        visual_tokens=None,
         text_embeddings=None,
         expert_tokens=None,
     ):
         # Project image and text embeddings
-        vit_proj = F.normalize(self.vit_proj(vit_patches), dim=-1) if vit_patches is not None else None
-        cnn_proj = F.normalize(self.cnn_proj(cnn_patches), dim=-1) if cnn_patches is not None else None
-        swin_proj = F.normalize(self.swin_proj(swin_patches), dim=-1) if swin_patches is not None else None
-        raddino_proj = F.normalize(self.raddino_proj(raddino_patches), dim=-1) if raddino_patches is not None else None
+        visual_proj = F.normalize(self.visual_proj(visual_tokens), dim=-1) if visual_tokens is not None else None
         txt_proj = F.normalize(self.text_proj(text_embeddings), dim=-1) if text_embeddings is not None else None
         expert_proj = self.expert_norm(self.expert_proj(expert_tokens)) if expert_tokens is not None else None
-        return vit_proj, cnn_proj, swin_proj, raddino_proj, txt_proj, expert_proj
+        return visual_proj, txt_proj, expert_proj
 
 # Define trainable positional encoding
 class TrainablePositionalEncoding(nn.Module):
@@ -220,34 +215,27 @@ class AbnormalityClassificationModel(nn.Module):
         num_commmon_tokens=8,
         dropout=0.2,
         initial_expert_tokens=None,
-        cnn_dim=1408,
-        vit_dim=768,
-        swin_dim=768,
-        raddino_dim=768,
+        visual_dim=1408,
         txt_dim=768,
         target_patch_count=49,
         text_dropout_rate=0.2,
         num_text_teacher_layers=2,
         use_cnn=True,
-        use_vit=True,
-        use_swin=True,
-        use_raddino=True,
     ):
         super(AbnormalityClassificationModel, self).__init__()
 
         self.embed_dim = embed_dim
+        self.visual_dim = visual_dim
         self.num_abnormalities = num_abnormalities
         self.num_layers = num_layers
         self.target_patch_count = target_patch_count
         if not 0 <= num_text_teacher_layers <= num_layers:
             raise ValueError("num_text_teacher_layers must be between 0 and num_layers")
-        # Initial projection layer to align image, text, and query embeddings
+        # Initial projection layer to align image, text, and query embeddings.
+        # One image projection, from the shared visual dimension.
         self.embedding_alignment = CrossModalEmbeddingAlignment(
             embed_dim,
-            cnn_dim=cnn_dim if use_cnn else None,
-            vit_dim=vit_dim if use_vit else None,
-            swin_dim=swin_dim if use_swin else None,
-            raddino_dim=raddino_dim if use_raddino else None,
+            visual_dim=visual_dim,
             txt_dim=txt_dim,
             # Expert tokens are allocated at embed_dim below, so their projection
             # must read embed_dim -- not the 768 default, which only happened to
@@ -311,8 +299,9 @@ class AbnormalityClassificationModel(nn.Module):
         # self.w_vit = nn.Parameter(torch.tensor(1.0))
         
         self.pos_enc = TrainablePositionalEncoding(num_patches=target_patch_count, embed_dim=embed_dim)
+        # Runs on the biovil span *after* the shared projection, hence embed_dim.
         self.cnn_downsampler = (
-            DownsamplePatches(196, target_patch_count, cnn_dim, method="conv")
+            DownsamplePatches(196, target_patch_count, embed_dim, method="conv")
             if use_cnn
             else None
         )
@@ -362,57 +351,57 @@ class AbnormalityClassificationModel(nn.Module):
 
     def forward(
         self,
-        cnn_patches=None,
-        vit_patches=None,
-        swin_patches=None,
-        raddino_patches=None,
+        shared_visual_tokens,
         text_embeddings=None,
         text_attention_mask=None,
         labels=None,
         sample_mask=None,
     ):
-        ref = (
-            cnn_patches
-            if cnn_patches is not None
-            else (vit_patches if vit_patches is not None else (swin_patches if swin_patches is not None else raddino_patches))
-        )
-        if ref is None:
-            raise ValueError("At least one image patch stream must be provided")
-        batch_size = ref.size(0)
-        
-        if vit_patches is not None:
-            vit_patches = self._resize_patch_sequence(vit_patches)
-        if swin_patches is not None:
-            swin_patches = self._resize_patch_sequence(swin_patches)
-        if raddino_patches is not None:
-            raddino_patches = self._resize_patch_sequence(raddino_patches)
-        
+        """Classify from the shared visual tokens produced upstream.
+
+        ``shared_visual_tokens`` is a ``SharedVisualTokens``: one ``[B, N, visual_dim]``
+        tensor plus the span each encoder occupies. Spans are used only to give each
+        encoder its own within-stream positional encoding and its own resize to
+        ``target_patch_count``; the projection to ``embed_dim`` happens once, on the
+        merged tensor, so MHCAC and META-Former share one visual representation.
+        """
+        tokens = shared_visual_tokens.tokens
+        spans = shared_visual_tokens.spans
+        if tokens.ndim != 3:
+            raise ValueError(
+                f"shared_visual_tokens must be [B, N, D]; got {tuple(tokens.shape)}"
+            )
+        if tokens.shape[-1] != self.visual_dim:
+            raise ValueError(
+                f"shared_visual_tokens dim {tokens.shape[-1]} != MHCAC visual_dim {self.visual_dim}"
+            )
+        if not spans:
+            raise ValueError("shared_visual_tokens carries no encoder spans")
+        batch_size = tokens.size(0)
+
         # Expand expert tokens to match batch size
         expert_tokens = self.expert_tokens.unsqueeze(0).expand(batch_size, -1, -1)  # [B, N_expert, D]
-        
-        if cnn_patches is not None:
-            if self.cnn_downsampler is None:
-                raise ValueError("cnn_patches were provided but the CNN stream is disabled")
-            cnn_patches = self.cnn_downsampler(cnn_patches)  # 196 -> 49 patches via conv
 
-        vit_proj, cnn_proj, swin_proj, raddino_proj, txt_proj, expert_tokens = self.embedding_alignment(
-            vit_patches=vit_patches,
-            cnn_patches=cnn_patches,
-            swin_patches=swin_patches,
-            raddino_patches=raddino_patches,
+        # One projection for every encoder, applied to the merged sequence.
+        visual_proj, txt_proj, expert_tokens = self.embedding_alignment(
+            visual_tokens=tokens,
             text_embeddings=text_embeddings,
             expert_tokens=expert_tokens,
         )
-        
+
+        # Slice the *projected shared* sequence per encoder. This is a view of the
+        # shared representation, not a second encoding path.
         image_streams = []
-        if cnn_proj is not None:
-            image_streams.append(self.pos_enc(cnn_proj))
-        if vit_proj is not None:
-            image_streams.append(self.pos_enc(vit_proj))
-        if swin_proj is not None:
-            image_streams.append(self.pos_enc(swin_proj))
-        if raddino_proj is not None:
-            image_streams.append(self.pos_enc(raddino_proj))
+        for name, span in sorted(spans.items(), key=lambda item: item[1].start):
+            stream = visual_proj[:, span, :]
+            if name == "biovil" and self.cnn_downsampler is not None:
+                # Learned 196 -> target_patch_count reduction, kept from the
+                # original CNN path. It now runs at embed_dim, after the shared
+                # projection, so it no longer constitutes a separate projection.
+                stream = self.cnn_downsampler(stream)
+            else:
+                stream = self._resize_patch_sequence(stream)
+            image_streams.append(self.pos_enc(stream))
         if not image_streams:
             raise ValueError("No image stream was provided to MHCAC.")
         image_patches = torch.cat(image_streams, dim=1)

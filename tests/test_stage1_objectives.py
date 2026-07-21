@@ -3,6 +3,7 @@ import torch.nn.functional as F
 
 from mhcac.loss import ClassificationLoss, soft_target_kl_loss
 from mhcac.mhcac_12 import AbnormalityClassificationModel
+from vision_encoders.shared_visual_tokens import SharedVisualTokens
 
 
 def test_classification_loss_masks_unlabelled_samples():
@@ -56,15 +57,15 @@ def test_mhcac_text_is_teacher_only_and_student_shape_matches_inference():
         num_classes=3,
         num_layers=2,
         num_commmon_tokens=3,
-        vit_dim=16,
+        visual_dim=16,
         txt_dim=16,
         target_patch_count=4,
         text_dropout_rate=0.2,
         use_cnn=False,
-        use_swin=False,
-        use_raddino=False,
     ).eval()
-    image_patches = torch.randn(2, 4, 16)
+    shared = SharedVisualTokens(
+        tokens=torch.randn(2, 4, 16), spans={"pubmedclip": slice(0, 4)}
+    )
     text_embeddings = torch.randn(2, 5, 16)
     labels = torch.tensor([[0, 1, 2], [1, 0, 0]])
 
@@ -73,13 +74,13 @@ def test_mhcac_text_is_teacher_only_and_student_shape_matches_inference():
         lambda *args: text_attention_calls.append(True)
     )
     student_logits, _, contrastive, orthogonal, sparse = model(
-        vit_patches=image_patches,
+        shared,
         text_embeddings=None,
         labels=labels,
     )
     assert text_attention_calls == []
     teacher_logits, _, _, _, _ = model(
-        vit_patches=image_patches,
+        shared,
         text_embeddings=text_embeddings,
         labels=labels,
     )
