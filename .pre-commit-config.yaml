@@ -1,0 +1,29 @@
+# Pre-commit hooks for META-CXR.
+#
+# Install once per checkout:
+#     pip install pre-commit && pre-commit install
+#
+# The notebook privacy hook is the important one: MIMIC-CXR is PhysioNet
+# credentialed data whose DUA forbids redistribution, and an executed notebook
+# embeds patient identifiers and report text in its outputs where they are easy
+# to miss during review.
+repos:
+  - repo: local
+    hooks:
+      - id: notebook-privacy
+        name: notebook privacy guard (MIMIC-CXR / credentials)
+        entry: python scripts/check_notebook_privacy.py --staged
+        language: system
+        # Runs once for the whole commit; the script resolves staged notebooks
+        # itself so it can also report "nothing staged" cleanly.
+        pass_filenames: false
+        always_run: true
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.22
+    hooks:
+      - id: ruff
+        # Lint only. Formatting the whole tree is a separate decision: 68 files
+        # would change, most of them frozen encoder code where a reformat would
+        # make future upstream diffs unreadable.
+        args: [--exit-non-zero-on-fix]
