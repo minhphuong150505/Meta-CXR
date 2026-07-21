@@ -72,6 +72,7 @@ try:
         safe_prediction_row,
         select_threshold_class,
         stable_fingerprint,
+        validate_soft_token_batch,
     )
 except ImportError:  # ``python -m training...``
     from training.stage2_utils import (
@@ -86,6 +87,7 @@ except ImportError:  # ``python -m training...``
         safe_prediction_row,
         select_threshold_class,
         stable_fingerprint,
+        validate_soft_token_batch,
     )
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -599,9 +601,16 @@ class SoftTokenEmbeddingWrapper(nn.Module):
         embeds = embeds.clone()
         for batch_idx in range(input_ids.shape[0]):
             positions = mask[batch_idx].nonzero(as_tuple=False).flatten()
-            if len(positions) != NUM_IMG_TOKENS:
-                raise RuntimeError(f"expected {NUM_IMG_TOKENS} image tokens, got {len(positions)}")
-            img = self.projected_img_embs[min(batch_idx, self.projected_img_embs.shape[0] - 1)]
+            # Fails closed on any batch/embedding mismatch. The previous
+            # ``min(batch_idx, n - 1)`` clamp silently fed one study's image
+            # features to a different study's report.
+            validate_soft_token_batch(
+                self.projected_img_embs.shape[0],
+                input_ids.shape[0],
+                len(positions),
+                NUM_IMG_TOKENS,
+            )
+            img = self.projected_img_embs[batch_idx]
             embeds[batch_idx, positions, :] = img.to(device=embeds.device, dtype=embeds.dtype)
         return embeds
 
@@ -683,7 +692,13 @@ class VariantLLM:
                     bnb_4bit_compute_dtype=self.dtype,
                     bnb_4bit_use_double_quant=True,
                 )
-                load_kwargs["device_map"] = {"": 0}
+                # Single-process, single-GPU by design (see docs/cloud/VM_SPEC.md).
+                # Pin to the current CUDA device rather than literal 0 so
+                # CUDA_VISIBLE_DEVICES selection is honoured. Multi-GPU would
+                # need DDP, not a wider device_map.
+                load_kwargs["device_map"] = {
+                    "": torch.cuda.current_device() if torch.cuda.is_available() else "cpu"
+                }
             try:
                 self.model = AutoModelForImageTextToText.from_pretrained(self.model_id, **load_kwargs)
             except Exception:
@@ -762,6 +777,56 @@ class VariantLLM:
             head = getattr(module, "lm_head", None)
             if head is not None:
                 head.to(device=self.device, dtype=self.dtype)
+
+    def parameter_report(self) -> dict:
+        """Trainable/frozen accounting for the run manifest.
+
+        Under NF4 the base weights are packed, so ``total`` is the storage
+        element count rather than the dense parameter count. The trainable and
+        LoRA figures are exact because adapters are never quantized.
+        """
+        vision_markers = ("vision_tower", "vision_model", "image_tower", "multi_modal_projector")
+        total = trainable = lora = vision = trainable_vision = 0
+        for name, param in self.model.named_parameters():
+            count = param.numel()
+            is_vision = any(marker in name for marker in vision_markers)
+            total += count
+            vision += count if is_vision else 0
+            if param.requires_grad:
+                trainable += count
+                lora += count if "lora_" in name else 0
+                trainable_vision += count if is_vision else 0
+        projector = (
+            sum(p.numel() for p in self.img_proj.parameters())
+            if self.img_proj is not None
+            else 0
+        )
+        return {
+            "total_parameters": total + projector,
+            "trainable_parameters": trainable + projector,
+            "lora_parameters": lora,
+            "projector_parameters": projector,
+            "vision_parameters": vision,
+            "trainable_vision_parameters": trainable_vision,
+            "trainable_fraction": round(
+                (trainable + projector) / max(total + projector, 1), 6
+            ),
+            "note": "NF4-packed base weights; trainable/LoRA counts are exact",
+        }
+
+    def assert_vision_tower_frozen(self) -> None:
+        """LoRA must adapt language layers only unless explicitly configured.
+
+        ``target_modules="all-linear"`` would also wrap the image tower, which
+        silently changes what the ablation is measuring.
+        """
+        report = self.parameter_report()
+        if report["trainable_vision_parameters"]:
+            raise RuntimeError(
+                "LoRA targets reached MedGemma's vision tower "
+                f"({report['trainable_vision_parameters']} trainable vision params); "
+                "language-only targeting is required"
+            )
 
     def save_adapter(
         self,
@@ -1056,7 +1121,17 @@ class VariantLLM:
                     torch.cuda.set_rng_state_all(state["cuda_rng_state"])
                 print(f"[train] resumed optimizer/scheduler at epoch={start_epoch} step={global_step}")
 
+        self.assert_vision_tower_frozen()
+        parameters = self.parameter_report()
+        print(
+            f"[params] trainable={parameters['trainable_parameters']:,} "
+            f"lora={parameters['lora_parameters']:,} "
+            f"projector={parameters['projector_parameters']:,} "
+            f"({parameters['trainable_fraction'] * 100:.4f}% of {parameters['total_parameters']:,})",
+            flush=True,
+        )
         training_config = {
+            "parameters": parameters,
             "epochs": epochs,
             "batch_size": batch_size,
             "grad_accum": grad_accum,

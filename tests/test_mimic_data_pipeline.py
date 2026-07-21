@@ -27,6 +27,67 @@ parser = load_module("mimic_report_parser", "preporcessing/mimic_report_parser.p
 sampling = load_module("mimic_cxr_utils", "model/lavis/data/mimic_cxr_utils.py")
 
 
+class FindingsAndImpressionTargetTest(unittest.TestCase):
+    """The parser output must compose into a findings_and_impression target."""
+
+    def setUp(self):
+        import sys
+
+        sys.path.insert(0, str(REPO_ROOT / "training"))
+        from dataio import manifest
+
+        self.manifest = manifest
+
+    def _row(self, report_text: str) -> dict:
+        findings, impression, _method = parser.get_target_text(report_text)
+        findings = parser.clean_report_text(findings)
+        impression = parser.clean_report_text(impression)
+        return {
+            "findings_clean": findings,
+            "impression_clean": impression,
+            "target_valid": bool(findings),
+            "impression_valid": bool(impression),
+        }
+
+    def test_both_sections_round_trip_through_the_target_format(self):
+        row = self._row(
+            "FINDINGS: Heart size is normal. No pneumothorax.\n"
+            "IMPRESSION: No acute cardiopulmonary process."
+        )
+        target = self.manifest.row_target(row, self.manifest.FINDINGS_AND_IMPRESSION)
+        self.assertTrue(target)
+        findings, impression = self.manifest.split_generated_report(target)
+        self.assertEqual(findings, "Heart size is normal. No pneumothorax.")
+        self.assertEqual(impression, "No acute cardiopulmonary process.")
+
+    def test_impression_only_report_yields_no_combined_target(self):
+        row = self._row("FINAL REPORT\nIMPRESSION: Mild pulmonary edema.")
+        self.assertEqual(
+            self.manifest.row_target(row, self.manifest.FINDINGS_AND_IMPRESSION), ""
+        )
+        self.assertEqual(
+            self.manifest.row_target(row, self.manifest.IMPRESSION_ONLY),
+            "Mild pulmonary edema.",
+        )
+
+    def test_findings_without_impression_yields_no_combined_target(self):
+        row = self._row("FINDINGS: Lungs are clear.")
+        self.assertEqual(
+            self.manifest.row_target(row, self.manifest.FINDINGS_AND_IMPRESSION), ""
+        )
+        self.assertEqual(
+            self.manifest.row_target(row, self.manifest.FINDINGS_ONLY), "Lungs are clear."
+        )
+
+    def test_deidentification_tokens_are_stripped_from_both_sections(self):
+        row = self._row(
+            "FINDINGS: Compared to [**2154-1-1**] there is new opacity.\n"
+            "IMPRESSION: Findings discussed with Dr. [**Last Name**]."
+        )
+        target = self.manifest.row_target(row, self.manifest.FINDINGS_AND_IMPRESSION)
+        self.assertNotIn("[**", target)
+
+
 class ReportParserTest(unittest.TestCase):
     def test_explicit_findings_does_not_include_impression(self):
         findings, impression, method = parser.get_target_text(

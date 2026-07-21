@@ -15,6 +15,7 @@ from training.stage2_utils import (
     safe_prediction_row,
     select_threshold_class,
     stable_fingerprint,
+    validate_soft_token_batch,
 )
 
 
@@ -102,6 +103,27 @@ class Stage2UtilsTest(unittest.TestCase):
             )
         )
         self.assertTrue(private_bucket_violations({}, {"bindings": []}))
+
+
+class SoftTokenBatchValidation(unittest.TestCase):
+    def test_matching_batch_passes(self):
+        validate_soft_token_batch(4, 4, 32, 32)
+
+    def test_fewer_embeddings_than_batch_is_rejected(self):
+        # Previously clamped to the last embedding, silently pairing one study's
+        # image with another study's report.
+        with self.assertRaises(ValueError) as ctx:
+            validate_soft_token_batch(1, 4, 32, 32)
+        self.assertIn("do not match the batch", str(ctx.exception))
+
+    def test_more_embeddings_than_batch_is_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_soft_token_batch(8, 4, 32, 32)
+
+    def test_wrong_soft_token_count_is_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            validate_soft_token_batch(4, 4, 31, 32)
+        self.assertIn("32 image tokens", str(ctx.exception))
 
 
 if __name__ == "__main__":

@@ -135,6 +135,27 @@ def masked_label_ids(
     return labels
 
 
+def validate_soft_token_batch(
+    num_embeddings: int, batch_size: int, tokens_per_row: int, expected_tokens: int
+) -> None:
+    """Guard soft-token injection against silent cross-sample contamination.
+
+    The previous implementation indexed projected embeddings with
+    ``min(batch_idx, n - 1)``. When the embedding count did not match the batch
+    it clamped instead of failing, feeding one study's image features to a
+    different study's report with no error.
+    """
+    if num_embeddings != batch_size:
+        raise ValueError(
+            "projected image embeddings do not match the batch: "
+            f"{num_embeddings} embeddings for {batch_size} sequences"
+        )
+    if tokens_per_row != expected_tokens:
+        raise ValueError(
+            f"expected {expected_tokens} image tokens, got {tokens_per_row}"
+        )
+
+
 def accumulation_window_size(batch_index: int, total_batches: int, grad_accum: int) -> int:
     """Actual micro-batch count in the current accumulation window.
 
