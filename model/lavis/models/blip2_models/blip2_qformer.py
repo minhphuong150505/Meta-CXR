@@ -26,7 +26,11 @@ from mhcac.mhcac_12 import AbnormalityClassificationModel
 from vision_encoders.pubmedclip.pubmed_clip import Pubmedclip
 from vision_encoders.swin.swin_encoder import SwinEncoder
 from vision_encoders.rad_dino.rad_dino_encoder import RadDinoEncoder
+from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector
 # from vision_encoders.medclip.medclip import Medclip
+
+# Common dimension every encoder is projected to before the merge.
+VISUAL_DIM = 1408
 
 from mhcac.loss import (
     ClassificationLoss,
@@ -191,7 +195,10 @@ class Blip2Qformer(Blip2Base):
         
         # Spatial/intensity augmentation is applied once in ReportDataset so
         # every encoder sees the same mildly transformed radiograph.
-        self.pubmedclip = Pubmedclip(aug=None).eval() if self.use_pubmedclip else None
+        self.pubmedclip = (
+            # project=False: SharedVisualTokenProjector owns the 1408 projection.
+            Pubmedclip(aug=None, project=False).eval() if self.use_pubmedclip else None
+        )
 
         self.swin = (
             SwinEncoder(
@@ -205,7 +212,6 @@ class Blip2Qformer(Blip2Base):
             else None
         )
         swin_dim = self.swin.embed_dim if self.use_swin else 768
-        self.swin_qformer_proj = nn.Linear(swin_dim, 1408) if self.use_swin else None
 
         self.raddino = (
             RadDinoEncoder(
@@ -218,7 +224,6 @@ class Blip2Qformer(Blip2Base):
             else None
         )
         raddino_dim = self.raddino.embed_dim if self.use_raddino else 768
-        self.raddino_qformer_proj = nn.Linear(raddino_dim, 1408) if self.use_raddino else None
 
         # self.medclip = Medclip().eval()
 
@@ -259,6 +264,23 @@ class Blip2Qformer(Blip2Base):
             logging.info(f"multi-view fusion enabled for streams: {stream_dims}")
 
         self._last_raddino_patches = None
+        # The single projection/merge point. Both MHCAC and the Q-Former read the
+        # tokens it produces, so the two branches can no longer drift onto
+        # different visual representations.
+        shared_stream_dims = {}
+        if self.use_biovil:
+            # ln_vision already emits VISUAL_DIM, so this stream gets an Identity.
+            shared_stream_dims["biovil"] = VISUAL_DIM
+        if self.use_pubmedclip:
+            shared_stream_dims["pubmedclip"] = 768
+        if self.use_swin:
+            shared_stream_dims["swin"] = swin_dim
+        if self.use_raddino:
+            shared_stream_dims["raddino"] = raddino_dim
+        self.shared_visual_projector = SharedVisualTokenProjector(
+            shared_stream_dims, visual_dim=VISUAL_DIM
+        )
+
         self.mhcac = AbnormalityClassificationModel(
             embed_dim=768,
             num_abnormalities=14,
@@ -266,13 +288,9 @@ class Blip2Qformer(Blip2Base):
             num_layers=6,
             num_commmon_tokens=14,
             initial_expert_tokens=None,
-            swin_dim=swin_dim,
-            raddino_dim=raddino_dim,
+            visual_dim=VISUAL_DIM,
             text_dropout_rate=mhcac_text_dropout,
             use_cnn=self.use_biovil,
-            use_vit=self.use_pubmedclip,
-            use_swin=self.use_swin,
-            use_raddino=self.use_raddino,
         )
 
         # sqrt(negative prevalence / class prevalence), capped at 10, computed
@@ -396,11 +414,9 @@ class Blip2Qformer(Blip2Base):
         # present we skip the frozen encoder forward; the trainable projection
         # layers below still run so training is identical.
         cached = cached or {}
-        cnn_patches = None
-        vit_patches = None
-        swin_patches = None
-        raddino_patches = None
-        qformer_streams = []
+        # Raw (pre-merge) per-encoder outputs, keyed by stream name. The shared
+        # projector is the only thing that turns these into visual tokens.
+        raw_streams = {}
         self._last_raddino_patches = None
         self._last_prefusion_streams = {}
 
@@ -422,38 +438,34 @@ class Blip2Qformer(Blip2Base):
         if self.use_biovil:
             cnn_raw = cached["biovil"] if "biovil" in cached else (
                 self.visual_encoder(image).projected_patch_embeddings.reshape(
-                    image.shape[0], -1, 1408
+                    image.shape[0], -1, VISUAL_DIM
                 )
             )
             self._stash_prefusion("biovil", cnn_raw, aux_streams)
             cnn_raw = self._fuse("biovil", cnn_raw, aux_streams, aux_mask,
                                  anchor_view_id, aux_view_ids)
-            cnn_patches = self.ln_vision(cnn_raw)
-            qformer_streams.append(cnn_patches)
+            # ln_vision normalises the frozen encoder output; it is not a
+            # dimension projection, so it stays on the encoder side of the merge.
+            raw_streams["biovil"] = self.ln_vision(cnn_raw)
 
         if self.use_pubmedclip:
             if "pubmedclip" in cached:
                 vit_patches = cached["pubmedclip"]
-                pubmed_projection = self.pubmedclip.mlp(vit_patches)
             else:
-                vit_patches, pubmed_projection = self.pubmedclip(
-                    image, apply_aug=apply_aug
-                )
+                vit_patches, _ = self.pubmedclip(image, apply_aug=apply_aug)
             self._stash_prefusion("pubmedclip", vit_patches, aux_streams)
-            if fuse_on and "pubmedclip" in aux_streams:
-                vit_patches = self._fuse("pubmedclip", vit_patches, aux_streams,
-                                         aux_mask, anchor_view_id, aux_view_ids)
-                # Recompute the 1408 Q-Former projection from the fused tokens.
-                # nn.Sequential of Linear broadcasts over [B, P, 768].
-                pubmed_projection = self.pubmedclip.mlp(vit_patches)
-            qformer_streams.append(pubmed_projection)
+            vit_patches = self._fuse("pubmedclip", vit_patches, aux_streams,
+                                     aux_mask, anchor_view_id, aux_view_ids)
+            # The encoder's own ``mlp`` head is no longer used to reach VISUAL_DIM:
+            # the shared projector owns that projection for every stream alike.
+            raw_streams["pubmedclip"] = vit_patches
 
         if self.use_swin:
             swin_patches = cached["swin"] if "swin" in cached else self.swin(image)
             self._stash_prefusion("swin", swin_patches, aux_streams)
-            swin_patches = self._fuse("swin", swin_patches, aux_streams, aux_mask,
-                                      anchor_view_id, aux_view_ids)
-            qformer_streams.append(self.swin_qformer_proj(swin_patches))
+            raw_streams["swin"] = self._fuse(
+                "swin", swin_patches, aux_streams, aux_mask, anchor_view_id, aux_view_ids
+            )
 
         if self.use_raddino:
             raddino_patches = cached["raddino"] if "raddino" in cached else self.raddino(image)
@@ -461,13 +473,13 @@ class Blip2Qformer(Blip2Base):
             raddino_patches = self._fuse("raddino", raddino_patches, aux_streams,
                                          aux_mask, anchor_view_id, aux_view_ids)
             self._last_raddino_patches = raddino_patches
-            qformer_streams.append(self.raddino_qformer_proj(raddino_patches))
+            raw_streams["raddino"] = raddino_patches
 
-        if not qformer_streams:
+        if not raw_streams:
             raise ValueError("No image encoder stream is enabled.")
 
-        qformer_image_embeds = torch.cat(qformer_streams, dim=1)
-        return cnn_patches, vit_patches, swin_patches, qformer_image_embeds
+        # One merge, one representation, consumed by both downstream branches.
+        return self.shared_visual_projector(raw_streams)
     
     def initialize_expert_tokens(self, chexpert_cols, embed_dim):
         # Initialize expert tokens based on text embeddings of abnormality names
@@ -761,7 +773,7 @@ class Blip2Qformer(Blip2Base):
             for k in ("biovil", "pubmedclip", "swin", "raddino")
             if f"aux_{k}_feat" in samples
         }
-        cnn_patches, vit_patches, swin_patches, image_embeds = self._encode_image_streams(
+        shared_visual = self._encode_image_streams(
             image,
             apply_aug=False,
             cached=cached,
@@ -771,6 +783,7 @@ class Blip2Qformer(Blip2Base):
             anchor_view_id=samples.get("anchor_view_id"),
             aux_view_ids=samples.get("aux_view_ids"),
         )
+        image_embeds = shared_visual.tokens
         device = image_embeds.device
         batch_size = image_embeds.shape[0]
         classification_mask = self._batch_mask(
@@ -835,10 +848,7 @@ class Blip2Qformer(Blip2Base):
 
         cls_labels = samples["classification_labels"]
         student_logits, _, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
-            cnn_patches=cnn_patches,
-            vit_patches=vit_patches,
-            swin_patches=swin_patches,
-            raddino_patches=self._last_raddino_patches,
+            shared_visual,
             text_embeddings=None,
             labels=cls_labels,
             sample_mask=classification_mask,
@@ -856,10 +866,7 @@ class Blip2Qformer(Blip2Base):
             self.lambda_teacher_cls > 0 or self.lambda_distill > 0
         ):
             teacher_logits, _, _, _, _ = self.mhcac(
-                cnn_patches=cnn_patches,
-                vit_patches=vit_patches,
-                swin_patches=swin_patches,
-                raddino_patches=self._last_raddino_patches,
+                shared_visual,
                 text_embeddings=text_output.last_hidden_state,
                 text_attention_mask=text_tokens.attention_mask,
                 # Teacher supervision is applied by ClassificationLoss below;
@@ -890,15 +897,16 @@ class Blip2Qformer(Blip2Base):
                     loss_mpc = torch.stack(terms).mean()
             if self.lambda_view_consistency > 0:
                 pre = self._last_prefusion_streams
+                anchor_raw_streams = {
+                    name: (
+                        self.ln_vision(pre[name][0]) if name == "biovil" else pre[name][0]
+                    )
+                    for name in self.shared_visual_projector.stream_names
+                    if name in pre
+                }
+                anchor_shared = self.shared_visual_projector(anchor_raw_streams)
                 anchor_logits, _, _, _, _ = self.mhcac(
-                    cnn_patches=(
-                        self.ln_vision(pre["biovil"][0])
-                        if "biovil" in pre
-                        else None
-                    ),
-                    vit_patches=(pre["pubmedclip"][0] if "pubmedclip" in pre else None),
-                    swin_patches=(pre["swin"][0] if "swin" in pre else None),
-                    raddino_patches=(pre["raddino"][0] if "raddino" in pre else None),
+                    anchor_shared,
                     text_embeddings=None,
                     labels=None,
                 )
@@ -972,7 +980,7 @@ class Blip2Qformer(Blip2Base):
             for k in ("biovil", "pubmedclip", "swin", "raddino")
             if f"aux_{k}_feat" in samples
         }
-        _, _, _, image_embeds = self._encode_image_streams(
+        image_embeds = self._encode_image_streams(
             image,
             apply_aug=False,
             cached=cached,
@@ -1048,18 +1056,17 @@ class Blip2Qformer(Blip2Base):
                 for k in ("biovil", "pubmedclip", "swin", "raddino")
                 if f"aux_{k}_feat" in samples
             }
-        cnn_patches, vit_patches, swin_patches, concat_image_embeds = self._encode_image_streams(
+        shared_visual = self._encode_image_streams(
             image, apply_aug=False, cached=cached,
             aux_image=aux_image, aux_mask=aux_mask,
             aux_cached=aux_cached,
             anchor_view_id=anchor_view_id, aux_view_ids=aux_view_ids,
         )
 
+        concat_image_embeds = shared_visual.tokens
+
         classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
-            cnn_patches=cnn_patches,
-            vit_patches=vit_patches,
-            swin_patches=swin_patches,
-            raddino_patches=self._last_raddino_patches,
+            shared_visual,
             text_embeddings=None,
             labels=None,
         )
@@ -1156,7 +1163,7 @@ class Blip2Qformer(Blip2Base):
             ), "Image is not provided for mode 'image' or 'multimodal'"
             # return query features
             with self.maybe_autocast():
-                _, _, _, image_embeds_frozen = self._encode_image_streams(image, apply_aug=False)
+                image_embeds_frozen = self._encode_image_streams(image, apply_aug=False).tokens
             image_embeds_frozen = image_embeds_frozen.float()
             image_atts = torch.ones(
                 image_embeds_frozen.size()[:-1], dtype=torch.long
@@ -1196,7 +1203,7 @@ class Blip2Qformer(Blip2Base):
         elif mode == "multimodal":
             # return multimodel query features
             with self.maybe_autocast():
-                _, _, _, image_embeds_frozen = self._encode_image_streams(image, apply_aug=False)
+                image_embeds_frozen = self._encode_image_streams(image, apply_aug=False).tokens
             image_embeds_frozen = image_embeds_frozen.float()
             image_atts = torch.ones(
                 image_embeds_frozen.size()[:-1], dtype=torch.long

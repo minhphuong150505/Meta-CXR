@@ -71,7 +71,9 @@ def extract_raw_features(model, image, enabled):
     """Return {encoder: raw frozen output} for the enabled encoders.
 
     Matches blip2_qformer._encode_image_streams exactly, but stops BEFORE the
-    trainable ln_vision / swin_qformer_proj / raddino_qformer_proj layers.
+    trainable ln_vision layer and before SharedVisualTokenProjector, which owns
+    every encoder's projection to the shared visual dimension. The cache is
+    therefore unaffected by changes to that projection.
     """
     out = {}
     if enabled.get("biovil"):

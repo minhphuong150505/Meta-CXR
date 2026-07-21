@@ -3,11 +3,19 @@ from torch import nn
 from transformers import CLIPModel, CLIPProcessor
 
 class Pubmedclip(nn.Module):
-    def __init__(self, aug = None, device='cuda'):
+    def __init__(self, aug = None, device='cuda', project=True):
+        """``project=False`` skips the 768->1408 MLP head.
+
+        SharedVisualTokenProjector now owns every encoder's projection to the
+        shared visual dimension, so callers that merge downstream must not build
+        this head: it would be a trainable module that receives no gradient and
+        costs a projection on every forward.
+        """
         super(Pubmedclip, self).__init__()  # Initialize nn.Module
         # Load the pre-trained PubMedCLIP model and processor
         self.device = device
         self.aug = aug
+        self.project = project
         self.model_name = "flaviagiammarino/pubmed-clip-vit-base-patch32"
         self.model = CLIPModel.from_pretrained(self.model_name).to(self.device)
         for p in self.model.parameters():
@@ -16,11 +24,15 @@ class Pubmedclip(nn.Module):
         self.processor = CLIPProcessor.from_pretrained(self.model_name)
         
         # Define the MLP to project patch embeddings to 1408 dimensions
-        self.mlp = nn.Sequential(
-            nn.Linear(768, 1024),  # Bottleneck layer: from 768 (input) to 1024 (hidden)
-            nn.ReLU(inplace=True),
-            nn.Linear(1024, 1408)  # Final projection to 1408 dimensions
-        ).to(self.device)
+        self.mlp = (
+            nn.Sequential(
+                nn.Linear(768, 1024),  # Bottleneck layer: from 768 (input) to 1024 (hidden)
+                nn.ReLU(inplace=True),
+                nn.Linear(1024, 1408)  # Final projection to 1408 dimensions
+            ).to(self.device)
+            if project
+            else None
+        )
 
     def train(self, mode=True):
         super().train(mode)
@@ -44,6 +56,9 @@ class Pubmedclip(nn.Module):
             vision_outputs = self.model.vision_model(pixel_values=inputs)
             patch_embeddings = vision_outputs.last_hidden_state
         
+        if self.mlp is None:
+            return patch_embeddings, None
+
         # Project the patch embeddings to 1408 dimensions using the MLP
         batch_size, num_patches, embedding_dim = patch_embeddings.shape  # Expected: (batch_size, num_patches, 768)
         patch_embeddings_clone = patch_embeddings.view(batch_size * num_patches, embedding_dim)  # Flatten for MLP
