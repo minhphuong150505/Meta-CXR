@@ -35,8 +35,10 @@ def test_mpc_rewards_same_study_similarity():
     l_shuffled = loss_fn(anchor, shuffled, aux_mask)
     assert torch.isfinite(l_aligned) and torch.isfinite(l_shuffled)
     assert l_aligned < l_shuffled, (l_aligned.item(), l_shuffled.item())
-    print("ok: MPC lower for same-study positives (%.4f < %.4f)"
-          % (l_aligned.item(), l_shuffled.item()))
+    print(
+        f"ok: MPC lower for same-study positives "
+        f"({l_aligned.item():.4f} < {l_shuffled.item():.4f})"
+    )
 
 
 def test_mpc_partial_mask_is_finite():

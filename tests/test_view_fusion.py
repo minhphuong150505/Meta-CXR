@@ -26,7 +26,7 @@ def test_zero_init_identity():
             aux_view_ids=torch.tensor([[1, 2], [0, 3], [3, 1]]))
     max_diff = (out - anchor).abs().max().item()
     assert max_diff < 1e-6, max_diff
-    print("ok: zero-init identity (max diff %.2e)" % max_diff)
+    print(f"ok: zero-init identity (max diff {max_diff:.2e})")
 
 
 def test_no_aux_returns_anchor():
