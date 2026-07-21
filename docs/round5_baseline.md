@@ -48,8 +48,60 @@ exits non-zero and the test always fails.
 them free of real identifiers. The defect is in target enumeration, not in
 detection.
 
-**Not fixed in this round.** The fix is small (exclude the fixture directory
-from `--all-tracked`, or assert the expected non-zero exit), but it is outside
-the runtime-validation scope this round was authorised for, and the brief
-directs stopping at the failing step rather than widening. Flagged for a
-decision.
+## Fixed — baseline is now green
+
+Resolved in `test: keep dirty notebook fixtures out of tracked notebook scan`.
+The fix is in the fixtures and the test, **not** in the guard.
+
+The five fixtures were renamed `*.ipynb` → `*.ipynb.fixture`:
+
+```
+tests/fixtures/notebooks/clean.ipynb.fixture
+tests/fixtures/notebooks/credential_like.ipynb.fixture
+tests/fixtures/notebooks/executed_output.ipynb.fixture
+tests/fixtures/notebooks/kaggle_ids.ipynb.fixture
+tests/fixtures/notebooks/synthetic_identifier.ipynb.fixture
+```
+
+`tests/test_notebook_privacy.py` gained a `notebook(tmp_path, name)` helper that
+writes a fixture out as a real `.ipynb` under `tmp_path`; every assertion about
+output detection, execution counts, identifier detection, redaction, credential
+detection and sanitize is unchanged and still runs against an ordinary notebook
+on disk. The clean fixtures go through the same helper, so all five load one
+way.
+
+### The guard was not weakened
+
+- `scripts/check_notebook_privacy.py` is **unmodified**.
+- `--all-tracked` keeps its exact meaning: it still checks *every* `.ipynb`
+  tracked by Git, via `git ls-files "*.ipynb"`. It now scans the three real
+  notebooks under `notebooks/` and reports them clean.
+- No directory exclusion was added. Excluding `tests/` or `tests/fixtures/`
+  would hide a genuinely leaky notebook parked there later.
+- No filename-based forgiveness was added. The detector never learns to ignore
+  a violation because of where it lives.
+- Intentionally-dirty fixtures are simply no longer stored as tracked
+  notebooks, so they are outside the notebook namespace rather than exempted
+  from it. A future `.ipynb` added anywhere — `tests/` included — is still
+  scanned.
+- Fixtures remain fully synthetic; no real MIMIC identifier was introduced.
+
+### Post-fix measurements
+
+| Check | Result |
+|---|---|
+| `pytest -q tests/test_notebook_privacy.py` | 26 passed |
+| `check_notebook_privacy.py --all-tracked` | exit 0 (CLEAN) |
+| `pytest -q` | **276 passed, 0 failed, 0 skipped** |
+| `python -m compileall scripts tests` | exit 0 |
+| `ruff check` on the two touched files | All checks passed |
+
+`ruff format --check` still reports both touched files as needing reformatting.
+That is pre-existing — verified by running the check against their `HEAD`
+versions, which report identically. Repo-wide counts are unchanged at 426 ruff
+errors and 70 unformatted files; this commit neither added to them nor fixed
+them, which was out of scope.
+
+The private notebook `preporcessing/kltn-data-preprocessing.ipynb` was not
+opened, read, or modified, and remains git-ignored (`.gitignore:62`) and
+untracked.
