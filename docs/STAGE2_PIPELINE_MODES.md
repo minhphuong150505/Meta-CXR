@@ -115,8 +115,14 @@ python training/run_medgemma_qlora.py \
 python training/run_medgemma_qlora.py \
     --resume-from training/outputs/.../adapters/medgemma_qlora_medgemma_direct/checkpoints/last
 
-# Tests
-python -m pytest tests/ training/test_stage2_utils.py    # 67 CPU tests
+# Tests (test_stage2_utils.py now lives under tests/)
+python -m pytest tests/    # 430 CPU tests
+
+# Evaluate a finished run from its saved predictions — no GPU, no model
+python scripts/calibrate_thresholds.py --predictions outputs/validation_predictions.npz \
+    --split validation --output outputs/thresholds.json
+python scripts/evaluate_stage2.py --predictions outputs/generated_reports.jsonl \
+    --metrics bleu,rouge --skip-clinical-metrics --output-dir outputs/stage2_evaluation
 ```
 
 The deprecated `--image-mode {native,qformer,both}` still works and prints the
@@ -130,10 +136,32 @@ repository — multi-GPU is not supported and no multi-GPU claim should be made.
 
 ## Known gaps
 
-- Checkpoint selection is validation **cross-entropy**, not a clinical metric.
+Last verified 2026-07-22 against the source, on branch `feature/complete-evaluator`.
+
+- Checkpoint selection is validation **cross-entropy**, not a clinical metric
+  (`run_medgemma_qlora.py:461`, `"selection_metric": "validation_cross_entropy"`).
 - No RadGraph / CheXbert / RadCliQ / GREEN implementation exists here.
-- No hallucination, grounding, uncertainty, abstention or counterfactual audit.
-- `threshold.json` carries no provenance and is never loaded implicitly.
+  `training/evaluation/clinical.py` is an **interface**: it raises
+  `MissingOptionalDependency` naming the package, and `NotImplementedError` if the
+  package is present but the adapter has not been wired and validated against
+  published reference scores. It never returns a placeholder number.
+- `threshold.json` carries no provenance and is never loaded implicitly. A
+  provenanced replacement can now be produced with
+  `scripts/calibrate_thresholds.py`, which records the split, objective and
+  uncertain policy in the output file — and refuses to fit on a test split.
+
+### Closed since this document was first written
+
+- **Hallucination, grounding, uncertainty and abstention** — implemented in
+  `safety/` (`claims.py`, `verifiers.py`, `reconciler.py`, `pipeline.py`).
+  Claim-level parse → verify → reconcile → abstain, with an audit trail per edit.
+- **Counterfactual audit** — `training/evaluation/counterfactual.py` plus
+  `perturbations.py`, measuring whether the report actually depends on the image.
+- **Classification evaluation** — `training/evaluation/` now covers per-pathology
+  AUROC/AUPRC, threshold calibration on validation only, bootstrap CIs resampled
+  by study, trivial baselines, subgroup analysis and error analysis. See
+  `docs/evaluator_audit.md` for what was wrong before and
+  `docs/evaluator_validation.md` for the measured checks.
 - `run_medgemma_qlora.py` still imports the Figure-9 module for `VariantLLM` and
   the evaluation helpers, so LAVIS/torch/transformers load even in
   `medgemma_direct`. The *data* path and Stage-1 *requirement* are decoupled;
