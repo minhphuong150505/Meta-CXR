@@ -196,6 +196,43 @@ def language_lora_target_names(module_names: Sequence[str]) -> list[str]:
     )
 
 
+def section_omission_rate(
+    predictions: Sequence[str], references: Sequence[str]
+) -> float:
+    """Fraction of rows where the reference has a section but the prediction does not.
+
+    Corpus NLG scores hide omission: a model that writes a good FINDINGS and no
+    IMPRESSION is barely penalised by BLEU over the joined report, because the
+    reference IMPRESSION is short. Reporting the omission rate separately makes
+    that failure visible.
+
+    Rows whose reference section is itself empty are excluded from the
+    denominator -- there is nothing to omit -- so an all-empty reference cohort
+    reports 0.0 rather than a spurious 1.0.
+    """
+    if len(predictions) != len(references):
+        raise ValueError(
+            f"predictions and references differ in length: "
+            f"{len(predictions)} vs {len(references)}"
+        )
+    expected = 0
+    omitted = 0
+    for prediction, reference in zip(predictions, references):
+        if not str(reference).strip():
+            continue
+        expected += 1
+        if not str(prediction).strip():
+            omitted += 1
+    if expected == 0:
+        return 0.0
+    return omitted / expected
+
+
+def prefix_metric_keys(metrics: Mapping[str, Any], prefix: str) -> dict[str, Any]:
+    """Namespace one section's metrics so section blocks cannot collide."""
+    return {f"{prefix}/{key}": value for key, value in metrics.items()}
+
+
 def native_findings_instruction() -> str:
     """Image-only instruction for the native MedGemma ablation.
 

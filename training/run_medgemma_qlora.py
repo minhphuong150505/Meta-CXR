@@ -276,6 +276,7 @@ def train_mode(
         root / "eval",
         args.max_new_tokens,
         "fine",
+        section_mode=args.section_mode,
         cohort_id=fig9.stable_fingerprint(
             {"full_val_cohort": val_cohort, "sample_keys": [r["sample_key"] for r in val_eval_records]}
         ),
@@ -293,6 +294,7 @@ def train_mode(
             root / "eval",
             args.max_new_tokens,
             "fine",
+            section_mode=args.section_mode,
             cohort_id=test_cohort,
         )
     del llm

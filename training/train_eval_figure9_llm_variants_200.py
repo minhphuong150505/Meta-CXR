@@ -68,8 +68,10 @@ try:
         language_lora_target_names,
         masked_label_ids,
         native_findings_instruction,
+        prefix_metric_keys,
         private_bucket_violations,
         safe_prediction_row,
+        section_omission_rate,
         select_threshold_class,
         stable_fingerprint,
         validate_soft_token_batch,
@@ -83,11 +85,26 @@ except ImportError:  # ``python -m training...``
         language_lora_target_names,
         masked_label_ids,
         native_findings_instruction,
+        prefix_metric_keys,
         private_bucket_violations,
         safe_prediction_row,
+        section_omission_rate,
         select_threshold_class,
         stable_fingerprint,
         validate_soft_token_batch,
+    )
+
+try:
+    from dataio.manifest import (
+        FINDINGS_AND_IMPRESSION,
+        FINDINGS_ONLY,
+        split_generated_report,
+    )
+except ImportError:  # ``python -m training...``
+    from training.dataio.manifest import (
+        FINDINGS_AND_IMPRESSION,
+        FINDINGS_ONLY,
+        split_generated_report,
     )
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -1358,6 +1375,49 @@ def compute_nlg(preds: list[str], refs: list[str]) -> dict:
     }
 
 
+def _unzip_sections(texts: list[str]) -> tuple[list[str], list[str]]:
+    """Split each text into (findings, impression), keeping row alignment."""
+    findings: list[str] = []
+    impression: list[str] = []
+    for text in texts:
+        section_findings, section_impression = split_generated_report(text)
+        findings.append(section_findings)
+        impression.append(section_impression)
+    return findings, impression
+
+
+def compute_sectioned_nlg(preds: list[str], refs: list[str], section_mode: str) -> dict:
+    """Score the full report and, when both sections are targets, each section.
+
+    ``split_generated_report`` treats an unheadered generation as FINDINGS with an
+    empty IMPRESSION rather than duplicating it into both, so a model that never
+    emits an IMPRESSION header scores 0 on the impression block instead of being
+    silently credited with its findings text.
+    """
+    metrics = compute_nlg(preds, refs)
+    if section_mode != FINDINGS_AND_IMPRESSION:
+        return metrics
+
+    pred_findings, pred_impression = _unzip_sections(preds)
+    ref_findings, ref_impression = _unzip_sections(refs)
+    for label, pred_section, ref_section in (
+        ("Findings", pred_findings, ref_findings),
+        ("Impression", pred_impression, ref_impression),
+    ):
+        metrics.update(
+            prefix_metric_keys(
+                compute_nlg(list(pred_section), list(ref_section)), label
+            )
+        )
+    metrics["FindingsOmissionRate"] = round(
+        section_omission_rate(list(pred_findings), list(ref_findings)), 6
+    )
+    metrics["ImpressionOmissionRate"] = round(
+        section_omission_rate(list(pred_impression), list(ref_impression)), 6
+    )
+    return metrics
+
+
 def evaluate_variant(
     family: str,
     variant: str,
@@ -1369,6 +1429,7 @@ def evaluate_variant(
     *,
     cohort_id: str | None = None,
     include_sensitive_fields: bool = False,
+    section_mode: str = FINDINGS_ONLY,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     cohort_id = cohort_id or stable_fingerprint(
@@ -1439,10 +1500,11 @@ def evaluate_variant(
                 row.update({"ref": str(record["ref"]), "image_path": str(record.get("image_path", ""))})
             f.write(json.dumps(row) + "\n")
             f.flush()
-    metrics = compute_nlg(preds, refs)
+    metrics = compute_sectioned_nlg(preds, refs, section_mode)
     metrics.update(
         {
             "Family": family,
+            "SectionMode": section_mode,
             "Variant": variant,
             "Run": RUN_NAME,
             "ImageMode": llm.image_mode,
