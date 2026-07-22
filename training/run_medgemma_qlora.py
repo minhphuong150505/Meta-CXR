@@ -97,6 +97,15 @@ def parse_args() -> argparse.Namespace:
         help="Report sections to train and evaluate on (default: findings_and_impression).",
     )
     parser.add_argument(
+        "--prompt-config",
+        type=Path,
+        help=(
+            "Opt-in stage2.prompts YAML (e.g. configs/stage2_prompt_v2.yaml). Omit to "
+            "keep the exact legacy prompt. Applies to a mode only when the config's "
+            "visual_mode matches that mode's image_mode; other modes stay legacy."
+        ),
+    )
+    parser.add_argument(
         "--require-image",
         action="store_true",
         help="Skip manifest rows whose JPG is absent instead of failing at load time.",
@@ -207,8 +216,23 @@ def train_mode(
     val_records: list[dict],
     test_records: list[dict],
     root: Path,
+    prompt_config=None,
 ) -> tuple[dict, Path]:
     image_mode = mode.image_mode
+    # A prompt config applies only to a mode whose visual channel it targets; an
+    # ablation run keeps the non-matching mode on the legacy prompt.
+    mode_prompt_config = (
+        prompt_config
+        if prompt_config is not None and prompt_config.visual_mode.image_mode == image_mode
+        else None
+    )
+    if prompt_config is not None and mode_prompt_config is None:
+        print(
+            f"[train:{mode.name}] prompt config visual_mode "
+            f"{prompt_config.visual_mode.value} does not target image_mode "
+            f"{image_mode!r}; using the legacy prompt for this mode",
+            flush=True,
+        )
     adapter_dir = root / "adapters" / f"medgemma_qlora_{mode.name}"
     last_dir = adapter_dir / "checkpoints" / "last"
     training_summary: dict = {}
@@ -232,6 +256,7 @@ def train_mode(
             image_mode=image_mode,
             lora_rank=args.lora_rank,
             lora_alpha=args.lora_alpha,
+            prompt_config=mode_prompt_config,
         )
         llm.load_img_proj_if_present(resume_dir)
         training_summary = llm.train_fine(
@@ -265,6 +290,7 @@ def train_mode(
         adapter=adapter_dir,
         quantize_4bit=True,
         image_mode=image_mode,
+        prompt_config=mode_prompt_config,
     )
     llm.load_img_proj_if_present(adapter_dir)
     val_eval_records = deterministic_subset(val_records, args.val_generation_limit, fig9.SEED + 1)
@@ -379,6 +405,16 @@ def main() -> None:
     args = parse_args()
     modes = resolve_pipeline_modes(args.pipeline_mode)
     needs_stage1 = modes_require_stage1(modes)
+    prompt_config = None
+    if args.prompt_config is not None:
+        from stage2.prompts import load_prompt_config
+
+        prompt_config = load_prompt_config(args.prompt_config)
+        print(
+            f"[prompt] {args.prompt_config} -> version={prompt_config.version} "
+            f"visual_mode={prompt_config.visual_mode.value}",
+            flush=True,
+        )
     context = Stage1Context(
         run_name=args.stage1_run,
         config_path=args.stage1_config,
@@ -443,7 +479,7 @@ def main() -> None:
     adapter_dirs: list[Path] = []
     for mode in modes:
         results[mode.name], adapter_dir = train_mode(
-            context, args, mode, train_records, val_records, test_records, root
+            context, args, mode, train_records, val_records, test_records, root, prompt_config
         )
         adapter_dirs.append(adapter_dir)
 
@@ -453,6 +489,8 @@ def main() -> None:
         "pipeline_mode": args.pipeline_mode,
         "primary_model": modes[0].name,
         "ablation": [mode.name for mode in modes[1:]] or None,
+        "prompt_config": str(args.prompt_config) if args.prompt_config else None,
+        "prompt_version": prompt_config.version if prompt_config else "legacy_build_instruction",
         "stage1_checkpoint": context.run_name if needs_stage1 else None,
         "section_mode": args.section_mode,
         "target_section": args.section_mode.replace("_", " ").upper(),

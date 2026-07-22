@@ -23,6 +23,19 @@ except ImportError:  # ``python -m training...``
 
 DEFAULT_NUM_IMG_TOKENS = 32
 
+
+def soft_token_bad_words_ids(img_token_id: int | None) -> list[list[int]] | None:
+    """``bad_words_ids`` that stop generation from emitting the soft-token itself.
+
+    ``skip_special_tokens`` only hides the token at decode time; suppressing it at
+    generation keeps the model from spending probability mass on a placeholder it
+    should never produce. Returns ``None`` when there is no image token (native /
+    text-only paths), so callers can splice it into ``generate`` kwargs directly.
+    """
+    if img_token_id is None or int(img_token_id) < 0:
+        return None
+    return [[int(img_token_id)]]
+
 # The projector itself stays an ordinary ``nn.Linear(768, hidden)`` owned by the
 # reporter. Wrapping it in a named module here would rename its state-dict keys
 # and silently invalidate every ``img_proj.pt`` already written to disk.
