@@ -97,7 +97,7 @@ try:
         MultimodalModelLoadError,
         validate_multimodal_capability,
     )
-    from medgemma.soft_tokens import SoftTokenEmbeddingWrapper
+    from medgemma.soft_tokens import SoftTokenEmbeddingWrapper, soft_token_bad_words_ids
     from run_context import Stage1Context
     from torch_io import load_torch_checkpoint
 except ImportError:  # ``python -m training...``
@@ -105,7 +105,10 @@ except ImportError:  # ``python -m training...``
         MultimodalModelLoadError,
         validate_multimodal_capability,
     )
-    from training.medgemma.soft_tokens import SoftTokenEmbeddingWrapper
+    from training.medgemma.soft_tokens import (
+        SoftTokenEmbeddingWrapper,
+        soft_token_bad_words_ids,
+    )
     from training.run_context import Stage1Context
     from training.torch_io import load_torch_checkpoint
 
@@ -136,6 +139,16 @@ from local_config import (  # noqa: E402
     PROCESSED_VAL_CSV,
     VIS_ROOT,
 )
+
+# Torch-free shared prompt builder. Optional: when a VariantLLM is constructed
+# with prompt_config=None the legacy build_prompt/build_native_instruction path is
+# used unchanged, so existing runs and checkpoints are unaffected.
+from stage2.prompts import (  # noqa: E402
+    PromptBuilder,
+    PromptConfig,
+    context_from_record,
+)
+from stage2.prompts.templates import template_hash as _prompt_template_hash  # noqa: E402
 
 try:
     nltk.data.find("corpora/wordnet")
@@ -590,11 +603,23 @@ class VariantLLM:
         lora_rank: int = 8,
         lora_alpha: int = 16,
         gradient_checkpointing: bool = True,
+        prompt_config: PromptConfig | None = None,
     ):
         if image_mode not in {"qformer", "native", "text_only"}:
             raise ValueError("image_mode must be 'qformer', 'native' or 'text_only'")
         if image_mode in {"native", "text_only"} and family != "medgemma":
             raise ValueError(f"{image_mode} image mode is only supported for MedGemma")
+        # Opt-in v2 prompt builder. None keeps the exact legacy prompt strings.
+        if prompt_config is not None:
+            if family != "medgemma":
+                raise ValueError("prompt_config is only supported for MedGemma")
+            if prompt_config.visual_mode.image_mode != image_mode:
+                raise ValueError(
+                    f"prompt_config.visual_mode={prompt_config.visual_mode.value} "
+                    f"maps to image_mode {prompt_config.visual_mode.image_mode!r}, "
+                    f"which does not match image_mode={image_mode!r}"
+                )
+        self.prompt_config = prompt_config
         # ``text_only`` is reachable only via the explicitly-named
         # text_only_language_prior_ablation pipeline mode. It is never a
         # fallback and never a default.
@@ -811,6 +836,31 @@ class VariantLLM:
                 "language-only targeting is required"
             )
 
+    def _prompt_metadata(self) -> dict:
+        """Reproducibility record for the prompt used by this run."""
+        if self.prompt_config is None:
+            return {
+                "builder": "legacy",
+                "version": "legacy_build_instruction",
+                "image_mode": self.image_mode,
+                "num_img_tokens": NUM_IMG_TOKENS,
+            }
+        config = self.prompt_config
+        return {
+            "builder": "stage2.prompts.PromptBuilder",
+            "version": config.version,
+            "visual_mode": config.visual_mode.value,
+            "normal_policy": config.normal_policy.value,
+            "negative_policy": config.negative_policy.value,
+            "uncertainty_policy": config.uncertainty_policy.value,
+            "temporal_target_policy": config.temporal_target_policy.value,
+            "config_hash": config.config_hash(),
+            "template_hash": _prompt_template_hash(config.visual_mode),
+            "num_img_tokens": NUM_IMG_TOKENS,
+            "tokenizer": self.model_id,
+            "processor": self.model_id,
+        }
+
     def save_adapter(
         self,
         out_dir: Path,
@@ -823,6 +873,7 @@ class VariantLLM:
         self.model.save_pretrained(out_dir)
         if self.img_proj is not None:
             torch.save(self.img_proj.state_dict(), out_dir / "img_proj.pt")
+        prompt_meta = self._prompt_metadata()
         meta = {
             "family": self.family,
             "model_id": self.model_id,
@@ -830,6 +881,7 @@ class VariantLLM:
             "img_token_id": self.img_token_id,
             "num_img_tokens": NUM_IMG_TOKENS,
             "image_mode": self.image_mode,
+            "prompt": prompt_meta,
             # Recorded so a checkpoint can never be mistaken later for a vision
             # run when it was in fact the language-prior ablation.
             **(
@@ -845,6 +897,7 @@ class VariantLLM:
             "family": self.family,
             "model_id": self.model_id,
             "image_mode": self.image_mode,
+            "prompt": prompt_meta,
             "training_config": training_config or {},
         }
         (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -858,6 +911,22 @@ class VariantLLM:
         if p.exists() and self.img_proj is not None:
             self.img_proj.load_state_dict(load_torch_checkpoint(p))
 
+    def _render_prompt_text(self, record: dict) -> str:
+        """User-turn text from the shared v2 builder (opt-in via prompt_config).
+
+        For qformer modes the returned string already contains the 32
+        ``<qformer_soft_token>`` placeholders; for native modes it is the
+        instruction text only (pixels are attached separately). Train and
+        inference both call this, so the user turn is identical by construction.
+        """
+        context = context_from_record(
+            record,
+            visual_mode=self.prompt_config.visual_mode,
+            qformer_token_count=NUM_IMG_TOKENS,
+            prompt_version=self.prompt_config.version,
+        )
+        return PromptBuilder(self.prompt_config).build(context).user_text(self.img_token)
+
     def _chat_texts(self, record: dict, prompt_style: str) -> tuple[str, str]:
         target = str(record["ref"]).strip()
         if self.family != "medgemma":
@@ -869,7 +938,13 @@ class VariantLLM:
             # The native ablation receives pixels only.  In particular, do not
             # include Q-Former/MHCAC predictions here, otherwise it is not a
             # valid native-image baseline.
-            instruction = build_native_instruction()
+            instruction = (
+                self._render_prompt_text(record)
+                if self.prompt_config is not None
+                else build_native_instruction()
+            )
+        elif self.prompt_config is not None:
+            instruction = self._render_prompt_text(record)
         else:
             instruction = build_prompt(record["pred_groups"], self.img_token, prompt_style)
         content.append({"type": "text", "text": instruction})
@@ -902,9 +977,14 @@ class VariantLLM:
         different image-token prefix, which would accidentally unmask prompt
         tokens during supervised fine tuning.
         """
+        instruction = (
+            self._render_prompt_text(record)
+            if self.prompt_config is not None
+            else build_native_instruction()
+        )
         content: list[dict[str, Any]] = [
             {"type": "image", "image": self._load_rgb(record)},
-            {"type": "text", "text": build_native_instruction()},
+            {"type": "text", "text": instruction},
         ]
         messages: list[dict[str, Any]] = [{"role": "user", "content": content}]
         if include_target:
@@ -1275,6 +1355,13 @@ class VariantLLM:
                 "use_cache": True,
                 "return_dict_in_generate": False,
             }
+            # Stop the model spending probability mass on the soft-token
+            # placeholder; None (native/text-only) leaves generation unchanged.
+            bad_words = soft_token_bad_words_ids(
+                self.img_token_id if self.image_mode == "qformer" else None
+            )
+            if bad_words is not None:
+                generate_kwargs["bad_words_ids"] = bad_words
             seq = self.model.generate(**generate_kwargs)[0]
         finally:
             if old_embedding is not None:

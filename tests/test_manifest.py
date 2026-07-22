@@ -137,7 +137,13 @@ class RecordBuilding(unittest.TestCase):
         serialized = repr(records[0])
         for leaked in ("42", "4242", "secret"):
             self.assertNotIn(leaked, records[0]["sample_key"])
-        self.assertEqual(set(records[0]) , {"index", "sample_key", "ref", "image_path"})
+        self.assertEqual(
+            set(records[0]),
+            {"index", "sample_key", "ref", "image_path", "anchor_view", "auxiliary_views"},
+        )
+        # View metadata is populated from ViewPosition (no patient identifier).
+        self.assertEqual(records[0]["anchor_view"], "PA")
+        self.assertEqual(records[0]["auxiliary_views"], [])
         self.assertIn(mf.IMPRESSION_HEADER, serialized)
 
     def test_rows_failing_the_section_mode_are_dropped(self):

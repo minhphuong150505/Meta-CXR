@@ -224,6 +224,8 @@ def build_records(
         if require_image and not Path(image_path).is_file():
             skipped_missing_image += 1
             continue
+        anchor_view = row.get("ViewPosition")
+        anchor_view = str(anchor_view).strip().upper() if anchor_view not in (None, "") else None
         records.append(
             {
                 "index": len(records),
@@ -232,6 +234,11 @@ def build_records(
                 ),
                 "ref": target,
                 "image_path": image_path,
+                # View metadata for the v2 prompt builder. Absent ViewPosition
+                # stays None rather than being invented; auxiliary views are not
+                # threaded here (native anchor-only), so the list is empty.
+                "anchor_view": anchor_view,
+                "auxiliary_views": [],
             }
         )
     print(
