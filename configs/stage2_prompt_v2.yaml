@@ -1,0 +1,55 @@
+# Stage-2 prompt configuration v2.
+# Loaded by stage2.prompts.load_prompt_config; every value is validated.
+# The visual evidence is primary; Stage-1 predictions are auxiliary cues.
+prompt:
+  version: stage2_prompt_v2
+
+  # native_anchor_only | native_anchor_guided | native_multiview
+  # | qformer_visual_only | qformer_guided
+  visual_mode: qformer_guided
+
+  # compact_summary | critical_negatives | all_negatives | no_structured_normal_statement
+  normal_policy: compact_summary
+
+  # none | all | critical_only | top_k_confident | thresholded | normal_summary
+  negative_policy: critical_only
+  max_negative_findings: 4
+  negative_probability_threshold: 0.85
+
+  # explicit_possible | probability_bins | omit_low_confidence | preserve_three_class
+  uncertainty_policy: explicit_possible
+
+  # Absence worth stating even on a normal study. Must be modeled-ontology names;
+  # unknown names are filtered out (never crash).
+  critical_findings:
+    - Pneumothorax
+    - Pleural Effusion
+    - Consolidation
+    - Edema
+
+  evidence_priority:
+    visual_primary: true
+    structured_auxiliary: true
+
+  context:
+    include_views: true
+    include_indication: true
+    include_technique: true
+    include_prior_flag: true
+
+  temporal:
+    forbid_comparison_without_prior: true
+    # keep | remove_temporal_clauses | exclude_sample | require_prior_context
+    target_policy: keep
+
+  output:
+    section: findings
+    min_sentences: 1
+    max_sentences: 4
+    allow_bullets: false
+    allow_impression: false
+    allow_recommendations: false
+
+  token_budget:
+    preserve_visual_tokens: true
+    truncate_negatives_first: true

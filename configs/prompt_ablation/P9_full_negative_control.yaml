@@ -1,0 +1,22 @@
+# P9 — full negative list as a control (expect verbose "no X, no Y…" reports).
+prompt:
+  version: P9_full_negative_control
+  visual_mode: qformer_guided
+  normal_policy: all_negatives
+  negative_policy: all
+  uncertainty_policy: explicit_possible
+  evidence_priority:
+    visual_primary: true
+    structured_auxiliary: true
+  context:
+    include_views: true
+    include_indication: true
+    include_technique: true
+    include_prior_flag: true
+  temporal:
+    forbid_comparison_without_prior: true
+    target_policy: keep
+  output:
+    section: findings
+    min_sentences: 1
+    max_sentences: 4
