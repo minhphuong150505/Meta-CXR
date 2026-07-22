@@ -1,0 +1,23 @@
+# P3 — positive + uncertain + critical negatives (capped).
+prompt:
+  version: P3_pos_unc_critical_neg
+  visual_mode: qformer_guided
+  normal_policy: compact_summary
+  negative_policy: critical_only
+  max_negative_findings: 4
+  uncertainty_policy: explicit_possible
+  evidence_priority:
+    visual_primary: false
+    structured_auxiliary: true
+  context:
+    include_views: false
+    include_indication: false
+    include_technique: false
+    include_prior_flag: true
+  temporal:
+    forbid_comparison_without_prior: true
+    target_policy: keep
+  output:
+    section: findings
+    min_sentences: 1
+    max_sentences: 4

@@ -1,0 +1,25 @@
+# P7 — P5 + calibrated confidence bins on uncertain findings.
+# REQUIRES uncertain_probabilities calibrated on the validation split; the builder
+# raises if they are absent. Do not run without calibration.
+prompt:
+  version: P7_confidence_bins
+  visual_mode: qformer_guided
+  normal_policy: compact_summary
+  negative_policy: critical_only
+  max_negative_findings: 4
+  uncertainty_policy: probability_bins
+  evidence_priority:
+    visual_primary: true
+    structured_auxiliary: true
+  context:
+    include_views: true
+    include_indication: true
+    include_technique: true
+    include_prior_flag: true
+  temporal:
+    forbid_comparison_without_prior: true
+    target_policy: keep
+  output:
+    section: findings
+    min_sentences: 1
+    max_sentences: 4

@@ -1,0 +1,23 @@
+# P8 — compact normal policy end-to-end (equivalent to stage2_prompt_v2).
+prompt:
+  version: P8_compact_normal
+  visual_mode: qformer_guided
+  normal_policy: compact_summary
+  negative_policy: critical_only
+  max_negative_findings: 4
+  uncertainty_policy: explicit_possible
+  evidence_priority:
+    visual_primary: true
+    structured_auxiliary: true
+  context:
+    include_views: true
+    include_indication: true
+    include_technique: true
+    include_prior_flag: true
+  temporal:
+    forbid_comparison_without_prior: true
+    target_policy: keep
+  output:
+    section: findings
+    min_sentences: 1
+    max_sentences: 4

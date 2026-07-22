@@ -1,0 +1,25 @@
+# P1 — closest reproduction of the SHIPPED prompt within the v2 framework:
+# full negative dump, no visual-primary emphasis, no view/prior context.
+# NOTE: the byte-exact legacy string is produced by the old build_instruction;
+# this variant is the nearest policy-equivalent, labelled legacy_style.
+prompt:
+  version: P1_legacy_style
+  visual_mode: qformer_guided
+  normal_policy: all_negatives
+  negative_policy: all
+  uncertainty_policy: preserve_three_class
+  evidence_priority:
+    visual_primary: false
+    structured_auxiliary: true
+  context:
+    include_views: false
+    include_indication: false
+    include_technique: false
+    include_prior_flag: false
+  temporal:
+    forbid_comparison_without_prior: false
+    target_policy: keep
+  output:
+    section: findings
+    min_sentences: 1
+    max_sentences: 4

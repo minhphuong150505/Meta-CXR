@@ -1,0 +1,17 @@
+# P6 — Q-Former soft tokens only, NO structured Stage-1 labels (isolates the
+# visual channel; the control for "do the labels help at all?").
+prompt:
+  version: P6_qformer_visual_only
+  visual_mode: qformer_visual_only
+  context:
+    include_views: true
+    include_indication: true
+    include_technique: true
+    include_prior_flag: true
+  temporal:
+    forbid_comparison_without_prior: true
+    target_policy: keep
+  output:
+    section: findings
+    min_sentences: 1
+    max_sentences: 4
