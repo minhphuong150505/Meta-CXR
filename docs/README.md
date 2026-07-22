@@ -264,6 +264,46 @@ Một chủ đề xuyên suốt codebase này: **pipeline bị suy giảm thì r
 **Chỉ hỗ trợ một GPU.** `device_map` ghim vào `torch.cuda.current_device()`. Trong repo này **không có
 DDP, FSDP hay DistributedSampler** ở bất kỳ đâu — đừng tuyên bố hỗ trợ đa GPU.
 
+### 📝 Thiết kế prompt Stage 2 (v2)
+
+`stage2/prompts/` là **một** prompt builder dùng chung, có version, không phụ thuộc torch, được **cả
+train lẫn inference gọi** (`VariantLLM._render_prompt_text` → `PromptBuilder`). Chi tiết ở
+`docs/stage2_prompt_design.md`; audit prompt cũ ở `docs/stage2_prompt_audit.md`.
+
+Nguyên tắc:
+
+- **Bằng chứng thị giác là chính**; prediction Stage 1 chỉ là *gợi ý phụ có thể sai* ("Auxiliary
+  Stage-1 predictions, which may be imperfect").
+- Study bình thường **không** liệt kê 13 negative — dùng `normal_policy` (mặc định `compact_summary`).
+- Uncertain **không** bị biến thành positive; hiển thị ở nhóm "Possible or uncertain".
+- Chọn negative bằng `negative_policy` (mặc định `critical_only`, cap `max_negative_findings`).
+- Không có prior → prompt **cấm** từ ngữ so sánh thời gian (`forbid_comparison_without_prior`).
+- `native_anchor_only` (image-only) khác `qformer_guided`: mode sau có structured cues, mode trước không.
+- Đổi prompt bằng YAML: `configs/stage2_prompt_v2.yaml`; ablation ở `configs/prompt_ablation/`.
+- Tái lập: mỗi run ghi `prompt_version`, `config_hash`, `template_hash` vào adapter manifest.
+
+```bash
+# Export prompt debug (synthetic nếu không có --input)
+python scripts/export_stage2_prompt_samples.py --config configs/stage2_prompt_v2.yaml \
+  --num-samples 50 --output outputs/prompt_samples.jsonl
+
+# Thống kê độ dài prompt/target
+python scripts/prompt_length_statistics.py --config configs/stage2_prompt_v2.yaml \
+  --tokenizer google/medgemma-1.5-4b-it --max-length 768
+
+# Ablation (dry-run, KHÔNG train, KHÔNG sinh metric)
+python scripts/run_prompt_ablation.py --prompt-configs configs/prompt_ablation/P*.yaml \
+  --max-samples 1000 --output-dir outputs/prompt_ablation
+
+# Train với prompt v2 (opt-in; bỏ --prompt-config để giữ prompt legacy)
+python training/run_medgemma_qlora.py --pipeline-mode meta_cxr_qformer \
+  --section-mode findings_only --prompt-config configs/stage2_prompt_v2.yaml
+```
+
+Prompt v2 là **opt-in** và **backward-compatible**: bỏ `--prompt-config` thì prompt legacy giữ nguyên
+byte-for-byte, checkpoint cũ không bị ảnh hưởng. Builder đã có unit test CPU; phần nối vào `VariantLLM`
+(chat template/generation) **chưa chạy trên GPU** — không có metric mô hình nào ở đây đến từ prompt v2.
+
 ---
 
 ## 🌍 Nhánh MedGemma ngoài
