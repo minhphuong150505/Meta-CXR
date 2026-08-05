@@ -22,7 +22,6 @@ pycocoevalcap==1.2
 nltk==3.9.1
 spacy==3.8.2
 iterative-stratification==0.1.9
-hi-ml-multimodal==0.2.1
 einops==0.8.0
 fairscale==0.4.13
 webdataset==0.2.100
