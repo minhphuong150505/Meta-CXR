@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import pytest
 
 from mhcac.loss import ClassificationLoss, soft_target_kl_loss
 from mhcac.mhcac_12 import AbnormalityClassificationModel
@@ -33,6 +34,49 @@ def test_empty_classification_mask_returns_differentiable_zero():
     assert loss.item() == 0.0
     loss.backward()
     assert torch.count_nonzero(logits.grad) == 0
+
+
+def test_ignore_uncertain_drops_only_uncertain_pairs():
+    torch.manual_seed(2)
+    logits = torch.randn(3, 2, 3, requires_grad=True)
+    labels = torch.tensor([[0, 2], [2, 1], [1, 0]])
+    loss_fn = ClassificationLoss(
+        num_abnormalities=2,
+        label_smoothing=0.0,
+        uncertain_policy="ignore_uncertain",
+    )
+
+    actual = loss_fn(logits, labels)
+    expected = torch.stack(
+        [
+            F.cross_entropy(logits[[0, 2], 0], labels[[0, 2], 0]),
+            F.cross_entropy(logits[[1, 2], 1], labels[[1, 2], 1]),
+        ]
+    ).mean()
+
+    torch.testing.assert_close(actual, expected)
+    actual.backward()
+    assert torch.count_nonzero(logits.grad[1, 0]) == 0
+    assert torch.count_nonzero(logits.grad[0, 1]) == 0
+
+
+@pytest.mark.parametrize(
+    ("policy", "replacement"),
+    [("uncertain_as_positive", 1), ("uncertain_as_negative", 0)],
+)
+def test_uncertain_mapping_policies(policy, replacement):
+    logits = torch.randn(2, 1, 3)
+    labels = torch.tensor([[2], [1]])
+    loss_fn = ClassificationLoss(
+        num_abnormalities=1,
+        label_smoothing=0.0,
+        uncertain_policy=policy,
+    )
+
+    actual = loss_fn(logits, labels)
+    expected_labels = torch.tensor([replacement, 1])
+    expected = F.cross_entropy(logits[:, 0], expected_labels)
+    torch.testing.assert_close(actual, expected)
 
 
 def test_distillation_detaches_teacher_and_masks_invalid_rows():

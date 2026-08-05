@@ -21,9 +21,9 @@ class ImageTextPretrainTask(BaseTask):
     """Stage-1 validation.
 
     The confusion-matrix metrics below are kept **bit-identical** to their
-    historical behaviour: ``f1_positive_macro`` is the checkpoint selection
-    metric, and changing its value would silently change which checkpoint a
-    resumed run selects. Its known defect -- a pathology with no positive
+    historical behaviour. ``f1_positive_macro`` remains available for old
+    runs, while production selects checkpoints with threshold-free
+    ``macro_auprc``. The legacy metric's known defect -- a pathology with no positive
     samples contributes 0 to the macro instead of being excluded -- is fixed in
     ``training/evaluation/classification_metrics.py`` and surfaced here under
     separate ``*_defined_only`` keys.
@@ -34,17 +34,38 @@ class ImageTextPretrainTask(BaseTask):
     thresholds and bootstrap without another GPU pass.
     """
 
-    def __init__(self):
+    def __init__(self, cfg=None):
         super().__init__()
+        self.cfg = getattr(cfg, "run_cfg", cfg)
+        self.eval_split = "validation"
+        self.eval_epoch = "unknown"
+
+    @classmethod
+    def setup_task(cls, cfg=None, **kwargs):
+        """Keep the run config: Stage-1 evaluation has configurable metrics."""
+        return cls(cfg=cfg)
+
+    def set_evaluation_context(self, split_name, epoch):
+        """Give prediction artifacts a stable split/epoch-specific name."""
+        self.eval_split = str(split_name)
+        self.eval_epoch = str(epoch)
 
     def evaluation(self, model, data_loader, cuda_enabled=True):
         loss_sums = {}
         example_count = 0
         confusion = None
 
+        run_cfg = self.cfg
         save_predictions = bool(
-            getattr(getattr(self, "cfg", None), "save_predictions", False)
+            run_cfg.get("save_predictions", False) if run_cfg is not None else False
         )
+        selection_metric = str(
+            run_cfg.get("selection_metric", "f1_positive_macro")
+            if run_cfg is not None
+            else "f1_positive_macro"
+        )
+        probability_metrics = {"macro_auprc", "macro_auroc"}
+        collect_predictions = save_predictions or selection_metric in probability_metrics
         collected_logits = []
         collected_labels = []
         collected_keys = []
@@ -103,7 +124,7 @@ class ImageTextPretrainTask(BaseTask):
             )
             confusion += counts.reshape(num_abnormalities, num_classes, num_classes)
 
-            if save_predictions:
+            if collect_predictions:
                 # Labels are masked to -1 where the sample carries no CheXpert
                 # annotation, so the offline evaluator skips exactly the rows
                 # this loop skipped. Without it, an unlabelled row would be
@@ -189,59 +210,100 @@ class ImageTextPretrainTask(BaseTask):
                         confusion.shape[0],
                     )
 
-        if save_predictions and collected_logits:
-            self._save_predictions(
-                collected_logits, collected_labels, collected_keys, model
+        if collected_logits:
+            predictions = self._build_predictions(
+                collected_logits, collected_labels, collected_keys
             )
+            if selection_metric in probability_metrics:
+                if is_dist_avail_and_initialized() and dist.get_world_size() > 1:
+                    raise RuntimeError(
+                        f"{selection_metric} checkpoint selection currently supports "
+                        "single-GPU evaluation only"
+                    )
+                from training.evaluation.classification_metrics import (
+                    evaluate_classification,
+                )
+
+                uncertain_policy = (
+                    str(run_cfg.get("uncertain_policy", "three_class"))
+                    if run_cfg is not None
+                    else "three_class"
+                )
+                include_meta_labels = bool(
+                    run_cfg.get("include_meta_labels", False)
+                    if run_cfg is not None
+                    else False
+                )
+                report = evaluate_classification(
+                    predictions,
+                    uncertain_policy=uncertain_policy,
+                    include_meta_labels=include_meta_labels,
+                )
+                for key in (
+                    "macro_auprc",
+                    "macro_auroc",
+                    "positive_macro_f1",
+                    "positive_micro_f1",
+                    "balanced_accuracy",
+                ):
+                    stats[key] = float(report.aggregates[key])
+
+            if save_predictions:
+                self._save_predictions(predictions)
 
         return stats
 
     @staticmethod
-    def _save_predictions(logits_chunks, label_chunks, keys, model):
+    def _build_predictions(logits_chunks, label_chunks, keys):
+        from model.lavis.models.blip2_models.blip2_qformer import chexpert_cols
+        from training.evaluation.schemas import (
+            ClassificationPredictions,
+            build_sample_keys,
+        )
+
+        logits = torch.cat(logits_chunks, dim=0).numpy()
+        labels = torch.cat(label_chunks, dim=0).numpy()
+        probabilities = torch.softmax(torch.from_numpy(logits), dim=-1).numpy()
+
+        names = tuple(chexpert_cols)
+        if len(names) != labels.shape[1]:
+            names = tuple(f"abnormality_{i}" for i in range(labels.shape[1]))
+            logger.warning(
+                "chexpert_cols has %d entries but logits have %d columns; "
+                "falling back to positional names",
+                len(chexpert_cols),
+                labels.shape[1],
+            )
+
+        return ClassificationPredictions(
+            labels=labels,
+            probabilities=probabilities,
+            logits=logits,
+            pathology_names=names,
+            sample_keys=build_sample_keys(list(keys[: labels.shape[0]])),
+        )
+
+    def _save_predictions(self, predictions):
         """Write a prediction .npz for offline re-evaluation.
 
         Best-effort: a failure here must not lose a completed validation pass,
         so it is logged rather than raised.
         """
         try:
-            import numpy as np
-
-            from model.lavis.models.blip2_models.blip2_qformer import chexpert_cols
-            from training.evaluation.schemas import ClassificationPredictions
-
             if is_dist_avail_and_initialized() and dist.get_world_size() > 1:
                 logger.warning(
                     "save_predictions collects rank-local batches only; with "
                     "world_size>1 the written file covers this rank's shard"
                 )
 
-            logits = torch.cat(logits_chunks, dim=0).numpy()
-            labels = torch.cat(label_chunks, dim=0).numpy()
-            probabilities = torch.softmax(
-                torch.from_numpy(logits), dim=-1
-            ).numpy()
-
-            names = tuple(chexpert_cols)
-            if len(names) != labels.shape[1]:
-                names = tuple(f"abnormality_{i}" for i in range(labels.shape[1]))
-                logger.warning(
-                    "chexpert_cols has %d entries but logits have %d columns; "
-                    "falling back to positional names",
-                    len(chexpert_cols),
-                    labels.shape[1],
-                )
-
-            predictions = ClassificationPredictions(
-                labels=labels,
-                probabilities=probabilities,
-                logits=logits,
-                pathology_names=names,
-                sample_keys=np.asarray(keys[: labels.shape[0]], dtype="U"),
-            )
             registry_output = registry.get_path("result_dir") or "."
-            path = f"{registry_output}/validation_predictions.npz"
+            safe_split = self.eval_split.replace("/", "_")
+            safe_epoch = self.eval_epoch.replace("/", "_")
+            path = (
+                f"{registry_output}/{safe_split}_predictions_epoch_{safe_epoch}.npz"
+            )
             predictions.save(path)
-            logger.info("saved %d predictions to %s", labels.shape[0], path)
+            logger.info("saved %d predictions to %s", predictions.num_samples, path)
         except Exception as exc:  # noqa: BLE001
             logger.warning("could not save predictions (metrics unaffected): %s", exc)
 

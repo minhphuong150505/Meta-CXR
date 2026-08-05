@@ -67,7 +67,7 @@ bao giờ ramp xong. Đừng copy giá trị từ đó.)
 ### Hyperparameters
 | | |
 |---|---|
-| `max_epoch` | **10** |
+| `max_epoch` | **20** (early stopping patience 5) |
 | `batch_size_train` | 2 |
 | `accum_grad_iters` | 32 → effective batch **64** |
 | `num_workers` | 4 |
@@ -76,8 +76,8 @@ bao giờ ramp xong. Đừng copy giá trị từ đó.)
 | `study_sampling` | true — **1 sample = 1 study**, không phải 1 ảnh |
 | `anchor_priority` | `[PA, AP, lateral]`, `max_aux_views: 1` |
 | `lambda_mpc` / `lambda_view_consistency` | 0.1 / 0.05 |
-| `selection_metric` | `f1_positive_macro` |
-| `early_stop_patience` | 10 — **bằng `max_epoch`, nên early stop không bao giờ kích hoạt** |
+| `selection_metric` | `macro_auprc` — calibrate threshold F1 sau khi chọn checkpoint |
+| `uncertain_policy` | `ignore_uncertain` cho classification loss và binary metrics |
 | `save_freq` | 3 |
 
 > `study_sampling: true` đổi định nghĩa epoch từ ~365k dòng ảnh thành **~220k study**.

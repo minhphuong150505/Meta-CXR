@@ -46,8 +46,21 @@ class ClassificationLoss(nn.Module):
         class_weights=None,
         num_abnormalities=14,
         label_smoothing=0.0,
+        uncertain_policy="three_class",
     ):
         super().__init__()
+        valid_policies = {
+            "three_class",
+            "uncertain_as_positive",
+            "uncertain_as_negative",
+            "ignore_uncertain",
+        }
+        if uncertain_policy not in valid_policies:
+            raise ValueError(
+                f"unknown uncertain_policy {uncertain_policy!r}; expected one of "
+                f"{', '.join(sorted(valid_policies))}"
+            )
+        self.uncertain_policy = uncertain_policy
         self.penalty_weight = float(penalty_weight)
         if class_weights is not None:
             if not isinstance(class_weights, (list, tuple)):
@@ -92,6 +105,12 @@ class ClassificationLoss(nn.Module):
             labels_i = true_labels[:, abnormality_idx].long()
             # Also accept -100 for future partially-labelled annotations.
             valid = sample_mask & (labels_i >= 0) & (labels_i < logits.shape[-1])
+            if self.uncertain_policy == "ignore_uncertain":
+                valid = valid & (labels_i != 2)
+            elif self.uncertain_policy == "uncertain_as_positive":
+                labels_i = torch.where(labels_i == 2, 1, labels_i)
+            elif self.uncertain_policy == "uncertain_as_negative":
+                labels_i = torch.where(labels_i == 2, 0, labels_i)
             if valid.any():
                 losses.append(loss_fn(logits[valid, abnormality_idx], labels_i[valid]))
 

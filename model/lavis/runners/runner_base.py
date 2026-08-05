@@ -717,8 +717,25 @@ class RunnerBase:
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         logging.info("Training time {}".format(total_time_str))
 
+        # Re-evaluate validation once with checkpoint_best. This produces the
+        # exact prediction artifact used for post-hoc threshold calibration;
+        # the last training epoch need not be the selected epoch.
+        if not self.evaluate_only and self.valid_splits:
+            best_path = self.output_dir / "checkpoint_best.pth"
+            if best_path.exists():
+                for split_name in self.valid_splits:
+                    logging.info(
+                        "Final evaluation of selected checkpoint on %s split.",
+                        split_name,
+                    )
+                    _, _, _, best_val_stats = self.eval_epoch(
+                        split_name=split_name, cur_epoch="best"
+                    )
+                    if best_val_stats is not None:
+                        self.log_stats(best_val_stats, f"best_{split_name}")
+
         # Run the held-out test split exactly once using the selected validation
-        # checkpoint.  This avoids tuning epochs, thresholds, or hyperparameters
+        # checkpoint. This avoids tuning epochs, thresholds, or hyperparameters
         # on test performance.
         if not self.evaluate_only and self.test_splits:
             best_path = self.output_dir / "checkpoint_best.pth"
@@ -788,6 +805,8 @@ class RunnerBase:
             model=model,
             dataset=self.datasets[split_name],
         )
+        if hasattr(self.task, "set_evaluation_context"):
+            self.task.set_evaluation_context(split_name, cur_epoch)
 
         results = self.task.evaluation(model, data_loader, cuda_enabled=self.cuda_enabled)
 

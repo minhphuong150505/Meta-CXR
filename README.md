@@ -200,11 +200,23 @@ Preflight không tải model weights; nó kiểm tra Python, CUDA/GPU, RAM/disk/
 
 ### 2. Stage 1 smoke test và training
 
-Stage 1 không có limit flag. Smoke test dùng một GPU, quan sát dataset build và vài optimizer steps rồi dừng thủ công:
+Stage 1 hỗ trợ `run.truncate_train/val/test` cho smoke test. Config production
+chạy tối đa 20 epoch, early stopping patience 5 và chọn checkpoint theo
+macro-AUPRC; logits validation được lưu để calibrate threshold F1 sau đó.
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
   -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml
+```
+
+Sau khi train, calibrate threshold chỉ trên prediction của validation từ
+`checkpoint_best` (các bệnh có dưới 20 positive giữ threshold 0.5):
+
+```bash
+python scripts/calibrate_thresholds.py \
+  --predictions pretraining/outputs/<run>/result/val_predictions_epoch_best.npz \
+  --objective f1 --uncertain-policy ignore_uncertain --min-positive 20 \
+  --output pretraining/outputs/<run>/result/f1_thresholds.json
 ```
 
 Full 2-GPU command được cấu hình như sau, nhưng vẫn cần GPU smoke test trước:
