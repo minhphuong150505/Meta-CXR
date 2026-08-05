@@ -142,7 +142,9 @@ class Blip2Qformer(Blip2Base):
         self.Qformer, self.query_tokens = self.init_Qformer(
             num_query_token, vis_num_feat, cross_attention_freq
         )
-        self.Qformer.resize_token_embeddings(len(self.tokenizer))
+        self.Qformer.resize_token_embeddings(
+            len(self.tokenizer), mean_resizing=False
+        )
         # transformers>=4.50 replaces the decoder during resize but leaves the
         # custom Q-Former head's separate bias alias at the old vocabulary size.
         # Re-link it so BLIP2's 30,523-token checkpoint loads without a shape

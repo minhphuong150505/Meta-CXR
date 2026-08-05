@@ -55,6 +55,9 @@ class Blip2Base(BaseModel):
         Qformer = BertLMHeadModel.from_pretrained(
             "bert-base-uncased", config=encoder_config
         )
+        # New transformers loaders can break this custom head's registered
+        # bias alias by leaving decoder.bias on the meta device.
+        Qformer.cls.predictions.decoder.bias = Qformer.cls.predictions.bias
         query_tokens = nn.Parameter(
             torch.zeros(1, num_query_token, encoder_config.hidden_size)
         )
