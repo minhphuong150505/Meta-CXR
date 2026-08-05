@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import logging
 import os
 import re
 from time import time
@@ -244,13 +245,33 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.reports = pd.read_csv(csv_map[split])
         required_report_cols = {
             "subject_id", "study_id", "dicom_id", "image_path", "findings_clean",
-            "extraction_method", "target_valid", "has_chexpert_label",
+            "has_chexpert_label",
         }
         missing_report_cols = sorted(required_report_cols - set(self.reports.columns))
         if missing_report_cols:
             raise ValueError(
                 f"Processed {split} CSV is missing columns: {missing_report_cols}. "
                 "Rebuild it with preporcessing/preprocess_mimic_cxr.py."
+            )
+        # The first full_allviews export predates these two provenance columns.
+        # Both are losslessly recoverable for training: extraction_method is
+        # diagnostic only, while an empty FINDINGS target is exactly the
+        # generation-invalid condition enforced again below.
+        if "extraction_method" not in self.reports:
+            logging.warning(
+                "Processed %s CSV has no extraction_method; marking rows as "
+                "legacy_preprocessed.",
+                split,
+            )
+            self.reports["extraction_method"] = "legacy_preprocessed"
+        if "target_valid" not in self.reports:
+            logging.warning(
+                "Processed %s CSV has no target_valid; deriving it from non-empty "
+                "findings_clean.",
+                split,
+            )
+            self.reports["target_valid"] = (
+                self.reports["findings_clean"].fillna("").astype(str).str.strip().ne("")
             )
         self.reports["subject_id"] = self.reports["subject_id"].astype(int)
         self.reports["study_id"] = self.reports["study_id"].astype(int)
