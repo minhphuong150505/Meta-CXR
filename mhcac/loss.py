@@ -425,7 +425,10 @@ class AbnormalitySpecificLoss(nn.Module):
             else:
                 unc_loss = zero
 
-            contrastive_loss += (pos_neg_loss + unc_loss)
+            # Do not mutate ``zero`` in place. Missing-class branches reuse that
+            # tensor; ``+=`` made them reuse the accumulated loss and doubled
+            # it repeatedly across later pathologies.
+            contrastive_loss = contrastive_loss + pos_neg_loss + unc_loss
 
         contrastive_loss = contrastive_loss / num_abnormalities
         

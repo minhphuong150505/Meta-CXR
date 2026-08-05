@@ -2,7 +2,11 @@ import torch
 import torch.nn.functional as F
 import pytest
 
-from mhcac.loss import ClassificationLoss, soft_target_kl_loss
+from mhcac.loss import (
+    AbnormalitySpecificLoss,
+    ClassificationLoss,
+    soft_target_kl_loss,
+)
 from mhcac.mhcac_12 import AbnormalityClassificationModel
 from vision_encoders.shared_visual_tokens import SharedVisualTokens
 
@@ -77,6 +81,29 @@ def test_uncertain_mapping_policies(policy, replacement):
     expected_labels = torch.tensor([replacement, 1])
     expected = F.cross_entropy(logits[:, 0], expected_labels)
     torch.testing.assert_close(actual, expected)
+
+
+def test_sparse_pathologies_do_not_exponentially_duplicate_contrastive_loss():
+    """Missing positive classes must contribute zero, not the running total."""
+    batch_size, num_abnormalities, embedding_dim = 4, 14, 8
+    common = torch.ones(batch_size, num_abnormalities, embedding_dim)
+    labels = torch.zeros(batch_size, num_abnormalities, dtype=torch.long)
+    labels[0, 0] = 1
+    attention = [
+        torch.full((batch_size, 1, num_abnormalities, 2), 0.5)
+    ]
+    objective = AbnormalitySpecificLoss(
+        margin=0.5,
+        d_embedding=embedding_dim,
+        num_abnormalities=num_abnormalities,
+        uncertain_policy="ignore_uncertain",
+    )
+
+    _, _, contrastive, _ = objective(common, attention, labels)
+
+    # Only pathology 0 is defined: cosine=1 gives relu(1 - 0.5)=0.5,
+    # averaged over all 14 pathologies.
+    assert contrastive.item() == pytest.approx(0.5 / num_abnormalities)
 
 
 def test_distillation_detaches_teacher_and_masks_invalid_rows():
