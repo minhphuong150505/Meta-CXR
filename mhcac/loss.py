@@ -239,7 +239,14 @@ class AttentionPooling(nn.Module):
         return pooled_representations
 
 class AbnormalitySpecificLoss(nn.Module):
-    def __init__(self, temperature=0.07, margin=0.7, d_embedding = 768, num_abnormalities = 14):
+    def __init__(
+        self,
+        temperature=0.07,
+        margin=0.7,
+        d_embedding=768,
+        num_abnormalities=14,
+        uncertain_policy="three_class",
+    ):
         """
         Modified InfoNCE Loss for abnormality-specific tokens.
 
@@ -251,6 +258,15 @@ class AbnormalitySpecificLoss(nn.Module):
         super(AbnormalitySpecificLoss, self).__init__()
         self.temperature = temperature
         self.margin = margin
+        valid_policies = {
+            "three_class",
+            "uncertain_as_positive",
+            "uncertain_as_negative",
+            "ignore_uncertain",
+        }
+        if uncertain_policy not in valid_policies:
+            raise ValueError(f"unknown uncertain_policy {uncertain_policy!r}")
+        self.uncertain_policy = uncertain_policy
         self.attention_pooling = AttentionPooling(d_embedding, num_abnormalities)
     
     def orthogonality_loss(self, common_representations):
@@ -358,7 +374,12 @@ class AbnormalitySpecificLoss(nn.Module):
             return pooled_representations_, orth_loss, zero, sparsity_loss
 
         batch_size, num_abnormalities, d_embedding = pooled_for_loss.shape
-        pooled_representations = F.normalize(pooled_for_loss, dim=-1)
+        # AMP can make very small fp16 norms underflow; normalizing in fp32
+        # keeps cosine similarities in [-1, 1] and this loss mathematically
+        # bounded instead of allowing it to dominate every other objective.
+        pooled_representations = F.normalize(
+            pooled_for_loss.float(), dim=-1
+        )
 
         contrastive_loss = zero
 
@@ -366,6 +387,11 @@ class AbnormalitySpecificLoss(nn.Module):
         for a in range(num_abnormalities):
             tokens = pooled_representations[:, a, :]  # [batch_size, d_embedding]
             token_labels = labels_for_loss[:, a]  # [batch_size]
+
+            if self.uncertain_policy == "uncertain_as_positive":
+                token_labels = torch.where(token_labels == 2, 1, token_labels)
+            elif self.uncertain_policy == "uncertain_as_negative":
+                token_labels = torch.where(token_labels == 2, 0, token_labels)
 
             # Masks
             pos_mask = (token_labels == 1).float()
@@ -387,7 +413,12 @@ class AbnormalitySpecificLoss(nn.Module):
                 pos_neg_loss = zero
             
             # Uncertain Alignment
-            if len(unc_indices) > 0 and len(pos_indices) > 0 and len(neg_indices) > 0:
+            if (
+                self.uncertain_policy != "ignore_uncertain"
+                and len(unc_indices) > 0
+                and len(pos_indices) > 0
+                and len(neg_indices) > 0
+            ):
                 pos_unc_similarity = similarity_matrix[unc_indices][:, pos_indices].mean(dim=1)
                 neg_unc_similarity = similarity_matrix[unc_indices][:, neg_indices].mean(dim=1)
                 unc_loss = torch.abs(pos_unc_similarity - neg_unc_similarity).mean()

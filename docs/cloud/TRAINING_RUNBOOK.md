@@ -68,8 +68,8 @@ bao giờ ramp xong. Đừng copy giá trị từ đó.)
 | | |
 |---|---|
 | `max_epoch` | **20** (early stopping patience 5) |
-| `batch_size_train` | 2 |
-| `accum_grad_iters` | 32 → effective batch **64** |
+| `batch_size_train` | 8 — smoke full model trên RTX 5060 Ti peak 12.755/16.311 MB |
+| `accum_grad_iters` | 8 → effective batch **64** |
 | `num_workers` | 4 |
 | `amp` | true |
 | `warmup_steps` | 300 (đếm theo **optimizer update**, không phải microbatch) |
