@@ -221,6 +221,7 @@ class AbnormalityClassificationModel(nn.Module):
         text_dropout_rate=0.2,
         num_text_teacher_layers=2,
         use_cnn=True,
+        uncertain_policy="three_class",
     ):
         super(AbnormalityClassificationModel, self).__init__()
 
@@ -290,6 +291,7 @@ class AbnormalityClassificationModel(nn.Module):
             margin=0.5,
             d_embedding=embed_dim,
             num_abnormalities=num_abnormalities,
+            uncertain_policy=uncertain_policy,
         )
         # self.attention_loss = AttentionLoss(lambda_sparsity=0.3)
         

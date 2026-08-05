@@ -299,6 +299,7 @@ class Blip2Qformer(Blip2Base):
             visual_dim=VISUAL_DIM,
             text_dropout_rate=mhcac_text_dropout,
             use_cnn=self.use_biovil,
+            uncertain_policy=uncertain_policy,
         )
 
         # sqrt(negative prevalence / class prevalence), capped at 10, computed
