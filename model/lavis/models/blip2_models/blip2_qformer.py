@@ -143,6 +143,11 @@ class Blip2Qformer(Blip2Base):
             num_query_token, vis_num_feat, cross_attention_freq
         )
         self.Qformer.resize_token_embeddings(len(self.tokenizer))
+        # transformers>=4.50 replaces the decoder during resize but leaves the
+        # custom Q-Former head's separate bias alias at the old vocabulary size.
+        # Re-link it so BLIP2's 30,523-token checkpoint loads without a shape
+        # mismatch and both state-dict names still reference the same parameter.
+        self.Qformer.cls.predictions.bias = self.Qformer.cls.predictions.decoder.bias
         state_dict = self.Qformer.state_dict()
         for name, param in self.Qformer.named_parameters():
             if "_query" in name:
