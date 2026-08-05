@@ -32,6 +32,8 @@ model:
   mhcac:
     distill_temperature: 2.0
     text_dropout: 0.2
+    # Ambiguous pairs are not reliable positive/negative targets.
+    uncertain_policy: ignore_uncertain
     # Defaults are sqrt inverse-frequency weights derived from the full
     # study-level train split; [] disables weighting for an ablation.
     label_smoothing: 0.05
@@ -102,24 +104,19 @@ run:
   init_lr_cls: 1.0e-4
   min_lr: 1.0e-6
   warmup_lr: 1.0e-6
-  # Optimizer updates, not microbatches: ~0.9% of a ten-epoch full run.
+  # Optimizer updates, not microbatches.
   warmup_steps: 300
   weight_decay: 0.02
   max_grad_norm: 1.0
 
-  max_epoch: 10
-  # Full validation F1 is stable enough to select the image-only student.
-  # patience 10 == max_epoch, so early stopping can never fire within this run:
-  # all ten epochs are intended to be paid for. checkpoint_best still tracks the
-  # best epoch, so a late plateau costs GPU hours but never costs quality.
-  early_stop_patience: 10
+  max_epoch: 20
+  # Stop after five validation epochs without meaningful AUPRC improvement.
+  early_stop_patience: 5
   early_stop_min_delta: 1.0e-4
-  selection_metric: f1_positive_macro
+  # Threshold-free selection is more stable under severe class imbalance.
+  selection_metric: macro_auprc
   selection_mode: max
-  # checkpoint_last (every epoch) and checkpoint_best are always kept. save_freq 3
-  # adds retained snapshots checkpoint_2/5/8.pth so a run that has to be rebuilt
-  # can restart from a fixed point rather than only from the rolling last.
-  save_freq: 3
+  save_freq: 5
 
   # 2 x accumulation 32 = effective batch 64. Contrastive negatives come from
   # the live microbatch plus the queue, not from gradient accumulation.
@@ -141,6 +138,10 @@ run:
   # Held out by RunnerBase and evaluated once from checkpoint_best after train.
   test_splits: [test]
   save_text_predictions: false
+  # Enables offline per-pathology threshold calibration without another GPU pass.
+  save_predictions: true
+  uncertain_policy: ignore_uncertain
+  include_meta_labels: false
 
   device: cuda
   world_size: 1

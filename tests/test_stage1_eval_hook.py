@@ -160,3 +160,24 @@ def test_predictions_are_not_saved_unless_requested(tmp_path):
     stats = run_evaluation(labels=[[1], [0]], predictions=[[1], [0]])
     assert "f1_positive_macro" in stats
     assert list(tmp_path.iterdir()) == []
+
+
+def test_probability_metric_can_select_checkpoint():
+    batch = make_batch([[1, 0], [0, 1], [1, 0], [0, 0]])
+    output = {
+        "loss": torch.tensor(1.0),
+        "classification_logits": logits_for([[1, 0], [0, 1], [1, 0], [0, 0]]),
+    }
+    task = ImageTextPretrainTask(
+        cfg={
+            "selection_metric": "macro_auprc",
+            "uncertain_policy": "ignore_uncertain",
+            "include_meta_labels": False,
+        }
+    )
+
+    stats = task.evaluation(FakeModel([output]), [batch], cuda_enabled=False)
+
+    assert stats["macro_auprc"] == pytest.approx(1.0)
+    assert stats["macro_auroc"] == pytest.approx(1.0)
+    assert stats["positive_macro_f1"] == pytest.approx(1.0)

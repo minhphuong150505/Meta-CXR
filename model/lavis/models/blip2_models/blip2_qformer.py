@@ -109,6 +109,7 @@ class Blip2Qformer(Blip2Base):
         mhcac_text_dropout=0.2,
         class_weights=None,
         cls_label_smoothing=0.05,
+        uncertain_policy="three_class",
         itc_queue_size=1024,
     ):
         super().__init__()
@@ -320,6 +321,7 @@ class Blip2Qformer(Blip2Base):
             class_weights=class_weights,
             num_abnormalities=14,
             label_smoothing=cls_label_smoothing,
+            uncertain_policy=uncertain_policy,
         )
         
 
@@ -1345,6 +1347,7 @@ class Blip2Qformer(Blip2Base):
         if class_weights is not None:
             class_weights = [list(weights) for weights in class_weights]
         cls_label_smoothing = float(mhcac_cfg.get("label_smoothing", 0.05))
+        uncertain_policy = str(mhcac_cfg.get("uncertain_policy", "three_class"))
 
         model = cls(
             vit_model=vit_model,
@@ -1385,6 +1388,7 @@ class Blip2Qformer(Blip2Base):
             mhcac_text_dropout=mhcac_text_dropout,
             class_weights=class_weights,
             cls_label_smoothing=cls_label_smoothing,
+            uncertain_policy=uncertain_policy,
             itc_queue_size=itc_queue_size,
         )
         model.load_checkpoint_from_config(cfg)
