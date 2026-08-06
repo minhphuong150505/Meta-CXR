@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from model.lavis.common.optims import LinearWarmupCosineLRScheduler
-from model.lavis.tasks.base_task import BaseTask
+from model.lavis.tasks.base_task import BaseTask, resolve_amp_dtype
 
 
 class _NoOpScheduler:
@@ -74,3 +74,22 @@ def test_scheduler_preserves_parameter_group_lr_ratio():
         assert optimizer.param_groups[1]["lr"] == pytest.approx(
             optimizer.param_groups[0]["lr"] * 2.0
         )
+
+
+@pytest.mark.parametrize("name", ["bfloat16", "bf16", "torch.bfloat16"])
+def test_resolve_amp_dtype_accepts_bfloat16_aliases(name):
+    assert resolve_amp_dtype(True, name) is torch.bfloat16
+
+
+@pytest.mark.parametrize("name", ["float16", "fp16", "half", "torch.float16"])
+def test_resolve_amp_dtype_preserves_legacy_float16(name):
+    assert resolve_amp_dtype(True, name) is torch.float16
+
+
+def test_resolve_amp_dtype_disables_autocast_when_amp_is_false():
+    assert resolve_amp_dtype(False, "not-a-real-dtype") is None
+
+
+def test_resolve_amp_dtype_rejects_unknown_values():
+    with pytest.raises(ValueError, match="unsupported run.amp_dtype"):
+        resolve_amp_dtype(True, "float32")

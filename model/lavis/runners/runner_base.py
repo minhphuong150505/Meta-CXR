@@ -30,6 +30,7 @@ from model.lavis.datasets.datasets.dataloader_utils import (
     MultiIterLoader,
     PrefetchLoader,
 )
+from model.lavis.tasks.base_task import resolve_amp_dtype
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.data.dataset import ChainDataset
@@ -227,9 +228,12 @@ class RunnerBase:
 
     @property
     def scaler(self):
+        # FP16 needs dynamic loss scaling. BF16 has FP32-like exponent range and
+        # intentionally trains without GradScaler.
         amp = self.config.run_cfg.get("amp", False)
+        amp_dtype = self.amp_dtype
 
-        if amp:
+        if amp and amp_dtype == torch.float16:
             if self._scaler is None:
                 try:
                     self._scaler = torch.amp.GradScaler("cuda")
@@ -237,6 +241,22 @@ class RunnerBase:
                     self._scaler = torch.cuda.amp.GradScaler()
 
         return self._scaler
+
+    @property
+    def amp_dtype(self):
+        dtype = resolve_amp_dtype(
+            self.config.run_cfg.get("amp", False),
+            self.config.run_cfg.get("amp_dtype", "float16"),
+        )
+        if (
+            dtype == torch.bfloat16
+            and self.cuda_enabled
+            and not torch.cuda.is_bf16_supported()
+        ):
+            raise RuntimeError(
+                "run.amp_dtype=bfloat16 requires a CUDA GPU with BF16 support"
+            )
+        return dtype
 
     @property
     def lr_scheduler(self):
@@ -774,6 +794,7 @@ class RunnerBase:
             data_loader=self.train_loader,
             optimizer=self.optimizer,
             scaler=self.scaler,
+            amp_dtype=self.amp_dtype,
             lr_scheduler=self.lr_scheduler,
             cuda_enabled=self.cuda_enabled,
             log_freq=self.log_freq,
