@@ -48,6 +48,56 @@ chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
                               "Pleural Effusion", "Pleural Other",
                               "Fracture", "Support Devices"]
 
+
+def _hard_negative_sampling_weights(
+    similarities: torch.Tensor,
+    candidate_valid: torch.Tensor,
+    positive_indices: torch.Tensor,
+) -> torch.Tensor:
+    """Return finite per-row probabilities over valid non-positive samples.
+
+    Masking the positive *after* softmax is numerically unsafe: once the model
+    becomes confident, BF16 can assign the positive probability 1 and every
+    negative probability 0. Removing the positive then leaves an all-zero row,
+    which makes ``torch.multinomial`` trigger a CUDA device-side assertion.
+
+    Compute the distribution in FP32 with positives excluded before softmax.
+    A uniform fallback keeps training alive if non-finite similarities still
+    erase every learned weight in a row.
+    """
+    if similarities.ndim != 2:
+        raise ValueError("similarities must have shape [batch, candidates]")
+    batch_size, candidate_count = similarities.shape
+    candidate_valid = candidate_valid.to(
+        device=similarities.device, dtype=torch.bool
+    ).reshape(-1)
+    positive_indices = positive_indices.to(
+        device=similarities.device, dtype=torch.long
+    ).reshape(-1)
+    if candidate_valid.numel() != candidate_count:
+        raise ValueError("candidate_valid does not match similarities")
+    if positive_indices.numel() != batch_size:
+        raise ValueError("positive_indices does not match similarities")
+
+    allowed = candidate_valid.unsqueeze(0).expand(batch_size, -1).clone()
+    rows = torch.arange(batch_size, device=similarities.device)
+    allowed[rows, positive_indices] = False
+    fallback_total = allowed.sum(dim=1, keepdim=True)
+    if (fallback_total == 0).any():
+        raise ValueError("hard-negative sampling needs at least one candidate per row")
+
+    logits = torch.nan_to_num(
+        similarities.detach().float(), nan=-1.0e4, posinf=1.0e4, neginf=-1.0e4
+    )
+    logits = logits.masked_fill(~allowed, float("-inf"))
+    weights = F.softmax(logits, dim=1).masked_fill(~allowed, 0.0)
+    weights = torch.nan_to_num(weights, nan=0.0, posinf=0.0, neginf=0.0)
+    totals = weights.sum(dim=1, keepdim=True)
+    normalized = weights / totals.clamp_min(torch.finfo(weights.dtype).tiny)
+    fallback = allowed.float() / fallback_total.float()
+    bad_rows = (~torch.isfinite(totals)) | (totals <= 0)
+    return torch.where(bad_rows, fallback, normalized)
+
 @registry.register_model("blip2")
 @registry.register_model("blip2_feature_extractor")
 class Blip2Qformer(Blip2Base):
@@ -689,15 +739,12 @@ class Blip2Qformer(Blip2Base):
         )
 
         with torch.no_grad():
-            weights_t2i = F.softmax(sim_t2i, dim=1)
-            weights_i2t = F.softmax(sim_i2t, dim=1)
-            weights_t2i[:, ~valid_all] = 0
-            weights_i2t[:, ~valid_all] = 0
-            rows = torch.arange(batch_size, device=image_embeds.device)
-            weights_t2i[rows, positive_indices] = 0
-            weights_i2t[rows, positive_indices] = 0
-            weights_t2i = weights_t2i / weights_t2i.sum(dim=1, keepdim=True).clamp_min(1e-12)
-            weights_i2t = weights_i2t / weights_i2t.sum(dim=1, keepdim=True).clamp_min(1e-12)
+            weights_t2i = _hard_negative_sampling_weights(
+                sim_t2i, valid_all, positive_indices
+            )
+            weights_i2t = _hard_negative_sampling_weights(
+                sim_i2t, valid_all, positive_indices
+            )
 
         local_indices = valid_mask.nonzero(as_tuple=True)[0]
         negative_image_indices = torch.stack(
