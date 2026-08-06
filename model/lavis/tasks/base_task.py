@@ -18,6 +18,33 @@ from model.lavis.common.registry import registry
 from model.lavis.datasets.data_utils import prepare_sample
 from torch.nn.utils import clip_grad_norm_
 
+
+def resolve_amp_dtype(amp_enabled, amp_dtype="float16"):
+    """Resolve the configured CUDA autocast dtype.
+
+    ``amp: true`` remains backward compatible with the historical FP16 path.
+    BF16 is opt-in because it does not use a GradScaler and requires hardware
+    support that the runner validates before the first training epoch.
+    """
+    if not amp_enabled:
+        return None
+
+    name = str(amp_dtype).strip().lower().replace("torch.", "")
+    aliases = {
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "half": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+    }
+    if name not in aliases:
+        raise ValueError(
+            f"unsupported run.amp_dtype {amp_dtype!r}; expected float16/fp16 "
+            "or bfloat16/bf16"
+        )
+    return aliases[name]
+
+
 class BaseTask:
     def __init__(self, **kwargs):
         super().__init__()
@@ -109,6 +136,7 @@ class BaseTask:
         optimizer,
         lr_scheduler,
         scaler=None,
+        amp_dtype=None,
         cuda_enabled=False,
         log_freq=50,
         accum_grad_iters=1,
@@ -121,6 +149,7 @@ class BaseTask:
             data_loader=data_loader,
             optimizer=optimizer,
             scaler=scaler,
+            amp_dtype=amp_dtype,
             lr_scheduler=lr_scheduler,
             log_freq=log_freq,
             cuda_enabled=cuda_enabled,
@@ -138,6 +167,7 @@ class BaseTask:
         optimizer,
         lr_scheduler,
         scaler=None,
+        amp_dtype=None,
         cuda_enabled=False,
         log_freq=50,
         accum_grad_iters=1,
@@ -151,6 +181,7 @@ class BaseTask:
             data_loader=data_loader,
             optimizer=optimizer,
             scaler=scaler,
+            amp_dtype=amp_dtype,
             lr_scheduler=lr_scheduler,
             log_freq=log_freq,
             cuda_enabled=cuda_enabled,
@@ -167,6 +198,7 @@ class BaseTask:
         optimizer,
         lr_scheduler,
         scaler=None,
+        amp_dtype=None,
         start_iters=None,
         log_freq=50,
         cuda_enabled=False,
@@ -179,7 +211,8 @@ class BaseTask:
         When using epoch-based, training stops after one epoch; when using iter-based,
         training stops after #iters_per_epoch iterations.
         """
-        use_amp = scaler is not None
+        use_autocast = cuda_enabled and amp_dtype is not None
+        use_grad_scaler = scaler is not None
 
         if not hasattr(data_loader, "__next__"):
             # convert to iterator if not already
@@ -257,10 +290,12 @@ class BaseTask:
                 # from DDP's forward hooks.
                 if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
                     amp_context = torch.amp.autocast(
-                        device_type="cuda", enabled=use_amp
+                        device_type="cuda",
+                        enabled=use_autocast,
+                        dtype=amp_dtype,
                     )
-                elif use_amp:
-                    amp_context = torch.cuda.amp.autocast()
+                elif use_autocast:
+                    amp_context = torch.cuda.amp.autocast(dtype=amp_dtype)
                 else:
                     amp_context = contextlib.nullcontext()
                 with amp_context:
@@ -299,14 +334,14 @@ class BaseTask:
                         window_had_nonfinite = False
                     continue
 
-                if use_amp:
+                if use_grad_scaler:
                     scaler.scale(scaled_loss).backward()
                 else:
                     scaled_loss.backward()
 
             # update gradients every accum_grad_iters iterations
             if is_sync_step:
-                if use_amp:
+                if use_grad_scaler:
                     # First unscale the gradients before clipping
                     scaler.unscale_(optimizer)
                     if max_grad_norm > 0:

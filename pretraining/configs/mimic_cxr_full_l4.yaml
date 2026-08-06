@@ -133,7 +133,10 @@ run:
   seed: 42
   output_dir: "pretraining/outputs"
 
+  # RTX 5060 Ti supports BF16. It retains FP32-like exponent range and avoids
+  # GradScaler collapse while keeping mixed-precision memory/throughput gains.
   amp: true
+  amp_dtype: bfloat16
   evaluate: false
   train_splits: [train]
   valid_splits: [val]
