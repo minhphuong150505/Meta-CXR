@@ -1,7 +1,7 @@
 {
   "title": "Encoder ablation F1 on the full MIMIC-CXR test split",
   "status": "partial",
-  "generated_at": "2026-08-10T22:31:34+07:00",
+  "generated_at": "2026-08-10T22:40:30+07:00",
   "method": "At inference, keep the named encoder streams and zero every other trained encoder span after shared projection. Token positions, common expert tokens, MHCAC, soft/query tokens, and all learned weights remain unchanged.",
   "trained_encoders": {
     "biovil": "BioViL-T",
@@ -58,10 +58,10 @@
     "tolerance": 0.005
   },
   "completed_configurations": [
+    "biovil",
     "all_three"
   ],
   "pending_configurations": [
-    "biovil",
     "pubmedclip",
     "swin"
   ],
@@ -69,10 +69,20 @@
     "biovil": {
       "display_name": "BioViL-T only",
       "active_encoders": ["biovil"],
-      "status": "pending",
-      "num_test_studies": null,
-      "per_pathology_f1": null,
-      "mean_f1": null,
+      "status": "completed",
+      "num_test_studies": 3216,
+      "prediction_file": "/mnt/drive1tb/meta-cxr-ablation/ablation_biovil/result/test_predictions_epoch_provided.npz",
+      "evaluation_dir": "/mnt/drive1tb/meta-cxr-ablation/ablation_biovil/eval",
+      "per_pathology_f1": {
+        "Atelectasis": 0.5002785515320335,
+        "Cardiomegaly": 0.5655172413793104,
+        "Consolidation": 0.22391857506361323,
+        "Edema": 0.6069651741293531,
+        "Pleural Effusion": 0.7279726261762189
+      },
+      "mean_f1": 0.5249304336561058,
+      "maximum_probability_delta_from_all_three": 0.06212574243545532,
+      "mean_probability_delta_from_all_three": 0.0011982079310592039,
       "error": null
     },
     "pubmedclip": {
