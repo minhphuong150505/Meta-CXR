@@ -49,6 +49,22 @@ chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
                               "Fracture", "Support Devices"]
 
 
+def _resolve_encoder_ablation(stream_names, active_encoders):
+    """Return trained streams to mask for an inference-only active set."""
+    if not active_encoders:
+        return ()
+
+    built = tuple(str(name) for name in stream_names)
+    active = {str(name) for name in active_encoders}
+    unknown = sorted(active - set(built))
+    if unknown:
+        raise ValueError(
+            f"active_encoders names {unknown}, but this model was built "
+            f"with {sorted(built)}"
+        )
+    return tuple(name for name in built if name not in active)
+
+
 def _hard_negative_sampling_weights(
     similarities: torch.Tensor,
     candidate_valid: torch.Tensor,
@@ -338,6 +354,11 @@ class Blip2Qformer(Blip2Base):
         self.shared_visual_projector = SharedVisualTokenProjector(
             shared_stream_dims, visual_dim=VISUAL_DIM
         )
+        # Inference-only per-encoder ablation (paper Table 5). Empty tuple is
+        # the trained multi-encoder model and leaves the original path intact.
+        # Masking happens after shared projection, preserving token positions,
+        # expert tokens, MHCAC, and every other learned component.
+        self.ablate_encoders: tuple[str, ...] = ()
 
         self.mhcac = AbnormalityClassificationModel(
             embed_dim=768,
@@ -466,6 +487,14 @@ class Blip2Qformer(Blip2Base):
             anchor, aux.to(anchor.dtype), aux_mask, anchor_view_id, aux_view_ids
         )
 
+    def _apply_encoder_ablation(self, shared):
+        """Mask configured encoder spans while preserving the trained layout."""
+        if not self.ablate_encoders:
+            return shared
+        if self.training:
+            raise RuntimeError("active_encoders is inference-only; call model.eval()")
+        return shared.without(*self.ablate_encoders)
+
     def _encode_image_streams(self, image, apply_aug=False, cached=None,
                               aux_image=None, aux_cached=None, aux_mask=None,
                               anchor_view_id=None, aux_view_ids=None):
@@ -539,7 +568,8 @@ class Blip2Qformer(Blip2Base):
             raise ValueError("No image encoder stream is enabled.")
 
         # One merge, one representation, consumed by both downstream branches.
-        return self.shared_visual_projector(raw_streams)
+        shared = self.shared_visual_projector(raw_streams)
+        return self._apply_encoder_ablation(shared)
     
     def initialize_expert_tokens(self, chexpert_cols, embed_dim):
         # Initialize expert tokens based on text embeddings of abnormality names
@@ -1445,6 +1475,14 @@ class Blip2Qformer(Blip2Base):
             cls_label_smoothing=cls_label_smoothing,
             uncertain_policy=uncertain_policy,
             itc_queue_size=itc_queue_size,
+        )
+
+        # Optional inference-only ablation. ``active_encoders`` names streams
+        # to keep; all other streams built into the checkpoint are zeroed at
+        # the shared-token boundary. Absent/empty means no ablation.
+        model.ablate_encoders = _resolve_encoder_ablation(
+            model.shared_visual_projector.stream_names,
+            cfg.get("active_encoders", None),
         )
         model.load_checkpoint_from_config(cfg)
 
