@@ -1,0 +1,5 @@
+configuration,active_encoders,status,num_test_studies,Atelectasis,Cardiomegaly,Consolidation,Edema,Pleural Effusion,mean_f1,error
+biovil,biovil,pending,,,,,,,,
+pubmedclip,pubmedclip,pending,,,,,,,,
+swin,swin,pending,,,,,,,,
+all_three,biovil|pubmedclip|swin,completed,3216,0.5019476905954369,0.5637314032971451,0.22391857506361323,0.6064880112834978,0.7286755250750107,0.5249522410629408,
