@@ -1,5 +1,5 @@
 configuration,active_encoders,status,num_test_studies,Atelectasis,Cardiomegaly,Consolidation,Edema,Pleural Effusion,mean_f1,error
 biovil,biovil,completed,3216,0.5002785515320335,0.5655172413793104,0.22391857506361323,0.6069651741293531,0.7279726261762189,0.5249304336561058,
 pubmedclip,pubmedclip,completed,3216,0.0,0.0,0.0,0.0,0.0,0.0,"All five fixed-threshold classifiers predicted no positives; see JSON warning"
-swin,swin,pending,,,,,,,,
+swin,swin,completed,3216,0.0,0.0,0.0,0.0,0.0,0.0,"All five fixed-threshold classifiers predicted no positives; see JSON warning"
 all_three,biovil|pubmedclip|swin,completed,3216,0.5019476905954369,0.5637314032971451,0.22391857506361323,0.6064880112834978,0.7286755250750107,0.5249522410629408,
