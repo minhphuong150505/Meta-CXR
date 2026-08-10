@@ -499,13 +499,21 @@ class RunnerBase:
     def setup_output_dir(self):
         base_dir = Path(self.config.run_cfg.get("output_dir", "pretraining/outputs"))
 
-        output_dir = base_dir if base_dir.name == self.run_name else base_dir / self.run_name
-        if os.path.exists(output_dir) and not self.evaluate_only:
-            output_dir = base_dir / "{}_{}".format(
-                self.run_name, datetime.datetime.now().strftime("%m%d_%H%M%S")
-            )
-        elif self.evaluate_only:
-            output_dir = base_dir / self.run_name.replace("_eval", "")
+        resume_path = self.resume_ckpt_path
+        if resume_path and not is_url(resume_path) and os.path.isfile(resume_path):
+            # Resume in place so checkpoint_best, metric history and future
+            # checkpoint_last files remain a coherent run. Creating a timestamped
+            # directory here can leave the final best-checkpoint reload without
+            # the best checkpoint from epochs completed before the resume.
+            output_dir = Path(resume_path).resolve().parent
+        else:
+            output_dir = base_dir if base_dir.name == self.run_name else base_dir / self.run_name
+            if os.path.exists(output_dir) and not self.evaluate_only:
+                output_dir = base_dir / "{}_{}".format(
+                    self.run_name, datetime.datetime.now().strftime("%m%d_%H%M%S")
+                )
+            elif self.evaluate_only:
+                output_dir = base_dir / self.run_name.replace("_eval", "")
         result_dir = output_dir / "result"
 
         output_dir.mkdir(parents=True, exist_ok=True)
