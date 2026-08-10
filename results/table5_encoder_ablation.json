@@ -1,7 +1,7 @@
 {
   "title": "Encoder ablation F1 on the full MIMIC-CXR test split",
-  "status": "partial",
-  "generated_at": "2026-08-10T22:49:02+07:00",
+  "status": "complete",
+  "generated_at": "2026-08-10T22:57:30+07:00",
   "method": "At inference, keep the named encoder streams and zero every other trained encoder span after shared projection. Token positions, common expert tokens, MHCAC, soft/query tokens, and all learned weights remain unchanged.",
   "trained_encoders": {
     "biovil": "BioViL-T",
@@ -60,11 +60,10 @@
   "completed_configurations": [
     "biovil",
     "pubmedclip",
+    "swin",
     "all_three"
   ],
-  "pending_configurations": [
-    "swin"
-  ],
+  "pending_configurations": [],
   "configurations": {
     "biovil": {
       "display_name": "BioViL-T only",
@@ -108,10 +107,21 @@
     "swin": {
       "display_name": "SwinV2 only",
       "active_encoders": ["swin"],
-      "status": "pending",
-      "num_test_studies": null,
-      "per_pathology_f1": null,
-      "mean_f1": null,
+      "status": "completed",
+      "num_test_studies": 3216,
+      "prediction_file": "/mnt/drive1tb/meta-cxr-ablation/ablation_swin/result/test_predictions_epoch_provided.npz",
+      "evaluation_dir": "/mnt/drive1tb/meta-cxr-ablation/ablation_swin/eval",
+      "per_pathology_f1": {
+        "Atelectasis": 0.0,
+        "Cardiomegaly": 0.0,
+        "Consolidation": 0.0,
+        "Edema": 0.0,
+        "Pleural Effusion": 0.0
+      },
+      "mean_f1": 0.0,
+      "maximum_probability_delta_from_all_three": 0.9090359285473824,
+      "mean_probability_delta_from_all_three": 0.12588520325886657,
+      "warning": "All five F1 values are zero because SwinV2-only produced no positive predictions at the fixed validation thresholds. Verified positive-score maxima: Atelectasis 0.10869 < 0.43510, Cardiomegaly 0.12071 < 0.32369, Consolidation 0.09620 < 0.40647, Edema 0.05791 < 0.51361, Pleural Effusion 0.04389 < 0.45006. This implausibly weak row is reported without alteration.",
       "error": null
     },
     "all_three": {
