@@ -2,19 +2,24 @@
 
 Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh báo cáo. Stage 1 học biểu diễn thị giác theo study, hợp nhất nhiều view, tạo Q-Former tokens và dự đoán bất thường. Stage 2 dùng MedGemma để sinh nội dung báo cáo, với đường ảnh native hoặc Q-Former soft tokens. Repository cũng có evaluator cho classification và report generation.
 
-> **Trạng thái hiện tại:** CPU integration complete; ready for GPU smoke testing.
+> **Trạng thái hiện tại:** CPU integration complete; Table 5 Stage-1 inference
+> ablation complete; training pipelines vẫn cần GPU smoke/full validation.
 >
 > Đây là trạng thái theo tài liệu tích hợp tại commit hiện tại, không phải xác nhận đã train trên GPU hay đã tái lập metric mô hình.
+>
+> **Máy train hiện tại (user xác nhận 2026-08-12):** một host với định danh
+> `phuong@minhphuong`. GPU/VRAM/RAM và data mount của host này chưa được ghi nhận;
+> các recipe L4/2×3090 bên dưới là cấu hình hỗ trợ, không phải mô tả hardware hiện tại.
 
 ## Trạng thái hiện tại
 
 | Thành phần | Trạng thái |
 |---|---|
 | Branch integration | Các nhánh tính năng đã được tích hợp tuyến tính vào `main`; xem [integration audit](docs/final_branch_integration_audit.md) |
-| Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC và DDP có trong code; chưa GPU-validated |
+| Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC và DDP có trong code; Table 5 inference-only ablation đã chạy, training pipeline chưa GPU-validated |
 | Stage 2 implementation | MedGemma QLoRA, native-image và Q-Former routes có trong code; chưa GPU-validated |
 | CPU tests | 465 tests passed theo [integration notes](docs/final_merge_plan.md); không chạy lại trong lần cập nhật README này |
-| GPU smoke test | **Not yet GPU-validated** |
+| GPU evidence | Table 5 encoder ablation 4/4 hoàn tất trên full test; chưa phải training smoke/full validation |
 | Full MIMIC-CXR training | Chưa được xác nhận với pipeline final |
 | Reproduced metrics | Chưa có metric mô hình mới được tái lập từ pipeline final |
 
@@ -316,8 +321,10 @@ Bài báo META-CXR gốc có báo cáo classification và report-generation metr
 
 ## Hạn chế hiện tại
 
-- Stage 1 và Stage 2 chưa được GPU smoke-tested trong lần tích hợp hiện tại.
-- Full MIMIC-CXR training và metric pipeline final chưa được tái lập.
+- Stage 1 và Stage 2 **training** chưa được GPU smoke-tested trong lần tích hợp
+  hiện tại. Riêng Table 5 Stage-1 inference-only encoder ablation đã hoàn tất 4/4
+  trên full test split; xem `results/table5_encoder_ablation.*`.
+- Full training pipeline và Stage 2 metric chưa được tái lập từ pipeline final.
 - Split records hiện chưa mang prior linkage đầy đủ; temporal target policy mặc định vẫn là `keep`.
 - `native_multiview` tồn tại trong Prompt v2, nhưng native manifest hiện chỉ luồn anchor image và để `auxiliary_views` rỗng; Stage 2 native multi-image chưa hoàn chỉnh end-to-end.
 - METEOR, CIDEr và BERTScore phụ thuộc package tùy chọn; clinical metric adapters chưa được wire/validate.

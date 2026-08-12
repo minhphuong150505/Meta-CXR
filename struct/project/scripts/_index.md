@@ -1,0 +1,108 @@
+> Source: `scripts/` (11 file)
+> Status: ✅ ACTIVE
+> Last verified against source: 2026-08-12
+
+# `scripts/`
+
+## Purpose
+
+CLI cho những việc **không phải training**: preflight, calibrate, evaluate, phân
+tích prompt, và guard quyền riêng tư.
+
+## Parent
+
+[`struct/project/`](../../HOME.md#source-code-tree)
+
+## Children
+
+### Vận hành
+
+| File | Doc | Status | Vai trò |
+|---|---|---|---|
+| `vm_preflight.py` (202) | [📄](vm_preflight.py.doc.md) | 🧰 | Kiểm tra CUDA, RAM, disk, shm, path, HF auth. **Không tải weight, không download** |
+| `check_notebook_privacy.py` (363) | [📄](check_notebook_privacy.py.doc.md) | ✅ ★ | Pre-commit hook chặn notebook mang dữ liệu MIMIC vào Git |
+
+### Evaluation
+
+| File | Doc | Status |
+|---|---|---|
+| `calibrate_thresholds.py` | [📄](calibrate_thresholds.py.doc.md) | ✅ Calibrate — **chỉ validation** |
+| `evaluate_stage1.py` (328) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz` |
+| `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |
+
+### Phân tích prompt
+
+| File | Doc | Status | Cảnh báo |
+|---|---|---|---|
+| `run_prompt_ablation.py` | [📄](run_prompt_ablation.py.doc.md) | 🧪 | **Dry run** — không load model, không sinh metric model |
+| `export_stage2_prompt_samples.py` | [📄](export_stage2_prompt_samples.py.doc.md) | 🧪 | ⚠ **Output CHỨA findings text** — `--output` phải ở nơi riêng tư |
+| `prompt_length_statistics.py` | [📄](prompt_length_statistics.py.doc.md) | 🧪 | Không có tokenizer MedGemma → fallback whitespace, đánh dấu `"approximate": true` |
+| `audit_temporal_targets.py` | [📄](audit_temporal_targets.py.doc.md) | 🧪 | Đo ngôn ngữ so sánh thời gian khi input không có prior |
+| `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
+| `__init__.py` | — | ✅ | |
+
+## `check_notebook_privacy.py` — quan trọng hơn nó có vẻ
+
+MIMIC-CXR là dữ liệu credentialed và remote này **public**. Notebook là đường rò
+rỉ dễ nhất: source trông vô hại, nhưng **outputs** nhúng `subject_id`, `study_id`,
+report text và `findings_clean`.
+
+`.gitignore` bảo vệ hai notebook đã biết — nhưng một `git add -f`, một lần đổi
+tên, hay một notebook mới là đủ để vượt qua. Script này chạy như **pre-commit
+hook**. Fixture kiểm thử ở `tests/fixtures/notebooks/`.
+
+> **Đừng bypass hook này.**
+
+## `_stage2_fixtures.py` — vì sao tồn tại
+
+Cho phép các script prompt chạy end-to-end **không cần dữ liệu, không cần GPU**.
+Record có đúng hình dạng pipeline thật phát ra (`pred_groups`, views, prior flags,
+`ref`).
+
+> Mọi con số sinh từ fixture là **minh họa**, không bao giờ là kết quả model.
+
+## Main responsibilities
+
+1. Kiểm tra máy trước run dài.
+2. Calibrate threshold rồi chấm điểm — không GPU.
+3. Phân tích prompt mà không train.
+4. Chặn rò rỉ dữ liệu vào Git.
+
+## Entry points
+
+Xem [ENTRYPOINTS.md](../_meta/ENTRYPOINTS.md#python--utility).
+
+## Dependencies
+
+`training/evaluation/*` (lõi chỉ cần numpy) · `stage2/prompts/*` (stdlib-only) ·
+`training/dataio/manifest` · `numpy`. Plot cần extra `eval-plots`; METEOR/CIDEr/
+BERTScore cần `eval-generation`.
+
+## Used by
+
+Người dùng. `check_notebook_privacy.py` được `.pre-commit-config.yaml` gọi.
+
+## Status
+
+```text
+✅ ACTIVE — preflight, evaluation, privacy guard
+🧪 EXPERIMENTAL — 5 script phân tích prompt
+```
+
+## Notes
+
+- **`calibrate_thresholds.py` phải chạy TRƯỚC `evaluate_stage1.py`**, và **chỉ
+  trên validation**. Calibrate trên test là rò rỉ test set.
+- `--min-positive 20`: bệnh lý dưới 20 mẫu positive giữ threshold 0.5.
+- `evaluate_stage1.py:294` import `visualization` **trễ, trong hàm** — script vẫn
+  chạy được khi không có matplotlib.
+- `evaluate_stage2.py:159` import `clinical` trễ tương tự, và báo **unavailable**
+  chứ không phải 0.
+
+## Related documentation
+
+[PIPELINES.md → P4, P5, P6](../_meta/PIPELINES.md#p4--evaluation-stage-1) ·
+[`training/evaluation/_index.md`](../training/evaluation/_index.md) ·
+[`stage2/prompts/_index.md`](../stage2/prompts/_index.md)
+
+← [Về HOME](../../HOME.md)
