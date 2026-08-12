@@ -2,6 +2,11 @@
 
 Hướng dẫn clone repo và train META-CXR trên VM **2× RTX 3090 (24 GB mỗi card), 64 GB RAM**.
 
+> **Môi trường hiện hành:** user xác nhận đang train trên một host có định danh
+> `phuong@minhphuong`. Chưa xác nhận hardware của host đó. Tài liệu này là recipe
+> riêng cho 2×3090, không được dùng làm bằng chứng rằng `minhphuong` có cấu hình này;
+> hãy chạy `python scripts/vm_preflight.py` trên host trước khi chọn config.
+
 > **Trạng thái (2026-07-22): CPU integration complete; ready for GPU smoke testing.**
 > Toàn bộ 465 CPU test pass, config load được, các entrypoint có `--help` (trừ entrypoint
 > train cần cài stage-env). **Chưa có bước nào chạy trên GPU trong lần tích hợp này**, nên

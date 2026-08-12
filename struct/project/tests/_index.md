@@ -1,0 +1,150 @@
+> Source: `tests/` (31 file, 6.514 LOC)
+> Status: ✅ ACTIVE
+> Last verified against source: 2026-08-12
+
+# `tests/`
+
+## Purpose
+
+Test suite CPU. Nhưng vai trò thật của nó lớn hơn "kiểm thử":
+
+> **`tests/` là thứ duy nhất enforce các invariant kiến trúc của repository.**
+
+Ranh giới Stage 1 / Stage 2, tính chất inference-only, teacher-only text — không
+có gì trong runtime bảo vệ chúng. Chỉ có test.
+
+Phạm vi documentation: nhóm theo component, không một trang cho mỗi file
+([D-010](../_meta/DECISIONS.md#d-010--tests-document-theo-nhóm-component)). Bù lại,
+mọi `.doc.md` của source đều có mục `## Tests` link ngược về đây.
+
+## Cách chạy
+
+```bash
+CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q          # toàn bộ
+python -m pytest tests/test_stage2_prompts.py -q            # một file
+python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # một test
+```
+
+⚠ **Trên máy CPU không có torchvision/transformers, 5 test fail và 1 file không
+collect được.** Đây là trạng thái đã biết, không phải hỏng:
+
+| Không chạy được | Lý do |
+|---|---|
+| `test_native_independence` (4 test) | import `model.lavis` |
+| `test_stage1_eval_hook` (1 test) | import `model.lavis` |
+| `test_blip2_negative_sampling` (cả file) | cần torchvision để collect |
+
+## `conftest.py` — không có nó thì suite không collect nổi
+
+`tests/conftest.py` đăng ký `model` và `model.lavis` là **package path-only**, để
+import một submodule **không** thực thi `model/lavis/__init__.py` — file đó kéo
+theo toàn bộ stack GPU. Nó cũng stub `timm.models.hub` khi thiếu timm.
+
+> Khi một test CPU cần import GPU-only, **stub nó trong `conftest.py`** — đừng
+> `pip install` vào venv CPU. Cài torchvision/transformers sẽ kéo về vài GB CUDA
+> và nâng cấp torch.
+
+---
+
+## Nhóm 1 — Invariant kiến trúc ★ quan trọng nhất
+
+| Test | Invariant được bảo vệ |
+|---|---|
+| `test_native_independence.py` (215) | **Mọi import LAVIS/Stage-1 chỉ nằm trong `training/stage1/lavis_loader.py`.** Thông điệp fail chỉ đúng cách sửa. Bảo vệ tính độc lập của `medgemma_direct` và tính sạch của ablation |
+| `test_inference_only_invariants.py` (258) | `medgemma_inference/` và `model/pretrained_medgemma/` **không** dựng optimizer, không tính gradient, không gọi `model.train()`. Cho phép rõ ràng cho `pretraining/`, `mhcac/`, `vision_encoders/`, `model/lavis/` |
+| `test_notebook_privacy.py` (279) | Guard chống rò rỉ MIMIC qua notebook. Fixture ở `tests/fixtures/notebooks/` (clean, credential_like, executed_output, kaggle_ids, synthetic_identifier) |
+
+**Nếu bạn phá một trong ba invariant này, đó không phải "test fail" — đó là lỗi
+kiến trúc hoặc lỗi tuân thủ dữ liệu.**
+
+## Nhóm 2 — Stage 1: model, loss, multi-view
+
+| Test | Kiểm gì |
+|---|---|
+| `test_stage1_objectives.py` | **Teacher-only text** — student không bao giờ thấy text; shape student khớp inference. Loss từ `mhcac/loss.py` |
+| `test_view_fusion.py` | `ViewFusionBlock` là **identity chính xác tại step 0** (zero-init `W_O` + FFN cuối) → checkpoint single-view load không hỏng |
+| `test_multiview_losses.py` | `MultiPositiveContrastiveLoss`, `view_consistency_loss` |
+| `test_shared_visual_tokens.py` (209) | Thứ tự stream chuẩn hóa, `spans` đúng, `without()` zero-out mà không đổi shape, gradient chảy đúng luồng |
+| `test_encoder_ablation.py` (72) | `active_encoders` zero đúng span, all-three giữ đường gốc, tên lạ fail-closed, ablation bị cấm khi training |
+| `test_blip2_negative_sampling.py` | Hard negative sampling ⚠ cần torchvision |
+| `test_stage1_eval_hook.py` (183) | Eval hook ⚠ cần `model.lavis` |
+| `test_mimic_data_pipeline.py` | Study sampling — nạp `mimic_cxr_utils.py` theo path |
+| `test_training_core.py` | Scheduler giữ `lr_scale`, đuôi accumulation |
+
+## Nhóm 3 — Stage 2: mode, soft token, capability
+
+| Test | Kiểm gì |
+|---|---|
+| `test_pipeline_modes.py` | Resolve mode; `meta_cxr_qformer` vs `..._with_mhcac_prompt` **phân biệt được**; `uses_mhcac_prompt` đúng |
+| `test_soft_token_injection.py` | `SoftTokenEmbeddingWrapper` — **THAY THẾ chứ không cộng**, index theo hàng đúng |
+| `test_multimodal_capability.py` (330) | Model phải thật sự đa phương thức; fail-closed |
+| `test_stage2_utils.py` | Helper Stage 2 |
+| `test_run_context.py` | `Stage1Context` |
+| `test_trainer_resume.py` (309) | ❓ `CheckpointManager` — resume giữa epoch, RNG snapshot, subdir last/best. **Chỉ test này dùng `training/trainer/`** |
+
+## Nhóm 4 — Prompt v2
+
+| Test | Kiểm gì |
+|---|---|
+| `test_stage2_prompts.py` (408) | Parity train↔inference; chính sách negative/uncertain; prompt prefix bị mask; `qformer_visual_only` **không nhận label**; `configs/stage2_prompt_v2.yaml` parse được |
+
+## Nhóm 5 — Dataio & manifest
+
+| Test | Kiểm gì |
+|---|---|
+| `test_manifest.py` (185) | `build_records`, `assert_columns` nêu tên cột thiếu, `assert_no_leakage` |
+| `test_section_metrics.py` | Section target; `split_generated_report` |
+
+## Nhóm 6 — Evaluation
+
+| Test | Kiểm gì |
+|---|---|
+| `test_classification_metrics.py` (377) | P/R/F1, per-pathology, uncertain policy |
+| `test_threshold_calibration.py` (256) | Calibrate + baseline + bootstrap |
+| `test_generation_metrics.py` (314) | BLEU/ROUGE, error analysis |
+| `test_evaluation_integration.py` (379) | End-to-end evaluator |
+| `test_clinical_metrics.py` | ⚠ **Chỉ số thiếu báo unavailable, KHÔNG trả 0** |
+| `test_counterfactual.py` (320) | ❓ `counterfactual` + `perturbations` — chỉ test này dùng |
+| `test_evaluation_config.py` | ❓ `evaluation/config.py` — chỉ test này dùng |
+
+## Nhóm 7 — Baseline ngoài & safety
+
+| Test | Kiểm gì |
+|---|---|
+| `test_pretrained_findings.py` (553) | P8: loader fail-closed, resume, budget, guard Impression, provenance |
+| `test_safety_pipeline.py` (297) | ❓ `SafetyPipeline`, `RuleBasedClaimReconciler`, `require_grounding` |
+
+## Parent
+
+[`struct/project/`](../../HOME.md#source-code-tree)
+
+## Dependencies
+
+`pytest`, `numpy`, `pandas`. Phần lớn test **không cần** torch. Các test cần torch
+sẽ skip hoặc fail rõ ràng trên máy CPU thuần.
+
+## Status
+
+```text
+✅ ACTIVE
+```
+
+## Notes
+
+- ⚠ **Bốn test file là caller DUY NHẤT của code production.** Đó là dấu hiệu
+  [D-001](../_meta/DECISIONS.md#d-001--hạ-tầng-đã-viết-nhưng-chưa-nối-vào-pipeline):
+  `test_trainer_resume`, `test_safety_pipeline`, `test_evaluation_config`,
+  `test_counterfactual`.
+
+- **`tests/fixtures/notebooks/*.ipynb.fixture`** dùng đuôi `.fixture` để không bị
+  `check_notebook_privacy.py` quét — chúng cố ý chứa pattern giống dữ liệu thật.
+
+- 12 test file có `if __name__ == "__main__"` để chạy lẻ khi debug. Đường chuẩn
+  vẫn là `pytest`.
+
+## Related documentation
+
+[ACTIVE_COMPONENTS.md](../_meta/ACTIVE_COMPONENTS.md#ba-invariant-giữ-bản-đồ-này-đúng) ·
+[LEGACY_AND_OPTIONAL.md](../_meta/LEGACY_AND_OPTIONAL.md) · [D-010](../_meta/DECISIONS.md#d-010--tests-document-theo-nhóm-component)
+
+← [Về HOME](../../HOME.md)

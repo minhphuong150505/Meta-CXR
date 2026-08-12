@@ -121,3 +121,7 @@ hf_cache/
 **/models--*/
 
 cloud/env.local.sh
+
+# Source knowledge base is versioned; override broad rules such as data/ above.
+!struct/
+!struct/**
