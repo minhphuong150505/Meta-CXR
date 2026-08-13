@@ -168,6 +168,17 @@ study (not image) → anchor + ≤1 auxiliary view
   300` counted in **optimizer updates, not microbatches**. Thresholds are
   calibrated post-hoc from `checkpoint_best` validation logits. The test split is
   held out of checkpoint selection entirely.
+- **The recipe is classification-only as of 2026-08-13.** `lambda_itc/itm/lm`
+  and `lambda_teacher_cls/distill` are all `0.0`; the objective now matches
+  upstream META-CXR (`cls + 0.3*contrastive + 0.7*orthogonality + 0.3*sparsity`)
+  plus the multi-view terms. `forward()` **skips** the Q-Former and text-encoder
+  passes entirely when every weight reading them is zero. Measured on the host,
+  200 iterations at batch 6: **0.5251 s/it against 0.8196 s/it** with the
+  vision-language losses on — 1.56x, ~54 h instead of ~84 h for 10 epochs.
+  **Consequence: the Q-Former gets no gradient**, so the checkpoint serves
+  Stage-1 classification only and is NOT valid for Stage-2 `meta_cxr_qformer`
+  modes. `medgemma_direct` is unaffected. Covered by
+  `tests/test_loss_weight_gating.py`.
 - **`run.eval_start_epoch: 5` — the first five epochs train without being
   scored.** Validation over the full split is expensive and the early epochs are
   never the ones selected, so skipping them buys wall-clock time. The knob counts

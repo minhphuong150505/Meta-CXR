@@ -46,6 +46,12 @@ model:
   #     loss = cls + 0.3*contrastive + 0.7*orthogonality + 0.3*sparsity
   # plus the multi-view terms, which upstream has no equivalent of.
   #
+  # MEASURED on the training host, 200 iterations at batch 6 (2026-08-13):
+  #   0.5251 s/it here, against 0.8196 s/it with lambda_itc/itm/lm at 1.0.
+  #   1.56x, i.e. ~5.4 h/epoch instead of ~8.4 h; ~54 h instead of ~84 h over
+  #   10 epochs. forward() skips the Q-Former and text-encoder passes outright
+  #   when these weights are zero rather than computing and multiplying by zero.
+  #
   # ⚠ WHAT THIS CHECKPOINT CAN AND CANNOT DO
   # The Q-Former gets no gradient and stays at its pretrained initialisation, so
   # this checkpoint serves Stage-1 classification ONLY. Stage-2
