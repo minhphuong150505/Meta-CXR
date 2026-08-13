@@ -17,7 +17,7 @@ bệnh lý × 3 lớp, cộng toàn bộ hàm loss của Stage 1 và module hợ
 | `loss.py` | ✅ | `blip2_qformer.py:35` |
 | `view_fusion.py` | 🟡 | `blip2_qformer.py:41`, chỉ khi `multi_view: true` |
 | `mhcac.py`, `mhcac_2.py` … `mhcac_11.py` (11 file) | 🕰 | **zero reference** |
-| `utils.py` (624 dòng) | 🕰 | chỉ `notebooks/03` (legacy) gọi |
+| `utils.py` (624 dòng) | 🕰 | ⚠ **không còn caller nào** — notebook 03 đã bị xóa 2026-08-13 |
 | `aggregator.py` | 🕰 | không có `import`; chỉ còn chuỗi `"aggregator"` trong freeze-list `runner_base.py:189` |
 
 11 variant là **lịch sử phát triển kiến trúc**, không phải ablation đang chạy.
@@ -77,7 +77,6 @@ thuộc `vision_encoders/` (nhận `SharedVisualTokens` như một duck-typed ob
 | `tests/test_stage1_objectives.py` | `mhcac_12`, `loss` |
 | `tests/test_view_fusion.py` | `view_fusion` |
 | `tests/test_multiview_losses.py` | `loss.MultiPositiveContrastiveLoss`, `view_consistency_loss` |
-| `notebooks/03` 🕰 | `mhcac.utils` |
 
 ## Execution flow
 

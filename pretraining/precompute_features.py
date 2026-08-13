@@ -16,10 +16,10 @@ Caches are written per encoder so any encoder-toggle combination can reuse them:
     <output_dir>/swin/...
     <output_dir>/raddino/...
 
-Run single-process (no DDP) on a private GCP VM. Example::
+Run single-process (no DDP) on the training host. Example::
 
     python -m pretraining.precompute_features \
-        --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml \
+        --cfg-path pretraining/configs/mimic_cxr_full.yaml \
         --output-dir /mnt/private-feature-cache \
         --splits train val \
         --batch-size 8 \
@@ -27,8 +27,8 @@ Run single-process (no DDP) on a private GCP VM. Example::
                   model.encoders.swin=true \
                   model.encoders.raddino=true run.distributed=false run.world_size=1
 
-Keep ``<output_dir>`` only on an access-controlled local disk or private GCS/GCP
-volume, then pass its mounted local path as ``run.feature_cache_dir``. Feature IDs
+Keep ``<output_dir>`` only on an access-controlled local disk, then pass its
+mounted local path as ``run.feature_cache_dir``. Feature IDs
 are derived from credentialed MIMIC-CXR and must not be published. Because cache
 features are deterministic, disable training image augmentation when consuming a
 cache; ``ReportDataset`` rejects that incompatible combination explicitly.

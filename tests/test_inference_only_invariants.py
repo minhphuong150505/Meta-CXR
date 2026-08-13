@@ -171,7 +171,7 @@ class Stage1RemainsIntact(unittest.TestCase):
         for relative in (
             "pretraining/train.py",
             "pretraining/precompute_features.py",
-            "pretraining/configs/mimic_cxr_full_l4.yaml",
+            "pretraining/configs/mimic_cxr_full.yaml",
         ):
             self.assertTrue(
                 (_REPO_ROOT / relative).is_file(), f"{relative} was removed"

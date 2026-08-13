@@ -165,7 +165,6 @@ Dockerfile → inference.sh → inference.py                      ✅ D-002
 | `scripts/export_stage2_prompt_samples.py` | 🧪 | ⚠ output chứa findings text |
 | `scripts/prompt_length_statistics.py` | 🧪 | |
 | `scripts/audit_temporal_targets.py` | 🧪 | |
-| `cloud/*.sh` + `cloud/lib/common.sh` | 🧰 | Launcher, đọc identity từ env |
 | `tests/` (31 file) | ✅ | Enforce invariant kiến trúc, gồm inference-only encoder ablation |
 
 ---

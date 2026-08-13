@@ -21,11 +21,20 @@ tồn tại, *ai* gọi nó, *cái gì* vỡ nếu bạn sửa nó, và *cái g�
 
 ### Máy train hiện tại
 
-Theo xác nhận của user ngày 2026-08-12, project hiện dùng **một máy train** với
-định danh đăng nhập `phuong@minhphuong` ([D-011](project/_meta/DECISIONS.md#d-011--máy-train-hiện-tại)).
-Các tài liệu GCP L4 và VM 2× RTX 3090 là recipe tham khảo/khả năng được hỗ trợ,
-không phải mô tả phần cứng hiện tại. Chưa có xác nhận về GPU, VRAM, RAM hay data
-mount của `minhphuong`; luôn chạy `scripts/vm_preflight.py` trước một run dài.
+Project dùng **một máy train duy nhất**: `phuong@minhphuong`, máy cá nhân của
+tác giả ([D-011](project/_meta/DECISIONS.md#d-011--máy-train-hiện-tại)). Xác minh
+qua SSH ngày 2026-08-13: **1× RTX 5060 Ti 16 GB**, driver 580.173.02 / CUDA 13.0;
+`/` còn ~5 GB, `/home` còn ~19 GB; dữ liệu và checkpoint nằm trên `/mnt/drive1tb`
+(930 GB NTFS, **không có trong `/etc/fstab`** nên phải mount tay sau reboot).
+Checkout trên máy đó: `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git`.
+
+Mọi thao tác **chạy** project (train, evaluate, inference, smoke test) phải thực
+hiện qua SSH vào máy này, và **luôn `git pull origin main` trước khi chạy** —
+checkout đó nhiều lần đã đi sau remote. Vẫn nên chạy `scripts/vm_preflight.py`
+trước một run dài.
+
+Đường chạy cloud (GCP / L4 thuê / Kaggle / 2× RTX 3090) đã bị **gỡ bỏ hoàn toàn**
+ngày 2026-08-13 để tối ưu chi phí.
 
 ---
 
@@ -139,11 +148,9 @@ Meta-CXR-source/
 │   ├── train.py                    ✅ ★ ENTRYPOINT Stage 1
 │   ├── precompute_features.py      🟡 feature cache
 │   ├── configs/
-│   │   ├── mimic_cxr_full_l4.yaml       ✅ ★ PRODUCTION
-│   │   ├── mimic_cxr_2x3090.yaml        ✅ 2-GPU DDP
+│   │   ├── mimic_cxr_full.yaml          ✅ ★ PRODUCTION — recipe duy nhất
 │   │   ├── blip2_pretrain_stage1_emb.yaml ✅ demo Gradio
 │   │   ├── blip2_pretrain_stage1.yaml   🕰
-│   │   ├── mimic_cxr_2gpu.yaml          🕰 ⚠ warmup_steps 32000
 │   │   ├── ablation/                     ✅ Table 5 inference-only (4/4 complete)
 │   │   └── encoder_comparison/
 │   │       └── 07_all_three.yaml        🧪
@@ -253,17 +260,7 @@ Meta-CXR-source/
 │   ├── stage2_prompt_v2.yaml       ✅ opt-in Prompt v2
 │   ├── stage1_thresholds_f1_val.json ✅ threshold validation cho Table 5
 │   ├── experiments/pretrained_medgemma_findings_first.yaml ✅
-│   ├── prompt_ablation/P1..P9.yaml 🧪
-│   └── kaggle_datasets.yaml        🕰 giờ chủ yếu là file chính sách
-│
-├── cloud/                          🧰 launcher GCP
-│   ├── run_stage1.sh  run_stage2.sh ✅
-│   ├── env.sh                      ✅ ⚠ identity đến từ cloud/env.local.sh (untracked)
-│   ├── setup_vm.sh  push_from_local.sh  🧰
-│   ├── run_encoder_comparison.sh   🕰 compatibility alias → run_stage1
-│   ├── run_medgemma_*.sh           🕰 3 compatibility alias → run_stage2
-│   ├── run_paper_assets.sh         ⚠ broken: thiếu paper_assets.py
-│   └── lib/common.sh               🧰 require_private_bucket = chốt chặn dữ liệu
+│   └── prompt_ablation/P1..P9.yaml 🧪
 │
 ├── results/                        ✅ Table 5 encoder ablation (4/4 complete)
 │   └── table5_encoder_ablation.{md,json,csv}
@@ -275,16 +272,9 @@ Meta-CXR-source/
 │   ├── prompter.py  callbacks.py  datacollator.py
 │   └── split_emb.py                ⚠ chạy ngay khi import, path không tồn tại
 │
-├── notebooks/                      🕰 cả 3 tự gắn nhãn "DO NOT RUN"
-│   ├── 01_generate_mimic_cxr_cleaned_csv.ipynb
-│   ├── 02_preprocess_mimic_cxr_p10_splits.ipynb
-│   └── 03_train_meta_cxr_2xT4_kaggle.ipynb
-│
-├── docs/                           ⚠ ~15/27 file là BIÊN BẢN, không phải spec
-│   ├── VM_TRAINING_FINAL.md        ✅ nên theo
+├── docs/                           ⚠ đa số là BIÊN BẢN, không phải spec
 │   ├── STAGE2_PIPELINE_MODES.md    ✅ nên theo
-│   ├── SETUP_GUIDE.md  CHECKPOINT_WORKFLOW.md  FEATURE_CACHE.md  ✅
-│   ├── notebook_privacy.md         ✅   cloud/  ✅
+│   ├── FEATURE_CACHE.md            ✅   notebook_privacy.md ✅
 │   └── *_audit.md  *_baseline.md  final_*.md   🕰 chỉ đọc như lịch sử
 │
 ├── checkpoints/                    (generated — chỉ .gitkeep; LoRA Vicuna ở đây)
@@ -368,11 +358,10 @@ Meta-CXR-source/
 ### `runtime/` · `safety/`
 [📁 runtime](project/runtime/_index.md) · [📁 safety](project/safety/_index.md)
 
-### `scripts/` · `preporcessing/` · `configs/` · `cloud/` · `tests/` · `utils/`
+### `scripts/` · `preporcessing/` · `configs/` · `tests/` · `utils/`
 [📁 scripts](project/scripts/_index.md) ·
 [📁 preporcessing](project/preporcessing/_index.md) ·
 [📁 configs](project/configs/_index.md) ·
-[📁 cloud](project/cloud/_index.md) ·
 [📁 tests](project/tests/_index.md) ·
 [📁 utils](project/utils/_index.md)
 
@@ -391,8 +380,8 @@ Meta-CXR-source/
   [`.pre-commit-config.yaml`](project/.pre-commit-config.yaml.doc.md)
 
 ### Không có documentation riêng
-`notebooks/` và các file legacy khác → xem [Legacy & Optional](project/_meta/LEGACY_AND_OPTIONAL.md)
-([D-004](project/_meta/DECISIONS.md#d-004--di-sản-kagglep10-chỉ-liệt-kê)).
+Các file legacy còn lại → xem [Legacy & Optional](project/_meta/LEGACY_AND_OPTIONAL.md)
+([D-004](project/_meta/DECISIONS.md#d-004--di-sản-kagglep10-đã-xóa)).
 
 ---
 
@@ -435,12 +424,17 @@ cp configs/env_config.yaml.example configs/env_config.yaml   # rồi điền pat
 # Test CPU (479 test; 5 fail + 1 file không collect được nếu thiếu torchvision)
 CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q
 
+# Mọi lệnh dưới đây chạy TRÊN phuong@minhphuong, không phải checkout này
+#   ssh phuong@minhphuong
+#   cd ~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git && git pull origin main
+
 # Preflight trước mọi run GPU
 python scripts/vm_preflight.py --stage 1
 
-# Stage 1
+# Stage 1 — ba override là setting đã tạo ra checkpoint_best hiện tại
 CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml
+    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+    --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 
 # Stage 2 (smoke)
 CUDA_VISIBLE_DEVICES=0 python training/run_medgemma_qlora.py \

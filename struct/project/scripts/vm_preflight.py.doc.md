@@ -28,7 +28,7 @@ python scripts/vm_preflight.py --stage 1  # riêng Stage 1
 | `check_write_perms()` | 99 | Quyền ghi output |
 | `check_imports(stage)` | 112 | Import theo stage |
 | `check_paths()` | 130 | Path trong env_config |
-| `check_train_configs()` | 151 | `mimic_cxr_2x3090.yaml`, `mimic_cxr_full_l4.yaml` tồn tại |
+| `check_train_configs()` | 151 | `mimic_cxr_full.yaml` tồn tại |
 | `check_env_vars()` | 157 | HF auth … |
 | `record(status, name, detail)` | 31 | Ghi kết quả |
 | `_spec(mod)` | 35 | Dò module không import |

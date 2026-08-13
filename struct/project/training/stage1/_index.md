@@ -86,8 +86,8 @@ make_stage1_loader(cfg, split)  →  MIMIC_CXR_Dataset  →  DataLoader
 
 | Flag | Ảnh hưởng |
 |---|---|
-| `--stage1-config` | Mặc định `pretraining/configs/mimic_cxr_full_l4.yaml` |
-| `--stage1-run` | Mặc định `mimic_cxr_full_l4_blip2` |
+| `--stage1-config` | Mặc định `pretraining/configs/mimic_cxr_full.yaml` |
+| `--stage1-run` | Mặc định `mimic_cxr_full_blip2` |
 | `--checkpoint-root` | Nơi tìm `<run>/checkpoint_best.pth` |
 
 ⚠ **Hai đường resolve khác nhau:** `build_cfg` theo `run_name` tìm trong

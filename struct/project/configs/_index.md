@@ -25,7 +25,6 @@ Siêu tham số Stage 1 nằm ở [`pretraining/configs/`](../pretraining/config
 | `experiments/pretrained_medgemma_findings_first.yaml` | [📄](experiments/pretrained_medgemma_findings_first.yaml.doc.md) | ✅ | Baseline P8 |
 | `prompt_ablation/P1..P9.yaml` | [📄](prompt_ablation/_index.md) | 🧪 | 9 biến thể prompt |
 | `stage1_thresholds_f1_val.json` | [📄](stage1_thresholds_f1_val.json.doc.md) | ✅ | Threshold validation dùng cho Stage-1 Table 5 |
-| `kaggle_datasets.yaml` | — | 🕰 | Giờ chủ yếu là **file chính sách** (`policy.storage: private-gcs-only`) |
 
 ## `env_config.yaml` — bắt buộc trước mọi thứ
 
@@ -57,8 +56,7 @@ Chạy bằng `scripts/run_prompt_ablation.py` — **dry run**, không load mode
 
 1. Tách đường dẫn của máy khỏi siêu tham số của run.
 2. Cấu hình prompt có version.
-3. Mã hóa chính sách lưu trữ dữ liệu (`kaggle_datasets.yaml`).
-4. Track threshold calibration có provenance cho evaluation tái lập.
+3. Track threshold calibration có provenance cho evaluation tái lập.
 
 ## Entry points
 
@@ -78,7 +76,6 @@ Không phải entrypoint.
 ```text
 ✅ ACTIVE
 🧪 prompt_ablation/
-🕰 kaggle_datasets.yaml
 ```
 
 ## Notes
@@ -90,8 +87,10 @@ Không phải entrypoint.
 - **Prompt v2 là opt-in.** Không có `--prompt-config` thì code dùng prompt legacy.
   Điều này dễ bị bỏ sót khi so sánh kết quả.
 
-- `kaggle_datasets.yaml` giờ mã hóa **chính sách**: MIMIC-CXR không được publish
-  thành Kaggle Dataset theo PhysioNet DUA → `policy.storage: private-gcs-only`.
+- **Chính sách dữ liệu giờ nằm ở `CLAUDE.md`.** `kaggle_datasets.yaml` đã bị xóa
+  ngày 2026-08-13 cùng toàn bộ đường chạy cloud. Lệnh cấm vẫn nguyên hiệu lực:
+  MIMIC-CXR và mọi dẫn xuất không được publish thành Kaggle Dataset hay open data
+  theo PhysioNet DUA.
 
 - ⚠ **Không bao giờ commit token/credential** vào bất kỳ file nào ở đây.
   `.gitignore` chặn rộng nhưng không thay được sự cẩn thận.

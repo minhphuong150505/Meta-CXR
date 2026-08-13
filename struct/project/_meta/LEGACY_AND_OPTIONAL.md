@@ -43,8 +43,7 @@ coi là legacy từ trước.
 | | |
 |---|---|
 | LOC | 624 |
-| Caller duy nhất | `notebooks/03_train_meta_cxr_2xT4_kaggle.ipynb:1364` — `from mhcac.utils import compute_metrics_for_tasks, get_task_list` |
-| Mà notebook đó | tự gắn nhãn LEGACY / DO NOT RUN (xem L6) |
+| Caller | **Không còn**. Caller duy nhất từng là notebook 03, đã xóa 2026-08-13 (xem L6) |
 | Thay bằng | `training/evaluation/classification_metrics.py` |
 
 ### L3 · `mhcac/aggregator.py`
@@ -86,35 +85,38 @@ bản trong `vision_encoders/` sẽ **không có tác dụng gì** và rất kh�
 | Evidence | `blip2_qformer.py:30` → `# from vision_encoders.medclip.medclip import Medclip` (comment) · `:286` → `# self.medclip = Medclip().eval()` (comment) |
 | Ngoài ra | `medclip.py:3` import package `medclip` bên ngoài — không có trong requirements nào |
 
-### L6 · Notebooks Kaggle / p10
-> Quyết định: [D-004](DECISIONS.md#d-004--di-sản-kagglep10-chỉ-liệt-kê)
+### L6 · Notebooks Kaggle / p10 — 🗑 ĐÃ XÓA
+> Quyết định: [D-004](DECISIONS.md#d-004--di-sản-kagglep10-đã-xóa) ·
+> [D-013](DECISIONS.md#d-013--gỡ-toàn-bộ-đường-chạy-cloud)
 
-Cả ba **tự gắn nhãn** "LEGACY / DO NOT RUN" ở cell markdown đầu tiên. Outputs đã
-sạch (`outputs present: False` — quan trọng, vì output notebook là đường rò rỉ dữ
-liệu bệnh nhân dễ nhất).
+Cả ba notebook đã bị xóa ngày 2026-08-13. Chúng từng tự gắn nhãn "LEGACY / DO NOT
+RUN"; outputs đã sạch nên việc xóa không phát tán dữ liệu.
 
-| Notebook | Mục tiêu lịch sử | Thay bằng |
+| Notebook (đã xóa) | Mục tiêu lịch sử | Thay bằng |
 |---|---|---|
 | `01_generate_mimic_cxr_cleaned_csv.ipynb` | Sinh `mimic_cxr_cleaned.csv` từ GCS | `preporcessing/preprocess_mimic_cxr.py` |
 | `02_preprocess_mimic_cxr_p10_splits.ipynb` | Preprocess subset p10 | `preporcessing/preprocess_mimic_cxr.py` (p10–p19) |
-| `03_train_meta_cxr_2xT4_kaggle.ipynb` | Train 2×T4 trên Kaggle | `cloud/run_stage1.sh` / `pretraining/train.py` |
+| `03_train_meta_cxr_2xT4_kaggle.ipynb` | Train 2×T4 trên Kaggle | `pretraining/train.py` gọi trực tiếp |
 
 Lý do đường Kaggle bị gỡ: MIMIC-CXR không được publish thành Kaggle Dataset theo
-PhysioNet DUA. `configs/kaggle_datasets.yaml` mã hóa chính sách này thành
-`policy.storage: private-gcs-only`.
+PhysioNet DUA. Lệnh cấm đó **vẫn còn hiệu lực** và giờ nằm ở `CLAUDE.md`
+§Data handling, sau khi `configs/kaggle_datasets.yaml` bị xóa.
 
-⚠ Notebook 03 chứa code **vá `mhcac_12.py` bằng string replacement lúc runtime**
-(`ensure_swin_mhcac_shape_patch`, dòng 843–874) để khớp shape Swin. Đây là dấu
-vết của một lỗi shape đã có; hiện `mhcac_12._resize_patch_sequence` xử lý việc
-này trong source.
+⚠ `scripts/check_notebook_privacy.py` và test của nó **được giữ nguyên** — hook
+vẫn phải chặn bất kỳ notebook nào được thêm về sau.
 
-### L7 · Config Kaggle / cũ
+📝 Notebook 03 từng chứa code vá `mhcac_12.py` bằng string replacement lúc runtime
+để khớp shape Swin. Lỗi shape đó hiện đã được `mhcac_12._resize_patch_sequence`
+xử lý trong source, nên không mất gì khi xóa notebook.
+
+### L7 · Config legacy
 
 | Path | Evidence | Ghi chú |
 |---|---|---|
-| `configs/kaggle_datasets.yaml` | Chỉ notebook 01/03 + docs tham chiếu. Không code Python production nào đọc. | Giờ chủ yếu là **file chính sách** (`policy.storage: private-gcs-only`) |
 | `pretraining/configs/blip2_pretrain_stage1.yaml` | Zero reference | |
-| `pretraining/configs/mimic_cxr_2gpu.yaml` | Chỉ comment `pretraining/train.py:39` + notebook 03 | 2×T4; `multi_view: false`; ⚠ `warmup_steps: 32000` **không bao giờ hoàn tất ramp** — đừng copy giá trị này |
+
+🗑 Đã xóa 2026-08-13: `configs/kaggle_datasets.yaml`,
+`pretraining/configs/mimic_cxr_2gpu.yaml`, `pretraining/configs/mimic_cxr_2x3090.yaml`.
 
 **Ngoại lệ quan trọng:** `blip2_pretrain_stage1_emb.yaml` **KHÔNG** legacy — nó là
 config mà `inference.sh` dùng ([D-002](DECISIONS.md#d-002--đường-vicuna-7b-legacy-vẫn-là-demo-active)).
@@ -219,7 +221,7 @@ Nó validate được `evaluation.bootstrap.samples`, `evaluation.clinical_metri
 | Component | Bật khi | Mặc định hiện tại |
 |---|---|---|
 | `vision_encoders/rad_dino/` | `model.encoders.raddino: true` | `false` ở **mọi** config |
-| `mhcac/view_fusion.py` | `model.multi_view: true` | `true` ở `mimic_cxr_full_l4.yaml`, `false` ở `mimic_cxr_2gpu.yaml` |
+| `mhcac/view_fusion.py` | `model.multi_view: true` | `true` ở `mimic_cxr_full.yaml` |
 | `training/medgemma/soft_tokens.py` | `--pipeline-mode meta_cxr_qformer*` | mặc định là `medgemma_direct` (không dùng) |
 | `training/stage1/lavis_loader.py` | mode cần Stage 1 | như trên |
 | `training/evaluation/visualization.py` | `--plots` | tắt; cần extra `eval-plots` |
@@ -255,14 +257,14 @@ Task documentation không sửa code. Ghi lại để quyết định sau.
 | I2 | Freeze-list trỏ tới attribute không tồn tại (`aggregator`) | `runner_base.py:189` |
 | I3 | `utils/split_emb.py` thực thi lúc import, đường dẫn hardcode không tồn tại | `utils/split_emb.py:6` |
 | I4 | `device_map={"": 0}` ghim cứng GPU 0 | `inference.py:312` |
-| I5 | Documentation nói `selection_metric: f1_positive_macro`, config thực tế là `macro_auprc` | `CLAUDE.md`, `README.md` vs `mimic_cxr_full_l4.yaml:109` |
-| I6 | Tên file `mimic_cxr_full_l4.yaml` nói L4, comment trong file nói "Verified on RTX 5060 Ti 16 GB" | `mimic_cxr_full_l4.yaml` |
-| I7 | `cloud/run_stage2.sh` dùng alias deprecated `--image-mode` | `cloud/run_stage2.sh:34` |
+| I5 | Documentation nói `selection_metric: f1_positive_macro`, config thực tế là `macro_auprc` | `CLAUDE.md`, `README.md` vs `mimic_cxr_full.yaml:109` |
+| I6 | ✅ **Đã sửa 2026-08-13** — đổi tên `mimic_cxr_full_l4.yaml` → `mimic_cxr_full.yaml` | — |
+| I7 | ✅ **Không còn** — `cloud/run_stage2.sh` đã bị xóa cùng `cloud/` | — |
 | I8 | `docs/stage2_prompt_audit.md` nói `utils/prompter.py` được `inference.py` dùng — không có import | `docs/stage2_prompt_audit.md:20` |
 | I9 | Typo tham số `num_commmon_tokens` (ba chữ m) trong API công khai của MHCAC | `mhcac/mhcac_12.py:208`, `blip2_qformer.py:347` |
 | I10 | `pandas 3.0` Copy-on-Write: `df[col].fillna(x, inplace=True)` âm thầm không làm gì | `ReportDataset.py:897` (trong `CheXpertDataset` — **không** nằm trên đường MIMIC-CXR) |
 | I11 | Demo gọi `demo.launch(share=True)`, tạo public Gradio share URL trong khi UI nhận ảnh X-quang credentialed | `inference.py:670` |
-| I12 | Launcher paper asset gọi entrypoint không tồn tại trong repository | `cloud/run_paper_assets.sh:24` → thiếu `paper_assets.py` |
+| I12 | ✅ **Không còn** — `cloud/run_paper_assets.sh` đã bị xóa cùng `cloud/` | — |
 | I13 | Container demo chạy `--privileged`, mount writable toàn repo và cấp `--gpus all`; quyền rộng hơn nhu cầu UI | `run_container.sh:17-21` |
 | I14 | Comment `pyproject.toml` nói Stage 1/2 pin torch/transformers xung đột, nhưng lock hiện tại là additive: Stage 2 include Stage 1 | `pyproject.toml:13-16` vs `requirements-stage2.txt:3` |
 
@@ -273,20 +275,24 @@ Task documentation không sửa code. Ghi lại để quyết định sau.
 Khoảng 15 file trong `docs/` là **bản ghi tại một thời điểm**, không phải tài liệu
 sống. Chúng mâu thuẫn nhau và mâu thuẫn với code hiện tại.
 
-**Nên theo:** `docs/VM_TRAINING_FINAL.md`, `docs/STAGE2_PIPELINE_MODES.md`,
-`docs/SETUP_GUIDE.md`, `docs/CHECKPOINT_WORKFLOW.md`, `docs/FEATURE_CACHE.md`,
-`docs/notebook_privacy.md`, `docs/cloud/*`.
+**Nên theo:** `docs/STAGE2_PIPELINE_MODES.md`, `docs/FEATURE_CACHE.md`,
+`docs/notebook_privacy.md`.
+
+🗑 Đã xóa 2026-08-13: `docs/cloud/*` (7 file), `docs/VM_TRAINING_FINAL.md`,
+`docs/SETUP_GUIDE.md`, `docs/CHECKPOINT_WORKFLOW.md`, `docs/gpu_pilot_checklist.md`.
 
 **Chỉ đọc như lịch sử:** `code_audit_latest.md`, `code_audit_second_pass.md`,
 `evaluator_audit.md`, `evaluator_validation.md`, `final_branch_integration_audit.md`,
 `final_merge_conflicts.md`, `final_merge_plan.md`, `findings_phase_a.md`,
-`gpu_pilot_checklist.md`, `medgemma_real_runtime_smoke.md`, `migration_guide.md`,
+`medgemma_real_runtime_smoke.md`, `migration_guide.md`,
 `pending_medgemma_finetuning_teardown.md`, `refactor_hotspots.md`,
 `round4_baseline.md`, `round5_baseline.md`, `test_report_second_pass.md`,
 `stage2_temporal_target_audit.md`, `stage2_prompt_audit.md`.
 
 Chúng dẫn nhiều đường đã chết (`evaluation/eval_final_200.py`, `outputs/paper_assets.py`,
-bucket GCS đã xóa). Đừng trích dẫn chúng trong công việc mới nếu chưa kiểm lại với code.
+bucket GCS đã xóa, và từ 2026-08-13 là cả `cloud/` lẫn `docs/cloud/`). Đừng trích
+dẫn chúng trong công việc mới nếu chưa kiểm lại với code. Nội dung lịch sử của
+chúng **cố ý không được sửa** khi gỡ đường cloud — sửa sẽ làm sai lệch bản ghi.
 
 ---
 

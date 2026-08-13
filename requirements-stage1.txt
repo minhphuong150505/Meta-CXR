@@ -1,4 +1,4 @@
-# Tested target: Python 3.10/3.11, NVIDIA L4, CUDA 12.4 wheel channel.
+# Tested target: Python 3.10/3.11, NVIDIA RTX 5060 Ti 16 GB, CUDA 12.4 wheel channel.
 # Install torch with the desired official CUDA index, then install this file.
 torch==2.5.1
 torchvision==0.20.1

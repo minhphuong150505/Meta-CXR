@@ -58,20 +58,20 @@ pretraining/  ──►  checkpoint_best.pth  ──►  training/  (chỉ mode 
 
 ## Entry points
 
-```bash
-# Production, 1 GPU
-CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml
+> **Chạy ở đâu:** mọi lệnh dưới đây thực thi trên `phuong@minhphuong`, không phải
+> ở checkout này (máy dev không có GPU và không có dataset). SSH vào máy đó,
+> `cd ~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git`, rồi
+> `git pull origin main` **trước khi chạy**.
 
-# 2-GPU DDP
-python -m torch.distributed.run --standalone --nproc_per_node=2 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_2x3090.yaml
+```bash
+# Production, 1 GPU — recipe duy nhất
+CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
+    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+    --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 
 # Feature cache (tùy chọn)
 python -m pretraining.precompute_features --cfg-path <yaml> --options model.encoders.biovil=true
 ```
-
-Qua launcher: `source cloud/env.local.sh && cloud/run_stage1.sh`
 
 ⚠ **Phải dùng `torch.distributed.run`**, không chạy `python pretraining/train.py`
 trực tiếp — `init_distributed_mode` cần các biến môi trường mà torchrun đặt.
@@ -90,10 +90,9 @@ trực tiếp — `init_distributed_mode` cần các biến môi trường mà t
 
 | Ai | Cách |
 |---|---|
-| `cloud/run_stage1.sh` | Gọi `python -m pretraining.train` với `--options` override output_dir/run_name |
 | [`training/stage1/lavis_loader.py`](../training/stage1/_index.md) | **Không** gọi `train.py`, nhưng đọc cùng file config để dựng lại model từ checkpoint |
-| `scripts/vm_preflight.py:152` | Kiểm tra sự tồn tại của `mimic_cxr_2x3090.yaml` và `mimic_cxr_full_l4.yaml` |
-| `training/run_medgemma_qlora.py:59` | Mặc định `--stage1-config` trỏ vào `mimic_cxr_full_l4.yaml` |
+| `scripts/vm_preflight.py:152` | Kiểm tra sự tồn tại của `mimic_cxr_full.yaml` |
+| `training/run_medgemma_qlora.py:59` | Mặc định `--stage1-config` trỏ vào `mimic_cxr_full.yaml` |
 
 ## Execution flow
 
@@ -144,8 +143,8 @@ Chi tiết đầy đủ: [CALL_GRAPH.md §1](../_meta/CALL_GRAPH.md#1-stage-1--t
   cứng với đúng key đó (`train.py:118`). `CheXpertDataset` và `IU_Xray_Dataset`
   tồn tại trong `ReportDataset.py` nhưng entrypoint này không dựng chúng.
 
-- **Comment ở `train.py:39` trỏ vào config legacy** (`mimic_cxr_2gpu.yaml`). Đừng
-  copy lệnh trong comment đó — dùng `mimic_cxr_full_l4.yaml`.
+- Comment ở `train.py:39` đã được cập nhật sang `mimic_cxr_full.yaml` với
+  `--nproc_per_node=1` (2026-08-13).
 
 - **`registry.mapping['paths']['cache_root'] = '.'`** được đặt ở dòng đầu `main()`
   trước cả khi parse config. Điều này khiến mọi đường dẫn tương đối của LAVIS

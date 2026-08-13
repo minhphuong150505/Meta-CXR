@@ -23,10 +23,6 @@ Thumbs.db
 # Sensitive configuration files
 .envdata/
 configs/env_config.yaml
-.kaggle/
-**/kaggle.json
-application_default_credentials.json
-cloud/outputs/
 **/.ipynb_checkpoints/
 
 # Credentials. Nothing here is ever a Git payload, on a public remote least of all.
@@ -41,11 +37,8 @@ id_rsa*
 id_ed25519*
 .netrc
 **/service-account*.json
-**/gcp-*-key.json
 **/*-credentials.json
 **/client_secret*.json
-.gcloud/
-.config/gcloud/
 **/wandb_api_key*
 wandb/
 
@@ -120,7 +113,6 @@ hf_cache/
 .hf_cache/
 **/models--*/
 
-cloud/env.local.sh
 
 # Source knowledge base is versioned; override broad rules such as data/ above.
 !struct/

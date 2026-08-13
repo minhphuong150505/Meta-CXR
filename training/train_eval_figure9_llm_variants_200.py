@@ -674,7 +674,7 @@ class VariantLLM:
                     bnb_4bit_compute_dtype=self.dtype,
                     bnb_4bit_use_double_quant=True,
                 )
-                # Single-process, single-GPU by design (see docs/cloud/VM_SPEC.md).
+                # Single-process, single-GPU by design.
                 # Pin to the current CUDA device rather than literal 0 so
                 # CUDA_VISIBLE_DEVICES selection is honoured. Multi-GPU would
                 # need DDP, not a wider device_map.

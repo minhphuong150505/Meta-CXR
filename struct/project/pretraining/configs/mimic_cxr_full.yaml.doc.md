@@ -1,16 +1,20 @@
-> Source: `pretraining/configs/mimic_cxr_full_l4.yaml` (config)
-> Status: ✅ ACTIVE — ★ PRODUCTION
-> Last verified against source: 2026-08-12
+> Source: `pretraining/configs/mimic_cxr_full.yaml` (config)
+> Status: ✅ ACTIVE — ★ PRODUCTION, recipe Stage-1 duy nhất
+> Last verified against source: 2026-08-13
 
-# `pretraining/configs/mimic_cxr_full_l4.yaml`
+# `pretraining/configs/mimic_cxr_full.yaml`
 
 ## Purpose
 **Recipe Stage 1 production**: full MIMIC-CXR p10–p19, một GPU.
 
-## ⚠ Tên file nói dối
-Tên gợi ý NVIDIA L4. Comment trong file ghi *"Verified on RTX 5060 Ti 16 GB: batch 8
-peaked at 12,755 MB"*. Con số batch/memory đến từ **5060 Ti**, không phải L4.
-[I6](../../_meta/LEGACY_AND_OPTIONAL.md#-potential-issues--ghi-nhận-không-sửa).
+## ⚠ Default trong file không phải setting đã chạy
+Đổi tên từ `mimic_cxr_full_l4.yaml` ngày 2026-08-13 (tên cũ nói NVIDIA L4 nhưng
+con số memory trong file đến từ RTX 5060 Ti — máy train thật).
+
+File ghi `batch_size_train: 8` / `accum_grad_iters: 8`, đã verify vừa 16 GB
+(*"batch 8 peaked at 12,755 MB"*). Nhưng run 10-epoch tạo ra `checkpoint_best`
+hiện tại chạy với override CLI `run.batch_size_train=6 run.batch_size_eval=6
+run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba override đó.
 
 ## Khối `model:`
 | Key | Giá trị | Ghi chú |
@@ -56,7 +60,7 @@ translate 0.02, scale ±0.05, `affine_p`/`jitter_p` 0.5, brightness/contrast 0.1
 
 ## Consumer
 `pretraining/train.py` · `precompute_features.py` · `run_medgemma_qlora.py:59`
-(mặc định `--stage1-config`) · `cloud/env.sh:24` · `scripts/vm_preflight.py:152`
+(mặc định `--stage1-config`) · `scripts/vm_preflight.py:152`
 
 ## Developer notes
 Comment về contrastive negative đáng nhớ: *"Contrastive negatives come from the

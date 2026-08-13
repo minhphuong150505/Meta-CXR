@@ -12,15 +12,16 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-001](#d-001--hạ-tầng-đã-viết-nhưng-chưa-nối-vào-pipeline) | Hạ tầng chưa wire | ❓ Unknown | 2026-08-12 |
 | [D-002](#d-002--đường-vicuna-7b-legacy-vẫn-là-demo-active) | Vicuna + Docker demo | ✅ Confirmed | 2026-08-12 |
 | [D-003](#d-003--mhcac-variants-và-encoder-trùng-lặp-là-legacy) | MHCAC variants, encoder dup | ✅ Confirmed | 2026-08-12 |
-| [D-004](#d-004--di-sản-kagglep10-chỉ-liệt-kê) | Di sản Kaggle/p10 | ✅ Confirmed | 2026-08-12 |
+| [D-004](#d-004--di-sản-kagglep10-đã-xóa) | Di sản Kaggle/p10 | 🗑 Đã xóa khỏi tree | 2026-08-13 |
 | [D-005](#d-005--track-inference-checkpoint-ngoài-là-baseline-chính-thức) | External MedGemma baseline | ✅ Confirmed | 2026-08-12 |
 | [D-006](#d-006--độ-sâu-documentation-cho-động-cơ-stage-2) | Độ sâu doc Stage 2 | ✅ Confirmed | 2026-08-12 |
 | [D-007](#d-007--độ-sâu-documentation-cho-fork-lavis) | Độ sâu doc LAVIS | ✅ Confirmed | 2026-08-12 |
 | [D-008](#d-008--struct-là-bộ-nhớ-local-không-commit) | struct/ từng git-ignored | ↪ Superseded by D-012 | 2026-08-12 |
 | [D-009](#d-009--rule-đồng-bộ-đặt-ở-cả-hai-claudemd) | Vị trí agent rule | ✅ Confirmed | 2026-08-12 |
 | [D-010](#d-010--tests-document-theo-nhóm-component) | Độ sâu doc tests | ✅ Confirmed | 2026-08-12 |
-| [D-011](#d-011--máy-train-hiện-tại) | Host train `phuong@minhphuong` | ✅ Confirmed | 2026-08-12 |
+| [D-011](#d-011--máy-train-hiện-tại) | Host train `phuong@minhphuong` — RTX 5060 Ti 16 GB | ✅ Confirmed | 2026-08-13 |
 | [D-012](#d-012--đưa-struct-vào-repository) | Track và push `struct/` | ✅ Confirmed | 2026-08-12 |
+| [D-013](#d-013--gỡ-toàn-bộ-đường-chạy-cloud) | Gỡ toàn bộ đường chạy cloud | ✅ Confirmed | 2026-08-13 |
 
 ---
 
@@ -121,7 +122,7 @@ chứa một bản sao đầy đủ của `biovil_t/` và một encoder có impo
 | Path | Bằng chứng |
 |---|---|
 | `mhcac/mhcac.py`, `mhcac_2.py` … `mhcac_11.py` (11 file) | Zero reference toàn repo. Chỉ `mhcac_12` được import: `model/lavis/models/blip2_models/blip2_qformer.py:23`. |
-| `mhcac/utils.py` (624 LOC) | Caller duy nhất là `notebooks/03_train_meta_cxr_2xT4_kaggle.ipynb:1364` — notebook đã tự gắn nhãn LEGACY (xem D-004). |
+| `mhcac/utils.py` (624 LOC) | Caller duy nhất từng là notebook 03; notebook đó đã bị xóa 2026-08-13 (xem D-004), nên hiện **không còn caller nào**. |
 | `mhcac/aggregator.py` (63 LOC) | Không có `import` nào. Chỉ xuất hiện dưới dạng **chuỗi ký tự** trong freeze-list `runner_base.py:189` (`for token in ("mhcac", "aggregator", "cls_loss_fn")`) và một dòng đã comment `runner_base.py:1073`. Tức là chỉ còn dấu vết trong logic freeze parameter, không phải module được dùng. |
 | `vision_encoders/biovil_t/` (8 file) | Bản sao chức năng của `biovil_t/` top-level. Zero external reference — mọi import đều là `biovil_t.*`. |
 | `vision_encoders/medclip/` (1 file) | Import bị comment: `blip2_qformer.py:30` (`# from vision_encoders.medclip.medclip import Medclip`) và `:286` (`# self.medclip = Medclip().eval()`). |
@@ -148,15 +149,20 @@ chứa một bản sao đầy đủ của `biovil_t/` và một encoder có impo
 
 ---
 
-## D-004 — Di sản Kaggle/p10 chỉ liệt kê
+## D-004 — Di sản Kaggle/p10 đã xóa
 
-Status: **Confirmed**
-Date: 2026-08-12
+Status: **Superseded by deletion**
+Date: 2026-08-12 · cập nhật 2026-08-13
 
 ### Context
 
 Repository từng chạy trên Kaggle với subset p10. Đường đó đã bị gỡ (MIMIC-CXR
 không được publish lên Kaggle theo PhysioNet DUA), nhưng file vẫn còn trong tree.
+
+**Cập nhật 2026-08-13:** user quyết định xóa hẳn, không giữ backup — training
+chuyển về máy cá nhân để tối ưu chi phí (xem [D-013](#d-013--gỡ-toàn-bộ-đường-chạy-cloud)).
+Toàn bộ file liệt kê dưới đây **không còn trong tree**; phần Evidence giữ lại làm
+lịch sử.
 
 ### Evidence
 
@@ -180,15 +186,15 @@ không được publish lên Kaggle theo PhysioNet DUA), nhưng file vẫn còn 
 
 ### Documentation impact
 
-- Không tạo `struct/project/notebooks/` với `.doc.md` từng notebook.
-- Toàn bộ ghi vào `LEGACY_AND_OPTIONAL.md` với path + lý do + thứ thay thế
-  (`preporcessing/preprocess_mimic_cxr.py` thay cho notebook 01/02;
-  `cloud/run_stage1.sh` thay cho notebook 03).
-- `HOME.md` source tree vẫn hiển thị `notebooks/` như một node, nhưng gắn nhãn
-  `🕰 LEGACY` và link tới `LEGACY_AND_OPTIONAL.md` thay vì tới `_index.md`.
-- `pretraining/configs/_index.md` phải phân biệt rõ bốn nhóm config: production
-  (`mimic_cxr_full_l4`), DDP (`mimic_cxr_2x3090`), demo (`blip2_pretrain_stage1_emb`),
-  legacy (`mimic_cxr_2gpu`, `blip2_pretrain_stage1`).
+- Không tạo `struct/project/notebooks/`. Thư mục `notebooks/` không còn tồn tại.
+- Thay thế: `preporcessing/preprocess_mimic_cxr.py` cho notebook 01/02;
+  `pretraining/train.py` gọi trực tiếp cho notebook 03.
+- `HOME.md` source tree đã bỏ node `notebooks/` và `cloud/`.
+- `pretraining/configs/_index.md` giờ chỉ còn ba nhóm: production
+  (`mimic_cxr_full` — recipe duy nhất), demo (`blip2_pretrain_stage1_emb`),
+  legacy (`blip2_pretrain_stage1`).
+- `scripts/check_notebook_privacy.py` và `tests/test_notebook_privacy.py` **được
+  giữ nguyên**: hook vẫn phải chặn bất kỳ notebook nào được thêm về sau.
 
 ---
 
@@ -412,8 +418,8 @@ nếu test này biến mất, invariant quan trọng nhất repo không còn đ�
 
 ## D-011 — Máy train hiện tại
 
-Status: **Confirmed**
-Date: 2026-08-12
+Status: **Confirmed — hardware đã verify**
+Date: 2026-08-12 · verify qua SSH 2026-08-13
 
 ### Context
 
@@ -422,17 +428,73 @@ nhưng tên recipe không chứng minh môi trường đang được dùng ở t
 
 ### User decision
 
-Project hiện dùng **một máy train**, với định danh đăng nhập
-`phuong@minhphuong`.
+Project dùng **một máy train duy nhất**: `phuong@minhphuong`, máy cá nhân.
+
+### Evidence (SSH, 2026-08-13)
+
+| Thuộc tính | Giá trị |
+|---|---|
+| GPU | 1× NVIDIA RTX 5060 Ti, 16 GB (`nvidia-smi`) |
+| Driver / CUDA | 580.173.02 / 13.0 |
+| Disk `/` | 58 GB, còn ~5 GB |
+| Disk `/home` | 185 GB, còn ~19 GB |
+| Dữ liệu + checkpoint | `/mnt/drive1tb` — `nvme1n1p2`, 930 GB **NTFS**, **không có trong `/etc/fstab`** |
+| Checkout | `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git` |
+| sudo | có mật khẩu — agent qua SSH không mount được |
 
 ### Documentation impact
 
-- `HOME.md`, `PROJECT_OVERVIEW.md`, `README.md`, `CLAUDE.md` và hướng dẫn VM phải
-  phân biệt host hiện tại với các recipe phần cứng tham khảo.
-- Chưa ghi GPU, VRAM, RAM, OS hay mount path vì user chưa xác nhận các thuộc tính
-  đó. Trước run dài phải chạy `scripts/vm_preflight.py` trên chính host này.
-- Không suy ra “một máy” đồng nghĩa với “một GPU”; Stage 1 DDP hay Stage 2
-  single-process vẫn phụ thuộc hardware thực tế và giới hạn của code.
+- Một GPU ⇒ **không còn đường DDP nào**. `--nproc_per_node` luôn là `1`.
+- `/mnt/drive1tb` không auto-mount: sau reboot mọi path trong `env_config.yaml`
+  đều treo. Kiểm tra mount trước khi debug lỗi thiếu file.
+- Mọi thao tác chạy project đều qua SSH vào host này, và phải `git pull origin main`
+  trước — checkout ở đó nhiều lần đã đi sau remote.
+- Vẫn chạy `scripts/vm_preflight.py` trước một run dài.
+
+---
+
+## D-013 — Gỡ toàn bộ đường chạy cloud
+
+Status: **Confirmed**
+Date: 2026-08-13
+
+### Context
+
+Repository mang ba recipe phần cứng (GCP L4, Kaggle 2×T4, 2× RTX 3090), một thư
+mục `cloud/` gồm 11 script GCP, 7 tài liệu `docs/cloud/`, và một file chính sách
+Kaggle. Không cái nào mô tả môi trường thật: training đã hoàn tất trên máy cá
+nhân (D-011).
+
+### User decision
+
+Xóa hết, **không cần backup** — lý do là tối ưu chi phí, training đã chuyển về
+máy cá nhân.
+
+### Đã xóa
+
+`cloud/` · `docs/cloud/` · `notebooks/` (cả 3) · `configs/kaggle_datasets.yaml` ·
+`pretraining/configs/mimic_cxr_2gpu.yaml` · `mimic_cxr_2x3090.yaml` ·
+`docs/{SETUP_GUIDE,CHECKPOINT_WORKFLOW,VM_TRAINING_FINAL,gpu_pilot_checklist}.md`
+
+Đổi tên: `mimic_cxr_full_l4.yaml` → `mimic_cxr_full.yaml`.
+
+### Được giữ, có chủ ý
+
+- `scripts/check_notebook_privacy.py` + test của nó — chữ "Kaggle" ở đó là **logic
+  thật** (chặn false-positive cho ID 8 chữ số), không phải di sản.
+- Lệnh cấm publish MIMIC-CXR lên Kaggle/open-data: chuyển từ
+  `configs/kaggle_datasets.yaml` sang `CLAUDE.md` §Data handling. Ràng buộc
+  PhysioNet DUA không mất đi khi file mã hóa nó bị xóa.
+- Các `docs/*audit*.md`, `*_baseline.md`, `final_*.md` — biên bản lịch sử, có nhắc
+  tới L4/Kaggle nhưng không phải hạ tầng. Sửa chúng sẽ làm sai lệch bản ghi.
+
+### Documentation impact
+
+- Không được tái tạo `cloud/`, `docs/cloud/`, đường upload GCS, hay config đặt tên
+  theo phần cứng.
+- Chốt chặn `require_private_bucket` mất theo `cloud/lib/common.sh`. Hiện không
+  còn code nào đẩy dữ liệu ra khỏi máy train. Nếu thêm lại đường upload nào thì
+  phải dựng lại chốt chặn tương đương **trước**.
 
 ---
 
@@ -465,7 +527,7 @@ làm sạch knowledge base, user yêu cầu bỏ rule đó, commit và push lên
 
 Khi thêm decision mới:
 
-1. Cấp ID kế tiếp (`D-011`, …), không tái sử dụng ID cũ.
+1. Cấp ID kế tiếp (`D-014`, …), không tái sử dụng ID cũ.
 2. Thêm một dòng vào bảng mục lục đầu file.
 3. `Status` chỉ nhận: `Confirmed`, `Unknown — chờ xác nhận`, `Superseded by D-0XX`.
 4. Mục `Evidence` phải là bằng chứng kiểm chứng được (đường dẫn + số dòng, kết quả

@@ -89,7 +89,7 @@ trực tiếp** — bỏ qua resolve mode, kiểm tra leakage và ràng buộc s
 
 ## Used by
 
-`cloud/run_stage2.sh` · `scripts/evaluate_stage1.py`, `evaluate_stage2.py`,
+`scripts/evaluate_stage1.py`, `evaluate_stage2.py`,
 `calibrate_thresholds.py` (→ `evaluation/`) · `medgemma_inference/run_pretrained_findings.py`
 (→ `dataio/manifest.py`, `stage2_utils.stable_fingerprint`) ·
 `model/pretrained_medgemma/output_schema.py` (→ `manifest.split_generated_report`) ·
@@ -105,7 +105,7 @@ Xem [CALL_GRAPH.md §3](../_meta/CALL_GRAPH.md#3-stage-2--top-down).
 |---|---|
 | CLI flags | `--pipeline-mode`, `--section-mode`, `--prompt-config`, `--checkpoint-root`, `--stage1-run`, `--stage1-config`, `--train/val/test-limit`, `--no-upload`, `--gcs-output` |
 | `configs/stage2_prompt_v2.yaml` | Prompt v2 (opt-in) |
-| `pretraining/configs/mimic_cxr_full_l4.yaml` | Mặc định `--stage1-config` |
+| `pretraining/configs/mimic_cxr_full.yaml` | Mặc định `--stage1-config` |
 | `configs/env_config.yaml` | Đường dẫn split CSV, ảnh |
 
 ## Status

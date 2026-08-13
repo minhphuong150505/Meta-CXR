@@ -244,7 +244,7 @@ total = λ_itc·L_itc + λ_itm·L_itm + λ_lm·L_lm
       + λ_mpc·L_mpc + λ_view_consistency·L_vc
 ```
 
-Trọng số production (`mimic_cxr_full_l4.yaml`):
+Trọng số production (`mimic_cxr_full.yaml`):
 
 | λ | Giá trị | | λ | Giá trị |
 |---|---|---|---|---|
@@ -407,8 +407,7 @@ Ghi lại để không ai đi vòng lại:
 
 | Nguồn | Nói gì | Code thực tế |
 |---|---|---|
-| `CLAUDE.md`, `README.md` §Stage 1 | `selection_metric: f1_positive_macro` | `mimic_cxr_full_l4.yaml:109` → **`macro_auprc`** |
-| Tên file `mimic_cxr_full_l4.yaml` | recipe cho NVIDIA L4 | Comment `:~135` ghi "Verified on RTX 5060 Ti 16 GB" |
+| `CLAUDE.md`, `README.md` §Stage 1 | `selection_metric: f1_positive_macro` | `mimic_cxr_full.yaml:109` → **`macro_auprc`** |
 | `docs/stage2_prompt_audit.md:20` | `utils/prompter.py` dùng bởi `inference.py` | Không có import nào — xem [D-002](DECISIONS.md#d-002--đường-vicuna-7b-legacy-vẫn-là-demo-active) |
 | Tên file `train_eval_figure9_llm_variants_200.py` | script vẽ figure | Là động cơ Stage 2 |
 

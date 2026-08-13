@@ -43,7 +43,7 @@ PROJECT_DIR / "pretraining/configs/encoder_comparison" / f"{run_name}.yaml"   # 
 ```
 
 `--stage1-run 07_all_three` → tìm trong `encoder_comparison/`.
-`--stage1-config` → trỏ thẳng vào file, mặc định `pretraining/configs/mimic_cxr_full_l4.yaml`.
+`--stage1-config` → trỏ thẳng vào file, mặc định `pretraining/configs/mimic_cxr_full.yaml`.
 
 Hai đường này **không** trỏ cùng chỗ. Dễ nhầm.
 

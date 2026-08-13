@@ -98,7 +98,7 @@ RunnerBase.train(wandb_run)                        runner_base.py:648
 
 1. `lr_scheduler.step()` gọi **một lần cho mỗi optimizer update**, không phải mỗi
    microbatch. Vì thế `warmup_steps: 300` nghĩa là 300 optimizer step. Config
-   legacy `mimic_cxr_2gpu.yaml` để `32000` — ramp không bao giờ xong.
+   recipe 2×T4 cũ (đã xóa) để `32000` — ramp không bao giờ xong.
 2. `validate()` chạy trên **toàn bộ** validation split, không phải subset.
 3. Test split **không tham gia** chọn checkpoint ở bất kỳ bước nào.
 

@@ -336,7 +336,7 @@ trước khi nối.
 Đếm bằng **optimizer update**, không phải microbatch. Production: `300` (~3% của
 một run 3 epoch).
 
-⚠ Config legacy `mimic_cxr_2gpu.yaml` để `32000` — ramp **không bao giờ hoàn tất**.
+⚠ Recipe 2×T4 cũ (đã xóa) từng để `32000` — ramp **không bao giờ hoàn tất**. Đừng tái sử dụng giá trị đó.
 Đừng copy giá trị đó.
 
 ---

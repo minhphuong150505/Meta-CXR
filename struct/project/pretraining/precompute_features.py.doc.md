@@ -14,7 +14,7 @@ với cùng ảnh. Cache chúng một lần đổi lấy tốc độ mỗi epoch
 ## Entry point
 ```bash
 python -m pretraining.precompute_features \
-    --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml \
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --options model.encoders.biovil=true model.encoders.pubmedclip=true
 ```
 

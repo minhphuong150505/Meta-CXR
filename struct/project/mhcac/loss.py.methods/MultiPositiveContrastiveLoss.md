@@ -35,7 +35,7 @@ cùng lúc thay vì chọn một.
 Nó chạy cho **từng encoder** rồi lấy trung bình (`torch.stack(terms).mean()`).
 
 ## Config dependencies
-`loss.lambda_mpc` — prod **0.1**; `0.0` ở `mimic_cxr_2gpu.yaml` legacy.
+`loss.lambda_mpc` — prod **0.1**.
 Chỉ dựng khi `lambda_mpc > 0` (`blip2_qformer.py:319`).
 
 ## Called by

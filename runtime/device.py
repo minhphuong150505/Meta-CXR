@@ -1,8 +1,8 @@
 """Device and dtype selection for external-checkpoint inference.
 
 Nothing here hardcodes ``cuda:0``. The device is resolved from config or from
-what the machine actually reports, so the same config runs on the RTX 3090
-workstation and on a rented L4 without edits.
+what the machine actually reports, so the same config runs on any single-GPU
+workstation without edits.
 """
 
 from __future__ import annotations

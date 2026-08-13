@@ -201,7 +201,7 @@ class ObsoleteFineTuningConfigIsRejected(unittest.TestCase):
     def test_stage1_training_config_is_not_parsed_here(self):
         # Guard against scope creep: this validator must never be pointed at a
         # Stage-1 YAML, whose learning_rate is entirely legitimate.
-        stage1 = _REPO_ROOT / "pretraining" / "configs" / "mimic_cxr_full_l4.yaml"
+        stage1 = _REPO_ROOT / "pretraining" / "configs" / "mimic_cxr_full.yaml"
         self.assertTrue(stage1.is_file())
         text = stage1.read_text(encoding="utf-8")
         self.assertNotIn(cfg.PIPELINE_MODE, text)

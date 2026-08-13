@@ -15,7 +15,7 @@ LAVIS dependencies, preprocessing/evaluation packages và pytest.
 `numpy==1.26.4`, `pandas==2.2.3`, `timm==0.9.16`, `omegaconf==2.3.0`.
 
 Comment source yêu cầu cài torch từ official CUDA index phù hợp trước, target đã
-test là CUDA 12.4/L4. File pin package nhưng không pin CUDA wheel index.
+test là CUDA 12.4 trên RTX 5060 Ti 16 GB. File pin package nhưng không pin CUDA wheel index.
 
 ## Relationship
 

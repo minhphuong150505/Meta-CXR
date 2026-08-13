@@ -52,11 +52,11 @@ import train_eval_figure9_llm_variants_200 as fig9  # noqa: E402
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint-root", default="checkpoints")
-    parser.add_argument("--stage1-run", default="mimic_cxr_full_l4_blip2")
+    parser.add_argument("--stage1-run", default="mimic_cxr_full_blip2")
     parser.add_argument(
         "--stage1-config",
         type=Path,
-        default=fig9.PROJECT_DIR / "pretraining/configs/mimic_cxr_full_l4.yaml",
+        default=fig9.PROJECT_DIR / "pretraining/configs/mimic_cxr_full.yaml",
         help="Config used to construct the Stage-1 model.",
     )
     parser.add_argument(

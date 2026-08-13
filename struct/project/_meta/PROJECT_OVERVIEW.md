@@ -68,14 +68,15 @@ này. Xem [GLOSSARY.md](GLOSSARY.md#pnu).
 
 **MIMIC-CXR-JPG**, subset p10–p19 (toàn bộ).
 
-Môi trường train hiện hành do user xác nhận là **một host** với định danh đăng
-nhập `phuong@minhphuong` ([D-011](DECISIONS.md#d-011--máy-train-hiện-tại)).
-Hardware và mount path của host này chưa được cung cấp/kiểm chứng; không suy ra
-L4 hay 2×3090 từ tên các recipe trong repository.
+Môi trường train là **một host duy nhất**, `phuong@minhphuong`
+([D-011](DECISIONS.md#d-011--máy-train-hiện-tại)) — máy cá nhân, **1× RTX 5060 Ti
+16 GB**, verify qua SSH 2026-08-13. Dữ liệu nằm ở `/mnt/drive1tb` (NTFS, không
+auto-mount). Không còn đường chạy cloud nào
+([D-013](DECISIONS.md#d-013--gỡ-toàn-bộ-đường-chạy-cloud)).
 
 | | |
 |---|---|
-| Nguồn ảnh | Bucket GCS riêng tư, mount vào máy train |
+| Nguồn ảnh | Bản mirror cục bộ trên `/mnt/drive1tb` của máy train |
 | Nguồn text | Report `.txt` thô, parse lấy phần FINDINGS/IMPRESSION |
 | Định dạng split | Ba file CSV: train / val / test |
 | Ràng buộc pháp lý | PhysioNet credentialed access, DUA **cấm redistribute** |

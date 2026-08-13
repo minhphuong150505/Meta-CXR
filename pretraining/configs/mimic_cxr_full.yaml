@@ -1,4 +1,7 @@
-# Production Stage-1 recipe for full MIMIC-CXR-JPG p10-p19 on one NVIDIA L4.
+# Production Stage-1 recipe for full MIMIC-CXR-JPG p10-p19 on one GPU.
+# Memory settings below were verified on an RTX 5060 Ti 16 GB. The completed
+# 10-epoch run overrode them on the command line with
+#   run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 # The processed CSV paths come from configs/env_config.yaml and must point at
 # processed/full_allviews. One epoch is one pass over unique studies (~220k),
 # not one pass over the ~365k duplicated image rows.
@@ -96,7 +99,7 @@ run:
   task: image_text_pretrain_eval
   project_name: meta-cxr-full
   wandb_entity: ""
-  run_name: mimic_cxr_full_l4_blip2
+  run_name: mimic_cxr_full_blip2
 
   lr_sched: linear_warmup_cosine_lr
   init_lr: 1.0e-4
