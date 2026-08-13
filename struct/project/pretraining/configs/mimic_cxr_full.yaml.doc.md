@@ -47,7 +47,8 @@ run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba ov
 | `warmup_steps` | 300 | **Optimizer update**, không phải microbatch |
 | `save_freq` | 5 | Checkpoint theo epoch mỗi 5 epoch |
 | `batch_size_train` × `accum_grad_iters` | 8 × 8 | Effective batch = **64** |
-| `max_epoch` / `early_stop_patience` | 20 / 5 | |
+| `max_epoch` / `early_stop_patience` | **10 / 5** | ⚠ 5+5=10 > index cuối [9] → early stop **không thể kích hoạt**; đặt patience ≤ 4 nếu muốn nó sống |
+| `eval_start_epoch` | **5** | Epoch [0]–[4] train nhưng **không** eval. Cũng chặn `checkpoint_best` trước [5], nên không epoch chưa chấm nào được tuyển |
 | `amp` / `amp_dtype` | true / `bfloat16` | BF16 giữ dải mũ, tránh GradScaler sụp |
 | `test_splits` | `[test]` | Held out; eval **một lần** sau train |
 | `save_predictions` | `true` | ★ Cho phép calibrate threshold offline |

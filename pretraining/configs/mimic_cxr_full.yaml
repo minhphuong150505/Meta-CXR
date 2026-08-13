@@ -112,8 +112,21 @@ run:
   weight_decay: 0.02
   max_grad_norm: 1.0
 
-  max_epoch: 20
-  # Stop after five validation epochs without meaningful AUPRC improvement.
+  max_epoch: 10
+  # Epoch INDEX of the first scored epoch, matching the training log: epoch [5]
+  # is the sixth. Epochs [0]-[4] train but are not evaluated, which saves one
+  # full validation pass each. The same knob gates checkpoint_best, so the
+  # selected checkpoint can never come from an unscored epoch.
+  eval_start_epoch: 5
+  # Stop after this many SCORED epochs without meaningful AUPRC improvement.
+  # The patience window opens at eval_start_epoch: epochs [0]-[4] are unscored
+  # and do not consume it, so the earliest possible stop is epoch
+  # eval_start_epoch + early_stop_patience.
+  #
+  # ARITHMETIC, read before changing max_epoch: 5 + 5 = 10, and the last epoch
+  # index in a 10-epoch run is [9]. Early stopping therefore CANNOT fire in this
+  # configuration. That is harmless -- the run ends at [9] either way -- but it
+  # means the value is currently inert. To make it live, set it to 4 or less.
   early_stop_patience: 5
   early_stop_min_delta: 1.0e-4
   # Threshold-free selection is more stable under severe class imbalance.

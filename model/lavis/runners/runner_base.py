@@ -464,6 +464,25 @@ class RunnerBase:
         return float(self.config.run_cfg.get("max_grad_norm", 1.0))
 
     @property
+    def eval_start_epoch(self):
+        """First epoch index that runs validation. Earlier epochs train only.
+
+        Validation over the full split is expensive, and the early epochs of a
+        run are never the ones selected. Skipping them buys wall-clock time.
+        Because `checkpoint_best` is only written from inside the evaluation
+        branch, this also makes the best checkpoint ineligible before this
+        epoch -- the two behaviours are deliberately the same knob, so the
+        selected checkpoint can never come from an epoch that was not scored.
+
+        Counts epoch *indices*, matching the training log: `epoch: [5]` is the
+        sixth epoch. Default 0 keeps the historical behaviour.
+        """
+        value = int(self.config.run_cfg.get("eval_start_epoch", 0))
+        if value < 0:
+            raise ValueError("run.eval_start_epoch must be >= 0")
+        return value
+
+    @property
     def early_stop_patience(self):
         return int(self.config.run_cfg.get("early_stop_patience", -1))
 
@@ -558,6 +577,23 @@ class RunnerBase:
         for split_name in requested_splits:
             if split_name not in eval_splits:
                 eval_splits.append(split_name)
+
+        # Warm-up epochs are trained but not scored.  `cur_epoch` is the string
+        # "provided" in evaluate-only runs, which must never be skipped.
+        if (
+            not self.evaluate_only
+            and isinstance(cur_epoch, int)
+            and cur_epoch < self.eval_start_epoch
+        ):
+            logging.info(
+                "Skipping validation at epoch %d: run.eval_start_epoch=%d. "
+                "checkpoint_best cannot be written before epoch %d, so no "
+                "unscored epoch can be selected.",
+                cur_epoch,
+                self.eval_start_epoch,
+                self.eval_start_epoch,
+            )
+            eval_splits = []
 
         if len(eval_splits) > 0:
             for split_name in eval_splits:
@@ -706,7 +742,16 @@ class RunnerBase:
                     not self.evaluate_only
                     and self.early_stop_patience > 0
                     and len(self.valid_splits) > 0
-                    and cur_epoch - best_epoch >= self.early_stop_patience
+                    # Patience counts *scored* epochs only.  best_epoch starts at
+                    # 0 while the first scored epoch is eval_start_epoch, so
+                    # measuring from best_epoch alone would spend the whole
+                    # patience budget on epochs that were never evaluated and
+                    # stop the run the moment scoring begins -- logging "early
+                    # stopping", which reads like convergence.  Clamping the
+                    # window to open at eval_start_epoch is exact when
+                    # eval_start_epoch is 0, so the default path is unchanged.
+                    and cur_epoch - max(best_epoch, self.eval_start_epoch)
+                    >= self.early_stop_patience
                 ):
                     logging.info(
                         "Early stopping at epoch %d: best val %s %.6f at epoch %d, "

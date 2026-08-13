@@ -47,8 +47,10 @@ Chỉ còn một GPU nên không còn biến thể DDP nào; `--nproc_per_node` 
 
 ### Config bắt buộc
 
-`pretraining/configs/mimic_cxr_full.yaml` (production) — 20 epoch, early stop
-patience 5, bf16 AMP, `save_freq: 5`, `warmup_steps: 300`.
+`pretraining/configs/mimic_cxr_full.yaml` (production) — **10 epoch**,
+`eval_start_epoch: 5` (epoch [0]–[4] train nhưng không chấm, cũng không thể được
+tuyển làm best), early stop patience 5 (**bất động** với cấu hình này), bf16 AMP,
+`save_freq: 5`, `warmup_steps: 300`.
 
 Cộng `configs/env_config.yaml` cho đường dẫn máy. Thiếu file này →
 `local_config.py` raise `FileNotFoundError`.
