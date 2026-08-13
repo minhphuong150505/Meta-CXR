@@ -1,4 +1,4 @@
-> Source: `mhcac/mhcac_12.py:208-316`
+> Source: `mhcac/mhcac_12.py:208-319`
 > Status: ✅ ACTIVE
 
 # `AbnormalityClassificationModel.__init__(...)`
@@ -43,6 +43,8 @@ AbnormalityClassificationModel(
 | `expert_token_norm` | LayerNorm cho residual lớp áp chót |
 | `classifiers` | 14 × `nn.Linear(embed_dim, 3)` |
 | `expert_loss` | `AbnormalitySpecificLoss` |
+| `capture_streams` | `False` mặc định — cờ opt-in cho Grad-CAM |
+| `_last_cam_streams` | `None` mặc định — state tạm, không phải buffer |
 
 ## ★ `expert_to_text_attention` là teacher-gate
 Chỉ một số lớp có nhánh này (gated bởi `num_text_teacher_layers` ⚠ đọc code để
@@ -50,7 +52,8 @@ biết chính xác lớp nào). `forward` kiểm `layer.expert_to_text_attention
 để quyết định có truyền text không.
 
 ## Side effects
-Cấp phát tham số.
+Cấp phát tham số và khởi tạo state capture rỗng. Hai attribute capture không đi
+vào `state_dict` và không đổi checkpoint compatibility.
 
 ## Modification risk
 | Sửa | Ảnh hưởng |

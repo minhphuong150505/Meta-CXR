@@ -20,6 +20,7 @@ from model.lavis.models.blip2_models.blip2 import (
 )
 from model.lavis.models.blip_models.blip_outputs import BlipOutput, BlipOutputFeatures
 
+from mhcac.explanation import ExplanationLoss, explanation_lambda
 from mhcac.mhcac_12 import AbnormalityClassificationModel
 
 
@@ -171,6 +172,8 @@ class Blip2Qformer(Blip2Base):
         lambda_mhcac_contrastive=0.1,
         lambda_orthogonality=0.05,
         lambda_sparsity=0.01,
+        lambda_explanation=0.0,
+        explanation_cfg=None,
         distill_temperature=2.0,
         mhcac_text_dropout=0.2,
         class_weights=None,
@@ -239,6 +242,28 @@ class Blip2Qformer(Blip2Base):
         self.lambda_mhcac_contrastive = float(lambda_mhcac_contrastive)
         self.lambda_orthogonality = float(lambda_orthogonality)
         self.lambda_sparsity = float(lambda_sparsity)
+        self.lambda_explanation = float(lambda_explanation)
+        self.current_epoch = 0
+        explanation_cfg = dict(explanation_cfg or {})
+        self.explanation_warmup_start_epoch = int(
+            explanation_cfg.get("warmup_start_epoch", 0)
+        )
+        self.explanation_warmup_epochs = int(
+            explanation_cfg.get("warmup_epochs", 0)
+        )
+        explanation_streams = explanation_cfg.get("streams")
+        if isinstance(explanation_streams, str):
+            explanation_streams = [explanation_streams]
+        self.explanation_streams = (
+            None
+            if explanation_streams is None
+            else tuple(str(name) for name in explanation_streams)
+        )
+        self.explanation_loss_fn = (
+            ExplanationLoss(top_k=float(explanation_cfg.get("top_k", 0.5)))
+            if self.lambda_explanation > 0
+            else None
+        )
         self.distill_temperature = float(distill_temperature)
         self.itc_queue_size = int(itc_queue_size)
         if self.itc_queue_size < 0:
@@ -403,6 +428,9 @@ class Blip2Qformer(Blip2Base):
             uncertain_policy=uncertain_policy,
         )
         
+    def set_epoch(self, epoch):
+        self.current_epoch = int(epoch)
+
 
     def _create_mask(self, embeddings, mask_ratio=0.1):
         num_patches = embeddings.size(1)
@@ -967,12 +995,75 @@ class Blip2Qformer(Blip2Base):
                 )
 
         cls_labels = samples["classification_labels"]
-        student_logits, _, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
-            shared_visual,
-            text_embeddings=None,
-            labels=cls_labels,
-            sample_mask=classification_mask,
-        )
+        lambda_eff = 0.0
+        explanation_mask = samples.get("explanation_mask")
+        explanation_valid = None
+        capture_explanation = False
+        if self.explanation_loss_fn is not None:
+            lambda_eff = explanation_lambda(
+                self.current_epoch,
+                self.lambda_explanation,
+                self.explanation_warmup_start_epoch,
+                self.explanation_warmup_epochs,
+            )
+            mask_valid = samples.get("explanation_mask_valid")
+            # Grad-CAM needs a live graph: it differentiates the score with
+            # respect to the visual activations.  RunnerBase.eval_epoch is
+            # decorated @torch.no_grad(), and validation reaches this same
+            # forward(), so without this guard the first scored epoch dies with
+            # "element 0 of tensors does not require grad".  Skipping the term
+            # under no_grad is also what we want on merit -- an explanation
+            # penalty that trains nothing has no business costing a backward.
+            if (
+                lambda_eff > 0
+                and torch.is_grad_enabled()
+                and explanation_mask is not None
+                and mask_valid is not None
+            ):
+                explanation_valid = self._batch_mask(
+                    samples,
+                    "explanation_mask_valid",
+                    batch_size,
+                    device,
+                    default=False,
+                ) & classification_mask
+                positive_study = (cls_labels.to(device=device) == 1).any(dim=1)
+                capture_explanation = bool(
+                    (explanation_valid & positive_study).any().item()
+                )
+
+        cam_streams = None
+        self.mhcac.capture_streams = capture_explanation
+        try:
+            student_logits, _, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
+                shared_visual,
+                text_embeddings=None,
+                labels=cls_labels,
+                sample_mask=classification_mask,
+            )
+        finally:
+            if capture_explanation:
+                cam_streams = self.mhcac._last_cam_streams
+            self.mhcac.capture_streams = False
+            self.mhcac._last_cam_streams = None
+
+        loss_explanation = None
+        if self.explanation_loss_fn is not None:
+            loss_explanation = student_logits.sum() * 0.0
+            if capture_explanation and cam_streams:
+                selected_streams = {
+                    name: value
+                    for name, value in cam_streams.items()
+                    if self.explanation_streams is None
+                    or name in self.explanation_streams
+                }
+                loss_explanation, _ = self.explanation_loss_fn(
+                    student_logits,
+                    cls_labels,
+                    selected_streams,
+                    explanation_mask,
+                    explanation_valid,
+                )
         cls_loss = self.cls_loss_fn(
             student_logits, cls_labels, sample_mask=classification_mask
         )
@@ -1047,6 +1138,8 @@ class Blip2Qformer(Blip2Base):
             + self.lambda_mpc * loss_mpc
             + self.lambda_view_consistency * loss_view_consistency
         )
+        if lambda_eff > 0:
+            total_loss = total_loss + lambda_eff * loss_explanation
         return BlipOutput(
             loss=total_loss,
             loss_itc=loss_itc,
@@ -1058,6 +1151,7 @@ class Blip2Qformer(Blip2Base):
             loss_contrastive=contrastive_loss,
             loss_orthagonal=orth_loss,
             loss_sparsity=sparsity_loss,
+            loss_explanation=loss_explanation,
             loss_mpc=loss_mpc,
             loss_view_consistency=loss_view_consistency,
             classification_logits=student_logits,
@@ -1456,7 +1550,25 @@ class Blip2Qformer(Blip2Base):
         )
         lambda_orthogonality = float(loss_cfg.get("lambda_orthogonality", 0.05))
         lambda_sparsity = float(loss_cfg.get("lambda_sparsity", 0.01))
+        lambda_explanation = float(loss_cfg.get("lambda_explanation", 0.0))
         itc_queue_size = int(loss_cfg.get("itc_queue_size", 1024))
+
+        explanation_cfg_raw = cfg.get("explanation", {}) or {}
+        explanation_streams = explanation_cfg_raw.get("streams", None)
+        if isinstance(explanation_streams, str):
+            explanation_streams = [explanation_streams]
+        explanation_cfg = {
+            "top_k": float(explanation_cfg_raw.get("top_k", 0.5)),
+            "warmup_start_epoch": int(
+                explanation_cfg_raw.get("warmup_start_epoch", 0)
+            ),
+            "warmup_epochs": int(explanation_cfg_raw.get("warmup_epochs", 0)),
+            "streams": (
+                None
+                if explanation_streams is None
+                else list(explanation_streams)
+            ),
+        }
 
         mhcac_cfg = cfg.get("mhcac", {}) or {}
         distill_temperature = float(mhcac_cfg.get("distill_temperature", 2.0))
@@ -1502,6 +1614,8 @@ class Blip2Qformer(Blip2Base):
             lambda_mhcac_contrastive=lambda_mhcac_contrastive,
             lambda_orthogonality=lambda_orthogonality,
             lambda_sparsity=lambda_sparsity,
+            lambda_explanation=lambda_explanation,
+            explanation_cfg=explanation_cfg,
             distill_temperature=distill_temperature,
             mhcac_text_dropout=mhcac_text_dropout,
             class_weights=class_weights,

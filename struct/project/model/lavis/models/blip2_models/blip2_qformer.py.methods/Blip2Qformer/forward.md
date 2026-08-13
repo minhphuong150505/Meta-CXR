@@ -1,4 +1,4 @@
-> Source: `model/lavis/models/blip2_models/blip2_qformer.py:850-1032`
+> Source: `model/lavis/models/blip2_models/blip2_qformer.py:878-1147`
 > Status: ✅ ACTIVE
 
 # `Blip2Qformer.forward(samples)`
@@ -9,7 +9,7 @@
 
 ## Purpose
 Trái tim Stage 1. Một forward = encode + fusion + Q-Former (ITC/ITM/LM) + MHCAC ×3
-+ tổng hợp 11 loss.
++ explanation-aware Grad-CAM conditional + tổng hợp 12 loss.
 
 ## Signature
 ```python
@@ -21,11 +21,12 @@ def forward(self, samples) -> BlipOutput
 - Type: `dict` từ `MIMIC_CXR_Dataset.collater` · Required: ✅
 - Khóa: `image [B,3,448,448]`, `text_output list[str]`,
   `classification_labels [B,14]`, `classification_mask [B]`, `generation_mask [B]`,
+  tùy chọn `explanation_mask [B,H,W]`, `explanation_mask_valid [B]`,
   và tùy chọn `aux_image [B,N,3,448,448]`, `aux_mask [B,N]`, `aux_view_ids [B,N]`,
   `anchor_view_id [B]`, `<enc>_feat`, `aux_<enc>_feat`.
 
 ## Returns
-`BlipOutput` — `loss` (tổng có trọng số) + 11 thành phần + `classification_logits [B,14,3]`
+`BlipOutput` — `loss` (tổng có trọng số) + 12 thành phần + `classification_logits [B,14,3]`
 + `classification_mask [B]`.
 
 ## Local variables quan trọng
@@ -36,6 +37,8 @@ def forward(self, samples) -> BlipOutput
 | `query_output` | Có `past_key_values` → tái dùng cho LM, không tính lại |
 | `teacher_mask` | `classification_mask & generation_mask` — teacher cần **cả hai** |
 | `student_logits` | Đường inference thật |
+| `lambda_eff` | Trọng số explanation tại `current_epoch` |
+| `cam_streams` | Activation student tạm; MHCAC state được clear trước khi đi tiếp |
 
 ## Execution flow
 ```text
@@ -48,16 +51,20 @@ def forward(self, samples) -> BlipOutput
   _image_text_matching   → loss_itm
   _language_modeling     → loss_lm
   _update_itc_queue      (chỉ khi training)
-6 mhcac(shared_visual, text_embeddings=None, labels, sample_mask)   ← STUDENT
+6 tính lambda_eff; chỉ khi mask hợp lệ + study Positive mới bật capture
+  mhcac(shared_visual, text_embeddings=None, labels, sample_mask)   ← STUDENT
+  copy activation vào local rồi luôn tắt capture + clear _last_cam_streams
   cls_loss_fn(student_logits, ...)
-7 IF teacher_mask.any() và (λ_teacher>0 hoặc λ_distill>0):
+7 IF local cam_streams có dữ liệu:
+     ExplanationLoss(student_logits, labels, selected_streams, mask, valid)
+8 IF teacher_mask.any() và (λ_teacher>0 hoặc λ_distill>0):
      mhcac(shared_visual, text_embeddings=<text>)                   ← TEACHER
      cls_loss_fn(teacher_logits, sample_mask=teacher_mask)
      soft_target_kl_loss(student, teacher, ...)
-8 IF multi_view và aux_mask.any():
+9 IF multi_view và aux_mask.any():
      mpc_loss_fn trên _last_prefusion_streams
      mhcac(anchor_shared, ...)  ← ANCHOR-ONLY  → view_consistency_loss
-9 total = Σ λᵢ·lossᵢ  → BlipOutput
+10 total = Σ λᵢ·lossᵢ + lambda_eff·L_exp  → BlipOutput
 ```
 
 ## Detailed logic
@@ -65,10 +72,15 @@ def forward(self, samples) -> BlipOutput
 được truyền thẳng sang `_language_modeling:810`. Query token được tính **một lần**
 cho cả ITC và LM.
 
-**Bước 6/7 — ranh giới teacher/student.** Khác biệt duy nhất là `text_embeddings`.
+**Bước 6/8 — ranh giới teacher/student.** Khác biệt duy nhất là `text_embeddings`.
 Đây là toàn bộ cơ chế giữ text khỏi đường inference.
 
-**Bước 8 — nhánh view-consistency chạy MHCAC lần ba** trên `anchor_shared` (chỉ
+**Explanation chỉ capture student.** Điều kiện được xác định trước lời gọi student
+từ lambda, epoch, sự hiện diện của hai key mask, classification mask và nhãn
+Positive. Teacher/anchor chạy sau khi cờ đã tắt. Nếu key chưa có (trạng thái Giai
+đoạn 1), loss bằng zero nối graph và forward không crash.
+
+**Bước 9 — nhánh view-consistency chạy MHCAC lần ba** trên `anchor_shared` (chỉ
 anchor, không fuse). Nó tái dựng `SharedVisualTokens` từ `_last_prefusion_streams`,
 áp `ln_vision` lại cho biovil (`:959`).
 
@@ -79,23 +91,30 @@ Xem [DATA_FLOW.md §2.4](../../../../../../_meta/DATA_FLOW.md#24-trong-model).
 ⚠ Mutate `itc_image_queue` / `itc_text_queue` / `itc_queue_ptr` / `itc_queue_filled`
 (chỉ khi `self.training`) · Reset `_last_prefusion_streams`, `_last_raddino_patches`
 
+Capture CAM được clear trong `finally`, kể cả student forward raise; model không
+giữ activation graph qua batch kế tiếp.
+
 ## Error handling
 Batch không có mẫu hợp lệ → trả loss `0.0` **vẫn nối đồ thị autograd**
 (`zero = x.sum()*0.0`), tránh DDP treo vì tham số không nhận gradient.
 
 ## Config dependencies
-Mọi `loss.lambda_*`, `multi_view`, `mhcac.*`, `itc_queue_size`.
+Mọi `loss.lambda_*`, `multi_view`, `mhcac.*`, `itc_queue_size`, `explanation.*`,
+và epoch do runner cung cấp.
 
 ## Important conditions
 ```python
 if teacher_mask.any() and (self.lambda_teacher_cls > 0 or self.lambda_distill > 0)  # :922
 if self.multi_view and aux_mask is not None and aux_mask.any()                      # :946
 if self.lambda_view_consistency > 0                                                 # :955
+if self.explanation_loss_fn is not None                                             # gate cấu hình
+if lambda_eff > 0 and explanation_mask is not None and mask_valid is not None        # gate batch
 ```
-Ba điều kiện này quyết định MHCAC chạy 1, 2 hay 3 lần.
+Các điều kiện này quyết định MHCAC chạy 1, 2 hay 3 lần và có dựng Grad-CAM hay không.
 
 ## Tests
-`tests/test_stage1_objectives.py` (teacher-only) · `tests/test_multiview_losses.py`
+`tests/test_stage1_objectives.py` (teacher-only) · `tests/test_multiview_losses.py` ·
+`tests/test_explanation_loss.py` · `tests/test_loss_weight_gating.py`
 
 ## Modification risk
 | Sửa | Ảnh hưởng |
@@ -104,3 +123,5 @@ Ba điều kiện này quyết định MHCAC chạy 1, 2 hay 3 lần.
 | Bỏ `zero = x.sum()*0.0` | DDP có thể treo |
 | Đổi thứ tự `_update_itc_queue` | Queue chứa chính batch hiện tại → contrastive tự so với mình |
 | Thêm loss mới | Phải thêm cả `lambda_` và trường trong `BlipOutput` |
+| Không clear `_last_cam_streams` | Giữ graph qua batch → rò bộ nhớ |
+| Gọi autograd khi lambda bằng 0 | Phá gate hiệu năng classification-only |

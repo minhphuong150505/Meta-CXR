@@ -1,4 +1,4 @@
-> Source: `mhcac/mhcac_12.py:354-448`
+> Source: `mhcac/mhcac_12.py:357-471`
 > Status: ✅ ACTIVE
 
 # `AbnormalityClassificationModel.forward(...)`
@@ -33,6 +33,10 @@ Bước 2 expert_tokens [14,D] → expand [B,14,D]
 Bước 3 embedding_alignment(visual, text, expert)     ← MỘT phép chiếu
 Bước 4 FOR name, span in sorted(spans, key=start):
           stream = visual_proj[:, span, :]
+          capture bật:
+            biovil → float32 + stash trước cnn_downsampler
+            stream khác → resize + float32 + stash
+            chỉ stash nếu số token là số chính phương
           biovil → cnn_downsampler   |  khác → _resize_patch_sequence
           → pos_enc(stream)                          ← pos-enc RIÊNG mỗi encoder
        image_patches = cat(streams, dim=1)
@@ -52,6 +56,10 @@ thứ tự `SharedVisualTokenProjector` đã nối.
 chống việc token trôi mất bản sắc sau 6 lớp attention. ⚠ Đổi `num_layers` đổi lớp
 nào làm việc này.
 
+**Capture là opt-in và không detach.** `_last_cam_streams` được reset đầu mỗi
+forward. Khi cờ tắt nó là `None`; khi bật nó chứa `(tensor, grid_hw)` để
+`ExplanationLoss` lấy đạo hàm score theo đúng activation student.
+
 ## Data / Tensor flow
 `[B,ΣP,1408]` → `[B,ΣP,768]` → slice/resize/pos-enc → `[B,k·target,768]` →
 6 lớp → `[B,14,768]` → `[B,14,3]`
@@ -65,9 +73,15 @@ Ba `ValueError` ở bước 1, mỗi cái **nêu giá trị thật**. Cộng `Va
 ## Config dependencies
 `mhcac.text_dropout` · `mhcac.uncertain_policy` · `num_layers=6`
 
+`capture_streams` do `Blip2Qformer.forward` điều khiển theo lambda, epoch và mask;
+không có config trực tiếp trong MHCAC.
+
 ## Tests
-`tests/test_stage1_objectives.py::test_mhcac_text_is_teacher_only_and_student_shape_matches_inference`
+`tests/test_stage1_objectives.py::test_mhcac_text_is_teacher_only_and_student_shape_matches_inference` ·
+`tests/test_explanation_loss.py::test_mhcac_only_keeps_cam_streams_while_capture_is_enabled`
 
 ## Modification risk
 ⚠ Đặt default khác `None` cho `text_embeddings` sẽ **phá teacher/student separation**
 mà không có lỗi nào — student im lặng nhận text.
+
+Không detach hoặc copy `_last_cam_streams`; Grad-CAM cần tensor gốc trong graph.

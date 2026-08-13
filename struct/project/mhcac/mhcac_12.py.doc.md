@@ -1,6 +1,6 @@
-> Source: `mhcac/mhcac_12.py` (448 dòng)
+> Source: `mhcac/mhcac_12.py` (471 dòng)
 > Status: ✅ ACTIVE — ★ bản DUY NHẤT được wire
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-13
 
 # `mhcac/mhcac_12.py`
 
@@ -27,6 +27,7 @@ SharedVisualTokens ──► AbnormalityClassificationModel ──► logits [B,
         │                        │
    (teacher-only)                └── attention_weights_list
    text_embeddings
+                                 └── _last_cam_streams (student, conditional)
 ```
 
 ## Status
@@ -53,6 +54,9 @@ Không.
 | `labels` | `[B,14]` long | Cho contrastive loss; `None` → bỏ qua |
 | `sample_mask` | `[B]` bool | Loại mẫu không nhãn |
 
+Instance flag `capture_streams` không nằm trong signature. Khi bật, forward giữ
+activation không detach cho explanation loss; khi tắt `_last_cam_streams=None`.
+
 ## Outputs
 
 Tuple 5 phần tử:
@@ -62,7 +66,7 @@ Tuple 5 phần tử:
 
 ## Important configuration
 
-Khởi tạo tại `blip2_qformer.py:342`:
+Khởi tạo tại `blip2_qformer.py:388`:
 
 ```python
 embed_dim=768, num_abnormalities=14, num_classes=3, num_layers=6,
@@ -87,9 +91,9 @@ Từ YAML: `mhcac.text_dropout`, `mhcac.uncertain_policy`.
 
 | Method | Doc | Vai trò |
 |---|---|---|
-| `AbnormalityClassificationModel.forward` (`:354`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/forward.md) | ★ |
+| `AbnormalityClassificationModel.forward` (`:357`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/forward.md) | ★ |
 | `AbnormalityClassificationModel.__init__` (`:208`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/__init__.md) | |
-| `_resize_patch_sequence` (`:317`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/_resize_patch_sequence.md) | ★ Đồng bộ số patch giữa encoder |
+| `_resize_patch_sequence` (`:320`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/_resize_patch_sequence.md) | ★ Đồng bộ số patch giữa encoder |
 
 ## Execution flow
 
@@ -101,6 +105,8 @@ forward(shared_visual_tokens, text_embeddings, ...)
  ├─ Bước 3 — embedding_alignment(visual, text, expert)   ← MỘT phép chiếu cho tất cả
  ├─ Bước 4 — FOR name, span in sorted(spans, key=start):
  │             stream = visual_proj[:, span, :]
+ │             IF capture: giữ FP32 biovil trước downsampler;
+ │                         giữ stream khác sau _resize_patch_sequence nếu N là số chính phương
  │             biovil → cnn_downsampler   |  khác → _resize_patch_sequence
  │             → pos_enc(stream)          ← pos-enc RIÊNG mỗi encoder
  │          image_patches = cat(streams, dim=1)
@@ -114,7 +120,7 @@ forward(shared_visual_tokens, text_embeddings, ...)
 
 ## Điểm thiết kế: một phép chiếu, nhiều view
 
-Docstring `:364` nói rõ: `spans` **chỉ** dùng để cấp pos-enc riêng và resize riêng
+Docstring `:367` nói rõ: `spans` **chỉ** dùng để cấp pos-enc riêng và resize riêng
 cho từng encoder. **Phép chiếu về `embed_dim` xảy ra một lần, trên tensor đã merge.**
 
 Nghĩa là MHCAC và Q-Former dùng chung một biểu diễn thị giác — không có đường
@@ -127,8 +133,8 @@ encode thứ hai. Trước đây hai nhánh tự chiếu và có thể trôi d�
 
 ## Called by
 
-`Blip2Qformer.forward` — **ba lần**: student (`:907`), teacher (`:925`),
-anchor-only cho view consistency (`:965`).
+`Blip2Qformer.forward` — **ba lần**: student (`:1026`), teacher (`:1067`),
+anchor-only cho view consistency (`:1107`).
 
 ## Data flow
 
@@ -153,22 +159,28 @@ tokens [B,ΣP,1408] ─► embedding_alignment ─► visual_proj [B,ΣP,768]
 
 ## Side effects
 
-Không mutate state ngoài tham số. `attention_weights_list` được trả về, không lưu.
+Mỗi forward đặt `_last_cam_streams` thành `None` khi `capture_streams=False`, hoặc
+dict activation còn trong graph khi bật. Caller phải tắt capture và bỏ tham chiếu
+sau khi tính explanation loss. `attention_weights_list` vẫn chỉ được trả về.
 
 ## Error / edge cases
 
 | Tình huống | Hành vi |
 |---|---|
-| `tokens.ndim != 3` | `ValueError` nêu shape thật (`:373`) |
-| `tokens.shape[-1] != visual_dim` | `ValueError` nêu cả hai giá trị (`:377`) |
-| `spans` rỗng | `ValueError("shared_visual_tokens carries no encoder spans")` (`:381`) |
-| `image_streams` rỗng | `ValueError` (`:407`) |
+| `tokens.ndim != 3` | `ValueError` nêu shape thật (`:376`) |
+| `tokens.shape[-1] != visual_dim` | `ValueError` nêu cả hai giá trị (`:380`) |
+| `spans` rỗng | `ValueError("shared_visual_tokens carries no encoder spans")` (`:384`) |
+| `image_streams` rỗng | `ValueError` (`:430`) |
 | Số patch không phải chính phương | `_resize_patch_sequence` rơi về nội suy tuyến tính 1-D |
+| Stream cần capture không có N chính phương | Bỏ qua stream đó; forward phân loại vẫn tiếp tục |
 
 ## Related tests
 
 `tests/test_stage1_objectives.py::test_mhcac_text_is_teacher_only_and_student_shape_matches_inference`
 — **test quan trọng nhất cho file này**: xác nhận student không bao giờ thấy text.
+
+`tests/test_explanation_loss.py::test_mhcac_only_keeps_cam_streams_while_capture_is_enabled`
+— xác nhận capture opt-in, giữ graph và giải phóng state khi tắt.
 
 ## Related documentation
 
@@ -185,6 +197,8 @@ Không mutate state ngoài tham số. `attention_weights_list` được trả v�
    từng vá nó bằng string replacement lúc runtime.
 5. Sửa file này ảnh hưởng: Stage 1, Stage 2 mode `..._with_mhcac_prompt`, và mọi
    checkpoint cũ (shape state dict).
+6. `capture_streams` không đổi chữ ký forward. BioViL được giữ trước
+   `cnn_downsampler`; stream khác được giữ sau resize để mang lưới không gian đúng.
 
 ## Source relationships
 

@@ -1,21 +1,22 @@
 > Source: `mhcac/`
-> Status: ✅ ACTIVE (chỉ 3/16 file)
-> Last verified against source: 2026-08-12
+> Status: ✅ ACTIVE (4/18 file active hoặc conditional)
+> Last verified against source: 2026-08-13
 
 # `mhcac/`
 
 ## Purpose
 
 **M**ulti-**H**ead **C**ross-**A**ttention **C**lassification — khối phân loại 14
-bệnh lý × 3 lớp, cộng toàn bộ hàm loss của Stage 1 và module hợp nhất đa view.
+bệnh lý × 3 lớp, cộng các hàm loss của Stage 1 và module hợp nhất đa view.
 
-## ⚠ Đọc trước: chỉ 3 trong 16 file đang được dùng
+## ⚠ Đọc trước: chỉ 4 trong 18 file đang được dùng
 
 | File | Status | Bằng chứng |
 |---|---|---|
-| `mhcac_12.py` | ✅ | `blip2_qformer.py:23` |
-| `loss.py` | ✅ | `blip2_qformer.py:35` |
-| `view_fusion.py` | 🟡 | `blip2_qformer.py:41`, chỉ khi `multi_view: true` |
+| `mhcac_12.py` | ✅ | `blip2_qformer.py:24` |
+| `explanation.py` | 🟡 | explanation-aware loss, chỉ khi `lambda_explanation > 0` |
+| `loss.py` | ✅ | `blip2_qformer.py:36` |
+| `view_fusion.py` | 🟡 | `blip2_qformer.py:42`, chỉ khi `multi_view: true` |
 | `mhcac.py`, `mhcac_2.py` … `mhcac_11.py` (11 file) | 🕰 | **zero reference** |
 | `utils.py` (624 dòng) | 🕰 | ⚠ **không còn caller nào** — notebook 03 đã bị xóa 2026-08-13 |
 | `aggregator.py` | 🕰 | không có `import`; chỉ còn chuỗi `"aggregator"` trong freeze-list `runner_base.py:189` |
@@ -46,7 +47,8 @@ trọng nhất của Stage 1.
 
 | File | Doc | Status | Vai trò |
 |---|---|---|---|
-| `mhcac_12.py` (448) | [📄](mhcac_12.py.doc.md) | ✅ | `AbnormalityClassificationModel` + 4 module phụ |
+| `mhcac_12.py` (471) | [📄](mhcac_12.py.doc.md) | ✅ | `AbnormalityClassificationModel` + 4 module phụ |
+| `explanation.py` (160) | [📄](explanation.py.doc.md) | 🟡 | Logit Difference Squared, Grad-CAM, explanation loss, warmup |
 | `loss.py` (628) | [📄](loss.py.doc.md) | ✅ | `ClassificationLoss`, `soft_target_kl_loss`, `MultiPositiveContrastiveLoss`, `view_consistency_loss`, `AbnormalitySpecificLoss`, `AttentionLoss` |
 | `view_fusion.py` | [📄](view_fusion.py.doc.md) | 🟡 | `ViewFusionModule`, `ViewFusionBlock` |
 | `__init__.py` | — | ✅ | **Rỗng** — mọi import phải nêu đủ tên module |
@@ -57,7 +59,8 @@ trọng nhất của Stage 1.
 1. **Phân loại** — 14 expert token cross-attend vào token thị giác qua 6 lớp.
 2. **Teacher/student** — cùng một module, hai chế độ, phân biệt bằng
    `text_embeddings=None` hay không.
-3. **Toàn bộ loss Stage 1** — `loss.py` là nơi duy nhất định nghĩa chúng.
+3. **Loss Stage 1** — objective cũ ở `loss.py`; explanation-aware objective khả vi
+   bậc hai ở `explanation.py`.
 4. **Hợp nhất đa view** — `view_fusion.py`, một module cho mỗi encoder.
 
 ## Entry points
@@ -73,8 +76,9 @@ thuộc `vision_encoders/` (nhận `SharedVisualTokens` như một duck-typed ob
 
 | Ai | Import gì |
 |---|---|
-| `model/lavis/models/blip2_models/blip2_qformer.py` | `:23` `mhcac_12.AbnormalityClassificationModel` · `:35` `loss.*` · `:41` `view_fusion.ViewFusionModule` |
+| `model/lavis/models/blip2_models/blip2_qformer.py` | `mhcac_12.AbnormalityClassificationModel` · `explanation.{ExplanationLoss, explanation_lambda}` · `loss.*` · `view_fusion.ViewFusionModule` |
 | `tests/test_stage1_objectives.py` | `mhcac_12`, `loss` |
+| `tests/test_explanation_loss.py` | `explanation`, `mhcac_12` |
 | `tests/test_view_fusion.py` | `view_fusion` |
 | `tests/test_multiview_losses.py` | `loss.MultiPositiveContrastiveLoss`, `view_consistency_loss` |
 
@@ -88,6 +92,7 @@ Blip2Qformer.forward()
    │  embedding_alignment → slice theo spans → pos_enc → 6 lớp attention
    │     ↓
    │  expert_loss → orth/contrastive/sparsity     14 × classifier → logits
+   │     └─ khi bật: stashed stream + logits → ExplanationLoss
    │
    ├─ mhcac(shared_visual, text_embeddings=<text>)                      ← TEACHER
    │
@@ -110,12 +115,13 @@ Trong khối `model:` của run YAML:
 | `mhcac.class_weights` | 14×3 sqrt inverse-frequency | `[]` → tắt weighting (ablation) |
 | `multi_view` | `false` (prod: `true`) | Có dựng `ViewFusionModule` không |
 | `view_fusion.*` | heads 8, ffn_ratio 4, blocks 1, dropout 0.1, p_view_drop 0.15 | |
-| `loss.lambda_*` | xem [ARCHITECTURE.md §2.6](../_meta/ARCHITECTURE.md#26-tổng-hợp-loss) | Trọng số 11 loss |
+| `loss.lambda_*` | xem [ARCHITECTURE.md §2.6](../_meta/ARCHITECTURE.md#26-tổng-hợp-loss) | Trọng số loss, gồm `lambda_explanation` conditional |
+| `explanation.*` | top-k, warmup, danh sách stream | Chỉ có hiệu lực khi lambda > 0 |
 
 ## Status
 
 ```text
-✅ ACTIVE — nhưng chỉ 3/16 file
+✅ ACTIVE — 4/18 file active hoặc conditional
 ```
 
 ## Notes
@@ -138,6 +144,7 @@ Trong khối `model:` của run YAML:
 - [ARCHITECTURE.md §2.4](../_meta/ARCHITECTURE.md#24-mhcac--phân-loại-bất-thường)
 - [GLOSSARY: MHCAC](../_meta/GLOSSARY.md#mhcac) · [P/N/U](../_meta/GLOSSARY.md#pnu) · [Teacher/student](../_meta/GLOSSARY.md#teacherstudent)
 - [`blip2_qformer.py`](../model/lavis/models/blip2_models/blip2_qformer.py.doc.md)
+- [`explanation.py`](explanation.py.doc.md)
 - [`tests/_index.md`](../tests/_index.md)
 
 ← [Về HOME](../../HOME.md)
