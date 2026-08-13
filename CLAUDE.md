@@ -94,8 +94,14 @@ pip install pre-commit && pre-commit install
 python scripts/vm_preflight.py --stage 1
 
 # Stage 1 — the only supported recipe. Single GPU; there is no DDP variant left.
-CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+# Launch it PLAIN, not through torch.distributed.run: with one GPU and
+# run.distributed=false, torchrun only sets RANK/WORLD_SIZE, which sends
+# init_distributed_mode down its distributed branch for no benefit. This plain
+# form is what produced the existing checkpoint (wandb metadata: program =
+# "-m pretraining.train"). torchrun does work now that run.dist_url is present,
+# but it buys nothing here.
+CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 # Those three overrides are what the completed 10-epoch run actually used on the
 # 5060 Ti. The YAML's own defaults (batch 8 / accum 8) fit in 16 GB but were not

@@ -431,9 +431,9 @@ CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q
 # Preflight trước mọi run GPU
 python scripts/vm_preflight.py --stage 1
 
-# Stage 1 — ba override là setting đã tạo ra checkpoint_best hiện tại
-CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+# Stage 1 — chạy plain, ba override là setting đã tạo ra checkpoint_best hiện tại
+CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 
 # Stage 2 (smoke)

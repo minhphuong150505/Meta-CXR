@@ -41,8 +41,6 @@ model:
     # study-level train split; [] disables weighting for an ablation.
     label_smoothing: 0.05
 
-  # Teacher receives report text only during training. The deployed student is
-  # image-only and learns both ground-truth classification and teacher logits.
   # CLASSIFICATION-ONLY RECIPE (2026-08-13). The objective now matches upstream
   # META-CXR (DasithEdirisinghe/META-CXR @ e97d709, blip2_qformer.py:477):
   #     loss = cls + 0.3*contrastive + 0.7*orthogonality + 0.3*sparsity
@@ -81,7 +79,8 @@ model:
     lambda_sparsity: 0.3
     lambda_mpc: 0.1
     lambda_view_consistency: 0.05
-    # Detached cross-batch negatives make ITC meaningful at microbatch=2.
+    # Only read when lambda_itc > 0; inert under the classification-only recipe.
+    # Kept so re-enabling ITC does not also require rediscovering this value.
     itc_queue_size: 1024
 
   multi_view: true
@@ -199,5 +198,11 @@ run:
   device: cuda
   world_size: 1
   distributed: false
+  # Required whenever RANK/WORLD_SIZE are in the environment, which
+  # torch.distributed.run always sets: dist_utils.init_distributed_mode reads
+  # run.dist_url unconditionally on that path. Its absence is why launching this
+  # config through torchrun died with "Missing key dist_url". Both sibling
+  # configs have always carried it.
+  dist_url: "env://"
   find_unused_parameters: false
   use_dist_eval_sampler: false

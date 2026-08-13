@@ -18,13 +18,13 @@ Phân loại: `PRIMARY` (đường chính) · `UTILITY` (hỗ trợ) · `EXPERIM
 
 | | |
 |---|---|
-| Lệnh | `python -m torch.distributed.run --standalone --nproc_per_node=1 -m pretraining.train --cfg-path <yaml>` |
+| Lệnh | `python -m pretraining.train --cfg-path <yaml>` (plain, **không** cần torchrun) |
 | Pipeline | [P1](PIPELINES.md#p1--stage-1-pretraining) |
 | Args | `--cfg-path` (bắt buộc), `--local_rank`, `--options k=v …` |
 | Status | ✅ PRIMARY |
 | Doc | [`pretraining/train.py.doc.md`](../pretraining/train.py.doc.md) |
 
-Phải chạy qua `torch.distributed.run` kể cả với 1 GPU — `init_distributed_mode`
+Chạy plain với 1 GPU. `init_distributed_mode`
 đọc `RANK`/`WORLD_SIZE`/`LOCAL_RANK` do torchrun đặt.
 
 ### `training/run_medgemma_qlora.py`

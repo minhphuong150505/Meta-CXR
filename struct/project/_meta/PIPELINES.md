@@ -38,12 +38,12 @@ một thứ — mỗi cái có entrypoint, input, output và điều kiện tiê
 > `git pull origin main` **trước khi chạy**.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 ```
 
-Chỉ còn một GPU nên không còn biến thể DDP nào; `--nproc_per_node` luôn là `1`.
+Chỉ còn một GPU nên không còn DDP; chạy plain, **không** qua `torch.distributed.run`.
 
 ### Config bắt buộc
 

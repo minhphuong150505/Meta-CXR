@@ -15,7 +15,7 @@ Trang này phục vụ cả hai hướng đọc: **top-down** (từ entrypoint x
 ## 1. Stage 1 — top-down
 
 ```text
-python -m torch.distributed.run … -m pretraining.train --cfg-path <yaml>
+python -m pretraining.train --cfg-path <yaml>
 │
 └─ pretraining/train.py :: main()                                      ← ENTRYPOINT
    │

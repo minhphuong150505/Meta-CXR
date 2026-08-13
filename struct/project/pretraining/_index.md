@@ -49,7 +49,7 @@ pretraining/  ──►  checkpoint_best.pth  ──►  training/  (chỉ mode 
 
 1. **Parse config** — `Config(parse_args())` từ `model/lavis/common/config.py`.
 2. **Khởi tạo distributed** — `init_distributed_mode(cfg)` đọc `RANK`/`WORLD_SIZE`/
-   `LOCAL_RANK` do `torchrun` đặt. Phải chạy qua `torch.distributed.run` kể cả với 1 GPU.
+   `LOCAL_RANK`. Không có chúng thì in `Not using distributed mode` và chạy đơn tiến trình — đúng đường dùng ở đây.
 3. **Seed** — `seed = cfg.run_cfg.seed + get_rank()`, `cudnn.deterministic = True`.
 4. **W&B** — chỉ rank 0 log thật; rank khác dùng `mode="disabled"` để chặn call lạc.
 5. **Dựng dataset** — ba `MIMIC_CXR_Dataset` (train/val/test), có hỗ trợ `truncate`.
@@ -64,17 +64,23 @@ pretraining/  ──►  checkpoint_best.pth  ──►  training/  (chỉ mode 
 > `git pull origin main` **trước khi chạy**.
 
 ```bash
-# Production, 1 GPU — recipe duy nhất
-CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+# Production, 1 GPU — recipe duy nhất. Chạy PLAIN, không qua torch.distributed.run.
+CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 
 # Feature cache (tùy chọn)
 python -m pretraining.precompute_features --cfg-path <yaml> --options model.encoders.biovil=true
 ```
 
-⚠ **Phải dùng `torch.distributed.run`**, không chạy `python pretraining/train.py`
-trực tiếp — `init_distributed_mode` cần các biến môi trường mà torchrun đặt.
+⚠ **Chạy `python -m pretraining.train`, không phải `python pretraining/train.py`**
+(cần import theo package). **Không cần `torch.distributed.run`**: với một GPU và
+`run.distributed: false`, torchrun chỉ đặt `RANK`/`WORLD_SIZE` khiến
+`init_distributed_mode` đi vào nhánh distributed mà không được lợi gì. Đây cũng là
+lệnh đã tạo ra checkpoint hiện có (wandb metadata: `program = "-m pretraining.train"`).
+
+📝 `run.dist_url` từng **thiếu** trong `mimic_cxr_full.yaml`, nên lệnh torchrun mà
+tài liệu cũ ghi luôn chết với `Missing key dist_url`. Đã bổ sung 2026-08-13.
 
 ## Dependencies
 
