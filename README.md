@@ -210,8 +210,8 @@ chạy tối đa 20 epoch, early stopping patience 5 và chọn checkpoint theo
 macro-AUPRC; logits validation được lưu để calibrate threshold F1 sau đó.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-  -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml
+CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
+  --cfg-path pretraining/configs/mimic_cxr_full.yaml
 ```
 
 Sau khi train, calibrate threshold chỉ trên prediction của validation từ
@@ -265,7 +265,7 @@ python scripts/evaluate_stage2.py \
 ## Hỗ trợ nhiều GPU
 
 Máy train chỉ có một GPU nên đây không còn là workflow được hỗ trợ. Stage 1 vẫn
-gọi qua `torch.distributed.run` với `--nproc_per_node=1`; code DDP còn trong
+chạy plain (một tiến trình); code DDP còn trong
 LAVIS fork nhưng không có config nào dùng và chưa từng được test. Stage 2
 **không hỗ trợ DDP** và không dùng `device_map` rộng để thay thế.
 

@@ -48,10 +48,10 @@ Inference ❌ (dùng `inference.py` hoặc Stage 2)
 
 ## Entry point
 
-Có. **Bắt buộc chạy qua `torch.distributed.run`**, kể cả 1 GPU:
+Có. Chạy **plain**, không cần `torch.distributed.run` (1 GPU, `run.distributed: false`):
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
+CUDA_VISIBLE_DEVICES=0 python \
     -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml
 ```
 
@@ -173,7 +173,7 @@ main()
 
 | Ai | Cách |
 |---|---|
-| Người dùng | `python -m torch.distributed.run … -m pretraining.train` |
+| Người dùng | `python -m pretraining.train` (plain, qua SSH vào máy train) |
 
 Không module Python nào import file này — nó là lá của cây gọi hàm.
 

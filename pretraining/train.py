@@ -36,7 +36,8 @@ from model.lavis.tasks import *
 from model.lavis.data.ReportDataset import MIMIC_CXR_Dataset
 
 
-# python -m torch.distributed.run --standalone --nproc_per_node=1 -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml
+# python -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml
+# Single GPU: launch plain. torchrun works too (run.dist_url is set) but adds nothing.
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Training")
