@@ -1,13 +1,13 @@
-> Source: `scripts/` (11 file)
+> Source: `scripts/` (12 file)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-13
 
 # `scripts/`
 
 ## Purpose
 
 CLI cho những việc **không phải training**: preflight, calibrate, evaluate, phân
-tích prompt, và guard quyền riêng tư.
+tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 
 ## Parent
 
@@ -38,6 +38,12 @@ tích prompt, và guard quyền riêng tư.
 | `export_stage2_prompt_samples.py` | [📄](export_stage2_prompt_samples.py.doc.md) | 🧪 | ⚠ **Output CHỨA findings text** — `--output` phải ở nơi riêng tư |
 | `prompt_length_statistics.py` | [📄](prompt_length_statistics.py.doc.md) | 🧪 | Không có tokenizer MedGemma → fallback whitespace, đánh dấu `"approximate": true` |
 | `audit_temporal_targets.py` | [📄](audit_temporal_targets.py.doc.md) | 🧪 | Đo ngôn ngữ so sánh thời gian khi input không có prior |
+
+### Chẩn đoán kiến trúc
+
+| File | Doc | Status | Vai trò |
+|---|---|---|---|
+| `diagnose_stream_scale.py` (231) | [📄](diagnose_stream_scale.py.doc.md) | 🔬 | Đo RMS token mỗi encoder tại điểm nối + attention mass của MHCAC. **Read-only** — đo được chênh lệch **32×**, xem trang doc |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |
 
