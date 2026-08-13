@@ -13,7 +13,31 @@ stopping, cadence lưu, đóng băng tham số, resume, và gọi eval.
 
 `pretraining/train.py` chỉ lắp ráp. Toàn bộ **chính sách huấn luyện** sống ở đây.
 Đây là bản LAVIS đã sửa nhiều: `selection_metric`, `early_stop_patience`,
-`save_freq`, freeze-list là bổ sung của Meta-CXR.
+`eval_start_epoch`, `save_freq`, freeze-list là bổ sung của Meta-CXR.
+
+### ⚠ `eval_start_epoch` — cửa sổ warm-up không chấm điểm
+
+`run.eval_start_epoch` (mặc định `0`) bỏ qua validation cho các epoch có index nhỏ
+hơn nó. Đếm theo **index**, khớp log train: `epoch: [5]` là epoch thứ sáu.
+
+Hai hành vi đi kèm, cả hai đều quan trọng:
+
+1. **Không epoch nào chưa chấm có thể được chọn.** `checkpoint_best` chỉ được ghi
+   *bên trong* nhánh evaluation, nên bỏ eval cũng đồng thời loại epoch đó khỏi
+   diện tuyển. Cùng một knob, cố ý.
+2. **Patience chỉ đếm epoch đã chấm.** `best_epoch` khởi tạo bằng `0` trong khi
+   epoch chấm đầu tiên là `eval_start_epoch`, nên điều kiện dừng được kẹp thành
+   `cur_epoch - max(best_epoch, eval_start_epoch) >= early_stop_patience`. Nếu đo
+   từ `best_epoch` trần, toàn bộ ngân sách patience bị tiêu bởi các epoch chưa
+   từng eval và run **chết ngay ở epoch chấm đầu tiên** mà chưa lưu best nào —
+   log ghi "early stopping", trông y hệt hội tụ. Với `eval_start_epoch: 0` biểu
+   thức này bằng đúng hành vi cũ.
+
+⚠ **Số học của config hiện tại:** `eval_start_epoch` 5 + `patience` 5 = 10, mà
+index cuối của run 10 epoch là `[9]`. **Early stopping không thể kích hoạt.** Vô
+hại (run kết thúc ở [9] dù thế nào) nhưng giá trị đang bất động; muốn nó sống thì
+đặt patience ≤ 4. Có test khẳng định điều này để việc đổi `max_epoch` không âm thầm
+làm sai.
 
 ## Role in architecture
 
@@ -51,10 +75,11 @@ log W&B, và (qua task) `.npz` prediction.
 
 | Property | Config key | Mặc định prod |
 |---|---|---|
-| `max_epoch` | `run.max_epoch` | 20 |
+| `max_epoch` | `run.max_epoch` | **10** |
+| `eval_start_epoch` | `run.eval_start_epoch` | **5** — epoch index đầu tiên được chấm; [0]–[4] chỉ train |
 | `selection_metric` | `run.selection_metric` | **`macro_auprc`** ⚠ không phải `f1_positive_macro` |
 | `selection_mode` | `run.selection_mode` | `max` |
-| `early_stop_patience` | `run.early_stop_patience` | 5 |
+| `early_stop_patience` | `run.early_stop_patience` | 5 — ⚠ **hiện không thể kích hoạt**, xem ghi chú dưới |
 | `early_stop_min_delta` | `run.early_stop_min_delta` | 1.0e-4 |
 | `save_freq` | `run.save_freq` | 5 (`0` → chỉ best + last) |
 | `accum_grad_iters` | `run.accum_grad_iters` | 8 |

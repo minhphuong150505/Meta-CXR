@@ -1,4 +1,4 @@
-> Source: `model/lavis/runners/runner_base.py:553-654`
+> Source: `model/lavis/runners/runner_base.py:571-690`
 > Status: ✅ ACTIVE
 
 # `RunnerBase.validate(cur_epoch, best_agg_metric, best_epoch, wandb_run)`
@@ -10,8 +10,16 @@
 ## Purpose
 Chạy eval trên **toàn bộ** validation split, gộp qua rank, so với best.
 
+⚠ **Bỏ qua eval khi `cur_epoch < run.eval_start_epoch`** (chỉ với run train; run
+`evaluate_only` truyền `cur_epoch="provided"` nên không bao giờ bị bỏ). Phần lưu
+`checkpoint_last` / `save_freq` ở cuối hàm **vẫn chạy**, nên mốc resume không mất.
+Vì `checkpoint_best` chỉ ghi trong nhánh eval, epoch bị bỏ cũng tự động không thể
+được tuyển.
+
 ## Execution flow
 ```text
+cur_epoch < eval_start_epoch ?  → log + bỏ qua eval, nhảy xuống save checkpoint_last
+   ↓ (ngược lại)
 eval_epoch("val", cur_epoch)  → ImageTextPretrainTask.evaluation
    ↓
 _reduce_eval_stats(eval_stats)          ← gộp qua các rank DDP

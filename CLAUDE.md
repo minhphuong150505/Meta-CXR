@@ -157,11 +157,27 @@ study (not image) → anchor + ≤1 auxiliary view
   Studies with no auxiliary view are gated to zero, not dropped from the batch.
 - `mhcac/loss.py` holds every loss; `ClassificationLoss` takes a `sample_mask` so
   unlabelled rows contribute nothing. `soft_target_kl_loss` detaches the teacher.
-- Production config `mimic_cxr_full_l4.yaml`: 20 epochs, early stop patience 5,
-  `selection_metric: macro_auprc` on **validation only**, bf16 AMP, `save_freq: 5`,
-  `warmup_steps: 300` counted in **optimizer updates, not microbatches**.
-  Thresholds are calibrated post-hoc from `checkpoint_best` validation logits.
-  The test split is held out of checkpoint selection entirely.
+- Production config `mimic_cxr_full.yaml`: **10 epochs**, `selection_metric:
+  macro_auprc` on **validation only**, bf16 AMP, `save_freq: 5`, `warmup_steps:
+  300` counted in **optimizer updates, not microbatches**. Thresholds are
+  calibrated post-hoc from `checkpoint_best` validation logits. The test split is
+  held out of checkpoint selection entirely.
+- **`run.eval_start_epoch: 5` — the first five epochs train without being
+  scored.** Validation over the full split is expensive and the early epochs are
+  never the ones selected, so skipping them buys wall-clock time. The knob counts
+  epoch *indices*, matching the training log: `epoch: [5]` is the sixth.
+  Because `checkpoint_best` is only written inside the evaluation branch, the
+  same knob guarantees no unscored epoch can ever be selected. Default 0
+  restores the historical behaviour.
+- **Early-stop patience counts scored epochs only.** The window is clamped to
+  open at `eval_start_epoch` (`cur_epoch - max(best_epoch, eval_start_epoch)`),
+  because `best_epoch` initialises to 0: measuring from it alone would spend the
+  whole budget on unscored epochs and kill the run on its first scored epoch,
+  logging "early stopping", which reads like convergence. With the shipped
+  values (10 epochs, eval from [5], patience 5) the earliest possible stop is
+  [10] and the last epoch is [9], so **early stopping cannot fire** — inert, not
+  broken. Set patience to 4 or less to make it live. Covered by
+  `tests/test_eval_start_epoch.py`.
 - Note the `data:` block must sit **inside** `model:` — `Config` merges only
   `run`/`model`/`datasets`.
 - `mimic_cxr_2gpu.yaml` is legacy (`multi_view: false`, `warmup_steps: 32000`

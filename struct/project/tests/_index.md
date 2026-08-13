@@ -1,6 +1,6 @@
-> Source: `tests/` (31 file, 6.514 LOC)
+> Source: `tests/` (32 file)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-13
 
 # `tests/`
 
@@ -70,6 +70,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | `test_stage1_eval_hook.py` (183) | Eval hook ⚠ cần `model.lavis` |
 | `test_mimic_data_pipeline.py` | Study sampling — nạp `mimic_cxr_utils.py` theo path |
 | `test_training_core.py` | Scheduler giữ `lr_scale`, đuôi accumulation |
+| `test_eval_start_epoch.py` (20 test) | Cửa sổ warm-up `run.eval_start_epoch`: epoch [0]–[4] không eval và **không thể được tuyển làm best**; patience chỉ đếm epoch đã chấm (kẹp `max(best_epoch, eval_start_epoch)`), nếu không run chết ngay ở epoch chấm đầu tiên và log ra như hội tụ. Cũng khẳng định config hiện tại **không thể** early stop |
 
 ## Nhóm 3 — Stage 2: mode, soft token, capability
 
