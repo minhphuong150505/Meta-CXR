@@ -1,4 +1,4 @@
-> Source: `model/lavis/models/blip2_models/blip2_qformer.py:119-1497`
+> Source: `model/lavis/models/blip2_models/blip2_qformer.py:120-1632`
 > Status: ✅ ACTIVE
 
 # `class Blip2Qformer(Blip2Base)`
@@ -9,7 +9,7 @@
 
 ## Responsibility
 Toàn bộ Stage 1 trong một class: 3 encoder đóng băng, view fusion, shared
-projector, MHCAC, Q-Former, và tổng hợp 11 loss.
+projector, MHCAC, Q-Former, và tổng hợp 12 loss.
 
 ## Inheritance
 `Blip2Base` (`model/lavis/models/blip2_models/blip2.py`) — cung cấp `init_tokenizer`,
@@ -18,7 +18,7 @@ projector, MHCAC, Q-Former, và tổng hợp 11 loss.
 Đăng ký hai tên registry: `"blip2"` và `"blip2_feature_extractor"`.
 
 ## Constructor
-`__init__` nhận **44 tham số**; xem [trang riêng](__init__.md). Dựng bởi
+`__init__` nhận **43 tham số ngoài self**; xem [trang riêng](__init__.md). Dựng bởi
 [`from_config`](../from_config.md), không bao giờ gọi trực tiếp.
 
 ## Sub-module (thứ trainable)
@@ -32,6 +32,7 @@ projector, MHCAC, Q-Former, và tổng hợp 11 loss.
 | `Qformer` + `query_tokens` | Q-Former | ✅ |
 | `vision_proj`, `text_proj`, `itm_head`, `temp` | head | ✅ |
 | `cls_loss_fn`, `mpc_loss_fn` | loss | — |
+| `explanation_loss_fn` | `ExplanationLoss` hoặc `None` | —; chỉ dựng khi lambda > 0 |
 
 ## Buffer (không persistent)
 `itc_image_queue [1024,32,256]` fp16 · `itc_text_queue [1024,256]` fp16 ·
@@ -44,9 +45,14 @@ resume bắt đầu với queue rỗng.
 `_last_prefusion_streams` (reset mỗi `_encode_image_streams`) ·
 `_last_raddino_patches` · `_keep_prefusion` (bool cố định lúc `__init__`)
 
+`current_epoch` điều khiển warmup; `explanation_streams` giới hạn stream được giám
+sát. Activation CAM chỉ sống trong local của `forward`, không được giữ sau return.
+
 ## Lifecycle
 ```text
 from_config(cfg) → __init__ → load_checkpoint_from_config
+   ↓
+set_epoch(epoch) → current_epoch
    ↓ (mỗi batch)
 forward(samples) → BlipOutput
    ↓ (inference/Stage 2)
@@ -54,7 +60,8 @@ generate(samples) hoặc lấy Q-Former output
 ```
 
 ## Public methods
-[`forward`](forward.md) ★ · `generate` · `compute_sim_matrix` · `initialize_expert_tokens`
+[`forward`](forward.md) ★ · [`set_epoch`](set_epoch.md) · `generate` ·
+`compute_sim_matrix` · `initialize_expert_tokens`
 
 ## Private methods quan trọng
 [`_encode_image_streams`](_encode_image_streams.md) ★ ·
@@ -65,7 +72,7 @@ generate(samples) hoặc lấy Q-Former output
 [`_update_itc_queue`](_update_itc_queue.md)
 
 ## Dependencies
-`mhcac.mhcac_12`, `mhcac.loss`, `mhcac.view_fusion`, `vision_encoders.*`,
+`mhcac.mhcac_12`, `mhcac.explanation`, `mhcac.loss`, `mhcac.view_fusion`, `vision_encoders.*`,
 `biovil_t.*`, `Qformer`, `blip_outputs.BlipOutput`
 
 ## Callers

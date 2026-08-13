@@ -92,6 +92,8 @@ class BlipOutput(ModelOutput):
     
     loss_sparsity: Optional[torch.FloatTensor] = None
 
+    loss_explanation: Optional[torch.FloatTensor] = None
+
     loss_mpc: Optional[torch.FloatTensor] = None
 
     loss_view_consistency: Optional[torch.FloatTensor] = None

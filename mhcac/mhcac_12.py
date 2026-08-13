@@ -314,6 +314,9 @@ class AbnormalityClassificationModel(nn.Module):
             nn.init.xavier_uniform_(self.cnn_downsampler.downsampler.weight)
             nn.init.constant_(self.cnn_downsampler.downsampler.bias, 0)
 
+        self.capture_streams = False
+        self._last_cam_streams = None
+
     def _resize_patch_sequence(self, patches):
         if patches is None:
             return None
@@ -367,6 +370,7 @@ class AbnormalityClassificationModel(nn.Module):
         ``target_patch_count``; the projection to ``embed_dim`` happens once, on the
         merged tensor, so MHCAC and META-Former share one visual representation.
         """
+        self._last_cam_streams = {} if self.capture_streams else None
         tokens = shared_visual_tokens.tokens
         spans = shared_visual_tokens.spans
         if tokens.ndim != 3:
@@ -396,13 +400,32 @@ class AbnormalityClassificationModel(nn.Module):
         image_streams = []
         for name, span in sorted(spans.items(), key=lambda item: item[1].start):
             stream = visual_proj[:, span, :]
-            if name == "biovil" and self.cnn_downsampler is not None:
-                # Learned 196 -> target_patch_count reduction, kept from the
-                # original CNN path. It now runs at embed_dim, after the shared
-                # projection, so it no longer constitutes a separate projection.
-                stream = self.cnn_downsampler(stream)
+            if name == "biovil":
+                if self.capture_streams:
+                    stream = stream.float()
+                grid_size = int(stream.size(1) ** 0.5)
+                if self.capture_streams and grid_size * grid_size == stream.size(1):
+                    self._last_cam_streams[name] = (
+                        stream,
+                        (grid_size, grid_size),
+                    )
+                if self.cnn_downsampler is not None:
+                    # Learned 196 -> target_patch_count reduction, kept from the
+                    # original CNN path. It now runs at embed_dim, after the shared
+                    # projection, so it no longer constitutes a separate projection.
+                    stream = self.cnn_downsampler(stream)
+                else:
+                    stream = self._resize_patch_sequence(stream)
             else:
                 stream = self._resize_patch_sequence(stream)
+                if self.capture_streams:
+                    stream = stream.float()
+                grid_size = int(stream.size(1) ** 0.5)
+                if self.capture_streams and grid_size * grid_size == stream.size(1):
+                    self._last_cam_streams[name] = (
+                        stream,
+                        (grid_size, grid_size),
+                    )
             image_streams.append(self.pos_enc(stream))
         if not image_streams:
             raise ValueError("No image stream was provided to MHCAC.")

@@ -1,4 +1,4 @@
-> Source: `mhcac/mhcac_12.py:317-353`
+> Source: `mhcac/mhcac_12.py:320-356`
 > Status: ✅ ACTIVE
 
 # `AbnormalityClassificationModel._resize_patch_sequence(patches)`

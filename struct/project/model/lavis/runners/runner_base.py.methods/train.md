@@ -1,4 +1,4 @@
-> Source: `model/lavis/runners/runner_base.py:656-781`
+> Source: `model/lavis/runners/runner_base.py:692-826`
 > Status: ✅ ACTIVE
 
 # `RunnerBase.train(wandb_run)`
@@ -15,7 +15,8 @@ Vòng epoch: train → validate → chọn checkpoint → early stop → test m�
 resume_ckpt_path có → _load_checkpoint()
    ↓
 FOR epoch in range(max_epoch):
-   train_epoch(epoch)                    → task.train_epoch → _train_inner_loop
+   train_epoch(epoch) → model.set_epoch(epoch), nếu có
+                      → task.train_epoch → _train_inner_loop
    validate(epoch, best, best_epoch, wandb_run)
    _metric_improved(value, best)?
       ✓ → _save_checkpoint(is_best=True)  → checkpoint_best.pth ; reset counter

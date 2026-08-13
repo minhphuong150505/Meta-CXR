@@ -839,6 +839,8 @@ class RunnerBase:
 
     def train_epoch(self, epoch):
         # train
+        if hasattr(self._model, "set_epoch"):
+            self._model.set_epoch(epoch)
         self.model.train()
 
         return self.task.train_epoch(

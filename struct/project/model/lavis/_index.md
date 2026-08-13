@@ -1,6 +1,6 @@
-> Source: `model/lavis/` (34 file Python, 10.908 LOC)
+> Source: `model/lavis/` (34 file Python, 11.092 LOC)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-13
 
 # `model/lavis/`
 
@@ -30,9 +30,9 @@ Quyết định phạm vi: [D-007](../../_meta/DECISIONS.md#d-007--độ-sâu-do
 
 | File | LOC | Doc | Vai trò |
 |---|---|---|---|
-| `models/blip2_models/blip2_qformer.py` | 1497 | [📄](models/blip2_models/blip2_qformer.py.doc.md) | ★ **Trung tâm Stage 1** — encoder, fusion, MHCAC, Q-Former, 11 loss, inference ablation |
+| `models/blip2_models/blip2_qformer.py` | 1632 | [📄](models/blip2_models/blip2_qformer.py.doc.md) | ★ **Trung tâm Stage 1** — encoder, fusion, MHCAC, Q-Former, 12 loss, inference ablation |
 | `models/blip2_models/Qformer.py` | 1221 | [📄](models/blip2_models/Qformer.py.doc.md) | Q-Former (BERT + cross-attention) |
-| `runners/runner_base.py` | 1182 | [📄](runners/runner_base.py.doc.md) | ★ Train loop, checkpoint selection, early stopping, resume-in-place, freeze |
+| `runners/runner_base.py` | 1229 | [📄](runners/runner_base.py.doc.md) | ★ Train loop, epoch hook, checkpoint selection, early stopping, resume-in-place, freeze |
 | `data/ReportDataset.py` | 1130 | [📄](data/ReportDataset.py.doc.md) | ★ `MIMIC_CXR_Dataset`, study sampling, mask, collate |
 | `models/blip2_models/modeling_llama_imgemb.py` | 975 | [📄](models/blip2_models/modeling_llama_imgemb.py.doc.md) | Llama có inject image embedding (đường Vicuna) |
 | `tasks/image_text_pretrain.py` | 320 | [📄](tasks/image_text_pretrain.py.doc.md) | Task hook, gọi evaluator Stage 1 |
@@ -50,7 +50,7 @@ Quyết định phạm vi: [D-007](../../_meta/DECISIONS.md#d-007--độ-sâu-do
 | `common/gradcam.py` | — | GradCAM (không dùng trong đường chính) | upstream |
 | `models/base_model.py` | 264 | `BaseModel`, `concat_all_gather` | upstream |
 | `models/blip2_models/blip2.py` | 324 | `Blip2Base` — `init_Qformer`, `init_vision_encoder`, `disabled_train` | ⚠ có (BioViL-T) |
-| `models/blip_models/blip_outputs.py` | 144 | `BlipOutput` — ⚠ mở rộng thêm 11 trường loss của Meta-CXR | ⚠ có |
+| `models/blip_models/blip_outputs.py` | 146 | [📄](models/blip_models/blip_outputs.py.doc.md) — `BlipOutput` có `loss_explanation` conditional | ⚠ có |
 | `models/__init__.py` | 201 | Đăng ký model qua registry | ⚠ có |
 | `data/mimic_cxr_utils.py` | 80 | `view_id()`, `build_study_index()` | ⚠ mới |
 | `datasets/builders/base_dataset_builder.py` | 234 | Dựng dataset từ config | upstream |

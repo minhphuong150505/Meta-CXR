@@ -1,4 +1,4 @@
-> Source: `tests/` (32 file)
+> Source: `tests/` (34 file Python, gồm `conftest.py`)
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-13
 
@@ -62,6 +62,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | Test | Kiểm gì |
 |---|---|
 | `test_stage1_objectives.py` | **Teacher-only text** — student không bao giờ thấy text; shape student khớp inference. Loss từ `mhcac/loss.py` |
+| `test_explanation_loss.py` | Logit Difference Squared, disease-positive gate, Grad-CAM FP32, top-k mềm có gradient, double backprop, warmup, resize mask và vòng đời capture stream |
 | `test_view_fusion.py` | `ViewFusionBlock` là **identity chính xác tại step 0** (zero-init `W_O` + FFN cuối) → checkpoint single-view load không hỏng |
 | `test_multiview_losses.py` | `MultiPositiveContrastiveLoss`, `view_consistency_loss` |
 | `test_shared_visual_tokens.py` (209) | Thứ tự stream chuẩn hóa, `spans` đúng, `without()` zero-out mà không đổi shape, gradient chảy đúng luồng |

@@ -1,6 +1,6 @@
-> Source: `model/lavis/runners/runner_base.py` (1.182 dòng)
+> Source: `model/lavis/runners/runner_base.py` (1.229 dòng)
 > Status: ✅ ACTIVE — ★
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-13
 
 # `runner_base.py`
 
@@ -103,7 +103,7 @@ log W&B, và (qua task) `.npz` prediction.
 | `_load_checkpoint` (`:1010`) | [📄](runner_base.py.methods/_load_checkpoint.md) | Resume |
 | `eval_epoch` (`:806`) | — | Gọi `task.evaluation` cho một split |
 | `evaluate` (`:776`) | — | Reload best rồi eval test |
-| `train_epoch` (`:787`) | — | Ủy quyền cho `task.train_epoch` |
+| `train_epoch` (`:840`) | [📄](runner_base.py.methods/train_epoch.md) | Truyền epoch cho model rồi ủy quyền task |
 | `_metric_improved` (`:488`) | — | So sánh có `min_delta`, theo `selection_mode` |
 | `_reduce_eval_stats` (`:520`) | — | Gộp stats qua các rank |
 | `_reload_best_model` (`:982`) | — | Nạp lại `checkpoint_best` |
@@ -132,7 +132,8 @@ Xem [CALL_GRAPH.md §1](../../../_meta/CALL_GRAPH.md#vòng-train).
 
 ## Side effects
 
-Ghi checkpoint và log · W&B · Cấp phát optimizer/scaler · Thay đổi
+Ghi checkpoint và log · W&B · Cấp phát optimizer/scaler · cập nhật epoch state
+của model nếu có `set_epoch` · Thay đổi
 `requires_grad` của tham số (freeze) · Có thể **xóa** checkpoint resume cục bộ sau
 khi nạp (`:1129`)
 
@@ -184,6 +185,8 @@ logic resume-directory được bảo vệ bởi hành vi `setup_output_dir` và
 4. **`save_freq: 0`** giữ **chỉ** best + last. Một run 20 epoch với `save_freq: 5`
    để lại 4 checkpoint theo epoch + 2.
 5. Sửa file này ảnh hưởng mọi Stage 1 run và gián tiếp Stage 2 mode Q-Former.
+6. `train_epoch` gọi `set_epoch` trên `_model` gốc, không phụ thuộc DDP wrapper;
+   hook có `hasattr` để giữ tương thích với model khác.
 
 ## Source relationships
 

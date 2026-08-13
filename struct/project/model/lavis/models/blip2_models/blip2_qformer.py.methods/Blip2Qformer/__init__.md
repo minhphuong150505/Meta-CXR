@@ -1,4 +1,4 @@
-> Source: `model/lavis/models/blip2_models/blip2_qformer.py:137-404`
+> Source: `model/lavis/models/blip2_models/blip2_qformer.py:138-429`
 > Status: ✅ ACTIVE
 
 # `Blip2Qformer.__init__(...)`
@@ -11,7 +11,7 @@
 Dựng 6 khối con theo đúng thứ tự phụ thuộc, và đăng ký ITC queue.
 
 ## Signature
-44 tham số keyword. Không gọi trực tiếp — dùng [`from_config`](../from_config.md).
+43 tham số ngoài `self`. Không gọi trực tiếp — dùng [`from_config`](../from_config.md).
 
 ## Parameters đáng chú ý
 | Tham số | Default | Ghi chú |
@@ -24,7 +24,9 @@ Dựng 6 khối con theo đúng thứ tự phụ thuộc, và đăng ký ITC que
 | `max_txt_len` | 32 | ⚠ prod đặt 256 |
 | `freeze_vit` | `True` | |
 | `multi_view` | `False` | ⚠ prod `True` |
-| `lambda_*` (11 cái) | xem code | |
+| `lambda_*` (11 objective cũ) | xem code | |
+| `lambda_explanation` | `0.0` | Gate cứng: zero không dựng `ExplanationLoss` |
+| `explanation_cfg` | `None` | `top_k`, warmup và danh sách stream |
 | `itc_queue_size` | 1024 | |
 | `class_weights` | `None` → default 14×3 | `[]` → tắt weighting |
 | `uncertain_policy` | `"three_class"` | ⚠ prod `ignore_uncertain` |
@@ -47,6 +49,7 @@ Dựng 6 khối con theo đúng thứ tự phụ thuộc, và đăng ký ITC que
 14 SharedVisualTokenProjector(shared_stream_dims, VISUAL_DIM)
 15 AbnormalityClassificationModel(embed_dim=768, ..., visual_dim=1408)
 16 ClassificationLoss(class_weights, label_smoothing, uncertain_policy)
+17 IF lambda_explanation > 0: ExplanationLoss(top_k); current_epoch = 0
 ```
 
 ## Detailed logic
@@ -65,6 +68,9 @@ học riêng.
 
 **Bước 13 — một `ViewFusionModule` cho mỗi encoder**, vì mỗi encoder có `D` khác.
 `vf_cfg.pop("dim_source")` (`:305`) bỏ key không phải tham số constructor.
+
+**Bước 17 — gate cứng.** `explanation_loss_fn=None` khi lambda bằng 0. Config
+explanation vẫn có default an toàn nhưng không kéo theo capture hoặc autograd.
 
 ## Side effects
 Cấp phát toàn bộ model; tải weight encoder (mạng lần đầu).

@@ -1,7 +1,7 @@
 # Meta-CXR — Source Code Guide
 
 > Điểm bắt đầu **duy nhất**. Mọi thứ khác đều tới được từ đây.
-> Last verified against source: 2026-08-12 · source through commit `6d5c463` · branch `main`
+> Last verified against source: 2026-08-13 · source through commit `6d5c463` · branch `main`
 
 ---
 
@@ -159,7 +159,7 @@ Meta-CXR-source/
 ├── model/
 │   ├── lavis/                      ✅ fork LAVIS đã sửa (24 file, 10.8k LOC)
 │   │   ├── models/blip2_models/
-│   │   │   ├── blip2_qformer.py         ✅ ★ TRUNG TÂM Stage 1 (1497)
+│   │   │   ├── blip2_qformer.py         ✅ ★ TRUNG TÂM Stage 1 (1632)
 │   │   │   ├── Qformer.py               ✅ (1221)
 │   │   │   ├── blip2.py                 ✅
 │   │   │   └── modeling_llama_imgemb.py ✅ (975, đường Vicuna)
@@ -179,8 +179,9 @@ Meta-CXR-source/
 │       └── errors.py                    ✅
 │
 ├── mhcac/                          ✅ phân loại bất thường
-│   ├── mhcac_12.py                 ✅ ★ bản DUY NHẤT được wire (448)
-│   ├── loss.py                     ✅ ★ toàn bộ 11 loss (628)
+│   ├── mhcac_12.py                 ✅ ★ bản DUY NHẤT được wire (471)
+│   ├── explanation.py              🟡 explanation-aware loss (lambda-gated)
+│   ├── loss.py                     ✅ ★ 11 objective Stage-1 hiện hữu (628)
 │   ├── view_fusion.py              🟡 multi_view: true
 │   ├── utils.py                    🕰 (624 — chỉ notebook legacy gọi)
 │   ├── aggregator.py               🕰 ⚠ chỉ còn string trong freeze-list
@@ -265,7 +266,7 @@ Meta-CXR-source/
 ├── results/                        ✅ Table 5 encoder ablation (4/4 complete)
 │   └── table5_encoder_ablation.{md,json,csv}
 │
-├── tests/                          ✅ 31 file — enforce invariant kiến trúc
+├── tests/                          ✅ 34 file Python — enforce invariant kiến trúc
 │   └── fixtures/notebooks/*.fixture
 │
 ├── utils/                          ⚠ POTENTIALLY_UNUSED — zero import toàn repo
@@ -325,6 +326,7 @@ Meta-CXR-source/
 [📁 Directory documentation](project/mhcac/_index.md)
 
 - [`mhcac_12.py`](project/mhcac/mhcac_12.py.doc.md) ★
+- [`explanation.py`](project/mhcac/explanation.py.doc.md) 🟡
 - [`loss.py`](project/mhcac/loss.py.doc.md) ★
 - [`view_fusion.py`](project/mhcac/view_fusion.py.doc.md)
 
