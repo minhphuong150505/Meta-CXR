@@ -1,7 +1,7 @@
-> Source: `model/lavis/data/ReportDataset.py:627-663`
+> Source: `model/lavis/data/ReportDataset.py:794-841`
 > Status: ✅ ACTIVE
 
-# `MIMIC_CXR_Dataset._row_visual(ann)`
+# `MIMIC_CXR_Dataset._row_visual(ann, explanation_mask=None)`
 
 ## Located in
 
@@ -13,12 +13,15 @@ bảo mật đường dẫn**.
 
 ## Signature
 ```python
-def _row_visual(self, ann) -> dict
+def _row_visual(self, ann, explanation_mask=None) -> dict
 ```
 
 ## Returns
 `{"image_path": str, "image": [3,448,448]}` hoặc
 `{"image_path": str, "<enc>_feat": Tensor, ...}`
+
+Khi anchor truyền `explanation_mask`, dict tạm còn có
+`"explanation_mask": float[112,112]`; `__getitem__` pop rồi đặt lại vào sample.
 
 ## ★ Chốt bảo mật đường dẫn
 ```python
@@ -46,7 +49,12 @@ thay vì âm thầm thoát khỏi `vis_root`.
 chuẩn hóa + validate path
    ↓
 feature_cache is None
-   → out["image"] = general_trans(load_image(Path(image_path)))
+   → explanation_mask is None:
+       out["image"] = optical_trans(geometric_trans(image))  # đường cũ
+   → explanation_mask có:
+       base geometry → sample affine 1 lần
+       image affine bilinear + mask affine nearest
+       optical chỉ áp image; mask trả về 112²
 feature_cache có
    → FOR enc, store in feature_cache:
         dicom_id không có trong store["row"] → KeyError NÊU TÊN + gợi ý sửa
@@ -63,8 +71,13 @@ feature_cache có
 Thông điệp `KeyError` (`:654`) là ví dụ tốt: nó nói **cái gì thiếu, ở đâu, và cách sửa**.
 
 ## Config dependencies
-`paths.mimic_cxr_jpg_root` → `vis_root` · `run.feature_cache_dir`
+`paths.mimic_cxr_jpg_root` → `vis_root` · `run.feature_cache_dir` ·
+`model.explanation.mask_cache_dir`
 
 ## Modification risk
 ⚠ **Đừng nới lỏng validate path.** Nó là thứ ngăn một CSV bị sửa đọc file tùy ý
 trên máy.
+
+⚠ Mask cache đã ở geometry chuẩn 112². Trước affine nó được upsample nearest lên
+448² để cùng translate pixel với ảnh; áp tuple translate 448 trực tiếp ở 112² sẽ
+lệch bốn lần.

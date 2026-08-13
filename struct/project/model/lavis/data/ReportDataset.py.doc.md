@@ -1,6 +1,6 @@
-> Source: `model/lavis/data/ReportDataset.py` (1.130 dòng)
+> Source: `model/lavis/data/ReportDataset.py` (1.335 dòng)
 > Status: ✅ ACTIVE — ★
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-13
 
 # `ReportDataset.py`
 
@@ -8,7 +8,8 @@
 
 Dataset và processor cho Stage 1. Quan trọng nhất là `MIMIC_CXR_Dataset` — nơi
 **study-level sampling**, **anchor/auxiliary selection**, **mask**, và **collate
-ragged** được hiện thực.
+ragged** được hiện thực. Khi cache explanation được cấu hình, đây cũng là nơi
+mask 112² được căn cùng affine với ảnh anchor.
 
 ## Why it exists
 
@@ -41,7 +42,8 @@ Không.
 
 `configs/env_config.yaml` → `VIS_ROOT`, `PROCESSED_{TRAIN,VAL,TEST}_CSV` ·
 `cfg.model_cfg.data.*` (`study_sampling`, `anchor_priority`, `max_aux_views`) ·
-`cfg.datasets_cfg` (image_size, resize_size, augmentation) · `run.feature_cache_dir`
+`cfg.datasets_cfg` (image_size, resize_size, augmentation) · `run.feature_cache_dir` ·
+`model.explanation.mask_cache_dir`
 
 ## Outputs
 
@@ -52,14 +54,14 @@ Dict sample — xem [DATA_FLOW.md §2.2](../../../_meta/DATA_FLOW.md#22-__getite
 | Class | Status | Vai trò |
 |---|---|---|
 | `MIMIC_CXR_Dataset` (`:221`) | ✅ ★ | Dataset chính |
-| `MIMIC_CXR_Builder` (`:801`) | ✅ | `@registry.register_builder("mimic_cxr")` |
+| `MIMIC_CXR_Builder` (`:1000`) | ✅ | `@registry.register_builder("mimic_cxr")` |
 | `MyBlipCaptionProcessor` (`:49`) | ✅ | `@registry` text processor |
 | `MyReportProcessor` (`:195`) | ✅ | Processor prompt báo cáo |
 | `ExpandChannels` (`:91`) | ✅ | Ảnh 1 kênh → 3 kênh |
-| `Conversation`, `SeparatorStyle` (`:119`,`:126`) | 🕰 | Của đường Vicuna; trong `__getitem__` đã **bị comment hết** (`:695-711`) |
-| `MIMICEvalCap` (`:810`) | [📄](ReportDataset.py.methods/MIMICEvalCap/_index.md) ⚠ | Không thấy caller |
-| `CheXpertDataset` (`:892`) | ⚠ | `train.py` không dựng |
-| `IU_Xray_Dataset` (`:1008`) | ⚠ | `train.py` không dựng |
+| `Conversation`, `SeparatorStyle` (`:119`,`:126`) | 🕰 | Của đường Vicuna; trong `__getitem__` đã **bị comment hết** (`:887-903`) |
+| `MIMICEvalCap` (`:1009`) | [📄](ReportDataset.py.methods/MIMICEvalCap/_index.md) ⚠ | Không thấy caller |
+| `CheXpertDataset` (`:1091`) | ⚠ | `train.py` không dựng |
+| `IU_Xray_Dataset` (`:1207`) | ⚠ | `train.py` không dựng |
 
 ## Main functions
 
@@ -72,25 +74,32 @@ Dict sample — xem [DATA_FLOW.md §2.2](../../../_meta/DATA_FLOW.md#22-__getite
 | Method | Doc | Vai trò |
 |---|---|---|
 | `__init__` (`:222`) | [📄](ReportDataset.py.methods/MIMIC_CXR_Dataset/__init__.md) | Nạp CSV, dựng transform, index study, feature cache |
-| `_init_study_index` (`:477`) | [📄](ReportDataset.py.methods/MIMIC_CXR_Dataset/_init_study_index.md) | ★ Gộp ảnh → study, chọn anchor |
-| `_row_visual` (`:627`) | [📄](ReportDataset.py.methods/MIMIC_CXR_Dataset/_row_visual.md) | ★ Ảnh hoặc cached feature; **chốt bảo mật path** |
-| `__getitem__` (`:665`) | [📄](ReportDataset.py.methods/MIMIC_CXR_Dataset/__getitem__.md) | ★ Một study → một sample |
-| `collater` (`:751`) | [📄](ReportDataset.py.methods/MIMIC_CXR_Dataset/collater.md) | ★ Pad aux view ragged về `N_max` |
-| `_init_feature_cache` (`:525`) | — | Mở store feature cache |
-| `load_image` (`:609`), `remap_to_uint8` (`:574`) | — | Đọc + chuẩn hóa percentile |
-| `_view_id` (`:474`) | — | `ViewPosition` → int |
-| `_coerce_bool` (`:456`) | — | Ép cột cờ về bool |
-| `set_custom_epoch` (`:571`) | — | Đặt epoch cho sampling |
-| `__len__` (`:748`) | — | **Số study**, không phải số ảnh |
+| `_init_study_index` (`:498`) | [📄](ReportDataset.py.methods/MIMIC_CXR_Dataset/_init_study_index.md) | ★ Gộp ảnh → study, chọn anchor |
+| `_row_visual` (`:788`) | [📄](ReportDataset.py.methods/MIMIC_CXR_Dataset/_row_visual.md) | ★ Ảnh hoặc cached feature; **chốt bảo mật path** |
+| `__getitem__` (`:837`) | [📄](ReportDataset.py.methods/MIMIC_CXR_Dataset/__getitem__.md) | ★ Một study → một sample |
+| `collater` (`:950`) | [📄](ReportDataset.py.methods/MIMIC_CXR_Dataset/collater.md) | ★ Pad aux view ragged về `N_max` |
+| `_init_feature_cache` (`:546`) | — | Mở store feature cache |
+| `_init_explanation_mask_cache` (`:592`) | — | Đọc JSON index; chưa mở `.npy` |
+| `_get_explanation_mask_memmap` (`:654`) | — | Mở memmap lazy theo PID worker |
+| `_read_explanation_mask` (`:679`) | — | Cache row → mask/valid/source |
+| `_apply_synced_image_mask_transforms` (`:690`) | — | Một affine cho ảnh bilinear + mask nearest |
+| `load_image` (`:770`), `remap_to_uint8` (`:735`) | — | Đọc + chuẩn hóa percentile |
+| `_view_id` (`:495`) | — | `ViewPosition` → int |
+| `_coerce_bool` (`:477`) | — | Ép cột cờ về bool |
+| `set_custom_epoch` (`:732`) | — | Đặt epoch cho sampling |
+| `__len__` (`:947`) | — | **Số study**, không phải số ảnh |
 
 ## Execution flow
 
 ```text
-__init__  → read_csv → _coerce_bool → transform → _init_study_index → _init_feature_cache
+__init__  → read_csv → _coerce_bool → split geometric/optical transforms
+          → load mask JSON index → _init_feature_cache → _init_study_index
 __getitem__(i)
    ├─ studies[i] → anchor row
-   ├─ _row_visual(anchor)        → "image"  HOẶC  "<enc>_feat"
+   ├─ IF mask cache: read cache row (memmap mở lazy trong worker)
+   ├─ _row_visual(anchor)        → image (+ synchronized mask) HOẶC <enc>_feat
    ├─ findings, chexpert labels, classification_mask, generation_mask
+   ├─ IF mask cache: explanation_mask [112,112], valid, source
    └─ IF multi_view: _row_visual cho từng aux → "aux_image" (ragged)
 collater(samples)
    ├─ default collate cho key thường
@@ -99,7 +108,8 @@ collater(samples)
 
 ## Calls
 
-`mimic_cxr_utils.build_study_index`, `view_id` · `torchvision.transforms` ·
+`mimic_cxr_utils.build_study_index`, `view_id` · `torchvision.transforms` +
+`RandomAffine.get_params`/functional affine ·
 `PIL`, `numpy` · `BaseDataset.collater`
 
 ## Called by
@@ -109,22 +119,27 @@ collater(samples)
 
 ## Side effects
 
-Đọc CSV vào RAM (`self.annotation`) · Đọc ảnh từ đĩa mỗi `__getitem__` ·
-Mở feature cache store · Không ghi gì.
+Đọc CSV + mask JSON index vào RAM · Đọc ảnh từ đĩa mỗi `__getitem__` ·
+Mở explanation memmap read-only ở lần worker access đầu tiên · Mở feature cache
+store · Không ghi gì.
 
 ## Error / edge cases
 
 | Tình huống | Hành vi |
 |---|---|
-| `image_path` tuyệt đối hoặc `C:/…` | **`ValueError`** (`:637`) — chốt bảo mật |
-| `image_path` thoát `vis_root` (`..`) | **`ValueError`** (`:643`) |
-| DICOM vắng trong feature cache | **`KeyError`** nêu tên DICOM + gợi ý `study_sampling=false` (`:654`) |
+| `image_path` tuyệt đối hoặc `C:/…` | **`ValueError`** (`:803`) — chốt bảo mật |
+| `image_path` thoát `vis_root` (`..`) | **`ValueError`** (`:808`) |
+| DICOM vắng trong feature cache | **`KeyError`** nêu tên DICOM + gợi ý `study_sampling=false` (`:826`) |
+| Cache mask thiếu file/index sai schema/shape | fail-closed trước hoặc ở lần đọc worker đầu |
+| Study không có entry mask | mask zero, `explanation_mask_valid=False` |
 | Marker Kaggle cũ `/mimic-cxr-jpg-lite/` | Vẫn hỗ trợ, cắt lấy phần sau |
 | `N_max == 0` | Tensor rỗng `[B,0,…]`, **không** `None` |
 
 ## Related tests
 
-`tests/test_mimic_data_pipeline.py` (study sampling — nạp `mimic_cxr_utils.py` theo path)
+`tests/test_mimic_data_pipeline.py` (study sampling) ·
+`tests/test_explanation_mask_pipeline.py` (cache lazy, synchronized affine,
+geometry và no-cache regression)
 
 ## Related documentation
 
@@ -135,14 +150,19 @@ Mở feature cache store · Không ghi gì.
 
 1. ⚠ **`.gitignore` chặn `model/lavis/data/`** nhưng file này đã được track.
    `git add .` **không** bắt thay đổi — dùng `git add -f`.
-2. ⚠ **`ReportDataset.py:897`** (trong `CheXpertDataset`) có
+2. ⚠ **`ReportDataset.py:1117`** (trong `CheXpertDataset`) có
    `df[col].fillna(x, inplace=True)` — pandas 3.0 Copy-on-Write khiến nó **âm thầm
    không làm gì**. Không nằm trên đường MIMIC-CXR nên chưa ảnh hưởng.
 3. **Augmentation áp một lần trong dataset**, để mọi encoder thấy cùng một ảnh đã
    biến đổi. Đừng thêm augmentation ở phía model.
-4. **Đừng đổi `image_path` sang tuyệt đối** — `_row_visual` sẽ raise.
-5. Code Vicuna cũ (`Conversation`, prompt) còn nằm dưới dạng comment trong
-   `__getitem__` (`:672-711`). Không xóa (ngoài phạm vi task này), nhưng đừng tưởng
+4. Khi mask cache bật, affine được sample **một lần**: ảnh dùng bilinear, mask
+   được upsample 448² rồi dùng nearest và hạ lại 112². Dùng cùng pixel translate
+   trực tiếp trên mask 112² sẽ lệch 4 lần.
+5. Khi không có `mask_cache_dir`, ba key explanation không được phát và chuỗi
+   transform giữ nguyên hành vi cũ.
+6. **Đừng đổi `image_path` sang tuyệt đối** — `_row_visual` sẽ raise.
+7. Code Vicuna cũ (`Conversation`, prompt) còn nằm dưới dạng comment trong
+   `__getitem__` (`:862-903`). Không xóa (ngoài phạm vi task này), nhưng đừng tưởng
    nó đang chạy.
 
 ## Source relationships

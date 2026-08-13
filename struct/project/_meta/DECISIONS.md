@@ -22,6 +22,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-011](#d-011--máy-train-hiện-tại) | Host train `phuong@minhphuong` — RTX 5060 Ti 16 GB | ✅ Confirmed | 2026-08-13 |
 | [D-012](#d-012--đưa-struct-vào-repository) | Track và push `struct/` | ✅ Confirmed | 2026-08-12 |
 | [D-013](#d-013--gỡ-toàn-bộ-đường-chạy-cloud) | Gỡ toàn bộ đường chạy cloud | ✅ Confirmed | 2026-08-13 |
+| [D-014](#d-014--mask-giải-thích-hai-tầng-và-split-project-là-nguồn-chân-lý) | Mask explanation hai tầng | ✅ Confirmed | 2026-08-13 |
 
 ---
 
@@ -523,11 +524,52 @@ làm sạch knowledge base, user yêu cầu bỏ rule đó, commit và push lên
 
 ---
 
+## D-014 — Mask giải thích hai tầng và split project là nguồn chân lý
+
+Status: **Confirmed**
+Date: 2026-08-13
+
+### Context
+
+Explanation-aware loss cần vùng giám sát nhưng MIMIC-CXR không có bbox bác sĩ cho
+toàn bộ tập. CheXmask phủ rộng bằng segmentation giải phẫu; MS-CXR có bbox bệnh
+lý thật nhưng chỉ trên một tập con và mang split riêng không khớp split project.
+
+### Decision
+
+- MS-CXR bbox là tầng ưu tiên (`mask_source=1`).
+- Nếu anchor không có bbox, dùng union phổi trái/phải CheXmask như anatomical
+  prior (`mask_source=0`); không dùng heart.
+- CheXmask dưới `Dice RCA (Mean) < 0.7` được xem là không có.
+- Manifest train/val/test của project là nguồn chân lý duy nhất để định tuyến;
+  cột split MS-CXR chỉ dùng để audit số dòng lệch.
+- Rasterize ở kích thước gốc, rồi dùng đúng geometry ảnh train: resize cạnh ngắn
+  512 → center crop 448 → nearest 112².
+- Train affine được sample một lần cho ảnh/mask; ảnh bilinear, mask nearest.
+- Cache + JSON index là dẫn xuất MIMIC-CXR, chỉ ở private storage và không log
+  identifier.
+
+### Evidence
+
+- `preporcessing/build_explanation_masks.py` thực hiện chunked CheXmask join,
+  bbox priority, Dice gate và split audit.
+- `model/lavis/data/ReportDataset.py` mở mask memmap lazy theo worker PID và phát
+  ba field explanation có điều kiện.
+- `tests/test_explanation_mask_pipeline.py` ghim RLE, priority, quality gate,
+  geometry, synchronized affine và no-cache behavior.
+
+### Documentation impact
+
+`preporcessing/`, `ReportDataset.py`, production config, test index và `HOME.md`
+phải cùng mô tả nguồn mask, source code 0/1, geometry và privacy boundary.
+
+---
+
 ## Ghi chú vận hành
 
 Khi thêm decision mới:
 
-1. Cấp ID kế tiếp (`D-014`, …), không tái sử dụng ID cũ.
+1. Cấp ID kế tiếp (`D-015`, …), không tái sử dụng ID cũ.
 2. Thêm một dòng vào bảng mục lục đầu file.
 3. `Status` chỉ nhận: `Confirmed`, `Unknown — chờ xác nhận`, `Superseded by D-0XX`.
 4. Mục `Evidence` phải là bằng chứng kiểm chứng được (đường dẫn + số dòng, kết quả

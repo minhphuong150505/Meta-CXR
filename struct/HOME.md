@@ -1,7 +1,7 @@
 # Meta-CXR — Source Code Guide
 
 > Điểm bắt đầu **duy nhất**. Mọi thứ khác đều tới được từ đây.
-> Last verified against source: 2026-08-13 · source through commit `6d5c463` · branch `main`
+> Last verified against source: 2026-08-13 · branch `explanation-loss` · Phase 2 working tree
 
 ---
 
@@ -73,6 +73,7 @@ Chest X-ray study (448×448)
 │  SharedVisualTokenProjector → 1408, nối theo trục token                │
 │         ├──────────────► MHCAC  → logits [B,14,3]                      │
 │         │                  student = ảnh  |  teacher = ảnh+text (train) │
+│         │                  + explanation loss ← lung/bbox mask 112²     │
 │         └──────────────► Q-Former 32 query → ITC + ITM + LM            │
 └────────────────────────────────────────────────────────────────────────┘
         │  checkpoint_best.pth
@@ -254,7 +255,8 @@ Meta-CXR-source/
 │
 ├── preporcessing/                  ✅ (sic — tên thư mục sai chính tả, giữ nguyên)
 │   ├── preprocess_mimic_cxr.py     ✅ ★ dựng split CSV
-│   └── mimic_report_parser.py      ✅ trích FINDINGS/IMPRESSION
+│   ├── mimic_report_parser.py      ✅ trích FINDINGS/IMPRESSION
+│   └── build_explanation_masks.py  🟡 CheXmask/MS-CXR → private mask cache
 │
 ├── configs/
 │   ├── env_config.yaml.example     ✅ (env_config.yaml git-ignored)
@@ -266,7 +268,7 @@ Meta-CXR-source/
 ├── results/                        ✅ Table 5 encoder ablation (4/4 complete)
 │   └── table5_encoder_ablation.{md,json,csv}
 │
-├── tests/                          ✅ 34 file Python — enforce invariant kiến trúc
+├── tests/                          ✅ 35 file Python — enforce invariant kiến trúc
 │   └── fixtures/notebooks/*.fixture
 │
 ├── utils/                          ⚠ POTENTIALLY_UNUSED — zero import toàn repo
@@ -445,6 +447,11 @@ CUDA_VISIBLE_DEVICES=0 python training/run_medgemma_qlora.py \
 
 # Kiểm tra invariant manifest
 python -m training.dataio.validate_manifest --section-mode findings_and_impression
+
+# Trên máy dữ liệu: inspect schema/ID shape trước, rồi smoke cache private
+python preporcessing/build_explanation_masks.py --inspect
+python preporcessing/build_explanation_masks.py \
+    --split val --limit 200 --output-dir <private-cache-dir>
 ```
 
 Đầy đủ: [ENTRYPOINTS.md](project/_meta/ENTRYPOINTS.md)

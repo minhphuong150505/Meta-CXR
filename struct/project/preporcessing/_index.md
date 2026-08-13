@@ -1,6 +1,6 @@
-> Source: `preporcessing/` (2 file)
+> Source: `preporcessing/` (3 file Python)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-13
 
 # `preporcessing/`
 
@@ -11,7 +11,8 @@
 ## Purpose
 
 Từ CSV thô + report `.txt` dựng ra ba split CSV mà **cả Stage 1 và Stage 2 đều
-tiêu thụ**. CPU-only, không đọc ảnh.
+tiêu thụ**; đồng thời dựng cache mask giải thích riêng cho recipe Stage 1
+explanation-aware. Cả hai đường đều CPU-only và không đọc pixel ảnh gốc.
 
 ## Role in project
 
@@ -25,6 +26,14 @@ train.csv / val.csv / test.csv     ← patient- VÀ study-disjoint
    ┌────┴────────────────────┐
 MIMIC_CXR_Dataset      dataio/manifest.py
    (Stage 1)              (Stage 2, P8)
+
+CheXmask RLE + MS-CXR bbox + ba split CSV
+        ↓
+build_explanation_masks.py
+        ↓
+masks_<split>.npy + index_<split>.json
+        ↓
+MIMIC_CXR_Dataset → explanation loss
 ```
 
 Đây là **thượng nguồn của mọi thứ**. Một lỗi ở đây lan vào cả hai stage.
@@ -39,6 +48,7 @@ MIMIC_CXR_Dataset      dataio/manifest.py
 |---|---|---|---|
 | `preprocess_mimic_cxr.py` | 420 | [📄](preprocess_mimic_cxr.py.doc.md) | ★ Dựng split |
 | `mimic_report_parser.py` | — | [📄](mimic_report_parser.py.doc.md) | Trích FINDINGS / IMPRESSION |
+| `build_explanation_masks.py` | 786 | [📄](build_explanation_masks.py.doc.md) | 🟡 Cache CheXmask/MS-CXR hai tầng |
 
 Hai notebook trong thư mục này (`preprocessing_walkthrough.ipynb`,
 `kltn-data-preprocessing.ipynb`) bị **git-ignore** vì outputs của chúng mang ID
@@ -58,6 +68,7 @@ Parser hiện tại **khôi phục phần thân tường thuật** thay vì fall
 3. Chia split **disjoint theo cả patient và study**.
 4. Ghi `image_path` dạng **tương đối**.
 5. Đặt cờ `target_valid` / `classification_valid` → thành mask lúc train.
+6. Từ split project, dựng mask phổi/bbox 112² với cùng geometry ảnh train.
 
 ## Entry points
 
@@ -69,6 +80,13 @@ python preporcessing/preprocess_mimic_cxr.py \
 
 # --views frontal      chỉ PA/AP
 # --limit-studies N    smoke run
+
+# Xác nhận schema và khoảng Dice trước khi quét file 13 GB
+python preporcessing/build_explanation_masks.py --inspect
+
+# Smoke cache một split trên private storage
+python preporcessing/build_explanation_masks.py \
+    --split val --limit 200 --output-dir <private-cache-dir>
 ```
 
 Kiểm tra sau khi dựng:
@@ -78,12 +96,12 @@ python -m training.dataio.validate_manifest --section-mode findings_and_impressi
 
 ## Dependencies
 
-`pandas`, stdlib. **Không** torch, không LAVIS.
+`pandas`, `numpy`, `Pillow`, stdlib. **Không** torch/torchvision, không LAVIS.
 
 ## Used by
 
-Không module nào import nó — nó là script chạy một lần. Nhưng **mọi thứ** phụ
-thuộc vào đầu ra của nó.
+Không module nào import các script — chúng chạy một lần. Nhưng đường train phụ
+thuộc vào split output; explanation-aware train còn phụ thuộc mask cache.
 
 ## Important configurations
 
@@ -95,6 +113,7 @@ thuộc vào đầu ra của nó.
 | `target_valid` | → `generation_mask` |
 | `classification_valid` | → `classification_mask` |
 | 14 cột CheXpert | `classification_labels` |
+| `masks_<split>.npy` + `index_<split>.json` | `explanation_mask`, validity, source |
 
 ## Status
 
@@ -117,6 +136,12 @@ thuộc vào đầu ra của nó.
 
 - ⚠ Đầu ra là **dữ liệu PhysioNet dẫn xuất**. `.gitignore` chặn `train.csv`,
   `val.csv`, `test.csv`, `*_split.csv`, `splits/`. **Không commit.**
+
+- ⚠ Cache mask cũng là dẫn xuất MIMIC-CXR. Script không log identifier và output
+  chỉ được đặt trên private storage.
+
+- ⚠ Split trong MS-CXR không phải split project. Builder luôn map qua ba manifest
+  và in số dòng lệch để leakage không xảy ra âm thầm.
 
 ## Related documentation
 

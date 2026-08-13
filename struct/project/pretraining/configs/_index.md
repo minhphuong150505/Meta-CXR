@@ -81,7 +81,7 @@ model:
 | Key | `full` ✅ |
 |---|---|---|
 | `multi_view` | `true` | `false` |
-| `warmup_steps` | `300` | ⚠ `32000` — **không bao giờ hoàn tất ramp** |
+| `warmup_steps` | `800` | ⚠ `32000` — **không bao giờ hoàn tất ramp** |
 | `lambda_mpc` | `0.1` | `0.0` |
 | `selection_metric` | `macro_auprc` | ⚠ khác |
 | `amp_dtype` | `bfloat16` | ⚠ khác |
@@ -91,6 +91,8 @@ model:
 | Key | Nghĩa thật |
 |---|---|
 | `warmup_steps` | **Optimizer update**, không phải microbatch |
+| `model.loss.lambda_explanation` | Gate duy nhất của explanation loss; 0 tắt module/Grad-CAM |
+| `model.explanation.mask_cache_dir` | Cache private mà `ReportDataset` đọc theo split |
 | `save_freq: 5` | Checkpoint theo epoch mỗi 5 epoch; `0` → chỉ giữ best + last |
 | `selection_metric: macro_auprc` | ⚠ `CLAUDE.md`/`README.md` nói `f1_positive_macro` — **sai**, config thắng |
 | `batch_size_train: 8` + `accum_grad_iters: 8` | Effective batch = 64 |
@@ -128,6 +130,11 @@ model:
 
 - **`blip2_pretrain_stage1_emb.yaml` KHÔNG legacy** dù tên giống file legacy bên
   cạnh: `inference.sh` dùng nó ([D-002](../../_meta/DECISIONS.md#d-002--đường-vicuna-7b-legacy-vẫn-là-demo-active)).
+
+- **Không có `explanation.enabled`.** Production dùng
+  `model.loss.lambda_explanation: 0.25` làm gate duy nhất; `model.explanation`
+  chỉ chứa top-k, warmup, stream và cache path. Điều này tránh một cờ YAML không
+  có consumer hoặc hai cờ bật/tắt bất đồng.
 
 ## Related documentation
 

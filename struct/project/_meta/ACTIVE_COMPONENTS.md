@@ -23,6 +23,7 @@ pretraining/train.py                                          ✅ ENTRYPOINT
  └── model/lavis/tasks/image_text_pretrain.py                  ✅
  └── model/lavis/data/ReportDataset.py       MIMIC_CXR_Dataset ✅
  │    └── model/lavis/data/mimic_cxr_utils.py build_study_index ✅
+ │    └── explanation mask cache + synchronized affine          🟡 mask_cache_dir
  └── model/lavis/models/blip2_models/blip2_qformer.py          ✅ ★ trung tâm
  │    ├── biovil_t/                          BioViL-T          ✅
  │    │    ├── model.py  encoder.py  modules.py  resnet.py
@@ -33,6 +34,7 @@ pretraining/train.py                                          ✅ ENTRYPOINT
  │    ├── vision_encoders/shared_visual_tokens.py              ✅
  │    ├── mhcac/view_fusion.py                ViewFusionModule 🟡 multi_view: true
  │    ├── mhcac/mhcac_12.py                   MHCAC            ✅
+ │    ├── mhcac/explanation.py                Grad-CAM loss    🟡 lambda_explanation
  │    ├── mhcac/loss.py                       11 loss          ✅
  │    ├── model/lavis/models/blip2_models/blip2.py  Blip2Base  ✅
  │    ├── model/lavis/models/blip2_models/Qformer.py           ✅
@@ -157,6 +159,7 @@ Dockerfile → inference.sh → inference.py                      ✅ D-002
 |---|---|---|
 | `preporcessing/preprocess_mimic_cxr.py` | ✅ | Dựng split CSV |
 | `preporcessing/mimic_report_parser.py` | ✅ | Trích FINDINGS/IMPRESSION |
+| `preporcessing/build_explanation_masks.py` | 🟡 | Dựng private CheXmask/MS-CXR cache khi chạy explanation-aware |
 | `local_config.py` | ✅ | Nạp `configs/env_config.yaml` |
 | `scripts/vm_preflight.py` | 🧰 | Kiểm tra trước run dài |
 | `scripts/check_notebook_privacy.py` | ✅ | Pre-commit hook chặn rò rỉ |
@@ -165,7 +168,7 @@ Dockerfile → inference.sh → inference.py                      ✅ D-002
 | `scripts/export_stage2_prompt_samples.py` | 🧪 | ⚠ output chứa findings text |
 | `scripts/prompt_length_statistics.py` | 🧪 | |
 | `scripts/audit_temporal_targets.py` | 🧪 | |
-| `tests/` (31 file) | ✅ | Enforce invariant kiến trúc, gồm inference-only encoder ablation |
+| `tests/` (35 file) | ✅ | Enforce invariant kiến trúc, gồm explanation-mask và inference-only encoder ablation |
 
 ---
 

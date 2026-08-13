@@ -31,7 +31,7 @@ from pycocoevalcap.rouge.rouge import Rouge
 from skimage import io
 from sklearn.metrics import classification_report, accuracy_score
 from torchvision import transforms
-from torchvision.transforms import Compose, Resize, ToTensor, CenterCrop
+from torchvision.transforms import Compose, Resize, ToTensor, CenterCrop, InterpolationMode
 
 from model.lavis.processors import BaseProcessor
 from model.lavis.common.registry import registry
@@ -348,6 +348,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         processor_cfg = cfg.datasets_cfg.mimic_cxr.vis_processor[processor_key]
         self.img_size = int(processor_cfg.get("image_size", 448))
         resize_size = int(processor_cfg.get("resize_size", round(self.img_size * 512 / 448)))
+        self.resize_size = resize_size
         aug_cfg = processor_cfg.get("augmentation", {}) or {}
         augmentation_enabled = split == "train" and bool(aug_cfg.get("enabled", True))
         if augmentation_enabled and cfg.run_cfg.get("feature_cache_dir", None):
@@ -357,14 +358,28 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                 "datasets.mimic_cxr.vis_processor.train.augmentation.enabled or "
                 "train without the cache."
             )
-        image_ops = [Resize(resize_size), CenterCrop(self.img_size)]
+        resize_op = Resize(resize_size)
+        crop_op = CenterCrop(self.img_size)
+        self.base_geometry_trans = transforms.Compose([resize_op, crop_op])
+        geometry_ops = [resize_op, crop_op]
+        optical_ops = []
+        self.augmentation_enabled = augmentation_enabled
+        self.affine_degrees = (-5.0, 5.0)
+        self.affine_translate = (0.02, 0.02)
+        self.affine_scale = (0.95, 1.05)
+        self.affine_p = 0.0
+        self.explanation_mask_size = (112, 112)
         if augmentation_enabled:
             degrees = float(aug_cfg.get("degrees", 5.0))
             translate = float(aug_cfg.get("translate", 0.02))
             scale_delta = float(aug_cfg.get("scale_delta", 0.05))
             affine_p = float(aug_cfg.get("affine_p", 0.5))
             jitter_p = float(aug_cfg.get("jitter_p", 0.5))
-            image_ops.extend([
+            self.affine_degrees = (-degrees, degrees)
+            self.affine_translate = (translate, translate)
+            self.affine_scale = (1.0 - scale_delta, 1.0 + scale_delta)
+            self.affine_p = affine_p
+            geometry_ops.extend([
                 transforms.RandomApply([
                     transforms.RandomAffine(
                         degrees=degrees,
@@ -372,6 +387,8 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                         scale=(1.0 - scale_delta, 1.0 + scale_delta),
                     )
                 ], p=affine_p),
+            ])
+            optical_ops.extend([
                 transforms.RandomApply([
                     transforms.ColorJitter(
                         brightness=float(aug_cfg.get("brightness", 0.1)),
@@ -379,8 +396,9 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                     )
                 ], p=jitter_p),
             ])
-        image_ops.extend([ToTensor(), ExpandChannels()])
-        self.general_trans = transforms.Compose(image_ops)
+        optical_ops.extend([ToTensor(), ExpandChannels()])
+        self.geometric_trans = transforms.Compose(geometry_ops)
+        self.optical_trans = transforms.Compose(optical_ops)
 
         if self.vit_model == 'biovil':
             self.vis_transforms = create_chest_xray_transform_for_inference(512, center_crop_size=self.img_size)
@@ -439,6 +457,10 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
 
         self.text_processor = MyReportProcessor(
             prompt=self.prompt, max_words=1000)
+
+        # Optional explanation masks.  The JSON index is cheap to load here;
+        # the .npy memmap itself is opened lazily after DataLoader workers fork.
+        self._init_explanation_mask_cache(cfg)
 
         # Optional precomputed frozen-encoder feature cache.
         self._init_feature_cache(cfg)
@@ -568,6 +590,151 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.feature_cache = cache
         print(f"[{self.cur_split}] feature cache active for {wanted} from {cache_dir}")
 
+    def _init_explanation_mask_cache(self, cfg):
+        """Load the small mask index now; defer the memmap until worker access."""
+        self.explanation_mask_cache_dir = None
+        self.explanation_mask_path = None
+        self.explanation_mask_index = {}
+        self._explanation_mask_memmap = None
+        self._explanation_mask_memmap_pid = None
+
+        explanation_cfg = cfg.model_cfg.get("explanation", {}) or {}
+        cache_dir = explanation_cfg.get("mask_cache_dir", None)
+        if cache_dir is None or not str(cache_dir).strip():
+            return
+        if (self.resize_size, self.img_size) != (512, 448):
+            raise ValueError(
+                "Explanation-mask caches use Resize(512) and CenterCrop(448); "
+                "the configured image geometry does not match"
+            )
+
+        cache_dir = Path(str(cache_dir)).expanduser()
+        masks_path = cache_dir / f"masks_{self.cur_split}.npy"
+        index_path = cache_dir / f"index_{self.cur_split}.json"
+        if not masks_path.is_file() or not index_path.is_file():
+            raise FileNotFoundError(
+                "explanation.mask_cache_dir is configured but the split cache is "
+                f"incomplete; expected masks_{self.cur_split}.npy and "
+                f"index_{self.cur_split}.json"
+            )
+
+        def reject_duplicate_keys(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(
+                        "Explanation-mask index contains a duplicate identifier"
+                    )
+                result[key] = value
+            return result
+
+        with index_path.open(encoding="utf-8") as handle:
+            index = json.load(handle, object_pairs_hook=reject_duplicate_keys)
+        if not isinstance(index, dict):
+            raise ValueError("Explanation-mask index must be a JSON object")
+
+        used_rows = set()
+        for entry in index.values():
+            if not isinstance(entry, dict) or set(entry) != {"row", "mask_source"}:
+                raise ValueError(
+                    "Every explanation-mask index entry needs row and mask_source"
+                )
+            row = entry["row"]
+            source = entry["mask_source"]
+            if isinstance(row, bool) or not isinstance(row, int) or row < 0:
+                raise ValueError("Explanation-mask index rows must be non-negative integers")
+            if isinstance(source, bool) or not isinstance(source, int) or source not in (0, 1):
+                raise ValueError("Explanation-mask source must be 0 (lung) or 1 (bbox)")
+            if row in used_rows:
+                raise ValueError("Explanation-mask index assigns one cache row more than once")
+            used_rows.add(row)
+
+        self.explanation_mask_cache_dir = cache_dir
+        self.explanation_mask_path = masks_path
+        self.explanation_mask_index = index
+        print(
+            f"[{self.cur_split}] explanation mask index active for "
+            f"{len(index)} studies"
+        )
+
+    def _get_explanation_mask_memmap(self):
+        """Open/reopen the read-only memmap in the process that consumes it."""
+        if self.explanation_mask_cache_dir is None:
+            return None
+        current_pid = os.getpid()
+        if (
+            self._explanation_mask_memmap is not None
+            and self._explanation_mask_memmap_pid == current_pid
+        ):
+            return self._explanation_mask_memmap
+
+        masks = np.load(self.explanation_mask_path, mmap_mode="r", allow_pickle=False)
+        if masks.dtype != np.uint8 or masks.ndim != 3 or tuple(masks.shape[1:]) != (112, 112):
+            raise ValueError(
+                "Explanation-mask array must have dtype uint8 and shape [N,112,112]"
+            )
+        if self.explanation_mask_index:
+            maximum_row = max(entry["row"] for entry in self.explanation_mask_index.values())
+            if maximum_row >= len(masks):
+                raise ValueError("Explanation-mask index contains an out-of-range row")
+
+        self._explanation_mask_memmap = masks
+        self._explanation_mask_memmap_pid = current_pid
+        return masks
+
+    def _read_explanation_mask(self, dicom_id):
+        """Return one binary cache mask plus validity/source without logging IDs."""
+        entry = self.explanation_mask_index.get(str(dicom_id))
+        if entry is None:
+            return np.zeros(self.explanation_mask_size, dtype=np.uint8), False, 0
+        masks = self._get_explanation_mask_memmap()
+        mask = np.array(masks[entry["row"]], dtype=np.uint8, copy=True)
+        if not mask.any():
+            raise ValueError("Explanation-mask index points to an empty mask row")
+        return (mask > 0).astype(np.uint8) * 255, True, int(entry["mask_source"])
+
+    def _apply_synced_image_mask_transforms(self, image, explanation_mask):
+        """Apply one sampled affine to image (bilinear) and mask (nearest)."""
+        image = self.base_geometry_trans(image)
+        explanation_mask = explanation_mask.resize(
+            image.size, resample=Image.Resampling.NEAREST
+        )
+        if self.augmentation_enabled and torch.rand(1).item() < self.affine_p:
+            angle, translate, scale, shear = transforms.RandomAffine.get_params(
+                self.affine_degrees,
+                self.affine_translate,
+                self.affine_scale,
+                None,
+                list(image.size),
+            )
+            image = transforms.functional.affine(
+                image,
+                angle=angle,
+                translate=translate,
+                scale=scale,
+                shear=shear,
+                interpolation=InterpolationMode.BILINEAR,
+                fill=0,
+            )
+            explanation_mask = transforms.functional.affine(
+                explanation_mask,
+                angle=angle,
+                translate=translate,
+                scale=scale,
+                shear=shear,
+                interpolation=InterpolationMode.NEAREST,
+                fill=0,
+            )
+
+        image = self.optical_trans(image)
+        explanation_mask = explanation_mask.resize(
+            self.explanation_mask_size, resample=Image.Resampling.NEAREST
+        )
+        explanation_mask = torch.from_numpy(
+            np.array(explanation_mask, dtype=np.uint8, copy=True) > 0
+        ).float()
+        return image, explanation_mask
+
     def set_custom_epoch(self, custom_epoch):
         self.current_custom_epoch = custom_epoch
 
@@ -624,8 +791,13 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         return Image.fromarray(image).convert("L")
 
 
-    def _row_visual(self, ann):
-        """Visual input for one CSV row: decoded image, or cached raw features."""
+    def _row_visual(self, ann, explanation_mask=None):
+        """Visual input for one CSV row: decoded image, or cached raw features.
+
+        ``explanation_mask`` is supplied only for the anchor.  Its presence
+        selects the synchronized geometry path; auxiliary views retain the
+        historical image-only transform.
+        """
         # Canonical full-data CSVs store a relative ``files/p1X/...`` path. Keep
         # support for the old Kaggle marker, but reject arbitrary absolute/path-
         # traversal inputs instead of silently escaping ``vis_root``.
@@ -646,7 +818,13 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
 
         out = {"image_path": str(image_path)}
         if self.feature_cache is None:
-            out["image"] = self.general_trans(self.load_image(Path(image_path)))
+            image = self.load_image(Path(image_path))
+            if explanation_mask is None:
+                out["image"] = self.optical_trans(self.geometric_trans(image))
+            else:
+                out["image"], out["explanation_mask"] = (
+                    self._apply_synced_image_mask_transforms(image, explanation_mask)
+                )
         else:
             for enc, store in self.feature_cache.items():
                 dicom_id = str(ann["dicom_id"])
@@ -666,7 +844,27 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         study = self.studies[index]
         ann = self.annotation.iloc[study["anchor"]]
 
-        anchor_visual = self._row_visual(ann)
+        explanation_payload = None
+        if self.explanation_mask_cache_dir is not None:
+            mask_array, mask_valid, mask_source = self._read_explanation_mask(
+                ann["dicom_id"]
+            )
+            explanation_mask = Image.fromarray(mask_array)
+            anchor_visual = self._row_visual(
+                ann,
+                explanation_mask=(
+                    explanation_mask if self.feature_cache is None else None
+                ),
+            )
+            if self.feature_cache is None:
+                mask_tensor = anchor_visual.pop("explanation_mask")
+            else:
+                mask_tensor = torch.from_numpy(
+                    np.array(mask_array, dtype=np.uint8, copy=True) > 0
+                ).float()
+            explanation_payload = (mask_tensor, mask_valid, mask_source)
+        else:
+            anchor_visual = self._row_visual(ann)
         image_path = anchor_visual.pop("image_path")
 
         # if self.cur_split == 'train':
@@ -731,6 +929,13 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             "image_path": str(image_path)
         }
         sample.update(anchor_visual)  # "image", or the cached "<enc>_feat" tensors
+        if explanation_payload is not None:
+            mask_tensor, mask_valid, mask_source = explanation_payload
+            sample["explanation_mask"] = mask_tensor
+            sample["explanation_mask_valid"] = torch.tensor(
+                mask_valid, dtype=torch.bool
+            )
+            sample["explanation_mask_source"] = int(mask_source)
 
         if self.multi_view:
             aux_visuals = [

@@ -5,7 +5,8 @@
 # `pretraining/configs/mimic_cxr_full.yaml`
 
 ## Purpose
-**Recipe Stage 1 production**: full MIMIC-CXR p10–p19, một GPU.
+**Recipe Stage 1 production**: full MIMIC-CXR p10–p19, một GPU; classification
+recipe với explanation-aware loss hai tầng được bật từ Giai đoạn 2.
 
 ## ⚠ Default trong file không phải setting đã chạy
 Đổi tên từ `mimic_cxr_full_l4.yaml` ngày 2026-08-13 (tên cũ nói NVIDIA L4 nhưng
@@ -32,19 +33,36 @@ run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba ov
 | `data.study_sampling` | `true` | ★ Một dòng = một study |
 | `data.anchor_priority` | `[PA, AP, lateral]` | |
 | `data.max_aux_views` | 1 | |
+| `explanation.mask_cache_dir` | private mask cache | Dataset đọc JSON + memmap theo split |
 
 ⚠ **`data:` nằm TRONG `model:`** — `Config` chỉ merge `run`/`model`/`datasets`.
 
 ## Trọng số loss
-`itc`/`itm`/`lm`/`cls` = 1.0 · `teacher_cls`/`distill` = 0.5 ·
-`mhcac_contrastive` = 0.1 · `orthogonality` = 0.05 · `sparsity` = 0.01 ·
-`mpc` = 0.1 · `view_consistency` = 0.05 · `itc_queue_size` = 1024
+
+`itc`/`itm`/`lm` = 0 · `cls` = 1.0 · `teacher_cls`/`distill` = 0 ·
+`mhcac_contrastive` = 0.3 · `orthogonality` = 0.7 · `sparsity` = 0.3 ·
+`mpc` = 0.1 · `view_consistency` = 0.05 · **`explanation` = 0.25** ·
+`itc_queue_size` = 1024.
+
+`lambda_explanation` là gate duy nhất. Config **không có** `explanation.enabled`,
+vì `Blip2Qformer.from_config` không đọc cờ đó và hai gate có thể mâu thuẫn. Đặt
+weight về 0 tắt hoàn toàn explanation module/Grad-CAM ở model.
+
+## Khối `model.explanation`
+
+| Key | Giá trị | Nghĩa |
+|---|---|---|
+| `top_k` | 0.5 | Giữ top 50% CAM mềm |
+| `warmup_start_epoch` | 2 | Epoch [0]–[1] có λ=0 |
+| `warmup_epochs` | 2 | Epoch [2]–[3] ramp; [4]+ λ=0.25 |
+| `streams` | biovil, pubmedclip, swin | Ba stream production |
+| `mask_cache_dir` | private path | `ReportDataset` cần đủ cache train/val/test |
 
 ## Khối `run:` — các key hay bị hiểu sai
 | Key | Giá trị | Nghĩa thật |
 |---|---|---|
 | `selection_metric` | **`macro_auprc`** | ⚠ `CLAUDE.md`/`README.md` nói `f1_positive_macro` — **sai** |
-| `warmup_steps` | 300 | **Optimizer update**, không phải microbatch |
+| `warmup_steps` | 800 | **Optimizer update**, không phải microbatch |
 | `save_freq` | 5 | Checkpoint theo epoch mỗi 5 epoch |
 | `batch_size_train` × `accum_grad_iters` | 8 × 8 | Effective batch = **64** |
 | `max_epoch` / `early_stop_patience` | **10 / 5** | ⚠ 5+5=10 > index cuối [9] → early stop **không thể kích hoạt**; đặt patience ≤ 4 nếu muốn nó sống |
@@ -58,6 +76,8 @@ run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba ov
 ## Khối `datasets:`
 `image_size: 448`, `resize_size: 512`; augmentation train: affine ±5°,
 translate 0.02, scale ±0.05, `affine_p`/`jitter_p` 0.5, brightness/contrast 0.1.
+Khi mask cache bật, affine được sample một lần cho ảnh/mask; ảnh bilinear, mask
+nearest. Không cấu hình cache thì sample không có ba key explanation mới.
 
 ## Consumer
 `pretraining/train.py` · `precompute_features.py` · `run_medgemma_qlora.py:59`

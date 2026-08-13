@@ -1,4 +1,4 @@
-> Source: `tests/` (34 file Python, gồm `conftest.py`)
+> Source: `tests/` (35 file Python, gồm `conftest.py`)
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-13
 
@@ -30,7 +30,7 @@ collect được.** Đây là trạng thái đã biết, không phải hỏng:
 
 | Không chạy được | Lý do |
 |---|---|
-| `test_native_independence` (4 test) | import `model.lavis` |
+| `test_native_independence` (4 test) | thiếu private `configs/env_config.yaml` |
 | `test_stage1_eval_hook` (1 test) | import `model.lavis` |
 | `test_blip2_negative_sampling` (cả file) | cần torchvision để collect |
 
@@ -43,6 +43,11 @@ theo toàn bộ stack GPU. Nó cũng stub `timm.models.hub` khi thiếu timm.
 > Khi một test CPU cần import GPU-only, **stub nó trong `conftest.py`** — đừng
 > `pip install` vào venv CPU. Cài torchvision/transformers sẽ kéo về vài GB CUDA
 > và nâng cấp torch.
+
+Fixture opt-in `report_dataset_module` bổ sung stub Pillow rất hẹp cho
+`ReportDataset.py`: chỉ test đường cache/transform explanation mới dùng nó. Stub
+không hoạt động khi fixture không được gọi, nên không che các baseline failure
+do thiếu full training stack.
 
 ---
 
@@ -63,6 +68,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 |---|---|
 | `test_stage1_objectives.py` | **Teacher-only text** — student không bao giờ thấy text; shape student khớp inference. Loss từ `mhcac/loss.py` |
 | `test_explanation_loss.py` | Logit Difference Squared, disease-positive gate, Grad-CAM FP32, top-k mềm có gradient, double backprop, warmup, resize mask và vòng đời capture stream |
+| `test_explanation_mask_pipeline.py` | RLE row-major round-trip, union phổi, bbox override, Dice gate, memmap lazy, affine dùng chung params, geometry 512→448 và no-cache regression |
 | `test_view_fusion.py` | `ViewFusionBlock` là **identity chính xác tại step 0** (zero-init `W_O` + FFN cuối) → checkpoint single-view load không hỏng |
 | `test_multiview_losses.py` | `MultiPositiveContrastiveLoss`, `view_consistency_loss` |
 | `test_shared_visual_tokens.py` (209) | Thứ tự stream chuẩn hóa, `spans` đúng, `without()` zero-out mà không đổi shape, gradient chảy đúng luồng |
