@@ -26,11 +26,27 @@ over SSH on 2026-08-13:
 
 Two consequences worth remembering:
 
-- `/mnt/drive1tb` does **not** auto-mount. After a reboot every path in
-  `configs/env_config.yaml` dangles until it is mounted by hand. If a run fails
-  with missing CSVs or images, check the mount before debugging anything else.
+- `/mnt/drive1tb` does **not** auto-mount — it is not in `/etc/fstab`. After a
+  reboot every path in `configs/env_config.yaml` dangles until it is mounted by
+  hand. If a run fails with missing CSVs or images, check the mount before
+  debugging anything else. Do not reboot mid-run.
 - The host has no passwordless sudo, so an agent on SSH cannot mount it. Ask
   the user.
+- **It is a Windows system partition**, not a data disk: `Windows/`,
+  `Program Files/`, `pagefile.sys`, `hiberfil.sys` sit next to the 573 GB
+  dataset and 22 GB of checkpoints. Treat write access as consequential.
+- **The volume has real NTFS errors.** `dmesg` on 2026-08-13:
+  `ntfs3(nvme1n1p2): Mark volume as dirty due to NTFS errors` /
+  `It is recommended to use chkdsk.` This is not a stale hibernation flag; the
+  kernel driver hit errors and flagged the volume itself. Only `chkdsk` from
+  Windows fixes it — `ntfsfix` clears the dirty bit without repairing anything.
+  The kernel `ntfs3` driver refuses rw while it stands; `ntfs-3g` (FUSE) mounts
+  it anyway, which is how the drive is currently writable.
+- **Driver choice does not affect training throughput.** Measured 2026-08-13,
+  200 iterations at batch 6: kernel `ntfs3` 0.5251 s/it vs FUSE `ntfs-3g`
+  0.5277 s/it, +0.5%, which is 0.3 h across a 54 h run. The workload is
+  GPU-bound, not I/O-bound. Do not switch drivers for speed; the only reason to
+  prefer `ntfs3` is that it refuses to write to a damaged volume.
 
 ### Running anything means SSH-ing there
 
