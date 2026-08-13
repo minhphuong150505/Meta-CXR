@@ -43,16 +43,42 @@ model:
 
   # Teacher receives report text only during training. The deployed student is
   # image-only and learns both ground-truth classification and teacher logits.
+  # CLASSIFICATION-ONLY RECIPE (2026-08-13). The objective now matches upstream
+  # META-CXR (DasithEdirisinghe/META-CXR @ e97d709, blip2_qformer.py:477):
+  #     loss = cls + 0.3*contrastive + 0.7*orthogonality + 0.3*sparsity
+  # plus the multi-view terms, which upstream has no equivalent of.
+  #
+  # ⚠ WHAT THIS CHECKPOINT CAN AND CANNOT DO
+  # The Q-Former gets no gradient and stays at its pretrained initialisation, so
+  # this checkpoint serves Stage-1 classification ONLY. Stage-2
+  # `meta_cxr_qformer` and `meta_cxr_qformer_with_mhcac_prompt` would read
+  # untrained soft tokens and are NOT valid against it. Stage-2
+  # `medgemma_direct` (the default) is unaffected -- it never touches Stage 1.
+  # To restore the vision-language path, set lambda_itc/itm/lm back to 1.0.
   loss:
-    lambda_itc: 1.0
-    lambda_itm: 1.0
-    lambda_lm: 1.0
+    # Vision-language objectives, off. Measured at exactly chance before being
+    # disabled: val loss_itc 1.7918 = ln(6) at eval batch 6, train 6.9375 =
+    # ln(1024) at queue 1024, loss_itm 0.6365 against ln(2) = 0.6931. They were
+    # contributing gradient noise, not signal.
+    lambda_itc: 0.0
+    lambda_itm: 0.0
+    lambda_lm: 0.0
     lambda_cls: 1.0
-    lambda_teacher_cls: 0.5
-    lambda_distill: 0.5
-    lambda_mhcac_contrastive: 0.1
-    lambda_orthogonality: 0.05
-    lambda_sparsity: 0.01
+    # Privileged-text teacher, off. Measured loss_distill 1.4e-08 with teacher
+    # and student logits agreeing to 9 significant figures -- the teacher was
+    # not teaching anything while costing an extra MHCAC forward per step.
+    lambda_teacher_cls: 0.0
+    lambda_distill: 0.0
+    # Weights for the three MHCAC auxiliary terms now match the upstream
+    # META-CXR reference (DasithEdirisinghe/META-CXR @ e97d709,
+    # blip2_qformer.py:477):
+    #     loss = cls_loss + contrastive*0.3 + orth*0.7 + sparsity*0.3
+    # Orthogonality in particular was 14x weaker here (0.05) than there (0.7);
+    # it is what pushes the expert tokens apart, so under-weighting it lets them
+    # collapse onto one another.
+    lambda_mhcac_contrastive: 0.3
+    lambda_orthogonality: 0.7
+    lambda_sparsity: 0.3
     lambda_mpc: 0.1
     lambda_view_consistency: 0.05
     # Detached cross-batch negatives make ITC meaningful at microbatch=2.
@@ -105,10 +131,16 @@ run:
   init_lr: 1.0e-4
   init_lr_q: 1.0e-4
   init_lr_cls: 1.0e-4
-  min_lr: 1.0e-6
+  # Matches the upstream META-CXR reference. Was 1.0e-6, which decayed the tail
+  # of the run 10x further than the recipe this work derives from.
+  min_lr: 1.0e-5
   warmup_lr: 1.0e-6
-  # Optimizer updates, not microbatches.
-  warmup_steps: 300
+  # Optimizer updates, NOT microbatches -- this differs from upstream, which
+  # steps its scheduler once per microbatch. Converting: upstream's 4000
+  # microbatches at accum_grad_iters 4 is 1000 optimizer updates. 800 is close to
+  # that without going over, and is ~2.3% of a 10-epoch run here (~3,440 updates
+  # per epoch at effective batch 64), against 0.9% at the previous 300.
+  warmup_steps: 800
   weight_decay: 0.02
   max_grad_norm: 1.0
 

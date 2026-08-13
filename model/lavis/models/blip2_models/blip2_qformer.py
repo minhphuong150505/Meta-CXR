@@ -884,54 +884,87 @@ class Blip2Qformer(Blip2Base):
             samples, "generation_mask", batch_size, device
         )
 
-        image_atts = torch.ones(
-            image_embeds.shape[:-1], dtype=torch.long, device=device
+        # The vision-language objectives and the privileged-text teacher are the
+        # only consumers of the Q-Former and text-encoder forwards.  Running them
+        # when every weight that reads them is zero is pure waste: two BERT
+        # forwards, ITM hard-negative mining and an LM decoder pass, all
+        # multiplied by zero afterwards.  A classification-only recipe therefore
+        # skips the block entirely rather than paying for it.
+        #
+        # Consequence, by design: with the vision-language weights at zero the
+        # Q-Former receives no gradient and stays at its pretrained
+        # initialisation, so the checkpoint cannot serve the Stage-2 soft-token
+        # modes.  See CLAUDE.md.
+        needs_vision_language = (
+            self.lambda_itc > 0 or self.lambda_itm > 0 or self.lambda_lm > 0
         )
-        query_tokens = self.query_tokens.expand(batch_size, -1, -1)
-        query_output = self.Qformer.bert(
-            query_embeds=query_tokens,
-            encoder_hidden_states=image_embeds,
-            encoder_attention_mask=image_atts,
-            use_cache=True,
-            return_dict=True,
-        )
-        image_features = F.normalize(
-            self.vision_proj(query_output.last_hidden_state), dim=-1
-        )
-
-        text_tokens = self.tokenizer(
-            text,
-            padding="max_length",
-            truncation=True,
-            max_length=self.max_txt_len,
-            return_tensors="pt",
-        ).to(device)
-        text_output = self.Qformer.bert(
-            text_tokens.input_ids,
-            attention_mask=text_tokens.attention_mask,
-            return_dict=True,
-        )
-        text_features = F.normalize(
-            self.text_proj(text_output.last_hidden_state[:, 0]), dim=-1
+        needs_text_encoder = needs_vision_language or (
+            self.lambda_teacher_cls > 0 or self.lambda_distill > 0
         )
 
-        loss_itc, sim_i2t, sim_t2i, generation_mask_all = (
-            self._image_text_contrastive(
-                image_features, text_features, generation_mask
+        zero = image_embeds.sum() * 0.0
+        loss_itc, loss_itm, loss_lm = zero, zero, zero
+        text_tokens = None
+        text_output = None
+
+        if needs_text_encoder:
+            text_tokens = self.tokenizer(
+                text,
+                padding="max_length",
+                truncation=True,
+                max_length=self.max_txt_len,
+                return_tensors="pt",
+            ).to(device)
+            text_output = self.Qformer.bert(
+                text_tokens.input_ids,
+                attention_mask=text_tokens.attention_mask,
+                return_dict=True,
             )
-        )
-        loss_itm = self._image_text_matching(
-            image_embeds,
-            text_tokens,
-            generation_mask,
-            generation_mask_all,
-            sim_i2t,
-            sim_t2i,
-        )
-        loss_lm = self._language_modeling(
-            text_tokens, query_tokens, query_output, generation_mask
-        )
-        self._update_itc_queue(image_features, text_features, generation_mask)
+
+        if needs_vision_language:
+            image_atts = torch.ones(
+                image_embeds.shape[:-1], dtype=torch.long, device=device
+            )
+            query_tokens = self.query_tokens.expand(batch_size, -1, -1)
+            query_output = self.Qformer.bert(
+                query_embeds=query_tokens,
+                encoder_hidden_states=image_embeds,
+                encoder_attention_mask=image_atts,
+                use_cache=True,
+                return_dict=True,
+            )
+            image_features = F.normalize(
+                self.vision_proj(query_output.last_hidden_state), dim=-1
+            )
+            text_features = F.normalize(
+                self.text_proj(text_output.last_hidden_state[:, 0]), dim=-1
+            )
+
+            # ITM reuses ITC's similarity matrices for hard-negative sampling, so
+            # the contrastive pass still runs when only ITM is enabled.
+            if self.lambda_itc > 0 or self.lambda_itm > 0:
+                loss_itc, sim_i2t, sim_t2i, generation_mask_all = (
+                    self._image_text_contrastive(
+                        image_features, text_features, generation_mask
+                    )
+                )
+                if self.lambda_itm > 0:
+                    loss_itm = self._image_text_matching(
+                        image_embeds,
+                        text_tokens,
+                        generation_mask,
+                        generation_mask_all,
+                        sim_i2t,
+                        sim_t2i,
+                    )
+            if self.lambda_lm > 0:
+                loss_lm = self._language_modeling(
+                    text_tokens, query_tokens, query_output, generation_mask
+                )
+            if self.lambda_itc > 0:
+                self._update_itc_queue(
+                    image_features, text_features, generation_mask
+                )
 
         cls_labels = samples["classification_labels"]
         student_logits, _, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
