@@ -79,6 +79,12 @@ features/
 feature_cache/
 *.npy
 *.npz
+# Explanation-mask indexes contain MIMIC image identifiers even though their
+# paired arrays are already covered by *.npy.
+index_train.json
+index_val.json
+index_test.json
+.index_*.tmp.json
 *.h5
 *.hdf5
 *.parquet

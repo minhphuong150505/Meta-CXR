@@ -85,9 +85,30 @@ model:
     lambda_sparsity: 0.3
     lambda_mpc: 0.1
     lambda_view_consistency: 0.05
+    # The loss weight is the sole enable/disable gate.  There is deliberately no
+    # separate explanation.enabled key that could disagree with this value.
+    #
+    # OFF until the mask cache exists.  ReportDataset fails fast when
+    # explanation.mask_cache_dir names a cache it cannot find, so arming this
+    # before the cache is built would make this config refuse to start rather
+    # than quietly train without masks.  Turning it on is a separate, deliberate
+    # commit -- which also gives the thesis a clean before/after boundary.
+    lambda_explanation: 0.0
     # Only read when lambda_itc > 0; inert under the classification-only recipe.
     # Kept so re-enabling ITC does not also require rediscovering this value.
     itc_queue_size: 1024
+
+  explanation:
+    top_k: 0.5
+    # Epoch indices [0]-[1] are zero; [2]-[3] ramp; [4]+ use the full weight.
+    warmup_start_epoch: 2
+    warmup_epochs: 2
+    streams: [biovil, pubmedclip, swin]
+    # Private MIMIC-derived cache built by preporcessing/build_explanation_masks.py.
+    # Empty means the dataset behaves exactly as it did before the explanation
+    # loss existed: no mask keys, no memmap, unchanged image transforms.  To
+    # enable, build the cache and set this plus lambda_explanation: 0.25 above.
+    mask_cache_dir: ""
 
   multi_view: true
   view_fusion:
