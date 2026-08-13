@@ -1,4 +1,4 @@
-> Source: mọi file có `if __name__ == "__main__"` + `cloud/*.sh` + `Dockerfile`
+> Source: mọi file có `if __name__ == "__main__"` + `Dockerfile`
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-12
 
@@ -117,29 +117,16 @@ buộc section ở entrypoint chính.
 
 ## Shell — LAUNCHER
 
-Tất cả nằm trong `cloud/`. Không script nào hardcode project/bucket — identity
-đến từ biến môi trường. Trước khi chạy:
+**Không còn launcher nào.** Thư mục `cloud/` (11 script GCP: `run_stage1.sh`,
+`run_stage2.sh`, `setup_vm.sh`, `push_from_local.sh`, các alias compatibility và
+`lib/common.sh`) đã bị xóa ngày 2026-08-13 cùng toàn bộ đường chạy cloud.
 
-```bash
-source cloud/env.local.sh     # untracked, chứa GCP_PROJECT / GCS_BUCKET / GCS_DATA_BUCKET
-```
+Gọi entrypoint Python trực tiếp trên máy train. Xem `CLAUDE.md` §Commands.
 
-| Script | Gọi cái gì | Status |
-|---|---|---|
-| `cloud/run_stage1.sh` | `python -m pretraining.train` + upload GCS | ✅ ACTIVE |
-| `cloud/run_stage2.sh` | `python training/run_medgemma_qlora.py --image-mode $STAGE2_IMAGE_MODE` | ✅ ACTIVE ⚠ dùng alias cũ |
-| `cloud/setup_vm.sh` | Cài dependency hệ thống trên VM | 🧰 UTILITY |
-| `cloud/push_from_local.sh` | Đẩy code lên VM | 🧰 UTILITY |
-| `cloud/run_encoder_comparison.sh` | Alias cũ → `run_stage1.sh`; không tự sweep | 🕰 COMPATIBILITY |
-| `cloud/run_medgemma_pipeline.sh` | Alias cũ → `run_stage2.sh` | 🕰 COMPATIBILITY |
-| `cloud/run_medgemma_l4_bucket_pipeline.sh` | Alias cũ → `run_stage2.sh` | 🕰 COMPATIBILITY |
-| `cloud/run_medgemma_qformer_eval.sh` | Alias Q-Former → full `run_stage2.sh`; có thể train, không chỉ eval | 🕰 COMPATIBILITY |
-| `cloud/run_paper_assets.sh` | Gọi `paper_assets.py` đang không tồn tại | ⚠ BROKEN / POTENTIALLY_UNUSED |
-| `cloud/lib/common.sh` | Thư viện dùng chung: `log`, `require_gcp_config`, `require_private_bucket`, `upload_gcs` | 🧰 UTILITY |
-
-`require_private_bucket` **từ chối** bucket không bật uniform bucket-level access
-**và** public-access prevention. Đây là chốt chặn dữ liệu PhysioNet, không phải
-kiểm tra hình thức.
+⚠ Chốt chặn `require_private_bucket` biến mất theo `cloud/lib/common.sh`. Không
+còn code nào upload dữ liệu ra ngoài máy train — đó chính là lý do nó không còn
+cần thiết. Nếu sau này thêm lại bất kỳ đường upload nào, phải dựng lại chốt chặn
+tương đương trước.
 
 ### Root shell
 

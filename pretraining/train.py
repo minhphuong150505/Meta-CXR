@@ -36,7 +36,7 @@ from model.lavis.tasks import *
 from model.lavis.data.ReportDataset import MIMIC_CXR_Dataset
 
 
-# python -m torch.distributed.run --standalone --nproc_per_node=2 -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_2gpu.yaml
+# python -m torch.distributed.run --standalone --nproc_per_node=1 -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Training")

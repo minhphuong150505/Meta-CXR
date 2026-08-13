@@ -120,7 +120,7 @@ class CheXpertLabelMetric(_DependencyBackedMetric):
         super().__init__(
             name="chexpert_labeler",
             package="chexpert_labeler",
-            install="see docs/SETUP_GUIDE.md -- also needs a Java runtime",
+            install="see README.md -- also needs a Java runtime",
         )
 
 

@@ -30,7 +30,7 @@ Nhưng mọi YAML hiện tại đặt `raddino: false`.
 ## Status
 
 ```text
-🟡 CONDITIONAL — encoders.raddino: false ở mimic_cxr_full_l4, 2x3090, 2gpu, blip2_*, 07_all_three
+🟡 CONDITIONAL — encoders.raddino: false ở mimic_cxr_full, blip2_*, 07_all_three
 ```
 
 ## Main class

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Preprocess the full MIMIC-CXR (p10-p19) metadata + reports into train/val/test CSVs.
 
-Script form of `kltn-data-preprocessing.ipynb`, with the Kaggle/gdown plumbing and the
+Script form of `kltn-data-preprocessing.ipynb`, with the download plumbing and the
 exploratory plotting cells removed. Reads the three `.csv.gz` metadata files and the
 per-study report .txt tree, emits the split CSVs consumed by
 `model/lavis/data/ReportDataset.py::MIMIC_CXR_Dataset`.

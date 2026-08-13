@@ -149,7 +149,7 @@ def check_paths() -> None:
 
 
 def check_train_configs() -> None:
-    for rel in ("pretraining/configs/mimic_cxr_2x3090.yaml", "pretraining/configs/mimic_cxr_full_l4.yaml"):
+    for rel in ("pretraining/configs/mimic_cxr_full.yaml",):
         p = REPO_ROOT / rel
         record(PASS if p.exists() else WARN, f"config: {rel}", "present" if p.exists() else "absent")
 

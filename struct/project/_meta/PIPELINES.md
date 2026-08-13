@@ -1,4 +1,4 @@
-> Source: `pretraining/`, `training/`, `scripts/`, `medgemma_inference/`, `preporcessing/`, `cloud/`
+> Source: `pretraining/`, `training/`, `scripts/`, `medgemma_inference/`, `preporcessing/`
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-12
 
@@ -32,25 +32,22 @@ một thứ — mỗi cái có entrypoint, input, output và điều kiện tiê
 
 ### Entrypoint
 
+> **Chạy ở đâu:** mọi lệnh dưới đây thực thi trên `phuong@minhphuong`, không phải
+> ở checkout này (máy dev không có GPU và không có dataset). SSH vào máy đó,
+> `cd ~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git`, rồi
+> `git pull origin main` **trước khi chạy**.
+
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml
+    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+    --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 ```
 
-Biến thể 2×3090 DDP:
-```bash
-python -m torch.distributed.run --standalone --nproc_per_node=2 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_2x3090.yaml
-```
-
-Qua launcher (identity đọc từ `cloud/env.local.sh` untracked):
-```bash
-source cloud/env.local.sh && cloud/run_stage1.sh
-```
+Chỉ còn một GPU nên không còn biến thể DDP nào; `--nproc_per_node` luôn là `1`.
 
 ### Config bắt buộc
 
-`pretraining/configs/mimic_cxr_full_l4.yaml` (production) — 20 epoch, early stop
+`pretraining/configs/mimic_cxr_full.yaml` (production) — 20 epoch, early stop
 patience 5, bf16 AMP, `save_freq: 5`, `warmup_steps: 300`.
 
 Cộng `configs/env_config.yaml` cho đường dẫn máy. Thiếu file này →
@@ -131,7 +128,7 @@ MedGemma" hay so sánh như thể nó đã nhìn ảnh.
 ### Alias cũ
 
 `--image-mode {native,qformer,both}` vẫn hoạt động, map sang tên mới.
-⚠ `cloud/run_stage2.sh:34` vẫn dùng alias cũ này (`--image-mode "$STAGE2_IMAGE_MODE"`).
+⚠ Launcher duy nhất còn dùng alias cũ này (`cloud/run_stage2.sh`) đã bị xóa 2026-08-13.
 
 ### Ví dụ đường Q-Former
 
@@ -291,7 +288,7 @@ mỗi epoch.
 
 ```bash
 python -m pretraining.precompute_features \
-    --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml \
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --options model.encoders.biovil=true model.encoders.pubmedclip=true
 ```
 

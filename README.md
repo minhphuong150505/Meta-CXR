@@ -1,4 +1,4 @@
-# META-CXR / Meta-CXR-Kaggle
+# META-CXR
 
 Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh báo cáo. Stage 1 học biểu diễn thị giác theo study, hợp nhất nhiều view, tạo Q-Former tokens và dự đoán bất thường. Stage 2 dùng MedGemma để sinh nội dung báo cáo, với đường ảnh native hoặc Q-Former soft tokens. Repository cũng có evaluator cho classification và report generation.
 
@@ -7,9 +7,11 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 >
 > Đây là trạng thái theo tài liệu tích hợp tại commit hiện tại, không phải xác nhận đã train trên GPU hay đã tái lập metric mô hình.
 >
-> **Máy train hiện tại (user xác nhận 2026-08-12):** một host với định danh
-> `phuong@minhphuong`. GPU/VRAM/RAM và data mount của host này chưa được ghi nhận;
-> các recipe L4/2×3090 bên dưới là cấu hình hỗ trợ, không phải mô tả hardware hiện tại.
+> **Máy train:** một host duy nhất, `phuong@minhphuong` (máy cá nhân của tác giả).
+> Xác minh 2026-08-13: **1× RTX 5060 Ti 16 GB**, dữ liệu và checkpoint nằm trên
+> `/mnt/drive1tb` (930 GB NTFS, **không auto-mount** — phải mount tay sau mỗi lần
+> reboot). Không còn đường chạy cloud: các recipe GCP/L4/Kaggle/2×3090 đã bị gỡ
+> ngày 2026-08-13 để tối ưu chi phí.
 
 ## Trạng thái hiện tại
 
@@ -54,8 +56,7 @@ Các config Stage 1 chính bật BioViL-T, PubMedCLIP và SwinV2; RadDINO có im
 Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/lateral được chọn làm anchor và tối đa một view phụ được fuse trước projection. Nhánh student dùng ảnh để tạo abnormality predictions và Q-Former representations; report text chỉ tham gia teacher branch trong lúc train.
 
 - Entrypoint: [`pretraining/train.py`](pretraining/train.py)
-- Config một GPU: [`pretraining/configs/mimic_cxr_full_l4.yaml`](pretraining/configs/mimic_cxr_full_l4.yaml)
-- Config 2× RTX 3090: [`pretraining/configs/mimic_cxr_2x3090.yaml`](pretraining/configs/mimic_cxr_2x3090.yaml)
+- Config production (một GPU, recipe duy nhất): [`pretraining/configs/mimic_cxr_full.yaml`](pretraining/configs/mimic_cxr_full.yaml)
 - Checkpoint selection: `f1_positive_macro` trên validation; test được giữ ngoài quá trình chọn checkpoint.
 
 ## Stage 2
@@ -129,7 +130,7 @@ Clinical adapters hiện chỉ khai báo CheXbert, RadGraph và CheXpert labeler
 ## Cấu trúc repository
 
 ```text
-Meta-CXR-Kaggle/
+Meta-CXR/
 ├── configs/                 environment, experiment và prompt configs
 ├── pretraining/             Stage 1 entrypoint và configs
 ├── training/                Stage 2, data I/O và evaluation implementation
@@ -140,7 +141,6 @@ Meta-CXR-Kaggle/
 ├── vision_encoders/         visual encoder implementations
 ├── scripts/                 preflight, calibration và evaluator CLIs
 ├── tests/                   CPU test suite
-├── cloud/                   VM/cloud automation
 └── docs/                    hướng dẫn và audit chi tiết
 ```
 
@@ -149,8 +149,8 @@ Không có thư mục top-level `evaluation/`; evaluator hiện nằm tại `tra
 ## Cài đặt
 
 ```bash
-git clone https://github.com/minhphuong150505/Meta-CXR-Kaggle.git
-cd Meta-CXR-Kaggle
+git clone https://github.com/minhphuong150505/Meta-CXR.git
+cd Meta-CXR
 ```
 
 Project yêu cầu Python 3.10 trở lên. Stage 1 và Stage 2 có requirement files riêng; hướng dẫn VM dùng hai virtual environment để cô lập runtime:
@@ -169,7 +169,7 @@ pip install -r requirements-stage2.txt
 deactivate
 ```
 
-`requirements-stage2.txt` bao gồm Stage 1 requirements rồi bổ sung Accelerate, bitsandbytes, PEFT và các package Stage 2. Xem [VM training guide](docs/VM_TRAINING_FINAL.md) trước khi cài trên GPU host. MedGemma là gated model; dùng `HF_TOKEN` hoặc đăng nhập Hugging Face và không ghi credential vào repository.
+`requirements-stage2.txt` bao gồm Stage 1 requirements rồi bổ sung Accelerate, bitsandbytes, PEFT và các package Stage 2. MedGemma là gated model; dùng `HF_TOKEN` hoặc đăng nhập Hugging Face và không ghi credential vào repository.
 
 ## Cấu hình
 
@@ -188,7 +188,7 @@ cp configs/env_config.yaml.example configs/env_config.yaml
 
 ## Dữ liệu
 
-MIMIC-CXR là dữ liệu hạn chế truy cập theo DUA. Người dùng phải tự có quyền truy cập hợp lệ; ảnh, report text, processed splits, credentials và model artifacts không được phân phối trong repository. Pipeline hiện nhắm tới full p10–p19 splits, không phải notebook p10 cũ. Cấu trúc mount chi tiết nằm trong [VM training guide](docs/VM_TRAINING_FINAL.md) và file config mẫu.
+MIMIC-CXR là dữ liệu hạn chế truy cập theo DUA. Người dùng phải tự có quyền truy cập hợp lệ; ảnh, report text, processed splits, credentials và model artifacts không được phân phối trong repository. Pipeline hiện nhắm tới full p10–p19 splits, không phải notebook p10 cũ. Cấu trúc mount chi tiết nằm trong `configs/env_config.yaml.example`.
 
 ## Quick start
 
@@ -211,7 +211,7 @@ macro-AUPRC; logits validation được lưu để calibrate threshold F1 sau đ
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-  -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml
+  -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml
 ```
 
 Sau khi train, calibrate threshold chỉ trên prediction của validation từ
@@ -222,13 +222,6 @@ python scripts/calibrate_thresholds.py \
   --predictions pretraining/outputs/<run>/result/val_predictions_epoch_best.npz \
   --objective f1 --uncertain-policy ignore_uncertain --min-positive 20 \
   --output pretraining/outputs/<run>/result/f1_thresholds.json
-```
-
-Full 2-GPU command được cấu hình như sau, nhưng vẫn cần GPU smoke test trước:
-
-```bash
-python -m torch.distributed.run --standalone --nproc_per_node=2 \
-  -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_2x3090.yaml
 ```
 
 ### 3. Stage 2 smoke test và training
@@ -269,16 +262,12 @@ python scripts/evaluate_stage2.py \
   --skip-clinical-metrics --output-dir <stage2_eval_dir>
 ```
 
-Xem [VM training guide](docs/VM_TRAINING_FINAL.md) để biết resume, output layout và troubleshooting.
-
 ## Hỗ trợ nhiều GPU
 
-| Thành phần | 1 GPU | 2-GPU DDP | Hai job độc lập |
-|---|---|---|---|
-| Stage 1 | Có trong code | Có trong code/config qua `torchrun`; chưa GPU-tested | Không phải workflow chính |
-| Stage 2 | Một GPU cho mỗi run | **Không hỗ trợ** | Có thể chạy hai experiment riêng bằng `CUDA_VISIBLE_DEVICES=0` và `CUDA_VISIBLE_DEVICES=1` |
-
-Stage 2 không dùng một `device_map` rộng để thay cho DDP. Hai job độc lập không chia sẻ gradient và không phải một distributed run.
+Máy train chỉ có một GPU nên đây không còn là workflow được hỗ trợ. Stage 1 vẫn
+gọi qua `torch.distributed.run` với `--nproc_per_node=1`; code DDP còn trong
+LAVIS fork nhưng không có config nào dùng và chưa từng được test. Stage 2
+**không hỗ trợ DDP** và không dùng `device_map` rộng để thay thế.
 
 ## Testing
 
@@ -304,7 +293,6 @@ Bài báo META-CXR gốc có báo cáo classification và report-generation metr
 
 ## Tài liệu
 
-- [VM training guide](docs/VM_TRAINING_FINAL.md)
 - [Stage 2 pipeline modes](docs/STAGE2_PIPELINE_MODES.md)
 - [Stage 2 prompt design](docs/stage2_prompt_design.md)
 - [Stage 2 prompt audit](docs/stage2_prompt_audit.md)
@@ -315,7 +303,6 @@ Bài báo META-CXR gốc có báo cáo classification và report-generation metr
 - [MedGemma runtime smoke status](docs/medgemma_real_runtime_smoke.md)
 - [Final branch integration audit](docs/final_branch_integration_audit.md)
 - [Final merge plan](docs/final_merge_plan.md)
-- [Checkpoint workflow](docs/CHECKPOINT_WORKFLOW.md)
 - [Feature cache](docs/FEATURE_CACHE.md)
 - [Notebook privacy](docs/notebook_privacy.md)
 

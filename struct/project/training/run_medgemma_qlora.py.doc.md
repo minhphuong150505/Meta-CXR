@@ -49,8 +49,8 @@ Chạy **trực tiếp bằng python**, không torchrun — Stage 2 single-proce
 | `--section-mode` | `findings_and_impression` | Q-Former chỉ `findings_only` |
 | `--prompt-config` | — | Bỏ → prompt legacy |
 | `--checkpoint-root` | `checkpoints` | |
-| `--stage1-run` | `mimic_cxr_full_l4_blip2` | |
-| `--stage1-config` | `pretraining/configs/mimic_cxr_full_l4.yaml` | |
+| `--stage1-run` | `mimic_cxr_full_blip2` | |
+| `--stage1-config` | `pretraining/configs/mimic_cxr_full.yaml` | |
 | `--train/val/test-limit` | — | Smoke |
 | `--output-dir`, `--gcs-output`, `--no-upload` | | |
 
@@ -106,7 +106,7 @@ main()
 
 Gọi: `pipeline_modes`, `dataio.manifest`, `run_context.Stage1Context`,
 `stage2.prompts.load_prompt_config`, `fig9.*`, `training/stage1/lavis_loader` (có điều kiện).
-Được gọi: người dùng; `cloud/run_stage2.sh:34`.
+Được gọi: người dùng (trực tiếp trên máy train).
 
 ## Side effects
 

@@ -28,7 +28,7 @@ Không có (đọc `sys.argv`).
 
 ### `cfg_path`
 - Type: `str` · Required: **✅**
-- Đường dẫn tới run YAML, ví dụ `pretraining/configs/mimic_cxr_full_l4.yaml`
+- Đường dẫn tới run YAML, ví dụ `pretraining/configs/mimic_cxr_full.yaml`
 - Được `Config` đọc
 
 ### `local_rank`
@@ -73,7 +73,7 @@ Giao cho `argparse`: thiếu tham số bắt buộc → in usage → exit 2.
 ## Modification risk
 
 Thêm tham số ở đây thì phải xử lý ở `main()` **và** kiểm tra `Config.__init__`
-có bỏ qua thuộc tính lạ không. `cloud/run_stage1.sh` truyền `--cfg-path` và
-`--options`; đổi tên chúng sẽ làm launcher hỏng.
+có bỏ qua thuộc tính lạ không. Lệnh train truyền `--cfg-path` và
+`--options`; đổi tên chúng sẽ làm mọi lệnh train và script gọi nó hỏng.
 
 ← [`train.py`](../train.py.doc.md) · [`main()`](main.md) · [HOME](../../../HOME.md)

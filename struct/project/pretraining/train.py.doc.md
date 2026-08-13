@@ -26,7 +26,7 @@ Không có file này, `registry.get_model_class("blip2")` trả về `None`.
 ## Role in architecture
 
 ```text
-người dùng / cloud/run_stage1.sh
+người dùng (SSH vào phuong@minhphuong)
         ↓
     train.py          ← BẠN ĐANG Ở ĐÂY
         ↓
@@ -52,7 +52,7 @@ Có. **Bắt buộc chạy qua `torch.distributed.run`**, kể cả 1 GPU:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml
+    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml
 ```
 
 Chạy `python pretraining/train.py` trực tiếp sẽ hỏng: `init_distributed_mode` cần
@@ -174,8 +174,6 @@ main()
 | Ai | Cách |
 |---|---|
 | Người dùng | `python -m torch.distributed.run … -m pretraining.train` |
-| `cloud/run_stage1.sh:27` | `"$PYTHON_BIN" -m pretraining.train --cfg-path "$STAGE1_CONFIG" --options …` |
-| `notebooks/03` (🕰 legacy) | `"--cfg-path", "pretraining/configs/mimic_cxr_2gpu.yaml"` |
 
 Không module Python nào import file này — nó là lá của cây gọi hàm.
 

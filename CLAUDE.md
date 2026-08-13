@@ -8,14 +8,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 branch `main`). It is a sibling of the older `../META-CXR/` checkout. The parent
 `../CLAUDE.md` describes that older layout — where it disagrees with this file
 (no `stage2/`, `safety/`, `runtime/`, `scripts/`, `training/evaluation/`,
-`medgemma_inference/`; a `Meta-CXR-Kaggle` remote; Stage-2 test counts), **this
-file wins for work done inside this directory.**
+`medgemma_inference/`; Stage-2 test counts), **this file wins for work done
+inside this directory.**
 
-Current training target, confirmed by the user on 2026-08-12, is one host with
-login identity `phuong@minhphuong`. Its GPU count/model, VRAM, RAM and data mounts
-have not been verified. Treat the L4 and 2×3090 documents as supported recipes,
-not as descriptions of the current host; run `scripts/vm_preflight.py` there
-before choosing a training config.
+## The training host — there is only one, and it is local
+
+All training runs on **`phuong@minhphuong`**, the user's own machine. Verified
+over SSH on 2026-08-13:
+
+| | |
+|---|---|
+| GPU | 1× NVIDIA **RTX 5060 Ti, 16 GB** (`nvidia-smi`), driver 580.173.02, CUDA 13.0 |
+| `/` | 58 GB, ~5 GB free — tight, do not install into it casually |
+| `/home` | 185 GB, ~19 GB free |
+| Data + checkpoints | `/mnt/drive1tb` — partition `nvme1n1p2`, **930 GB NTFS**, **not in `/etc/fstab`** |
+| Repo checkout there | `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git` |
+
+Two consequences worth remembering:
+
+- `/mnt/drive1tb` does **not** auto-mount. After a reboot every path in
+  `configs/env_config.yaml` dangles until it is mounted by hand. If a run fails
+  with missing CSVs or images, check the mount before debugging anything else.
+- The host has no passwordless sudo, so an agent on SSH cannot mount it. Ask
+  the user.
+
+### Running anything means SSH-ing there
+
+This directory is a **development checkout on a machine with no GPU and no
+dataset**. Nothing that actually runs the project — training, evaluation,
+inference, smoke tests, GPU-dependent scripts — runs here. SSH to the host:
+
+```bash
+ssh phuong@minhphuong
+cd ~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git
+git pull origin main        # ALWAYS pull first — this checkout drifts behind
+```
+
+That checkout has the same `origin` (`git@github.com:minhphuong150505/Meta-CXR.git`,
+branch `main`), so the workflow is: commit and push from here, then pull and run
+there. **Always pull before running** — the host has repeatedly been one or more
+commits behind, and running stale code silently produces results attributed to
+the wrong revision.
+
+What may still be done locally: reading code, editing, `struct/` updates, and the
+CPU test suite. Everything else goes over SSH.
+
+**There is no cloud path.** GCP, rented L4, Kaggle and 2×3090 recipes were all
+deleted on 2026-08-13 to cut cost — the user trains locally. Do not reintroduce
+`cloud/`, `docs/cloud/`, GCS upload flows, or hardware-named configs. Anything
+in git history describing them is dead.
 
 `README.md` is authoritative and detailed (written in Vietnamese) — read it before
 making claims about pipeline status. GPU evidence is limited: the tracked Table 5
@@ -27,10 +68,15 @@ that either training pipeline is GPU-validated.
 ## Commands
 
 ```bash
-# CPU test suite (479 tests). 5 fail on a box without torchvision/transformers:
-# test_native_independence (4) and test_stage1_eval_hook (1) import model.lavis.
-# test_blip2_negative_sampling cannot even be collected without torchvision.
-CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q
+# CPU test suite. On a box without torchvision/transformers (verified 2026-08-13):
+#   473 passed, 5 failed, 1 skipped, and 2 modules that cannot be COLLECTED at all
+#   — test_blip2_negative_sampling.py and test_encoder_ablation.py, both of which
+#   import model.lavis and therefore torchvision. Collection errors abort the run,
+#   so ignore them explicitly to see the real result:
+CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
+    --ignore=tests/test_blip2_negative_sampling.py --ignore=tests/test_encoder_ablation.py
+# The 5 failures are test_native_independence (4) and test_stage1_eval_hook (1),
+# same root cause. All 7 pass on the training host, which has the full stack.
 python -m pytest tests/test_stage2_prompts.py -q          # one file
 python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # one test
 
@@ -47,10 +93,13 @@ pip install pre-commit && pre-commit install
 # Preflight before any GPU run (checks CUDA, RAM, disk, shm, paths, HF auth)
 python scripts/vm_preflight.py --stage 1
 
-# Stage 1
+# Stage 1 — the only supported recipe. Single GPU; there is no DDP variant left.
 CUDA_VISIBLE_DEVICES=0 python -m torch.distributed.run --standalone --nproc_per_node=1 \
-    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full_l4.yaml
-# 2×3090 DDP variant: --nproc_per_node=2 --cfg-path .../mimic_cxr_2x3090.yaml
+    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+    --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
+# Those three overrides are what the completed 10-epoch run actually used on the
+# 5060 Ti. The YAML's own defaults (batch 8 / accum 8) fit in 16 GB but were not
+# the settings that produced the current checkpoint.
 # Smoke: set run.truncate_train / truncate_val / truncate_test in the YAML.
 
 # Stage 2 (single-GPU only — no DDP anywhere in Stage 2)
@@ -211,13 +260,17 @@ This remote is public.
 - Never commit images, report text, processed split CSVs, feature caches,
   prediction JSONL, credentials, or model weights. `.gitignore` covers these
   broadly (`data/`, `Report/`, `*.npz`, `*.jsonl`, `checkpoints/**`, `*.pth`, …).
+- **Never publish MIMIC-CXR or any derivative as a Kaggle Dataset, an open-data
+  release, or under a licence such as CC0.** The PhysioNet DUA prohibits
+  redistribution, and that covers cleaned reports, split CSVs, feature caches,
+  predictions and checkpoints trained on them. This rule used to live in
+  `configs/kaggle_datasets.yaml`; that file is gone, so it lives here now.
 - **Executed notebooks are the easy leak** — their outputs embed `subject_id`,
   `study_id` and report text. `scripts/check_notebook_privacy.py` runs as a
-  pre-commit hook; do not bypass it.
+  pre-commit hook; do not bypass it. `notebooks/` no longer exists, but the hook
+  still guards any notebook added later.
 - `configs/env_config.yaml` is git-ignored here (unlike the old checkout). Edit
   `configs/env_config.yaml.example` for anything shared.
-- `cloud/env.sh` holds no real project/bucket names. Export them from an
-  untracked `cloud/env.local.sh` before running the launchers.
 - `image_path` in the processed CSVs is **relative** (`files/p1X/pXXXXXXXX/sYYYYYYY/<dicom>.jpg`)
   and is joined onto `mimic_cxr_jpg_root`, which must point at a directory
   directly containing `files/`. Do not rewrite these to absolute paths.
@@ -241,8 +294,34 @@ This remote is public.
   migrated to MedGemma. Two functionally identical copies of BioViL-T exist
   (`biovil_t/`, `vision_encoders/biovil_t/`).
 - The many `docs/*audit*.md` / `*_baseline.md` files are point-in-time records of
-  past integration work, not living specs. `docs/VM_TRAINING_FINAL.md` and
-  `docs/STAGE2_PIPELINE_MODES.md` are the ones to actually follow.
+  past integration work, not living specs. `docs/STAGE2_PIPELINE_MODES.md` is the
+  one to actually follow.
+
+## Keep CLAUDE.md and README.md current — this is part of the work
+
+Whenever you fix something or add a feature, ask whether it changes anything
+either of these two files claims, and update them **in the same commit** if so:
+
+- **`CLAUDE.md`** (this file) — what an agent needs to not get it wrong: the
+  training host and its quirks, commands that actually work, invariants, traps,
+  which components are live vs dead. If you delete a path, remove the flag that
+  used to reach it, change a default, or discover that a documented fact is
+  false, fix it here. A stale line here misleads every future session.
+- **`README.md`** — what a human needs: pipeline status, install, how to run
+  each stage, what is and is not validated. Written in Vietnamese; keep it that
+  way.
+
+Rule of thumb: if a reader following these files would now do the wrong thing,
+the change is not finished. This is not optional cleanup and not a separate
+follow-up task — it ships with the code change, alongside the `struct/` update
+described below.
+
+Two habits that keep them honest:
+
+- State evidence, not intent. "Verified over SSH on <date>" and "not yet run on
+  GPU" are both useful; "should work" is not.
+- When you remove something, say it is removed rather than deleting the line
+  silently, if a future agent might otherwise try to reintroduce it.
 
 ## Source Documentation Synchronization
 

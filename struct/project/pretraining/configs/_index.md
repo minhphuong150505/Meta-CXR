@@ -24,11 +24,9 @@ pretraining/configs/*.yaml ──► LAVIS Config   ──► SIÊU THAM SỐ (m
 
 | File | Doc | Status | Dùng cho |
 |---|---|---|---|
-| `mimic_cxr_full_l4.yaml` | [📄](mimic_cxr_full_l4.yaml.doc.md) | ✅ ★ | **PRODUCTION**, 1 GPU |
-| `mimic_cxr_2x3090.yaml` | [📄](mimic_cxr_2x3090.yaml.doc.md) | ✅ | 2-GPU DDP |
+| `mimic_cxr_full.yaml` | [📄](mimic_cxr_full.yaml.doc.md) | ✅ ★ | **PRODUCTION**, 1 GPU — recipe duy nhất |
 | `blip2_pretrain_stage1_emb.yaml` | [📄](blip2_pretrain_stage1_emb.yaml.doc.md) | ✅ | Demo Gradio (`inference.sh:7`) |
 | `blip2_pretrain_stage1.yaml` | — | 🕰 | Zero reference |
-| `mimic_cxr_2gpu.yaml` | — | 🕰 | 2×T4 cũ ⚠ `warmup_steps: 32000` |
 | `encoder_comparison/07_all_three.yaml` | [📄](encoder_comparison/07_all_three.yaml.doc.md) | 🧪 | So sánh encoder; resolve theo `<run_name>.yaml` tại đây |
 | `ablation/{biovil,pubmedclip,swin,all_three}.yaml` | [📄](ablation/_index.md) | ✅ | Table 5, inference-only; 4/4 completed |
 
@@ -48,7 +46,7 @@ Không phải entrypoint; được truyền qua `--cfg-path`.
 
 `pretraining/train.py`, `pretraining/precompute_features.py`,
 `training/run_medgemma_qlora.py:59`, `training/stage1/lavis_loader.py:50`,
-`training/train_eval_figure9_llm_variants_200.py:324`, `cloud/env.sh:24`,
+`training/train_eval_figure9_llm_variants_200.py:324`,
 `scripts/vm_preflight.py:152`, `inference.sh:7`
 
 ## Execution flow
@@ -80,7 +78,7 @@ model:
 
 ### Khác biệt giữa production và legacy
 
-| Key | `full_l4` ✅ | `2gpu` 🕰 |
+| Key | `full` ✅ |
 |---|---|---|
 | `multi_view` | `true` | `false` |
 | `warmup_steps` | `300` | ⚠ `32000` — **không bao giờ hoàn tất ramp** |
@@ -101,22 +99,27 @@ model:
 ## Status
 
 ```text
-✅ ACTIVE — mimic_cxr_full_l4.yaml, mimic_cxr_2x3090.yaml, blip2_pretrain_stage1_emb.yaml
+✅ ACTIVE — mimic_cxr_full.yaml, blip2_pretrain_stage1_emb.yaml
 🧪 encoder_comparison/07_all_three.yaml
 ✅ ablation/*.yaml — evaluation hoàn tất; không retrain
-🕰 blip2_pretrain_stage1.yaml, mimic_cxr_2gpu.yaml
+🕰 blip2_pretrain_stage1.yaml
 ```
 
 ## Notes
 
-- ⚠ **Tên file nói dối:** `mimic_cxr_full_l4.yaml` gợi ý NVIDIA L4, nhưng comment
-  trong file ghi *"Verified on RTX 5060 Ti 16 GB"*. Con số batch/memory trong đó
-  đến từ 5060 Ti, không phải L4.
+- **Đã đổi tên** `mimic_cxr_full_l4.yaml` → `mimic_cxr_full.yaml` (2026-08-13).
+  Tên cũ nói NVIDIA L4 trong khi con số batch/memory trong file đến từ RTX 5060 Ti.
+  Các recipe `mimic_cxr_2gpu.yaml` (2×T4 Kaggle) và `mimic_cxr_2x3090.yaml` đã bị
+  xóa cùng đợt — máy train chỉ có một GPU.
+
+- ⚠ **Default trong file ≠ setting đã chạy.** File ghi `batch_size_train: 8`,
+  nhưng run 10-epoch tạo ra `checkpoint_best` hiện tại dùng override CLI
+  `run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11`.
 
 - **`encoder_comparison/` được resolve theo quy ước tên.** `lavis_loader.py:50`
   làm `PROJECT_DIR / "pretraining/configs/encoder_comparison" / f"{run_name}.yaml"`.
   Nên `--stage1-run 07_all_three` sẽ tìm file ở **đó**, không phải ở thư mục cha.
-  Còn `--stage1-config` mặc định lại trỏ vào `mimic_cxr_full_l4.yaml`. Hai đường
+  Còn `--stage1-config` mặc định lại trỏ vào `mimic_cxr_full.yaml`. Hai đường
   resolve khác nhau — dễ nhầm.
 
 - **`ablation/` không phải encoder training recipe.** Bốn file đều dựng checkpoint

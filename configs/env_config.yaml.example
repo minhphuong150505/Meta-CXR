@@ -1,7 +1,7 @@
 # Copy this file to configs/env_config.yaml and fill in your own paths.
 #
-# Layout assumption: `data_root` mirrors the GCS bucket
-# gs://mimic-cxr-jpg-dataset-phuongnm, i.e. it directly contains:
+# Layout assumption: `data_root` is a local mirror of MIMIC-CXR-JPG that
+# directly contains:
 #
 #   data_root/
 #   ├── files/p1X/pXXXXXXXX/sYYYYYYY/<dicom>.jpg    <- images (571 GiB full set)
@@ -16,7 +16,7 @@
 
 paths:
   # The only line most machines need to change.
-  data_root: "/your/local/mirror/of/mimic-cxr-jpg-dataset-phuongnm"
+  data_root: "/your/local/mirror/of/mimic-cxr-jpg"
 
   mimic_cxr_jpg_root: "${paths.data_root}"
 
@@ -27,7 +27,6 @@ paths:
   reports_csv:  "${paths.data_root}/mimic_cxr_cleaned.csv"
 
   # Output of preporcessing/preprocess_mimic_cxr.py, mirrored from
-  # gs://mimic-cxr-jpg-dataset-phuongnm/processed/full_allviews/
   # Point at processed/full_frontal/ instead if you regenerate with --views frontal.
   processed_dir:       "${paths.data_root}/processed/full_allviews"
   processed_train_csv: "${paths.processed_dir}/train.csv"
@@ -36,11 +35,6 @@ paths:
 
   output_dir: "/your/output/dir"
   checkpoint_dir: "/your/checkpoint/dir"
-
-  # Use a dedicated private bucket with uniform bucket-level access and Public
-  # Access Prevention enforced. Never publish reports or model artifacts.
-  gcs_bucket:  "gs://your-private-checkpoint-bucket"
-  gcs_project: "your-gcp-project-id"
 
 wandb:
   entity: ""        # your wandb entity/username

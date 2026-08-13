@@ -17,7 +17,7 @@ Recipe so sánh dùng cả BioViL, PubMedCLIP và Swin, resolve theo `run_name` 
 - `output_dir` là absolute path `/home/phuong/output/07_all_three` → không portable.
 - `wandb_entity` gắn tên account cụ thể; cần override trên máy khác.
 - Không khai báo `multi_view`, các lambda loss mới, selection metric hay bf16 như
-  production `mimic_cxr_full_l4.yaml`.
+  production `mimic_cxr_full.yaml`.
 
 ## Status note
 

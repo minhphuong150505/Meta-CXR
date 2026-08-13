@@ -1,7 +1,6 @@
-> **KHÔNG publish feature cache.** Các đoạn bên dưới hướng dẫn đưa `<cache_dir>`
-> lên Kaggle Dataset — đừng làm. Feature là dẫn xuất trực tiếp từ ảnh MIMIC-CXR và
-> PhysioNet DUA cấm phân phối lại; cache chỉ được đặt ở đĩa cục bộ của VM hoặc
-> bucket GCS riêng tư. Phần lập luận về chi phí và cách precompute vẫn đúng.
+> **KHÔNG publish feature cache.** Feature là dẫn xuất trực tiếp từ ảnh MIMIC-CXR
+> và PhysioNet DUA cấm phân phối lại; cache chỉ được đặt trên đĩa cục bộ có kiểm
+> soát truy cập của máy train.
 
 # Frozen-Encoder Feature Cache
 
@@ -35,71 +34,37 @@ toggle combinations reuses the same files.
 ```
 
 Estimated size (P10, ~18k train + ~2.1k val, float16): BioViL ~11 GB, Swin ~3 GB,
-rad-dino ~42 GB. **Publish `<cache_dir>` as a Kaggle Dataset** and attach it as
-`/kaggle/input/...` (read-only, doesn't count against the 20 GB working quota).
-
-### ⚠️ Disk: all three at once may not fit `/kaggle/temp`
-
-Staging biovil+swin+rad-dino together is ~56 GB, but Kaggle ephemeral disk is
-~57 GB total and `/kaggle/working` already claims ~20 GB — precomputing all three
-in one run will likely overflow mid-write.
-
-- **biovil + swin only (~14 GB): fits trivially — ship this first.**
-- **rad-dino:** pick one:
-  - **Keep rad-dino live** (drop `model.encoders.raddino` from the precompute and
-    from `run.feature_cache_dir`'s encoder set). Zero disk risk; you still cache the
-    other two.
-  - **Precompute per-encoder and publish each as its own Kaggle Dataset**, then in
-    training symlink the `<encoder>/` subdirs into one staging dir so the single
-    `feature_cache_dir` loader sees them all:
-    ```python
-    import os
-    os.makedirs("/kaggle/temp/feat_cache", exist_ok=True)
-    for enc, ds in {
-        "biovil":  "/kaggle/input/meta-cxr-feat-biovil/biovil",
-        "swin":    "/kaggle/input/meta-cxr-feat-swin/swin",
-        "raddino": "/kaggle/input/meta-cxr-feat-raddino/raddino",
-    }.items():
-        os.symlink(ds, f"/kaggle/temp/feat_cache/{enc}")
-    # then: run.feature_cache_dir=/kaggle/temp/feat_cache
-    ```
+rad-dino ~42 GB. Scale that up for the full p10–p19 split before choosing a
+target disk. Keep `<cache_dir>` on the training host's own storage only — it is a
+MIMIC-CXR derivative and must never be published.
 
 ## Step 1 — Precompute (run once per encoder set)
 
-Add a Kaggle cell after Cell 5 (env_config) and **before** training:
-
-```python
-import subprocess, sys, os
-env = os.environ.copy()
-env["PYTHONPATH"] = "/kaggle/working/META-CXR"
-subprocess.run([
-    sys.executable, "-m", "pretraining.precompute_features",
-    "--cfg-path", "pretraining/configs/mimic_cxr_2gpu.yaml",
-    "--output-dir", "/kaggle/temp/feat_cache",
-    "--splits", "train", "val",
-    "--batch-size", "32",
-    "--num-workers", "4",
-    "--options",
-    "model.encoders.biovil=true",
-    "model.encoders.swin=true",
-    "model.encoders.raddino=true",
-    "run.distributed=false", "run.world_size=1", "run.gpu=0",
-], cwd="/kaggle/working/META-CXR", env=env, check=True)
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m pretraining.precompute_features \
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+    --output-dir /mnt/drive1tb/meta-cxr-feat-cache \
+    --splits train val \
+    --batch-size 32 \
+    --num-workers 4 \
+    --options model.encoders.biovil=true model.encoders.swin=true \
+              model.encoders.raddino=true \
+              run.distributed=false run.world_size=1 run.gpu=0
 ```
 
 > `run.gpu=0` is required: the standalone script does not call
 > `init_distributed_mode`, so `cfg.run_cfg.gpu` must be set explicitly.
 
-Then save `/kaggle/temp/feat_cache` as a Kaggle Dataset (e.g. slug
-`meta-cxr-feat-cache`) and attach it to the training notebook.
+Precompute one encoder at a time if disk is tight; the loader reads one
+`<cache_dir>` containing a per-encoder subdirectory each, so separate runs
+writing into the same `--output-dir` compose without extra work.
 
 ## Step 2 — Enable cache in training
 
-In **Cell 6**, add `run.feature_cache_dir=...` to the `cfg_options` list, pointing
-at the attached cache dataset:
+Pass `run.feature_cache_dir` in the training `--options`:
 
-```python
-cfg_options.append("run.feature_cache_dir=/kaggle/input/meta-cxr-feat-cache")
+```bash
+--options run.feature_cache_dir=/mnt/drive1tb/meta-cxr-feat-cache
 ```
 
 The enabled encoders must match what was precomputed. With the cache active the
