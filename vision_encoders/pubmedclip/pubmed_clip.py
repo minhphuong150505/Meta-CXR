@@ -17,7 +17,15 @@ class Pubmedclip(nn.Module):
         self.aug = aug
         self.project = project
         self.model_name = "flaviagiammarino/pubmed-clip-vit-base-patch32"
-        self.model = CLIPModel.from_pretrained(self.model_name).to(self.device)
+        # use_safetensors is required, not a preference. transformers >= 4.53
+        # refuses torch.load on torch < 2.6 (CVE-2025-32434), and the cached
+        # main ref for this repo resolves to a snapshot that ships only
+        # pytorch_model.bin. Without this the whole run dies in __init__ before
+        # a single batch, which is how it was found. Verified on the training
+        # host: loads 151.3M parameters with the flag, ValueError without it.
+        self.model = CLIPModel.from_pretrained(
+            self.model_name, use_safetensors=True
+        ).to(self.device)
         for p in self.model.parameters():
             p.requires_grad = False
         self.model.eval()
