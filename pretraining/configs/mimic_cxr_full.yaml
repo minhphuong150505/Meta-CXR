@@ -2,7 +2,7 @@
 # Memory settings below were verified on an RTX 5060 Ti 16 GB. Batch 16 /
 # accum 4 is the measured default as of 2026-08-14 -- launch this config
 # WITHOUT batch overrides; the old `batch_size_train=6 accum_grad_iters=11`
-# command line is superseded and is 14% slower.
+# command line is superseded.
 # The processed CSV paths come from configs/env_config.yaml and must point at
 # processed/full_allviews_v2. One epoch is one pass over unique studies (~223k),
 # not one pass over the ~365k duplicated image rows.
@@ -127,19 +127,23 @@ model:
     #
     #   term off  0.2424 s/it   torch peak 3,778 MiB
     #   term on   0.2788 s/it   torch peak 3,952 MiB
-    #   -> +15.0% time, +174 MiB
     #
-    # An earlier note here claimed +3.6%. That was measured with three encoders
-    # when a step cost 0.56 s and Grad-CAM was hidden inside it. Removing Swin
-    # roughly halved the step, so the term's share of it more than quadrupled.
-    # The absolute cost did not change much; the fraction did. Quote +15%, and
-    # re-measure if the encoder set changes again.
+    # ⚠ THE TIME FIGURE IS NOT USABLE. Both numbers were taken while the
+    # dataloader was the bottleneck, so they largely measure it and not this
+    # term. An earlier note here claimed +3.6% and was wrong for the same kind
+    # of reason (measured with three encoders, when a 0.56 s step hid Grad-CAM).
+    # The memory figure, +174 MiB, is unaffected and stands.
+    #
+    # The clean measurement is free and nobody needs to burn GPU time on it:
+    # warmup_start_epoch below keeps lambda at 0 through epoch [1] and ramps at
+    # [2], so comparing s/it between those two epochs of any real run isolates
+    # the term exactly. Do that and replace this note.
     #
     # It stays this cheap because the Grad-CAM backward only traverses the
     # MHCAC subgraph, not the frozen encoders, and the term fires on 56.7% of
     # studies (a study needs both a mask and a positive finding).
     #
-    # At the shipped batch 16 this puts a 10-epoch run at ~25.3 h.
+    # At batch 16 with the fixed data path a 10-epoch run is ~9.1 h.
     top_k: 0.5
     # Epoch indices [0]-[1] are zero; [2]-[3] ramp; [4]+ use the full weight.
     warmup_start_epoch: 2
@@ -246,6 +250,22 @@ run:
 
   # 16 x accumulation 4 keeps the effective batch at 64.
   #
+  # ⚠ THE TABLE BELOW WAS MEASURED WHILE THE DATALOADER WAS THE BOTTLENECK and
+  # therefore measures the DATALOADER, not the model. See remap_to_uint8 in
+  # ReportDataset.py: it moved ~336 MB of DRAM per image and starved all twelve
+  # workers. After fixing it the same loop runs 0.2347 s/it at batch 16 against
+  # 0.6346 before -- 2.70x -- and `next(it)` fell from 26.5% of wall to 0.1%.
+  # The step is now 94.1% of wall, i.e. genuinely GPU-bound.
+  #
+  # What survives from the table: the VRAM column, and the fact that batch 32
+  # fits comfortably. What does NOT survive: every s/sample figure and the
+  # conclusion that "batch size is not a throughput lever" -- that was a
+  # property of the old data path. Batch scaling has NOT been re-measured
+  # GPU-bound. Do not quote these timings.
+  #
+  # 16 still stands, but on the modelling argument at the end of this comment,
+  # not on speed.
+  #
   # MEASURED on the host 2026-08-14, two encoders, explanation loss on, 200
   # iterations each. torch.cuda.max_memory_allocated / nvidia-smi peak:
   #
@@ -254,14 +274,15 @@ run:
   #   batch 24 (accum  3)  0.04016 s/sample  4,889 / 5,532 MiB   24.8 h / 10ep
   #   batch 32 (accum  2)  0.03989 s/sample  5,414 / 6,356 MiB   24.7 h / 10ep
   #
-  # Two things to take from that table. First, batch size is NOT a throughput
-  # lever here: 5.3x the batch buys 14.2%, and it is already saturated at 16
-  # (16 -> 32 is worth 2.3 points). `data: 0.0000` at every size, so it is not
-  # the dataloader either; the bottleneck scales with samples, not with steps,
-  # and has not been identified. Do not expect a bigger batch to fix GPU
-  # utilisation -- it sits near 37% regardless.
+  # The flat s/sample across that table, and the ~37% GPU utilisation that went
+  # with it, were both the dataloader ceiling (24.5 studies/s) showing through.
+  # `data: 0.0000` in the training log did NOT rule that out: the Python loop
+  # runs ahead of CUDA asynchronously, so by the time it calls next() the batch
+  # has arrived and the real wait lands in `time:` instead. Measuring the
+  # loader on its own -- 0.6520 s/batch against the run's 0.6524 s/it -- is what
+  # exposed it. It now delivers 92.9 studies/s against the 68 the GPU consumes.
   #
-  # Second, memory is almost all static: a linear fit over those four points
+  # Memory is almost all static: a linear fit over those four points
   # gives 56.2 MiB per sample on top of a 3,615 MiB fixed cost, so 91.5% of the
   # batch-6 footprint is parameters and optimizer state. Even batch 32 uses 39%
   # of the card. The old "batch 8 peaked at 12,755 MB" note was from the
