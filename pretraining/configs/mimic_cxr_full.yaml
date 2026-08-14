@@ -235,7 +235,15 @@ run:
   batch_size_train: 8
   batch_size_eval: 8
   accum_grad_iters: 8
-  num_workers: 4
+  # The training host has 20 threads and JPEG decode is the dataloader's cost:
+  # at 4 workers they sit at 96-98% CPU in state R while the GPU idles between
+  # kernels. Measured at batch 6 over 500 iterations: 0.305 s/it at 4 workers
+  # against 0.253 at 12, i.e. ~26 h for ten epochs instead of ~31.
+  #
+  # Not an I/O problem -- a page-cached epoch runs 0.2529 s/it, the same as a
+  # cold one, and the mount reads 216 MB/s against the ~50 MB/s this needs.
+  # Raising this further has not been measured.
+  num_workers: 12
 
   max_len: 256
   min_len: 8
