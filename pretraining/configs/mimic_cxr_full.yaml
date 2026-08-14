@@ -88,12 +88,11 @@ model:
     # The loss weight is the sole enable/disable gate.  There is deliberately no
     # separate explanation.enabled key that could disagree with this value.
     #
-    # OFF until the mask cache exists.  ReportDataset fails fast when
-    # explanation.mask_cache_dir names a cache it cannot find, so arming this
-    # before the cache is built would make this config refuse to start rather
-    # than quietly train without masks.  Turning it on is a separate, deliberate
-    # commit -- which also gives the thesis a clean before/after boundary.
-    lambda_explanation: 0.0
+    # ON as of 2026-08-14, once the cache existed and the cost was measured.
+    # alpha = 0.25 is the value Faruqui & Dubey report as the best accuracy /
+    # explanation trade-off (Fig. 4). Warmup below keeps it at 0 for epochs
+    # [0]-[1] so the classification head settles first.
+    lambda_explanation: 0.25
     # Only read when lambda_itc > 0; inert under the classification-only recipe.
     # Kept so re-enabling ITC does not also require rediscovering this value.
     itc_queue_size: 1024
@@ -119,10 +118,10 @@ model:
     warmup_epochs: 2
     streams: [biovil, pubmedclip, swin]
     # Private MIMIC-derived cache built by preporcessing/build_explanation_masks.py.
-    # Empty means the dataset behaves exactly as it did before the explanation
-    # loss existed: no mask keys, no memmap, unchanged image transforms.  To
-    # enable, build the cache and set this plus lambda_explanation: 0.25 above.
-    mask_cache_dir: ""
+    # Built 2026-08-14: 208,987 train / 1,690 val / 2,959 test masks.
+    # Empty disables the whole path (no mask keys, no memmap, unchanged image
+    # transforms) and is the way to run the without-explanation control.
+    mask_cache_dir: "/mnt/drive1tb/datasets/explanation_masks"
 
   multi_view: true
   view_fusion:
