@@ -1,6 +1,6 @@
-> Source: `mhcac/mhcac_12.py` (471 dòng)
+> Source: `mhcac/mhcac_12.py` (560 dòng)
 > Status: ✅ ACTIVE — ★ bản DUY NHẤT được wire
-> Last verified against source: 2026-08-13
+> Last verified against source: 2026-08-14
 
 # `mhcac/mhcac_12.py`
 
@@ -72,28 +72,30 @@ Khởi tạo tại `blip2_qformer.py:388`:
 embed_dim=768, num_abnormalities=14, num_classes=3, num_layers=6,
 num_commmon_tokens=14,      # ⚠ typo: ba chữ 'm'
 visual_dim=1408, text_dropout_rate=<mhcac.text_dropout>,
-use_cnn=<use_biovil>, uncertain_policy=<mhcac.uncertain_policy>
+use_cnn=<use_biovil>, uncertain_policy=<mhcac.uncertain_policy>,
+stream_layouts=<Blip2Qformer._native_stream_layouts(img_size)>
 ```
 
-Từ YAML: `mhcac.text_dropout`, `mhcac.uncertain_policy`.
+Từ YAML: `mhcac.text_dropout`, `mhcac.uncertain_policy`, `model.image_size`.
 
 ## Main classes
 
 | Class | Dòng | Vai trò |
 |---|---|---|
-| `AbnormalityClassificationModel` | 207 | ★ Model chính |
-| `DownsamplePatches` | 7 | Giảm 196 → `target_patch_count` cho luồng CNN |
-| `CrossModalEmbeddingAlignment` | 66 | Chiếu visual/text/expert về `embed_dim` — **một lần, trên chuỗi đã merge** |
-| `TrainablePositionalEncoding` | 103 | Pos-enc học được, **riêng cho từng encoder** |
-| `ExpertTokenCrossAttention` | 112 | Một lớp attention; `expert_to_text_attention` là **teacher-gated** |
+| `AbnormalityClassificationModel` | 233 | ★ Model chính |
+| `DownsamplePatches` | 9 | Giảm 196 → `target_patch_count`. **Không được dựng khi biovil có `StreamLayout`** — xem "Native layout" bên dưới |
+| `CrossModalEmbeddingAlignment` | 68 | Chiếu visual/text/expert về `embed_dim` — **một lần, trên chuỗi đã merge** |
+| `StreamLayout` | 126 | NamedTuple `(num_tokens, num_global_tokens)` — mô tả chuỗi gốc của một encoder |
+| `TrainablePositionalEncoding` | 105 | Pos-enc học được. `std=0.02` (**không phải `randn` trần**) |
+| `ExpertTokenCrossAttention` | 138 | Một lớp attention; `expert_to_text_attention` là **teacher-gated** |
 
 ## Main methods
 
 | Method | Doc | Vai trò |
 |---|---|---|
-| `AbnormalityClassificationModel.forward` (`:357`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/forward.md) | ★ |
-| `AbnormalityClassificationModel.__init__` (`:208`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/__init__.md) | |
-| `_resize_patch_sequence` (`:320`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/_resize_patch_sequence.md) | ★ Đồng bộ số patch giữa encoder |
+| `AbnormalityClassificationModel.forward` (`:419`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/forward.md) | ★ |
+| `AbnormalityClassificationModel.__init__` (`:234`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/__init__.md) | |
+| `_resize_patch_sequence` (`:382`) | [📄](mhcac_12.py.methods/AbnormalityClassificationModel/_resize_patch_sequence.md) | Đồng bộ số patch — **chỉ trên nhánh legacy** |
 
 ## Execution flow
 
@@ -105,10 +107,14 @@ forward(shared_visual_tokens, text_embeddings, ...)
  ├─ Bước 3 — embedding_alignment(visual, text, expert)   ← MỘT phép chiếu cho tất cả
  ├─ Bước 4 — FOR name, span in sorted(spans, key=start):
  │             stream = visual_proj[:, span, :]
- │             IF capture: giữ FP32 biovil trước downsampler;
- │                         giữ stream khác sau _resize_patch_sequence nếu N là số chính phương
- │             biovil → cnn_downsampler   |  khác → _resize_patch_sequence
- │             → pos_enc(stream)          ← pos-enc RIÊNG mỗi encoder
+ │             IF có StreamLayout ── NATIVE (cấu hình production) ──
+ │                 số token != layout.num_tokens          → ValueError
+ │                 tách global_tokens | spatial           ← CLS của pubmedclip
+ │                 IF capture: lưu spatial + lưới vuông (14×14 / 7×7)
+ │                 cat lại → pos_enc[name](stream)        ← pos-enc RIÊNG mỗi encoder
+ │             ELSE ────────── LEGACY (khi swin/raddino bật) ──────────
+ │                 biovil → cnn_downsampler | khác → _resize_patch_sequence
+ │                 → pos_enc(stream)                      ← MỘT pos-enc dùng chung
  │          image_patches = cat(streams, dim=1)
  ├─ Bước 5 — FOR i, layer in attention_layers (6 lớp):
  │             có expert_to_text_attention → truyền text  (TEACHER)
@@ -120,11 +126,55 @@ forward(shared_visual_tokens, text_embeddings, ...)
 
 ## Điểm thiết kế: một phép chiếu, nhiều view
 
-Docstring `:367` nói rõ: `spans` **chỉ** dùng để cấp pos-enc riêng và resize riêng
+Docstring `:426` nói rõ: `spans` **chỉ** dùng để cấp pos-enc riêng và resize riêng
 cho từng encoder. **Phép chiếu về `embed_dim` xảy ra một lần, trên tensor đã merge.**
 
 Nghĩa là MHCAC và Q-Former dùng chung một biểu diễn thị giác — không có đường
 encode thứ hai. Trước đây hai nhánh tự chiếu và có thể trôi dạt khỏi nhau.
+
+## Native layout — mỗi encoder giữ nguyên thang đo của nó (2026-08-14)
+
+`stream_layouts` là `dict[str, StreamLayout]`. Khi được truyền, **không encoder
+nào bị pool, nội suy hay cắt token** trên đường vào MHCAC, và mỗi encoder có
+positional encoding riêng.
+
+| Stream | Token | Lưới | Vai trò |
+|---|---|---|---|
+| `biovil` | 196 | 14×14, ô 32 px | cục bộ, chi tiết |
+| `pubmedclip` | 1 + 49 | CLS + 7×7, ô 64 px | toàn cục + ngữ cảnh vùng |
+
+Trước đó cả hai bị ép về 7×7 (98 token): BioViL qua `cnn_downsampler`,
+PubMedCLIP qua `_resize_patch_sequence` — vốn còn **xoá luôn CLS** (`50 == 49+1`).
+Kết quả là hai bản đồ thô giống hệt nhau và không còn token toàn cục nào.
+Đo trên ảnh thật cho thấy CLS không tái tạo được từ phần giữ lại
+(`cos(CLS, mean patch) = 0.21`), trong khi global embedding của BioViL **chính
+là** trung bình các patch (`cos = 1.0000`, `biovil_t/model.py:84`) nên bỏ đi
+không mất gì. Xem
+[D-016](../_meta/DECISIONS.md#d-016--mỗi-encoder-giữ-thang-đo-riêng).
+
+Ba ràng buộc phải giữ khi sửa vòng lặp này:
+
+1. **Tensor được capture phải nằm trên đường tới loss.** Grad-CAM gọi
+   `autograd.grad(score, activation)`. Nếu cắt `spatial` ra rồi vẫn đẩy tensor
+   *chưa cắt* xuống dưới, `spatial` thành nhánh cụt: `autograd.grad` báo lỗi,
+   hoặc với `allow_unused=True` trả `None`, và explanation loss âm thầm thành
+   vô hiệu. Vì vậy code cắt trước, rồi `torch.cat` lại.
+2. **`num_global_tokens` nằm ở ĐẦU chuỗi** và bị loại khỏi lưới vuông khi
+   capture — CLS không có toạ độ không gian.
+3. **Số token phải khớp layout**, nếu không `forward` raise. Đây không phải
+   phòng xa: `img_size` mà layout dùng từng là 224 (mặc định của YAML BLIP-2)
+   trong khi vis_processor sinh 448, và check này bắt được ngay ở smoke đầu tiên.
+
+Nhánh legacy (`stream_layouts=None`) giữ nguyên hành vi cũ và được dùng khi
+`swin`/`raddino` bật, vì số token của chúng không suy ra được từ config.
+
+## `std=0.02` cho positional encoding
+
+Token vào `pos_enc` có L2 norm **đúng bằng 1.0** (`CrossModalEmbeddingAlignment`
+kết thúc bằng `F.normalize(dim=-1)`). Khởi tạo `torch.randn` trần cho pos-enc
+norm `sqrt(768) = 27.8`, tức ở bước 0 `cos(token+pos, pos) = 0.999`: attention
+hoàn toàn do vị trí quyết định, không do nội dung ảnh. `std=0.02` (quy ước
+BERT/ViT) đưa về norm ~0.55, cùng bậc với nội dung.
 
 ## Calls
 

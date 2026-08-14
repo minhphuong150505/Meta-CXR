@@ -682,3 +682,92 @@ file, 39 GB) vì các run đó đi sai hướng. Chúng cũng đã không nạp 
 hiện tại do Swin tắt, và có trước manifest v2, việc mask ô trống, trọng số lớp
 mới và tiêu chí chọn checkpoint mới. Số liệu Table 5 còn trong `results/` nhưng
 **không tái lập được** vì checkpoint sinh ra chúng đã mất.
+
+---
+
+## D-016 — Mỗi encoder giữ thang đo riêng
+
+**Ngày:** 2026-08-14
+**Trạng thái:** ✅ Đã áp dụng, đã smoke trên GPU
+**Liên quan:** [D-014](#d-014--mask-giải-thích-hai-tầng-và-split-project-là-nguồn-chân-lý)
+
+### Bối cảnh
+
+Lý do chạy hai encoder đóng băng là để model vừa nhìn cục bộ vừa nhìn toàn cục.
+Đo trên ảnh thật của dataset cho thấy code **không** làm được điều đó — nó cắt
+đúng phần tạo nên vai trò của mỗi bên:
+
+| Đo được (ảnh thật, CPU, 2026-08-14) | Giá trị |
+|---|---|
+| cosine đôi một giữa 49 patch PubMedCLIP | **0.6755** |
+| cosine đôi một giữa 196 patch BioViL | **0.0017** |
+| tỉ lệ hướng chung đó là hằng số toàn dataset | **97%** (cos 0.970) |
+| `cos(CLS PubMedCLIP, mean patch)` | **0.2109** |
+| `cos(global BioViL, mean patch)` | **1.0000** |
+| norm positional encoding vs norm token | **27.8 : 1.0** |
+
+Ba hệ quả:
+
+1. `_resize_patch_sequence` **xoá CLS** của PubMedCLIP (`50 == 49+1`). Đó là
+   token duy nhất qua `post_layernorm` và là vector CLIP được huấn luyện
+   contrastive — tức là tín hiệu toàn cục thật sự — và nó không tái tạo được từ
+   phần giữ lại. Ngược lại `projected_global_embedding` của BioViL **chính là**
+   trung bình các patch (`biovil_t/model.py:84`) nên bỏ đi không mất gì. Code
+   đang vứt của PubMedCLIP thứ không tái tạo được và của BioViL thứ tái tạo được.
+2. `cnn_downsampler` nén BioViL từ 14×14 xuống 7×7 **trước** MHCAC, bỏ đi đúng
+   phần chi tiết là lý do tồn tại của encoder đó. Chỗ duy nhất còn dùng 14×14 là
+   nhánh capture Grad-CAM.
+3. Sau hai bước trên, hai encoder thành hai bản đồ 7×7 giống hệt nhau, dùng
+   **chung một** positional encoding, nên không có gì trong đầu vào cho biết một
+   token đến từ encoder nào.
+
+### Quyết định
+
+Mỗi encoder giữ nguyên chuỗi token gốc, mô tả bằng `StreamLayout`:
+
+| Stream | Token | Lưới | Vai trò |
+|---|---|---|---|
+| `biovil` | 196 | 14×14, ô 32 px | cục bộ, chi tiết |
+| `pubmedclip` | 1 + 49 | CLS + 7×7, ô 64 px | toàn cục + ngữ cảnh vùng |
+
+Kèm ba thay đổi:
+
+- `Pubmedclip.forward` áp `post_layernorm` rồi **trừ mean token của từng ảnh**
+  khỏi 49 patch → cosine 0.674 → **−0.014**. CLS giữ nguyên. Sự phân công trở
+  nên tường minh: token 0 = toàn cục, 49 patch = sai lệch cục bộ so với nó.
+- Positional encoding **riêng cho mỗi encoder**, khởi tạo `std=0.02` thay vì
+  `randn` trần (27.8 : 1 → 0.55 : 1).
+- `model.image_size: 448` khai báo tường minh trong run YAML.
+
+### Vì sao giữ PubMedCLIP ở 224 chứ không đẩy lên 448
+
+Đã đo. Ở 448 với `interpolate_pos_encoding=True` PubMedCLIP cho 196 token khớp
+BioViL, nhưng cosine thô *tệ hơn* (0.714 so với 0.674) và nó đẩy CLIP ra ngoài
+phân bố huấn luyện trong khi encoder đóng băng nên không có cơ hội thích nghi.
+Quan trọng hơn: hai bản đồ 14×14 là hai bản sao cùng thang đo. Ở 224 ta có **ba**
+thang đo thật — 32 px, 64 px, toàn ảnh — đúng thứ hai encoder được dựng để cho.
+
+### Chi phí
+
+Chuỗi thị giác 98 → **246 token**. Đo trên host, batch 6, cùng manifest:
+**0.2543 s/it so với 0.2529** — **+0.6%**. Rẻ vì `visual_proj` vốn đã chạy trên
+246 token trước khi cắt; chỉ có cross-attention 14 query × 246 key dài ra, và
+encoder đóng băng mới là phần chiếm thời gian.
+
+### Hệ quả
+
+- **Mọi checkpoint trước 2026-08-14 không load được.** `pos_enc` đổi từ một
+  Parameter sang `ModuleDict`, và `cnn_downsampler` biến mất khỏi state dict.
+- `loss_sparsity` là entropy trên số key, nên thang đo của nó đổi theo
+  `ln(246)/ln(98) ≈ 1.20`. Đừng so trực tiếp giá trị term này với log cũ.
+- Nhánh legacy (`stream_layouts=None`) vẫn giữ nguyên và được dùng khi
+  `swin`/`raddino` bật, vì số token của chúng không suy ra được từ config.
+
+### Đã bác bỏ
+
+- **Đẩy PubMedCLIP lên 448** — xem trên.
+- **Chỉ áp `post_layernorm`** — chỉ đưa cosine về 0.587, không giải quyết.
+- **Để `Linear(768,1408)` của shared projector tự học trừ DC** — nó *có* bias
+  nên về nguyên tắc làm được, và đây là lý do vấn đề này là "xuất phát điểm tệ"
+  chứ không phải bug. Nhưng không có gì trong loss thúc nó về đó, và cái giá của
+  việc đoán sai là cả stream vô dụng suốt 10 epoch.

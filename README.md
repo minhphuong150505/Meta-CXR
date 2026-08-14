@@ -56,7 +56,26 @@ Chest X-ray study
     -> classification, generation và XAI evaluators
 ```
 
-Các config Stage 1 chính bật BioViL-T, PubMedCLIP và SwinV2; RadDINO có implementation nhưng đang tắt trong các recipe này. MHCAC dự đoán 14 nhãn theo Positive/Negative/Uncertain, còn Q-Former tạo 32 query tokens.
+Config Stage 1 production bật **BioViL-T và PubMedCLIP**; SwinV2 tắt từ
+2026-08-14, RadDINO có implementation nhưng cũng đang tắt. MHCAC dự đoán 14 nhãn
+theo Positive/Negative/Uncertain, còn Q-Former tạo 32 query tokens.
+
+**Hai encoder giữ nguyên thang đo riêng (từ 2026-08-14).** Đây là lý do chạy hai
+encoder — một cái nhìn kỹ, một cái nhìn tổng quát:
+
+| Encoder | Đầu vào | Token vào MHCAC | Vai trò |
+|---|---|---|---|
+| BioViL-T | 448×448 | 196 (lưới 14×14, ô 32 px) | cục bộ, chi tiết |
+| PubMedCLIP | 224×224 | 1 CLS + 49 (lưới 7×7, ô 64 px) | toàn cục + ngữ cảnh vùng |
+
+Trước đó cả hai bị ép về lưới 7×7 và CLS của PubMedCLIP bị xoá, nên thực chất
+model chỉ nhận hai bản đồ thô giống nhau và không có token toàn cục nào. Ngoài ra
+49 patch của PubMedCLIP có cosine đôi một 0,674 (BioViL: 0,0017) vì một thành
+phần DC cố định; nay chúng được đọc qua `post_layernorm` rồi trừ mean từng ảnh,
+đưa về −0,014. Chi phí của 148 token thêm vào: **+0,6% s/it**. Chi tiết và số đo
+đầy đủ ở `struct/project/_meta/DECISIONS.md` (D-016).
+
+⚠ **Mọi checkpoint tạo trước 2026-08-14 không load được** với kiến trúc này.
 
 ## Stage 1
 
@@ -83,7 +102,8 @@ L_exp = 1 - Σ(H_plus · M) / (ΣH_plus + eps)
 
 Trong **loss**, `H_plus` giữ giá trị mềm phía trong gate có threshold detach để
 double backprop còn gradient. Top-saliency **metric** mới dùng mask nhị phân đúng
-Eq. (5). Loss chạy riêng trên BioViL 14×14 và PubMedCLIP/Swin 7×7; encoder vẫn
+Eq. (5). Loss chạy riêng trên BioViL 14×14 và PubMedCLIP 7×7 (CLS không có toạ
+độ không gian nên bị loại khỏi lưới CAM); encoder vẫn
 đóng băng, nên nó nắn cách projection/MHCAC/head đọc feature chứ không đổi
 feature encoder.
 

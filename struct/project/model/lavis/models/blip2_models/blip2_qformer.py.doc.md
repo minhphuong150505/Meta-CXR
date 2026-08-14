@@ -1,4 +1,4 @@
-> Source: `model/lavis/models/blip2_models/blip2_qformer.py` (1.632 dòng)
+> Source: `model/lavis/models/blip2_models/blip2_qformer.py` (1.705 dòng)
 > Status: ✅ ACTIVE — ★ TRUNG TÂM STAGE 1
 > Last verified against source: 2026-08-13
 
@@ -113,6 +113,7 @@ dòng đọc ở đây = key đó không làm gì.
 | `forward` | [📄](blip2_qformer.py.methods/Blip2Qformer/forward.md) | ★ Trái tim Stage 1 |
 | `set_epoch` | [📄](blip2_qformer.py.methods/Blip2Qformer/set_epoch.md) | Truyền epoch vào warmup explanation |
 | `_encode_image_streams` | [📄](blip2_qformer.py.methods/Blip2Qformer/_encode_image_streams.md) | ★ Encoder → fusion → shared projector |
+| `_native_stream_layouts` | [📄](blip2_qformer.py.methods/Blip2Qformer/_native_stream_layouts.md) | ★ Số token gốc mỗi encoder → MHCAC; `None` = nhánh legacy |
 | `_encode_aux_streams` | [📄](blip2_qformer.py.methods/Blip2Qformer/_encode_aux_streams.md) | Encode auxiliary view, batched, no_grad |
 | `_apply_encoder_ablation` | [📄](blip2_qformer.py.methods/Blip2Qformer/_apply_encoder_ablation.md) | Zero span encoder sau projection; chỉ hợp lệ khi `eval()` |
 | `_image_text_contrastive` | [📄](blip2_qformer.py.methods/Blip2Qformer/_image_text_contrastive.md) | ITC + queue |
