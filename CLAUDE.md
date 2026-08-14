@@ -146,7 +146,10 @@ CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
 # Memory is 91.5% static (56.2 MiB per sample on a 3,615 MiB fixed cost), so
 # even batch 32 uses 39% of the 16 GB card.
 #
-# A 10-epoch run is ~9.1 h. Batch scaling has NOT been re-measured since the
+# A 10-epoch run is ~9.0 h measured end to end (epochs average 55 min with the
+# explanation loss on, 49 min without; that term costs +10.5%, and the cost is
+# switched rather than scaled -- lambda 0.125 and 0.25 time the same).
+# Batch scaling has NOT been re-measured since the
 # dataloader was fixed, so there is no current evidence about the best batch
 # size for speed -- see "the dataloader was the bottleneck" below.
 #
