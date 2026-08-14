@@ -1,7 +1,8 @@
 # Production Stage-1 recipe for full MIMIC-CXR-JPG p10-p19 on one GPU.
-# Memory settings below were verified on an RTX 5060 Ti 16 GB. The completed
-# 10-epoch run overrode them on the command line with
-#   run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
+# Memory settings below were verified on an RTX 5060 Ti 16 GB. Batch 16 /
+# accum 4 is the measured default as of 2026-08-14 -- launch this config
+# WITHOUT batch overrides; the old `batch_size_train=6 accum_grad_iters=11`
+# command line is superseded and is 14% slower.
 # The processed CSV paths come from configs/env_config.yaml and must point at
 # processed/full_allviews_v2. One epoch is one pass over unique studies (~223k),
 # not one pass over the ~365k duplicated image rows.
@@ -26,9 +27,17 @@ model:
     biovil: true
     pubmedclip: true
     # OFF as of 2026-08-14. This changes the architecture, not just a weight:
-    # the shared projector receives two streams instead of three and MHCAC sees
-    # 98 visual tokens instead of 147. Any checkpoint trained with swin on
-    # cannot be loaded against this config, and vice versa.
+    # the shared projector receives two streams instead of three, and MHCAC now
+    # sees 246 visual tokens (biovil 196 + pubmedclip 1 CLS + 49). Any
+    # checkpoint trained with swin on cannot be loaded against this config, and
+    # vice versa -- turning it back on also drops MHCAC to the legacy
+    # resample-everything-to-49 path, because _native_stream_layouts cannot
+    # describe swin's token count.
+    #
+    # It was by far the most expensive of the three: ~220 ms of a ~520 ms step
+    # and ~1.6 GB. SwinV2 at 448 has 112x112 = 12,544 tokens at its first stage
+    # and does window attention over them, against 196 for BioViL's CNN and 49
+    # for PubMedCLIP.
     #
     # explanation.streams below still lists swin; that is a filter over the
     # streams actually captured, so a name that is not produced is simply
@@ -113,23 +122,24 @@ model:
     itc_queue_size: 1024
 
   explanation:
-    # MEASURED on the host, 200 iterations at batch 6, RTX 5060 Ti, torch 2.9.1
-    # (2026-08-14).
+    # COST OF THIS TERM, re-measured 2026-08-14 on the current two-encoder,
+    # native-layout recipe. 200 iterations, batch 6, everything else identical:
     #
-    # Cost of the term itself, three encoders and the slow CLIP processor,
-    # everything else identical:
-    #   s/it 0.560 -> 0.580 (+3.6%), peak VRAM 6112 -> 6136 MiB
-    # +3.6%, not the 30-50% first estimated: the Grad-CAM backward only
-    # traverses the MHCAC subgraph, not the frozen encoders, and the term fires
-    # on 56.7% of studies (a study needs both a mask and a positive finding).
+    #   term off  0.2424 s/it   torch peak 3,778 MiB
+    #   term on   0.2788 s/it   torch peak 3,952 MiB
+    #   -> +15.0% time, +174 MiB
     #
-    # Current recipe, Swin off and CLIPImageProcessorFast, term still on:
-    #   s/it 0.305, peak VRAM 4518 MiB (28% of 16 GB), loss_explanation 0.4461
-    # 1.90x faster than the three-encoder measurement above. Swin was the bulk
-    # of it (~220 ms/step); the CPU-side CLIP resize was ~55 ms.
+    # An earlier note here claimed +3.6%. That was measured with three encoders
+    # when a step cost 0.56 s and Grad-CAM was hidden inside it. Removing Swin
+    # roughly halved the step, so the term's share of it more than quadrupled.
+    # The absolute cost did not change much; the fraction did. Quote +15%, and
+    # re-measure if the encoder set changes again.
     #
-    # A 10-epoch run is therefore ~31 h, not the ~60 h estimated before those
-    # two changes (222,758 studies / batch 6 = 37,126 it/epoch).
+    # It stays this cheap because the Grad-CAM backward only traverses the
+    # MHCAC subgraph, not the frozen encoders, and the term fires on 56.7% of
+    # studies (a study needs both a mask and a positive finding).
+    #
+    # At the shipped batch 16 this puts a 10-epoch run at ~25.3 h.
     top_k: 0.5
     # Epoch indices [0]-[1] are zero; [2]-[3] ramp; [4]+ use the full weight.
     warmup_start_epoch: 2
@@ -234,13 +244,38 @@ run:
   selection_metric: loss
   save_freq: 5
 
-  # Verified on RTX 5060 Ti 16 GB: batch 8 peaked at 12,755 MB for the full
-  # three-encoder, multi-view forward/backward. 8 x accumulation 8 keeps the
-  # effective batch at 64. Contrastive negatives come from
-  # the live microbatch plus the queue, not from gradient accumulation.
-  batch_size_train: 8
-  batch_size_eval: 8
-  accum_grad_iters: 8
+  # 16 x accumulation 4 keeps the effective batch at 64.
+  #
+  # MEASURED on the host 2026-08-14, two encoders, explanation loss on, 200
+  # iterations each. torch.cuda.max_memory_allocated / nvidia-smi peak:
+  #
+  #   batch  6 (accum 11)  0.04647 s/sample  3,952 / 4,776 MiB   28.8 h / 10ep
+  #   batch 16 (accum  4)  0.04093 s/sample  4,415 / 4,914 MiB   25.3 h / 10ep
+  #   batch 24 (accum  3)  0.04016 s/sample  4,889 / 5,532 MiB   24.8 h / 10ep
+  #   batch 32 (accum  2)  0.03989 s/sample  5,414 / 6,356 MiB   24.7 h / 10ep
+  #
+  # Two things to take from that table. First, batch size is NOT a throughput
+  # lever here: 5.3x the batch buys 14.2%, and it is already saturated at 16
+  # (16 -> 32 is worth 2.3 points). `data: 0.0000` at every size, so it is not
+  # the dataloader either; the bottleneck scales with samples, not with steps,
+  # and has not been identified. Do not expect a bigger batch to fix GPU
+  # utilisation -- it sits near 37% regardless.
+  #
+  # Second, memory is almost all static: a linear fit over those four points
+  # gives 56.2 MiB per sample on top of a 3,615 MiB fixed cost, so 91.5% of the
+  # batch-6 footprint is parameters and optimizer state. Even batch 32 uses 39%
+  # of the card. The old "batch 8 peaked at 12,755 MB" note was from the
+  # three-encoder recipe and no longer applies.
+  #
+  # 16 is chosen for a modelling reason, not a speed one. lambda_mpc carries
+  # ~25% of the total loss, but MultiPositiveContrastiveLoss draws negatives
+  # from the live microbatch only, and ~55% of studies have an auxiliary view:
+  # at batch 6 that is ~3.3 usable studies, which is not a contrastive problem.
+  # 16 gives ~8.8. 32 would give ~17.6 but moves the recipe further than the
+  # 2.3 speed points justify.
+  batch_size_train: 16
+  batch_size_eval: 16
+  accum_grad_iters: 4
   # The training host has 20 threads and JPEG decode is the dataloader's cost:
   # at 4 workers they sit at 96-98% CPU in state R while the GPU idles between
   # kernels. Measured at batch 6 over 500 iterations: 0.305 s/it at 4 workers

@@ -135,10 +135,25 @@ python scripts/vm_preflight.py --stage 1
 # "-m pretraining.train"). torchrun does work now that run.dist_url is present,
 # but it buys nothing here.
 CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
-    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
-    --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
-# Those three overrides are what the earlier 10-epoch run used on the 5060 Ti.
-# The YAML's own defaults (batch 8 / accum 8) also fit in 16 GB.
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml
+# Launch it with NO batch overrides. The YAML ships batch 16 / accum 4
+# (effective 64), measured 2026-08-14 as the best of {6, 16, 24, 32}. The old
+# `batch_size_train=6 ... accum_grad_iters=11` command line is superseded.
+#
+# Batch size is not a throughput lever on this model: 5.3x the batch buys
+# 14.2% and saturates at 16 (16 -> 32 is worth 2.3 points), with `data: 0.0000`
+# at every size, so it is not the dataloader. GPU utilisation sits near 37%
+# regardless and the cause is NOT identified -- do not assume a bigger batch,
+# or more workers, will fix it. Memory is 91.5% static (56.2 MiB per sample on
+# a 3,615 MiB fixed cost), so even batch 32 uses 39% of the 16 GB card.
+# 16 is chosen because lambda_mpc carries ~25% of the loss and
+# MultiPositiveContrastiveLoss draws negatives from the live microbatch only:
+# at batch 6 that was ~3.3 usable studies, which is not a contrastive problem.
+#
+# A 10-epoch run is ~25.3 h with the explanation loss on. That term costs
+# +15.0% time / +174 MiB on the current two-encoder recipe -- NOT the +3.6%
+# an older note claimed, which was measured when Swin made each step twice as
+# long and hid it.
 #
 # ALL PRE-2026-08-14 CHECKPOINTS WERE DELETED on 2026-08-14, at the user's
 # request, on the grounds that those runs went in the wrong direction. 15 files,
