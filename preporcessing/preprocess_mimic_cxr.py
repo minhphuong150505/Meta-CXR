@@ -50,6 +50,8 @@ except ImportError:  # Direct execution: python preporcessing/preprocess_mimic_c
 SPLIT_TO_FILENAME = {"train": "train", "validate": "val", "test": "test"}
 FRONTAL_VIEWS = ["PA", "AP"]
 MIN_IMAGE_SIZE = 100
+# Must match model/lavis/data/ReportDataset.py::IGNORE_LABEL.
+IGNORE_LABEL = -100
 
 
 def parse_args() -> argparse.Namespace:
@@ -97,10 +99,20 @@ def clean_chexpert(chexpert_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     out = chexpert_df.copy()
     out["has_chexpert_label"] = ~no_label_mask
 
-    # 3-class mapping: 0=negative, 1=positive, 2=uncertain, NaN->0.
-    # For has_chexpert_label=False rows the 0s are placeholders, NOT real negatives.
+    # 3-class mapping: 0=negative, 1=positive, 2=uncertain, IGNORE_LABEL=blank.
+    #
+    # A blank means the labeler found no mention of the finding, which is not
+    # the radiologist ruling it out; 79.4% of this matrix is blank, so mapping
+    # blanks to 0 turned absence of evidence into evidence of absence. Consumers
+    # drop labels < 0 per cell.
+    #
+    # These columns are NOT written to the split CSVs -- final_cols keeps only
+    # has_chexpert_label -- so the live label path is ReportDataset, which reads
+    # this same CheXpert export and applies the identical mapping. Both are kept
+    # in step so that fixing one and not the other cannot silently diverge.
     for col in label_cols:
-        mapped = pd.Series(0, index=out.index, dtype="int8")
+        mapped = pd.Series(IGNORE_LABEL, index=out.index, dtype="int8")
+        mapped[out[col] == 0.0] = 0
         mapped[out[col] == 1.0] = 1
         mapped[out[col] == -1.0] = 2
         out[col] = mapped
