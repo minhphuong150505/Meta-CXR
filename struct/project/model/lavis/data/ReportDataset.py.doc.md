@@ -83,7 +83,7 @@ Dict sample — xem [DATA_FLOW.md §2.2](../../../_meta/DATA_FLOW.md#22-__getite
 | `_get_explanation_mask_memmap` (`:654`) | — | Mở memmap lazy theo PID worker |
 | `_read_explanation_mask` (`:679`) | — | Cache row → mask/valid/source |
 | `_apply_synced_image_mask_transforms` (`:690`) | — | Một affine cho ảnh bilinear + mask nearest |
-| `load_image` (`:770`), `remap_to_uint8` (`:735`) | — | Đọc + chuẩn hóa percentile |
+| `load_image` (`:837`), `remap_to_uint8` (`:790`) | — | Đọc ảnh + kéo giãn min–max. ★ **`remap_to_uint8` từng là nút cổ chai của toàn bộ training** — xem bên dưới |
 | `_view_id` (`:495`) | — | `ViewPosition` → int |
 | `_coerce_bool` (`:477`) | — | Ép cột cờ về bool |
 | `set_custom_epoch` (`:732`) | — | Đặt epoch cho sampling |
@@ -193,3 +193,55 @@ nhầm lẫn lúc eval giữ `labels >= 0`, cả hai đã có sẵn từ trướ
 đường không lệch nhau, dù cột nhãn của nó không được ghi vào split CSV.
 
 Ghim bởi `tests/test_blank_label_masking.py`.
+
+
+## `remap_to_uint8` — nút cổ chai của toàn bộ pipeline (2026-08-14)
+
+Cho tới 2026-08-14, training chạy **đúng bằng tốc độ dataloader**:
+
+| | s/it (batch 16) |
+|---|---|
+| run thật | 0,6524 |
+| dataloader chạy một mình, không GPU | **0,6520** |
+| model chạy một mình, batch nạp sẵn | **0,2099** |
+
+GPU nhàn 68% thời gian. ⚠ **`data: 0.0000` trong log KHÔNG loại trừ được điều
+này**: `MetricLogger` đo thời gian `next()` bị chặn, nhưng vòng lặp Python chạy
+trước CUDA bất đồng bộ nên lúc nó gọi `next()` thì batch đã tới, còn thời gian
+chờ thật rơi vào `time:`. Muốn thấy phải đo **loader riêng, không GPU** và
+**model riêng, batch nạp sẵn**, rồi so cả hai với run.
+
+Thủ phạm: `remap_to_uint8` làm `array.astype(float)` → **float64** trên ảnh 7 MP
+**nguyên bản, trước mọi phép resize**, rồi quét toàn mảng thêm bốn lượt —
+khoảng **336 MB lưu lượng DRAM mỗi ảnh**. Nó chiếm **45,7% của 83,6 ms mỗi
+study**, nhiều hơn cả giải mã JPEG. Vì nghẽn **băng thông** chứ không phải tính
+toán, 12 worker bóp nghẹt lẫn nhau: đạt 24,5 study/s thay vì 143 study/s như chi
+phí đơn luồng dự đoán.
+
+Trên đầu vào 8-bit, hàm này là phép ánh xạ tuyến tính từ 256 giá trị sang 256
+giá trị — tức **đúng bằng một bảng tra 256 phần tử**. Và trên bộ dữ liệu này
+bảng tra là **ma trận đồng nhất**: mọi ảnh đã dùng hết dải [0,255], nên hàm đang
+tốn 24 ms/ảnh để trả về chính đầu vào của nó.
+
+Đường nhanh uint8 **bit-identical**, đã kiểm trên ảnh thật và ghim bằng
+`tests/test_remap_to_uint8.py` (12 test). Đường float64 tổng quát giữ nguyên cho
+đầu vào 16-bit DICOM mà BioViL-T vốn thiết kế cho.
+
+Kết quả:
+
+| | trước | sau |
+|---|---|---|
+| `__getitem__` | 83,6 ms/study | **42,5 ms** |
+| dataloader | 0,6520 s/batch (24,5 study/s) | **0,1722 s/batch (92,9 study/s)** |
+| vòng lặp thật | 0,6346 s/it | **0,2347 s/it** |
+| `next(it)` chiếm | 26,5% wall | **0,1%** |
+| step chiếm | 67,5% wall | **94,1%** |
+| 10 epoch | ~25 h | **~9,1 h** |
+
+`CheXpertDataset` và `IU_Xray_Dataset` giữ bản sao riêng của hàm này, **cố ý
+không sửa** — không nằm trên đường training.
+
+Thủ phạm tiếp theo nếu muốn nhanh hơn: **giải mã JPEG**, giờ chiếm 66% mỗi item.
+`Image.draft()` giải ở 1/4 kích thước trong miền DCT sẽ cắt vài lần, nhưng nó
+**đổi chuỗi lấy mẫu tức là đổi pixel** — là thay đổi tiền xử lý thật, không miễn
+phí, và chưa làm.

@@ -140,20 +140,15 @@ CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
 # (effective 64), measured 2026-08-14 as the best of {6, 16, 24, 32}. The old
 # `batch_size_train=6 ... accum_grad_iters=11` command line is superseded.
 #
-# Batch size is not a throughput lever on this model: 5.3x the batch buys
-# 14.2% and saturates at 16 (16 -> 32 is worth 2.3 points), with `data: 0.0000`
-# at every size, so it is not the dataloader. GPU utilisation sits near 37%
-# regardless and the cause is NOT identified -- do not assume a bigger batch,
-# or more workers, will fix it. Memory is 91.5% static (56.2 MiB per sample on
-# a 3,615 MiB fixed cost), so even batch 32 uses 39% of the 16 GB card.
 # 16 is chosen because lambda_mpc carries ~25% of the loss and
 # MultiPositiveContrastiveLoss draws negatives from the live microbatch only:
 # at batch 6 that was ~3.3 usable studies, which is not a contrastive problem.
+# Memory is 91.5% static (56.2 MiB per sample on a 3,615 MiB fixed cost), so
+# even batch 32 uses 39% of the 16 GB card.
 #
-# A 10-epoch run is ~25.3 h with the explanation loss on. That term costs
-# +15.0% time / +174 MiB on the current two-encoder recipe -- NOT the +3.6%
-# an older note claimed, which was measured when Swin made each step twice as
-# long and hid it.
+# A 10-epoch run is ~9.1 h. Batch scaling has NOT been re-measured since the
+# dataloader was fixed, so there is no current evidence about the best batch
+# size for speed -- see "the dataloader was the bottleneck" below.
 #
 # ALL PRE-2026-08-14 CHECKPOINTS WERE DELETED on 2026-08-14, at the user's
 # request, on the grounds that those runs went in the wrong direction. 15 files,
@@ -296,6 +291,32 @@ study (not image) → anchor + ≤1 auxiliary view
   [10] and the last epoch is [9], so **early stopping cannot fire** — inert, not
   broken. Set patience to 4 or less to make it live. Covered by
   `tests/test_eval_start_epoch.py`.
+- **The dataloader was the bottleneck, and `data: 0.0000` hid it.** Until
+  2026-08-14 training ran at exactly the speed of the data pipeline: the loader
+  alone measured **0.6520 s/batch** against the run's **0.6524 s/it**, while the
+  model alone did **0.2099**. The GPU was idle 68% of the time (~37% utilisation
+  in wandb). Trust neither `data:` nor GPU utilisation on their own here:
+  MetricLogger's `data:` times how long `next()` blocks, but the Python loop
+  runs ahead of CUDA asynchronously, so the batch has always arrived by then and
+  the real wait lands in `time:`. The way to see it is to time the loader with
+  no GPU work at all, and the model on a pre-loaded batch, and compare both to
+  the run.
+  The cause was `ReportDataset.remap_to_uint8`: a float64 min-max stretch run on
+  the full 7 MP image before any resize, moving ~336 MB of DRAM per image. It
+  was 45.7% of an 83.6 ms study -- more than JPEG decode -- and being
+  bandwidth-bound it made twelve workers starve each other, delivering 24.5
+  studies/s against the 143/s their single-threaded cost predicted. On 8-bit
+  input the function is exactly a 256-entry lookup table, and on this dataset
+  the table is the identity (every image already spans [0,255]), so it was
+  spending 24 ms per image to return its own input. The uint8 fast path is
+  bit-identical, pinned by `tests/test_remap_to_uint8.py`. Result: loader
+  0.6520 -> 0.1722 s/batch (92.9 studies/s), full loop **0.6346 -> 0.2347 s/it,
+  2.70x**, `next(it)` from 26.5% of wall to 0.1%, and the step is now 94.1% of
+  wall. A 10-epoch run went from ~25 h to **~9.1 h**.
+  Next in line if more is wanted: JPEG decode, now 66% of the item. `Image.draft()`
+  decodes at 1/4 scale in the DCT domain and would cut it several-fold, but that
+  changes the resampling chain and therefore the pixels -- it is a preprocessing
+  change, not a free one, and has not been done.
 - Note the `data:` block must sit **inside** `model:` — `Config` merges only
   `run`/`model`/`datasets`.
 - `mimic_cxr_2gpu.yaml` was deleted with the retired cloud/Kaggle recipes. Do
