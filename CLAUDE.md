@@ -48,6 +48,29 @@ Two consequences worth remembering:
   GPU-bound, not I/O-bound. Do not switch drivers for speed; the only reason to
   prefer `ntfs3` is that it refuses to write to a damaged volume.
 
+### The venv: there are three and only one works
+
+`~/.venvs/meta-cxr-stage1-311/bin/python` — torch 2.9.1+cu129, torchvision
+0.24.1, transformers 4.53.2. **Use this one.**
+
+The other two are traps:
+
+| path | torch | why it fails |
+|---|---|---|
+| `~/.venvs/meta-cxr-rtx4060` | 2.5.1+cu124 | built for an RTX 4060; max arch sm_90 |
+| `~/myenv` | none | no torch at all |
+
+The 5060 Ti is **sm_120**, and torch 2.5.1 ships kernels only up to sm_90, so
+`meta-cxr-rtx4060` dies with `CUDA error: no kernel image is available for
+execution on the device` — after loading the whole model, several minutes in.
+The name is a leftover from earlier hardware and does not describe this machine.
+
+That venv also fails earlier and more confusingly: transformers 4.53 refuses
+`torch.load` under torch < 2.6 (CVE-2025-32434), so PubMedCLIP raises a
+vulnerability ValueError first and the arch mismatch never surfaces. Both
+symptoms have the same cause — wrong interpreter. On the correct venv
+PubMedCLIP loads either way.
+
 ### Running anything means SSH-ing there
 
 This directory is a **development checkout on a machine with no GPU and no
