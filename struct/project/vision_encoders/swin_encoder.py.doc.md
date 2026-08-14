@@ -1,5 +1,5 @@
 > Source: `vision_encoders/swin/swin_encoder.py` (140 dòng)
-> Status: ✅ ACTIVE
+> Status: 🟡 CONDITIONAL — `encoders.swin: false` từ 2026-08-14
 > Last verified against source: 2026-08-12
 
 # `vision_encoders/swin/swin_encoder.py`

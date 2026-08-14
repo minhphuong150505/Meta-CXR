@@ -660,3 +660,25 @@ v2 đã đối chiếu ngược về nguồn ngày 2026-08-14: 377.110 dòng = *
 metadata (hao hụt 0%), 0 trùng `dicom_id`, split khớp official MIMIC **0 lệch**,
 ảnh tồn tại thật, `findings_clean` rỗng ⟺ `target_valid=False` **0 lệch** cả ba
 split, và bound độ dài lấy từ train (val/test 0 dòng vượt trần).
+
+
+## Tắt Swin, tăng num_workers, xoá toàn bộ checkpoint cũ (2026-08-14)
+
+**`encoders.swin: false`.** Đây là đổi **kiến trúc**, không phải hyperparameter:
+`SharedVisualTokenProjector` nhận hai stream thay vì ba và MHCAC thấy 98 visual
+token thay vì 147, nên state dict không chuyển qua lại được giữa hai cấu hình.
+Grad-CAM còn hai độ phân giải: BioViL 14×14, PubMedCLIP 7×7.
+`explanation.streams` vẫn liệt kê `swin` — nó là bộ lọc trên các stream thực sự
+được capture (`blip2_qformer.py`), nên tên không được sinh ra thì bị bỏ qua.
+
+**`num_workers: 12`** (từ 4). Sau khi bỏ Swin và đưa resize CLIP lên GPU, bước
+train đủ nhanh để bốn worker không theo kịp: chúng bám 96–98% CPU trạng thái `R`
+trong khi GPU đứng chờ. Đo: 0.305 → 0.253 s/it. **Không phải nghẽn I/O** — epoch
+nằm hết trong page cache chạy 0.2529 s/it, bằng epoch cache lạnh. Chi phí là giải
+mã JPEG ở độ phân giải đầy đủ.
+
+**Toàn bộ checkpoint trước 2026-08-14 đã bị xoá** theo yêu cầu người dùng (15
+file, 39 GB) vì các run đó đi sai hướng. Chúng cũng đã không nạp được vào recipe
+hiện tại do Swin tắt, và có trước manifest v2, việc mask ô trống, trọng số lớp
+mới và tiêu chí chọn checkpoint mới. Số liệu Table 5 còn trong `results/` nhưng
+**không tái lập được** vì checkpoint sinh ra chúng đã mất.
