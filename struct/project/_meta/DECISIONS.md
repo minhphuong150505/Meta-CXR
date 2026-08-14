@@ -623,3 +623,40 @@ Khi thêm decision mới:
 4. Mục `Evidence` phải là bằng chứng kiểm chứng được (đường dẫn + số dòng, kết quả
    grep), không phải suy đoán.
 5. Mục `Documentation impact` phải nêu cụ thể file nào trong `struct/` bị ảnh hưởng.
+
+## Ô trống CheXpert bị mask; chọn checkpoint theo val loss; manifest v2 (2026-08-14)
+
+**Ô trống ≠ âm tính.** Export CheXpert để trống khi labeler không thấy nhắc tới
+tổn thương, không phải khi bác sĩ loại trừ nó. 79,4% ma trận nhãn là ô trống, nên
+việc gộp vào lớp 0 khiến khoảng 9/10 mẫu "âm tính" là *thiếu bằng chứng* chứ không
+phải *bằng chứng về sự vắng mặt*. Nay chúng mang `IGNORE_LABEL = -100` và bị bỏ
+theo từng ô.
+
+Cái giá, đã đo trên `full_allviews_v2` (222.758 study train): chỉ còn 2,86/14 nhãn
+mỗi study (31% study còn đúng 1 nhãn), mất cân bằng **lật chiều** — dương tính
+thành đa số ở 12/14 nhãn — nên `default_class_weights` trong `blip2_qformer.py`
+phải tính lại xuống 0,18–2,01. `No Finding` còn 0 mẫu âm (CheXpert chỉ đánh 1 hoặc
+để trống) nên thành nhãn một lớp; nó đã bị `include_meta_labels: false` loại khỏi
+macro metric.
+
+**Chọn checkpoint theo `loss`, không phải `macro_auprc`.** Quyết định của người
+dùng sau khi được cảnh báo. Ghi lại đánh đổi để không ai phải suy luận lại: val
+loss là tổng có trọng số bị các nhãn phổ biến chi phối, nên một model **ngừng hẳn**
+việc dự đoán nhãn hiếm có thể đạt điểm tốt hơn model đôi khi tìm ra nó.
+`macro_auprc` không có lỗi này vì tính theo từng nhãn và không cần ngưỡng; nó bị
+thay vì val quá mỏng cho hai nhãn (Pleural Other 14 dương, Fracture 16). Cả hai
+vẫn được log mỗi epoch được chấm — đối chiếu xem hai tiêu chí chọn ra epoch nào
+trước khi trích dẫn.
+
+**Manifest: `processed/full_allviews_v2`.** `meta-cxr-manifests-upgraded-20260806`
+là export cũ dù tên nói ngược lại. Ba dấu hiệu: `extraction_method` bằng
+`legacy_preprocessed` cho 100% dòng (chuỗi không tồn tại ở đâu trong repo),
+`target_valid` đúng 100% True (bộ lọc độ dài chưa từng chạy), và thiếu 4 cột —
+`impression_valid`, `impression_token_count`, `findings_token_count`,
+`target_filter_reason` — khiến Stage-2 mặc định `findings_and_impression` chết ở
+`assert_columns`.
+
+v2 đã đối chiếu ngược về nguồn ngày 2026-08-14: 377.110 dòng = **đúng toàn bộ**
+metadata (hao hụt 0%), 0 trùng `dicom_id`, split khớp official MIMIC **0 lệch**,
+ảnh tồn tại thật, `findings_clean` rỗng ⟺ `target_valid=False` **0 lệch** cả ba
+split, và bound độ dài lấy từ train (val/test 0 dòng vượt trần).

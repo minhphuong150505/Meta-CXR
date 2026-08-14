@@ -187,9 +187,21 @@ run:
   # means the value is currently inert. To make it live, set it to 4 or less.
   early_stop_patience: 5
   early_stop_min_delta: 1.0e-4
-  # Threshold-free selection is more stable under severe class imbalance.
-  selection_metric: macro_auprc
-  selection_mode: max
+  # Select on total validation loss -- the quantity actually optimised, and
+  # independent of any decision threshold. ``selection_mode`` is deliberately
+  # absent: RunnerBase infers "min" from the metric name containing "loss", and
+  # leaving an explicit "max" here would silently keep the worst epoch.
+  #
+  # KNOWN BIAS, stated so results are read correctly: validation loss is a
+  # weighted sum dominated by the frequent labels, so a model that stops
+  # predicting a rare finding altogether can score better than one that finds
+  # it sometimes. macro_auprc is per-label and threshold-free and does not have
+  # that failure mode; it was replaced because val is thin for two labels
+  # (Pleural Other 14 positives, Fracture 16), which made its rare-label terms
+  # noisy. Both numbers are logged every scored epoch -- compare which epoch
+  # each would have chosen before quoting either in a write-up.
+  selection_metric: loss
+  save_freq: 5
   save_freq: 5
 
   # Verified on RTX 5060 Ti 16 GB: batch 8 peaked at 12,755 MB for the full

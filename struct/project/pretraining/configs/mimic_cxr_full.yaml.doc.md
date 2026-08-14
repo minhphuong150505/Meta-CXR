@@ -61,7 +61,7 @@ weight về 0 tắt hoàn toàn explanation module/Grad-CAM ở model.
 ## Khối `run:` — các key hay bị hiểu sai
 | Key | Giá trị | Nghĩa thật |
 |---|---|---|
-| `selection_metric` | **`macro_auprc`** | ⚠ `CLAUDE.md`/`README.md` nói `f1_positive_macro` — **sai** |
+| `selection_metric` | **`loss`** | Tổng val loss; `selection_mode` cố ý vắng để RunnerBase tự suy ra `min`. Thiên lệch với nhãn hiếm — xem DECISIONS.md |
 | `warmup_steps` | 800 | **Optimizer update**, không phải microbatch |
 | `save_freq` | 5 | Checkpoint theo epoch mỗi 5 epoch |
 | `batch_size_train` × `accum_grad_iters` | 8 × 8 | Effective batch = **64** |

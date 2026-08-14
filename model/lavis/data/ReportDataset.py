@@ -45,6 +45,13 @@ from model.lavis.data.mimic_cxr_utils import (
     view_id,
 )
 
+# Per-cell "no label here" sentinel for the 14 CheXpert columns. Any negative
+# value works: ClassificationLoss keeps only ``labels_i >= 0`` and the eval
+# confusion matrix keeps only ``labels >= 0``. -100 matches the torch
+# ignore_index convention and still fits int8.
+IGNORE_LABEL = -100
+
+
 @registry.register_processor("my_blip_caption")
 class MyBlipCaptionProcessor(BaseProcessor):
     def __init__(self, prompt="", max_words=50):
@@ -329,10 +336,26 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.chexpert["_has_chexpert_label_raw"] = (
             self.chexpert[self.chexpert_cols].notna().any(axis=1)
         )
-        # CE uses 0=negative, 1=positive, 2=uncertain. Zeros in an entirely
-        # unlabelled row are placeholders and are excluded by classification_mask.
+        # CE uses 0=negative, 1=positive, 2=uncertain, and IGNORE_LABEL for a
+        # blank cell.
+        #
+        # A blank in the CheXpert export means the labeler found no mention of
+        # the finding in the report -- not that the radiologist ruled it out.
+        # 79.4% of the label matrix is blank, so folding blanks into 0 made
+        # roughly nine in ten "negatives" an absence of evidence rather than
+        # evidence of absence, and taught the model that silence means healthy.
+        # Masking them costs supervision (2.86 of 14 labels survive per study,
+        # and 31% of studies keep exactly one) and flips the imbalance so that
+        # positives dominate 12 of 14 labels -- see the class weights in
+        # mimic_cxr_full.yaml, which had to be recomputed downward.
+        #
+        # ClassificationLoss and the evaluation confusion matrix already drop
+        # labels < 0 per cell, so no consumer needed changing.
         self.chexpert[self.chexpert_cols] = (
-            self.chexpert[self.chexpert_cols].replace(-1, 2).fillna(0).astype("int8")
+            self.chexpert[self.chexpert_cols]
+            .replace(-1, 2)
+            .fillna(IGNORE_LABEL)
+            .astype("int8")
         )
 
         print(f"Number of chexpert records: {len(self.chexpert)}")
@@ -434,8 +457,11 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             self.annotation["classification_valid"] = preprocessed_has_label & raw_has_label
         else:
             self.annotation["classification_valid"] = raw_has_label
+        # Rows that matched no CheXpert record land here with NaN across every
+        # label. They are already excluded by classification_valid, but they
+        # must not read back as negatives either.
         self.annotation[self.chexpert_cols] = (
-            self.annotation[self.chexpert_cols].fillna(0).astype("int8")
+            self.annotation[self.chexpert_cols].fillna(IGNORE_LABEL).astype("int8")
         )
         self.annotation = self.annotation.drop(
             columns=[

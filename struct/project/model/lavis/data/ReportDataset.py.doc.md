@@ -172,3 +172,24 @@ geometry và no-cache regression)
 - **Related:** [`blip2_qformer.py`](../models/blip2_models/blip2_qformer.py.doc.md)
 
 ← [HOME](../../../../HOME.md)
+
+
+## Nhãn CheXpert: ô trống bị mask, không phải âm tính
+
+`__init__` ánh xạ export CheXpert thành `0=âm, 1=dương, 2=không chắc,
+IGNORE_LABEL(-100)=ô trống`. Ô trống nghĩa là labeler không thấy nhắc tới, chứ
+không phải bác sĩ loại trừ; 79,4% ma trận nhãn là ô trống.
+
+Hệ quả đã đo trên `processed/full_allviews_v2` (222.758 study train):
+
+- trung bình chỉ **2,86/14** nhãn còn lại mỗi study; **31%** study còn đúng 1 nhãn
+- dương tính thành lớp đa số ở **12/14** nhãn (Atelectasis 44.718 dương / 1.502 âm)
+- `No Finding` còn **0** mẫu âm — CheXpert chỉ đánh 1 hoặc để trống — nên nó là
+  nhãn một lớp; đã bị loại khỏi macro metric bởi `run.include_meta_labels: false`
+
+Không consumer nào phải sửa: `ClassificationLoss` giữ `labels_i >= 0` và ma trận
+nhầm lẫn lúc eval giữ `labels >= 0`, cả hai đã có sẵn từ trước.
+`preporcessing/preprocess_mimic_cxr.py::clean_chexpert` áp đúng ánh xạ này để hai
+đường không lệch nhau, dù cột nhãn của nó không được ghi vào split CSV.
+
+Ghim bởi `tests/test_blank_label_masking.py`.

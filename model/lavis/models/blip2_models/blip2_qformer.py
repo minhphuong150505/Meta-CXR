@@ -400,21 +400,37 @@ class Blip2Qformer(Blip2Base):
 
         # sqrt(negative prevalence / class prevalence), capped at 10, computed
         # from the full study-level training cohort (negative, positive, uncertain).
+        # [1.0, sqrt(neg/pos), sqrt(neg/uncertain)], capped at 10, measured on
+        # the 222,758 study-level train rows of processed/full_allviews_v2.
+        #
+        # These are far below 1 because blank CheXpert cells are masked rather
+        # than counted as negatives (ReportDataset.IGNORE_LABEL). Once "not
+        # mentioned" stops inflating the negative class, positives become the
+        # majority for 12 of 14 findings -- Atelectasis is 44,718 positive
+        # against 1,502 negative -- so the weighting now pushes the other way.
+        # Recompute these whenever the manifest or the blank policy changes;
+        # the previous values assumed blank == negative and are 3-40x too high
+        # for this labelling.
+        #
+        # No Finding has zero negatives by construction (CheXpert only ever
+        # marks it 1 or blank), so it is single-class under this policy and its
+        # weight is neutral. It is already excluded from macro metrics by
+        # run.include_meta_labels: false.
         default_class_weights = [
-            [1.0, 1.40, 0.0],
-            [1.0, 5.56, 4.79],
-            [1.0, 2.00, 5.47],
-            [1.0, 1.85, 6.80],
-            [1.0, 6.01, 10.0],
-            [1.0, 2.67, 3.81],
-            [1.0, 4.50, 7.17],
-            [1.0, 3.44, 3.28],
-            [1.0, 1.95, 4.14],
-            [1.0, 4.61, 10.0],
-            [1.0, 1.78, 5.45],
-            [1.0, 10.0, 10.0],
-            [1.0, 7.20, 10.0],
-            [1.0, 1.57, 10.0],
+            [1.0, 1.00, 0.0],   # No Finding -- single class, see above
+            [1.0, 0.86, 0.75],  # Enlarged Cardiomediastinum
+            [1.0, 0.60, 1.63],  # Cardiomegaly
+            [1.0, 0.24, 0.90],  # Lung Opacity
+            [1.0, 0.37, 0.87],  # Lung Lesion
+            [1.0, 0.98, 1.40],  # Edema
+            [1.0, 0.86, 1.37],  # Consolidation
+            [1.0, 1.22, 1.16],  # Pneumonia
+            [1.0, 0.18, 0.39],  # Atelectasis
+            [1.0, 2.01, 6.11],  # Pneumothorax
+            [1.0, 0.71, 2.17],  # Pleural Effusion
+            [1.0, 0.26, 0.41],  # Pleural Other
+            [1.0, 0.45, 1.27],  # Fracture
+            [1.0, 0.23, 3.86],  # Support Devices
         ]
 
         if class_weights is None:

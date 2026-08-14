@@ -85,7 +85,7 @@ that either training pipeline is GPU-validated.
 
 ```bash
 # CPU test suite. On a box without torchvision/transformers (verified 2026-08-14):
-#   541 passed, 5 failed, 1 skipped, and 2 modules excluded before collection
+#   546 passed, 5 failed, 1 skipped, and 2 modules excluded before collection
 #   — test_blip2_negative_sampling.py and test_encoder_ablation.py, both of which
 #   import model.lavis and therefore torchvision. Collection errors abort the run,
 #   so ignore them explicitly to see the real result:
@@ -397,6 +397,44 @@ costs the same as a busy one) and carries `prior_elapsed_seconds` so resumes
 cannot reset the ceiling. It only ever stops a run — it never downgrades the
 model or enables extra sections. `runtime/device.py` resolves device/dtype from
 config or the machine; nothing hardcodes `cuda:0`.
+
+## The labels, the manifest, and how a checkpoint gets picked
+
+Three things here are easy to get wrong and produce a run that looks healthy.
+
+**A blank CheXpert cell is masked, not negative.** The export leaves a cell blank
+when the labeler found no mention of the finding, which is not the radiologist
+ruling it out. 79.4% of the label matrix is blank, so the old `.fillna(0)` made
+roughly nine in ten "negatives" an absence of evidence. Blanks now carry
+`ReportDataset.IGNORE_LABEL = -100` and are dropped per cell; `ClassificationLoss`
+and the eval confusion matrix already kept only `labels >= 0`, so nothing
+downstream needed changing. What it costs, measured on `full_allviews_v2`:
+2.86 of 14 labels survive per study, 31% of studies keep exactly one, and the
+imbalance **inverts** — positives are the majority for 12 of 14 findings
+(Atelectasis: 44,718 positive against 1,502 negative). `default_class_weights` in
+`blip2_qformer.py` were recomputed downward (0.18–2.01) and must be recomputed
+again if the manifest or this policy changes. `No Finding` has zero negatives by
+construction and is single-class under this policy; `include_meta_labels: false`
+already keeps it out of macro metrics. Pinned by `tests/test_blank_label_masking.py`.
+
+**Use `processed/full_allviews_v2`, nothing else.** Two stale exports sit beside
+it on the training host, and `meta-cxr-manifests-upgraded-20260806` was wired up
+despite the name. Tell a stale export by any of: `extraction_method` is a single
+constant (`legacy_preprocessed` appears nowhere in this repo), `target_valid` is
+100% True (the length filter never ran), or `impression_valid` is missing (Stage 2
+then dies in `assert_columns`). v2 reconciles exactly against the source —
+377,110 rows = all of metadata, zero duplicate `dicom_id`, split identical to the
+official MIMIC split, `findings_clean` empty iff `target_valid` is False, and
+length bounds taken from train only.
+
+**`selection_metric: loss`, and it has a known bias.** Validation loss is a
+weighted sum dominated by the frequent labels, so a model that stops predicting a
+rare finding entirely can outscore one that finds it sometimes. `macro_auprc` is
+per-label and threshold-free and does not have that failure mode; it was replaced
+because val is thin for two labels (Pleural Other 14 positives, Fracture 16).
+Both are logged every scored epoch — check which epoch each would pick before
+quoting either. `selection_mode` is deliberately absent from the YAML so
+RunnerBase infers `min`; an explicit `max` left behind would keep the worst epoch.
 
 ## Data handling — non-negotiable
 

@@ -7,7 +7,7 @@
 #   ├── files/p1X/pXXXXXXXX/sYYYYYYY/<dicom>.jpg    <- images (571 GiB full set)
 #   ├── mimic-cxr-2.0.0-{split,chexpert,metadata}.csv.gz
 #   ├── mimic-cxr-reports/files/p1X/pXXXXXXXX/sYYYYYYY.txt
-#   └── processed/full_allviews/{train,val,test}.csv
+#   └── processed/full_allviews_v2/{train,val,test}.csv
 #
 # This matters: `image_path` in the processed CSVs is RELATIVE ("files/p1X/...")
 # and ReportDataset._row_visual joins it onto mimic_cxr_jpg_root. If you mount or
@@ -28,7 +28,15 @@ paths:
 
   # Output of preporcessing/preprocess_mimic_cxr.py, mirrored from
   # Point at processed/full_frontal/ instead if you regenerate with --views frontal.
-  processed_dir:       "${paths.data_root}/processed/full_allviews"
+  # Must be the output of the CURRENT preporcessing/preprocess_mimic_cxr.py:
+  # 16 columns, extraction_method drawn from mimic_report_parser (FINDINGS_TAG /
+  # IMPRESSION_ONLY / NARRATIVE_BODY / ...), and target_valid actually False for
+  # the ~17.5% of rows the length filter rejects.
+  # A directory whose extraction_method is a single constant, or whose
+  # target_valid is 100% True, or that lacks impression_valid, is a stale export:
+  # Stage 2 refuses it (training/dataio/manifest.py::assert_columns) and Stage 1
+  # silently trains on a smaller cohort with no length filtering.
+  processed_dir:       "${paths.data_root}/processed/full_allviews_v2"
   processed_train_csv: "${paths.processed_dir}/train.csv"
   processed_val_csv:   "${paths.processed_dir}/val.csv"
   processed_test_csv:  "${paths.processed_dir}/test.csv"

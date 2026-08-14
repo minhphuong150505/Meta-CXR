@@ -28,7 +28,7 @@ python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # một te
 ```
 
 Kết quả Phase 3 ngày 2026-08-14, với hai file cần full LAVIS stack được ignore:
-**541 passed, 5 failed, 1 skipped**. Riêng `test_explanation_metrics.py`: 7 passed.
+**546 passed, 5 failed, 1 skipped**. Riêng `test_explanation_metrics.py`: 7 passed; `test_blank_label_masking.py`: 5 passed.
 Năm failure đúng baseline bên dưới.
 
 ⚠ **Trên máy CPU không có torchvision/transformers, 5 test fail và 2 file phải
@@ -74,6 +74,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | Test | Kiểm gì |
 |---|---|
 | `test_stage1_objectives.py` | **Teacher-only text** — student không bao giờ thấy text; shape student khớp inference. Loss từ `mhcac/loss.py` |
+| `test_blank_label_masking.py` | Ô trống CheXpert -> IGNORE_LABEL(-100), không phải 0; sentinel sống sót int8; ô bị mask không sinh gradient; loss bằng đúng việc bỏ hẳn nhãn; Grad-CAM không coi ô trống là dương tính |
 | `test_explanation_loss.py` | Logit Difference Squared, disease-positive gate, Grad-CAM FP32, top-k mềm có gradient, double backprop, warmup, resize mask và vòng đời capture stream |
 | `test_explanation_mask_pipeline.py` | RLE row-major round-trip, union phổi, bbox override, Dice gate, memmap lazy, affine dùng chung params, geometry 512→448 và no-cache regression |
 | `test_view_fusion.py` | `ViewFusionBlock` là **identity chính xác tại step 0** (zero-init `W_O` + FFN cuối) → checkpoint single-view load không hỏng |
