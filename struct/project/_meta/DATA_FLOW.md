@@ -1,6 +1,6 @@
 > Source: `preporcessing/`, `model/lavis/data/ReportDataset.py`, `blip2_qformer.py`, `training/dataio/manifest.py`
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-14
 
 # Data Flow
 
@@ -33,6 +33,11 @@ train.csv / val.csv / test.csv          ← patient- và study-disjoint
         │                          │                           │
         ▼                          ▼                           ▼
   evaluate_stage1.py         evaluate_stage2.py         evaluate_stage2.py
+
+Stage-1 checkpoint + project split + private mask cache
+        │  evaluate_explanation.py (model.eval, grad enabled)
+        ▼
+per-stream CAM 112² → metric JSON tách lung/bbox (+ private NPZ/PNG tùy chọn)
 ```
 
 Ba đường đọc CSV **độc lập nhau**. `manifest.py` cố ý chỉ dùng pandas, không
@@ -239,6 +244,27 @@ target_valid        (CSV) ─► generation_mask ──────┬──┴�
 `.npz` chứa logits + label + mask → đủ để tính lại mọi chỉ số **không cần GPU**.
 
 ⚠ `.npz` là dẫn xuất từ dữ liệu bệnh nhân → `.gitignore` chặn. Không commit.
+
+### 3.1 Stage 1 → XAI artifact
+
+```text
+checkpoint_best.pth + MIMIC_CXR_Dataset(val|test)
+        │  project manifest chọn anchor/split
+        ├─ classification_labels + explanation mask/source
+        └─ image → encoder/view fusion → shared visual → MHCAC
+                                      │ capture _last_cam_streams
+                                      ▼
+                      Logit Difference Squared → Grad-CAM
+                                      ▼
+                      native 14²/7² → bilinear 112² → [0,1]
+                                      ▼
+                explanation_metrics (lung/bbox KHÔNG gộp)
+```
+
+MS-CXR từng box đi qua chính helper Resize(512) → CenterCrop(448) → 112² của
+mask builder. `split` của MS-CXR không vào data flow. JSON aggregate không chứa
+identifier; NPZ/PNG tùy chọn vẫn là dẫn xuất bệnh nhân và phải ở private/ignored
+storage.
 
 ---
 

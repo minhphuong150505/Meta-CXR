@@ -1,7 +1,7 @@
 # Meta-CXR — Source Code Guide
 
 > Điểm bắt đầu **duy nhất**. Mọi thứ khác đều tới được từ đây.
-> Last verified against source: 2026-08-13 · branch `explanation-loss` · Phase 2 working tree
+> Last verified against source: 2026-08-14 · branch `explanation-loss` · Phase 3 working tree
 
 ---
 
@@ -84,6 +84,7 @@ Chest X-ray study (448×448)
 └────────────────────────────────────────────────────────────────────────┘
         ▼
    FINDINGS (± IMPRESSION)  →  evaluate_stage1.py / evaluate_stage2.py
+   Stage-1 checkpoint       →  evaluate_explanation.py (Grad-CAM, có grad)
 ```
 
 **Hai Stage cố ý tách rời.** Đây là ràng buộc thiết kế nặng nhất repository, và
@@ -98,7 +99,7 @@ quy ước.
 
 1. [**Project Overview**](project/_meta/PROJECT_OVERVIEW.md) — bài toán, dữ liệu, ràng buộc
 2. [**Architecture**](project/_meta/ARCHITECTURE.md) — các khối và cách chúng nối
-3. [**Pipelines**](project/_meta/PIPELINES.md) — 10 pipeline, chạy thế nào
+3. [**Pipelines**](project/_meta/PIPELINES.md) — 11 pipeline, chạy thế nào
 4. [**Data Flow**](project/_meta/DATA_FLOW.md) — CSV → tensor → output, kèm shape
 5. [**Entrypoints**](project/_meta/ENTRYPOINTS.md) — gõ lệnh gì
 6. [**Source Tree**](#source-code-tree) — bắt đầu click xuống code
@@ -217,8 +218,9 @@ Meta-CXR-source/
 │   │   └── capabilities.py         ✅
 │   ├── trainer/                    ❓ D-001 — chỉ test import
 │   │   ├── checkpointing.py  state.py
-│   └── evaluation/                 ✅ 17 module
+│   └── evaluation/                 ✅ 17 file Python
 │       ├── classification_metrics.py ✅ (662)   schemas.py ✅
+│       ├── explanation_metrics.py   ✅ XAI NumPy; tách lung/bbox
 │       ├── threshold_calibration.py  ✅         uncertain_policy.py ✅
 │       ├── generation_metrics.py     ✅         error_analysis.py ✅
 │       ├── baselines.py  bootstrap.py  subgroup_analysis.py  ✅
@@ -248,6 +250,7 @@ Meta-CXR-source/
 ├── scripts/                        🧰 CLI
 │   ├── vm_preflight.py             🧰 chạy TRƯỚC mọi run dài
 │   ├── calibrate_thresholds.py     ✅   evaluate_stage1.py ✅
+│   ├── evaluate_explanation.py     ✅ XAI, checkpoint + autograd, không train
 │   ├── evaluate_stage2.py          ✅   check_notebook_privacy.py ✅ pre-commit
 │   ├── run_prompt_ablation.py      🧪   export_stage2_prompt_samples.py 🧪 ⚠ chứa findings
 │   ├── prompt_length_statistics.py 🧪   audit_temporal_targets.py 🧪
@@ -268,7 +271,7 @@ Meta-CXR-source/
 ├── results/                        ✅ Table 5 encoder ablation (4/4 complete)
 │   └── table5_encoder_ablation.{md,json,csv}
 │
-├── tests/                          ✅ 35 file Python — enforce invariant kiến trúc
+├── tests/                          ✅ 36 file Python — enforce invariant kiến trúc
 │   └── fixtures/notebooks/*.fixture
 │
 ├── utils/                          ⚠ POTENTIALLY_UNUSED — zero import toàn repo
@@ -425,8 +428,10 @@ environment Stage 1, không phải Stage 2.
 # Bắt buộc trước tiên
 cp configs/env_config.yaml.example configs/env_config.yaml   # rồi điền path
 
-# Test CPU (479 test; 5 fail + 1 file không collect được nếu thiếu torchvision)
-CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q
+# Test CPU Phase 3: 541 pass, 5 baseline fail, 1 skip; ignore 2 file full-stack
+CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
+  --ignore=tests/test_blip2_negative_sampling.py \
+  --ignore=tests/test_encoder_ablation.py
 
 # Mọi lệnh dưới đây chạy TRÊN phuong@minhphuong, không phải checkout này
 #   ssh phuong@minhphuong
@@ -452,6 +457,13 @@ python -m training.dataio.validate_manifest --section-mode findings_and_impressi
 python preporcessing/build_explanation_masks.py --inspect
 python preporcessing/build_explanation_masks.py \
     --split val --limit 200 --output-dir <private-cache-dir>
+
+# XAI: cần checkpoint + GPU và output private; chưa từng chạy ở Phase 3 dev
+CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
+    --checkpoint <checkpoint_best.pth> \
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml --split val \
+    --mask-cache-dir /mnt/drive1tb/datasets/explanation_masks \
+    --output-dir /mnt/drive1tb/private-results/xai --export-figures 12
 ```
 
 Đầy đủ: [ENTRYPOINTS.md](project/_meta/ENTRYPOINTS.md)

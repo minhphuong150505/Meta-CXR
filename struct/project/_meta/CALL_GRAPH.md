@@ -1,6 +1,6 @@
 > Source: `pretraining/train.py`, `model/lavis/runners/runner_base.py`, `model/lavis/tasks/`, `training/run_medgemma_qlora.py`
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-14
 
 # Call Graph
 
@@ -274,6 +274,19 @@ scripts/evaluate_stage2.py :: main()
 └─ (nếu không --skip-clinical-metrics) evaluation.clinical
       └─ raise MissingOptionalDependency / NotImplementedError
          ⚠ báo "unavailable", KHÔNG BAO GIỜ trả 0
+
+scripts/evaluate_explanation.py :: main()
+├─ _assert_private_output_location()           ← repo-local phải Git-ignored
+├─ _load_ms_cxr_groups()                       ← KHÔNG đọc cột split MS-CXR
+├─ _build_runtime()                            ← import Stage-1 TRỄ trong hàm
+│  ├─ Config + checkpoint override
+│  └─ MIMIC_CXR_Dataset(project split), DataLoader batch 1
+└─ _evaluate()
+   ├─ _encode_image_streams()
+   ├─ mhcac(capture_streams=True) → logits + _last_cam_streams
+   ├─ logit_difference_squared() → grad_cam()  ← autograd sống
+   ├─ transform_mask_geometry() từng expert box
+   └─ explanation_metrics.summarize() → lung/bbox riêng → JSON/NPZ/PNG
 ```
 
 ---
@@ -298,6 +311,8 @@ Tra ngược cho các thành phần hay bị sửa:
 | `runtime.budget.BudgetState` | `medgemma_inference/runner.py:23` |
 | `runtime.device.plan_device` | `model/pretrained_medgemma/findings_loader.py:24` |
 | `training/evaluation/classification_metrics` | `scripts/evaluate_stage1.py`, và **`tasks/image_text_pretrain.py:223` (import trễ trong hàm)** |
+| `training/evaluation/explanation_metrics` | `scripts/evaluate_explanation.py` |
+| `mhcac.explanation.grad_cam` / `logit_difference_squared` | `Blip2Qformer.forward` qua `ExplanationLoss`; `scripts/evaluate_explanation.py` trực tiếp |
 
 ### Không có caller production
 

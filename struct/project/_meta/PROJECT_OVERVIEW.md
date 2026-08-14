@@ -172,14 +172,18 @@ Chi tiết ở [PIPELINES.md](PIPELINES.md).
 
 ## 5. Đánh giá
 
-Evaluator nằm ở `training/evaluation/`, chạy qua CLI trong `scripts/`. Nguyên tắc
-quan trọng: **evaluator đọc file kết quả đã lưu, không cần GPU và không cần model.**
-Đổi threshold hay đổi policy không được tốn thêm một GPU-hour nào.
+Evaluator nằm ở `training/evaluation/`, chạy qua CLI trong `scripts/`. Với Stage 1
+và Stage 2, nguyên tắc quan trọng là **evaluator đọc file kết quả đã lưu, không cần
+GPU và không cần model.** Đổi threshold hay đổi policy không được tốn thêm một
+GPU-hour nào. Ngoại lệ có chủ ý là `evaluate_explanation.py`: Grad-CAM cần đồ thị
+autograd sống nên script này tự nạp checkpoint và chạy pass có grad; phần công
+thức metric vẫn được tách thành module NumPy thuần.
 
 | Stage | Input | Chỉ số |
 |---|---|---|
 | 1 | `.npz` logits | Precision/Recall/F1 positive macro, per-pathology, AUROC, AUPRC, bootstrap CI, confusion matrix 3 lớp |
 | 2 | `.jsonl` reports | BLEU, ROUGE-L (tự implement); METEOR, CIDEr, BERTScore (package tùy chọn) |
+| XAI | checkpoint + cache mask | Top-saliency precision, all-saliency precision, annotation coverage; tách lung/bbox |
 
 Threshold **chỉ được calibrate trên validation**, rồi mới áp lên test. Test split
 bị giữ hoàn toàn ngoài quá trình chọn checkpoint.

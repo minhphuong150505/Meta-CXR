@@ -1,6 +1,6 @@
 > Source: mọi file có `if __name__ == "__main__"` + `Dockerfile`
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-14
 
 # Entrypoints
 
@@ -84,6 +84,7 @@ CPU-only, không đọc ảnh.
 | `scripts/vm_preflight.py` | `python scripts/vm_preflight.py --stage 1` | Kiểm tra CUDA, RAM, disk, shm, path, HF auth **trước** mọi run dài. Không tải weight, không download. |
 | `scripts/calibrate_thresholds.py` | `… --predictions <val.npz> --objective f1 --min-positive 20 --output <json>` | Calibrate threshold, **chỉ trên validation** |
 | `scripts/evaluate_stage1.py` | `… --predictions <test.npz> --thresholds <json> --output-dir <dir>` | Chấm điểm classification |
+| `scripts/evaluate_explanation.py` | `… --checkpoint <pth> --cfg-path <yaml> --split test --mask-cache-dir <dir>` | [P11](PIPELINES.md#p11--evaluation-xai-grad-cam) — load Stage-1, cần grad/GPU; không train. PNG/NPZ private |
 | `scripts/evaluate_stage2.py` | `… --predictions <jsonl> --metrics bleu,rouge,… --output-dir <dir>` | Chấm điểm generation |
 | `training/dataio/validate_manifest.py` | `python -m training.dataio.validate_manifest --section-mode findings_and_impression` | Kiểm tra leakage split, cột bắt buộc, section target |
 | `scripts/check_notebook_privacy.py` | chạy như pre-commit hook | Chặn notebook mang dữ liệu MIMIC vào Git |
@@ -158,14 +159,15 @@ chạy chuẩn là:
 CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q
 ```
 
-⚠ Trên máy CPU không có torchvision/transformers, 5 test fail và 1 file không
-collect được — đây là trạng thái đã biết, không phải hỏng:
+⚠ Trên máy CPU không có torchvision/transformers, 5 test fail và 2 file phải
+ignore trước collection — đây là trạng thái đã biết, không phải hỏng:
 
 | Không chạy được | Lý do |
 |---|---|
-| `test_native_independence` (4 test) | import `model.lavis` |
-| `test_stage1_eval_hook` (1 test) | import `model.lavis` |
+| `test_native_independence` (4 test) | thiếu private `configs/env_config.yaml` |
+| `test_stage1_eval_hook` (1 test) | thiếu torchvision khi import `model.lavis` |
 | `test_blip2_negative_sampling` (cả file) | cần torchvision để collect |
+| `test_encoder_ablation` (cả file) | cần torchvision để collect |
 
 ---
 

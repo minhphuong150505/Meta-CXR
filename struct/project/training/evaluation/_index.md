@@ -1,6 +1,6 @@
-> Source: `training/evaluation/` (17 module)
+> Source: `training/evaluation/` (17 file Python)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-14
 
 # `training/evaluation/`
 
@@ -8,7 +8,10 @@
 
 Toàn bộ evaluator cho **cả hai Stage**. Nguyên tắc thiết kế trung tâm:
 
-> **Đánh giá đọc file kết quả đã lưu — không cần model, không cần GPU, không cần dataset.**
+> **Classification/generation đọc file kết quả đã lưu — không cần model, không
+> cần GPU, không cần dataset.** XAI là ngoại lệ có chủ đích: module metric vẫn
+> thuần NumPy, nhưng `scripts/evaluate_explanation.py` phải tạo CAM từ đồ thị
+> autograd sống.
 
 Đổi threshold hay đổi uncertain policy không được tốn một GPU-hour nào.
 
@@ -20,6 +23,7 @@ Toàn bộ evaluator cho **cả hai Stage**. Nguyên tắc thiết kế trung t�
 ```text
 Stage 1 → .npz ──► calibrate_thresholds.py → evaluate_stage1.py ──► metrics
 Stage 2 → .jsonl ─────────────────────────► evaluate_stage2.py ──► metrics
+Stage 1 checkpoint + split ───────────────► evaluate_explanation.py ──► XAI
 ```
 
 ## Parent
@@ -43,6 +47,7 @@ Stage 2 → .jsonl ────────────────────�
 | `subgroup_analysis.py` | 215 | [📄](subgroup_analysis.py.doc.md) | Phân tích theo nhóm |
 | `report_writer.py` | 423 | [📄](report_writer.py.doc.md) | Xuất markdown + json |
 | `clinical.py` | 185 | [📄](clinical.py.doc.md) | ⚠ Luôn báo unavailable — xem dưới |
+| `explanation_metrics.py` | — | [📄](explanation_metrics.py.doc.md) | Eq. (7)–(9), thuần NumPy; tách lung/bbox bắt buộc |
 
 ### Có điều kiện / chưa nối
 
@@ -75,6 +80,7 @@ research code sau license riêng, không phải pin tái lập được.
 4. Bootstrap khoảng tin cậy.
 5. Xuất báo cáo markdown + json.
 6. **Từ chối** bịa chỉ số lâm sàng.
+7. Tính XAI metric theo từng `mask_source`, không tạo aggregate lung+bbox.
 
 ## Entry points
 
@@ -93,7 +99,8 @@ Không có. Được `scripts/evaluate_stage*.py` và `calibrate_thresholds.py` 
 ## Used by
 
 `scripts/evaluate_stage1.py`, `scripts/evaluate_stage2.py`,
-`scripts/calibrate_thresholds.py`, và ⚠ `model/lavis/tasks/image_text_pretrain.py:223,259`
+`scripts/evaluate_explanation.py`, `scripts/calibrate_thresholds.py`, và ⚠
+`model/lavis/tasks/image_text_pretrain.py:223,259`
 (**import trễ trong hàm** — tạo phụ thuộc ngược `model/lavis/` → `training/`).
 
 ## Execution flow
@@ -114,7 +121,7 @@ Xem [CALL_GRAPH.md §4](../../_meta/CALL_GRAPH.md#4-evaluation--top-down).
 ## Status
 
 ```text
-✅ ACTIVE — 11 module lõi
+✅ ACTIVE — 12 module lõi
 🟡 CONDITIONAL — visualization.py
 ❓ UNKNOWN — config.py, counterfactual.py, perturbations.py
 ```
@@ -123,6 +130,10 @@ Xem [CALL_GRAPH.md §4](../../_meta/CALL_GRAPH.md#4-evaluation--top-down).
 
 - **Threshold chỉ calibrate trên validation**, rồi mới áp lên test. Làm ngược lại
   là rò rỉ test set.
+
+- XAI report không có trường `overall`: `mask_source=0` chỉ chứng minh saliency
+  ở trong phổi; chỉ `mask_source=1` với bbox MS-CXR mới là bằng chứng định vị ổ
+  bệnh. Annotation coverage của nhóm lung là `null/unavailable`, không phải 0.
 
 - `--min-positive 20`: calibrate trên quá ít mẫu positive chỉ là overfit vào nhiễu.
 

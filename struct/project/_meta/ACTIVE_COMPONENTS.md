@@ -1,6 +1,6 @@
 > Source: kết quả trace import/caller trên toàn repository
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-14
 
 # Active Components
 
@@ -94,6 +94,7 @@ training/run_medgemma_qlora.py                                ✅ ENTRYPOINT
 scripts/calibrate_thresholds.py                               ✅
 scripts/evaluate_stage1.py                                    ✅
 scripts/evaluate_stage2.py                                    ✅
+scripts/evaluate_explanation.py                               ✅ model-driven XAI
  │
  └── training/evaluation/
       ├── schemas.py                  ✅   ClassificationPredictions, load_generation_records
@@ -107,6 +108,7 @@ scripts/evaluate_stage2.py                                    ✅
       ├── subgroup_analysis.py        ✅
       ├── report_writer.py            ✅   markdown + json
       ├── clinical.py                 ✅   luôn báo unavailable/not-implemented
+      ├── explanation_metrics.py      ✅   XAI NumPy, lung/bbox tách biệt
       ├── visualization.py            🟡   import trễ, cần extra eval-plots
       ├── config.py                   ❓   D-001
       ├── counterfactual.py           ❓   D-001
@@ -168,7 +170,8 @@ Dockerfile → inference.sh → inference.py                      ✅ D-002
 | `scripts/export_stage2_prompt_samples.py` | 🧪 | ⚠ output chứa findings text |
 | `scripts/prompt_length_statistics.py` | 🧪 | |
 | `scripts/audit_temporal_targets.py` | 🧪 | |
-| `tests/` (35 file) | ✅ | Enforce invariant kiến trúc, gồm explanation-mask và inference-only encoder ablation |
+| `scripts/evaluate_explanation.py` | ✅ | XAI checkpoint pass có grad, không optimizer; artifact private |
+| `tests/` (36 file) | ✅ | Enforce invariant kiến trúc, gồm explanation loss/mask/metric và inference-only encoder ablation |
 
 ---
 
@@ -189,8 +192,10 @@ Dockerfile → inference.sh → inference.py                      ✅ D-002
 
 Nếu một trong ba invariant sau bị phá, bản đồ trên **sai ngay lập tức**:
 
-1. **Ranh giới Stage 1 / Stage 2** — mọi import LAVIS chỉ ở
-   `training/stage1/lavis_loader.py`. Bảo vệ bởi `tests/test_native_independence.py`.
+1. **Ranh giới Stage 1 / Stage 2** — trong đường Stage 2, mọi import LAVIS chỉ ở
+   `training/stage1/lavis_loader.py`. Utility Stage-1 độc lập
+   `scripts/evaluate_explanation.py` import LAVIS trễ trong hàm và không nằm trên
+   đường `medgemma_direct`. Bảo vệ bởi `tests/test_native_independence.py`.
 2. **Inference-only** — `medgemma_inference/` và `model/pretrained_medgemma/`
    không được dựng optimizer / tính gradient / gọi `model.train()`. Bảo vệ bởi
    `tests/test_inference_only_invariants.py`.

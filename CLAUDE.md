@@ -84,15 +84,16 @@ that either training pipeline is GPU-validated.
 ## Commands
 
 ```bash
-# CPU test suite. On a box without torchvision/transformers (verified 2026-08-13):
-#   473 passed, 5 failed, 1 skipped, and 2 modules that cannot be COLLECTED at all
+# CPU test suite. On a box without torchvision/transformers (verified 2026-08-14):
+#   541 passed, 5 failed, 1 skipped, and 2 modules excluded before collection
 #   — test_blip2_negative_sampling.py and test_encoder_ablation.py, both of which
 #   import model.lavis and therefore torchvision. Collection errors abort the run,
 #   so ignore them explicitly to see the real result:
 CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
     --ignore=tests/test_blip2_negative_sampling.py --ignore=tests/test_encoder_ablation.py
-# The 5 failures are test_native_independence (4) and test_stage1_eval_hook (1),
-# same root cause. All 7 pass on the training host, which has the full stack.
+# The 5 failures are test_native_independence (4: missing private env config)
+# and test_stage1_eval_hook (1: missing torchvision). They are unchanged baseline.
+CUDA_VISIBLE_DEVICES="" python -m pytest tests/test_explanation_metrics.py -q  # 7 passed
 python -m pytest tests/test_stage2_prompts.py -q          # one file
 python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # one test
 
@@ -132,6 +133,10 @@ CUDA_VISIBLE_DEVICES=0 python training/run_medgemma_qlora.py \
 python scripts/calibrate_thresholds.py --predictions <val.npz> --objective f1 \
     --uncertain-policy ignore_uncertain --min-positive 20 --output <thresholds.json>
 python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresholds.json> --output-dir <dir>
+CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
+    --checkpoint <checkpoint_best.pth> --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+    --split test --mask-cache-dir /mnt/drive1tb/datasets/explanation_masks \
+    --output-dir /mnt/drive1tb/private-results/xai --export-figures 12
 python scripts/evaluate_stage2.py --predictions <reports.jsonl> \
     --metrics bleu,rouge,meteor,cider,bertscore --skip-clinical-metrics --output-dir <dir>
 
@@ -213,8 +218,100 @@ study (not image) → anchor + ≤1 auxiliary view
   `tests/test_eval_start_epoch.py`.
 - Note the `data:` block must sit **inside** `model:` — `Config` merges only
   `run`/`model`/`datasets`.
-- `mimic_cxr_2gpu.yaml` is legacy (`multi_view: false`, `warmup_steps: 32000`
-  which never finishes its ramp). Don't copy from it.
+- `mimic_cxr_2gpu.yaml` was deleted with the retired cloud/Kaggle recipes. Do
+  not recreate or copy it from history; `mimic_cxr_full.yaml` is the only
+  supported Stage-1 recipe.
+
+#### Explanation-aware loss and XAI evaluation
+
+Phase 1–3 added an optional Grad-CAM constraint, two-tier private mask cache and
+XAI evaluator. **None of this explanation-aware path has run on GPU yet.** The
+loss/math and cache pipeline have CPU tests; a real 200-study validation cache
+was built on CPU, but neither a smoke/full train with the loss nor
+`scripts/evaluate_explanation.py` has ever run against a checkpoint.
+
+For each study with at least one Positive CheXpert label:
+
+```text
+s       = Σ_positive (logit_pos - logit_neg)²
+α_c     = mean_ij ∂s/∂A_cij
+H       = ReLU(Σ_c α_c A_c)
+H_norm  = (H - min(H)) / (max(H) - min(H) + eps)
+theta   = quantile(H_norm, 1 - top_k).detach()
+H_plus  = H_norm * 1[H_norm >= theta]       # soft values, detached binary gate
+L_exp   = 1 - Σ(H_plus * M) / (Σ H_plus + eps)
+```
+
+The soft values are essential **for the loss** so double backprop has a gradient;
+the evaluation top-saliency metric deliberately uses the binary Eq. (5). CAMs
+are supervised separately at BioViL 14×14 and PubMedCLIP/Swin 7×7, then averaged
+as loss terms. Frozen encoders do not move; the loss reshapes the trainable
+projection/MHCAC/head path that reads their features.
+
+`model.loss.lambda_explanation` is the only enable/disable gate. There is no
+separate `enabled` flag that can disagree with it:
+
+```yaml
+model:
+  loss:
+    lambda_explanation: 0.25   # 0.0 = completely off, including CAM capture
+  explanation:
+    top_k: 0.5
+    warmup_start_epoch: 2
+    warmup_epochs: 2
+    streams: [biovil, pubmedclip, swin]
+    mask_cache_dir: /mnt/drive1tb/datasets/explanation_masks
+```
+
+Production config remains **off** (`lambda_explanation: 0.0`, empty cache path)
+until the GPU smoke is performed. The approved schedule at 0.25 is epoch [0]–[1]
+0, [2] 0.125, [3] 0.1875, [4]+ 0.25. `RunnerBase.eval_epoch` is
+`@torch.no_grad()`, so the training forward skips this loss during validation.
+Do not remove that guard: Grad-CAM requires a live graph.
+
+Mask data and verified traps (2026-08-14):
+
+- CheXmask source:
+  `/mnt/drive1tb/datasets/chexmask/MIMIC-CXR-JPG.csv`. The **real header is
+  `dicom_id`**, not `Image ID` as the data dictionary claims. Use
+  OriginalResolution, Dice mean >=0.7, union left/right lung, never heart.
+- MS-CXR source:
+  `/mnt/drive1tb/datasets/ms-cxr/MS_CXR_Local_Alignment_v1.1.0.csv`; schema is
+  `dicom_id,category_name,label_text,path,x,y,w,h,image_width,image_height,split`.
+  **Never use its `split` column.** At least 166 boxes marked `train` there belong
+  to this project's test set. Project manifests are the sole split authority.
+- Default private cache location is
+  `/mnt/drive1tb/datasets/explanation_masks`; format is
+  `masks_<split>.npy uint8 [N,112,112] {0,255}` plus
+  `index_<split>.json` mapping identifier to row/source.
+- Verified CPU smoke over 200 validation studies produced 193 valid masks: 189
+  lung and 4 bbox. Lung coverage was 18.2–52.9% (median 32.6%); bbox union
+  coverage 3.5–18.2%.
+- PhysioNet restricted downloads require Basic auth **after** a 401 challenge.
+  `curl -n` sends credentials preemptively and receives an uninformative 403;
+  use `wget --user ... --ask-password`, not curl, for MS-CXR. CheXmask is open
+  access but its cache is still a MIMIC-derived private artifact.
+
+Build and evaluate only on the mounted private data host:
+
+```bash
+python preporcessing/build_explanation_masks.py --inspect
+python preporcessing/build_explanation_masks.py \
+  --split val --output-dir /mnt/drive1tb/datasets/explanation_masks
+
+CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
+  --checkpoint <checkpoint_best.pth> \
+  --cfg-path pretraining/configs/mimic_cxr_full.yaml --split val \
+  --mask-cache-dir /mnt/drive1tb/datasets/explanation_masks \
+  --ms-cxr-csv /mnt/drive1tb/datasets/ms-cxr/MS_CXR_Local_Alignment_v1.1.0.csv \
+  --output-dir /mnt/drive1tb/private-results/xai --save-cams --export-figures 12
+```
+
+`evaluate_explanation.py` is intentionally separate from model-free
+`evaluate_stage1.py`. It uses `model.eval()` with grad enabled and no optimizer,
+reports each encoder stream with `lung` and `bbox` populations separate, and
+marks lung annotation coverage unavailable. PNG/NPZ outputs are patient data;
+the script refuses non-ignored repo destinations and never prints identifiers.
 
 ### Stage 2 — `training/run_medgemma_qlora.py`
 

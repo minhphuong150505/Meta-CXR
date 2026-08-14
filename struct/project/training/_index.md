@@ -85,11 +85,11 @@ trực tiếp** — bỏ qua resolve mode, kiểm tra leakage và ràng buộc s
 | stdlib-only | `pipeline_modes.py`, `dataio/manifest.py` (chỉ pandas) |
 | Chỉ mode Q-Former | `model/lavis/`, `mhcac/`, `vision_encoders/` — qua `stage1/lavis_loader.py` |
 | Prompt | [`stage2/prompts/`](../stage2/prompts/_index.md) |
-| Evaluation | chỉ `numpy` cho phần lõi |
+| Evaluation | chỉ `numpy` cho phần lõi metric; Grad-CAM CLI nạp Stage 1/PyTorch theo kiểu lazy import |
 
 ## Used by
 
-`scripts/evaluate_stage1.py`, `evaluate_stage2.py`,
+`scripts/evaluate_stage1.py`, `evaluate_stage2.py`, `evaluate_explanation.py`,
 `calibrate_thresholds.py` (→ `evaluation/`) · `medgemma_inference/run_pretrained_findings.py`
 (→ `dataio/manifest.py`, `stage2_utils.stable_fingerprint`) ·
 `model/pretrained_medgemma/output_schema.py` (→ `manifest.split_generated_report`) ·
