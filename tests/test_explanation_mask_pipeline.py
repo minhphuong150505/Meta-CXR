@@ -457,3 +457,21 @@ def test_ms_cxr_rows_absent_from_the_manifest_are_dropped_not_fatal(tmp_path, ca
     output = capsys.readouterr().out
     assert "1 / 2" in output
     assert unknown not in output
+
+
+def test_bbox_cropped_out_of_frame_falls_back_to_lung(monkeypatch, tmp_path):
+    """One unusable box must not abort a 228k-study build.
+
+    Resize(512) crops the long axis, so a box against the top or bottom edge can
+    disappear. Measured on MS-CXR v1.1.0: 3 of 1,448 boxes vanish and exactly one
+    DICOM loses every box it has. That study should keep its lung mask.
+    """
+    tall = np.zeros((3000, 1500), dtype=np.uint8)
+    tall[0:40, 700:800] = 1  # hugs the top edge, outside the centre crop
+
+    assert not mask_builder.transform_mask_geometry(tall).any()
+
+    centred = np.zeros((3000, 1500), dtype=np.uint8)
+    centred[1400:1600, 700:800] = 1
+
+    assert mask_builder.transform_mask_geometry(centred).any()
