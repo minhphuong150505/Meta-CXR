@@ -417,6 +417,38 @@ again if the manifest or this policy changes. `No Finding` has zero negatives by
 construction and is single-class under this policy; `include_meta_labels: false`
 already keeps it out of macro metrics. Pinned by `tests/test_blank_label_masking.py`.
 
+**The explanation-mask cache is built, and its coverage decides what you can
+claim.** `/mnt/drive1tb/datasets/explanation_masks/` holds `masks_<split>.npy`
+(uint8 `[N,112,112]`, values 0/255) plus `index_<split>.json` keyed by the anchor
+`dicom_id`. Built 2026-08-14 from CheXmask + MS-CXR against `full_allviews_v2`;
+the build takes ~25 minutes and streams the 13 GB CheXmask export, so do not
+rebuild it casually. Verified: rows unique and in range, no empty or all-ones
+mask, lung coverage p50 ≈ 33-35% on every split.
+
+`build_explanation_masks.py` reimplements anchor selection instead of calling
+`build_study_index`. The two agree exactly on real data — 0 cache keys that are
+not dataset anchors, all 208,987 train keys found — but that is a checked fact,
+not a guarantee. Recheck it if either side changes, because a divergence means
+`_read_explanation_mask` silently returns `valid=False` and the term quietly
+trains on less data than you think.
+
+What the coverage allows:
+
+| | train | val | test |
+|---|---|---|---|
+| studies with a mask | 93.8% | 93.5% | 90.5% |
+| with >=1 positive finding | 60.6% | — | 77.6% |
+| **both -> loss actually fires** | **56.7%** | — | 69.8% |
+| **of those, real MS-CXR box** | **823** | **5** | **138** |
+
+Two consequences. Cost: the Grad-CAM backward is paid on ~57% of training steps,
+not all of them, so scale any s/it measurement by that and not by 100%. Evidence:
+the only population that supports "the model looks at the pathology" is the box
+one, and that is **138 test studies** — val's 5 cannot calibrate or select
+anything. The lung-mask population is 30x larger but only supports the weaker
+claim "the model stays inside the lungs"; `ExplanationSummary` keeps the two
+apart on purpose.
+
 **Use `processed/full_allviews_v2`, nothing else.** Two stale exports sit beside
 it on the training host, and `meta-cxr-manifests-upgraded-20260806` was wired up
 despite the name. Tell a stale export by any of: `extraction_method` is a single
