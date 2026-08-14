@@ -19,8 +19,17 @@ model:
   encoders:
     biovil: true
     pubmedclip: true
-    swin: true
+    # OFF as of 2026-08-14. This changes the architecture, not just a weight:
+    # the shared projector receives two streams instead of three and MHCAC sees
+    # 98 visual tokens instead of 147. Any checkpoint trained with swin on
+    # cannot be loaded against this config, and vice versa.
+    #
+    # explanation.streams below still lists swin; that is a filter over the
+    # streams actually captured, so a name that is not produced is simply
+    # ignored. Re-enabling the encoder therefore needs no second edit.
+    swin: false
     raddino: false
+  # Inert while encoders.swin is false; kept so re-enabling needs one flag.
   swin:
     backend: hf
     model_name: "ChayanM/SwinV2-GPT2_Mimic"
