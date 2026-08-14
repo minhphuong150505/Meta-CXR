@@ -2,8 +2,10 @@
 
 Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh báo cáo. Stage 1 học biểu diễn thị giác theo study, hợp nhất nhiều view, tạo Q-Former tokens và dự đoán bất thường. Stage 2 dùng MedGemma để sinh nội dung báo cáo, với đường ảnh native hoặc Q-Former soft tokens. Repository cũng có evaluator cho classification và report generation.
 
-> **Trạng thái hiện tại:** CPU integration complete; Table 5 Stage-1 inference
-> ablation complete; training pipelines vẫn cần GPU smoke/full validation.
+> **Trạng thái hiện tại:** ba giai đoạn explanation-aware đã hoàn tất ở mức
+> implementation/CPU test; cache val nhỏ đã kiểm chứng trên dữ liệu thật; Table 5
+> Stage-1 inference ablation hoàn tất. Explanation loss và evaluator XAI mới
+> **chưa từng chạy trên GPU**; training pipelines vẫn cần GPU smoke/full validation.
 >
 > Đây là trạng thái theo tài liệu tích hợp tại commit hiện tại, không phải xác nhận đã train trên GPU hay đã tái lập metric mô hình.
 >
@@ -18,9 +20,11 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 | Thành phần | Trạng thái |
 |---|---|
 | Branch integration | Các nhánh tính năng đã được tích hợp tuyến tính vào `main`; xem [integration audit](docs/final_branch_integration_audit.md) |
-| Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC và DDP có trong code; Table 5 inference-only ablation đã chạy, training pipeline chưa GPU-validated |
+| Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC và explanation loss tùy chọn có trong code; Table 5 inference-only ablation đã chạy, training/explanation path chưa GPU-validated |
 | Stage 2 implementation | MedGemma QLoRA, native-image và Q-Former routes có trong code; chưa GPU-validated |
-| CPU tests | 465 tests passed theo [integration notes](docs/final_merge_plan.md); không chạy lại trong lần cập nhật README này |
+| Explanation masks | Đã build CPU thử 200 study val: 193 hợp lệ (189 lung, 4 bbox); full cache chưa được xác nhận |
+| XAI evaluation | Metric NumPy + checkpoint script + PNG/NPZ implemented; script checkpoint/GPU chưa từng chạy |
+| CPU tests | Xem mục [Testing](#testing) cho output chạy thật của Phase 3 |
 | GPU evidence | Table 5 encoder ablation 4/4 hoàn tất trên full test; chưa phải training smoke/full validation |
 | Full MIMIC-CXR training | Chưa được xác nhận với pipeline final |
 | Reproduced metrics | Chưa có metric mô hình mới được tái lập từ pipeline final |
@@ -33,7 +37,8 @@ Repository kế thừa công trình META-CXR nhưng code hiện tại đã bổ 
 - đường Stage 2 MedGemma native độc lập với Stage 1, bên cạnh Q-Former ablations;
 - Prompt v2 có cấu hình, version và hash;
 - evaluator cho classification, report generation, error analysis và counterfactual checks;
-- workflow VM/preflight và config Stage 1 cho một GPU hoặc 2-GPU DDP.
+- explanation-aware Grad-CAM loss, cache CheXmask/MS-CXR và evaluator XAI;
+- workflow preflight và config Stage 1 cho máy train một GPU.
 
 Các thay đổi này chưa kèm bằng chứng rằng pipeline mới tốt hơn kết quả của bài báo gốc.
 
@@ -44,9 +49,10 @@ Chest X-ray study
     -> Stage 1 visual encoders
     -> anchor/auxiliary multi-view fusion
     -> Q-Former representations + abnormality classification
+       + optional Grad-CAM explanation loss (lung/bbox mask)
     -> Stage 2 MedGemma (native image hoặc Q-Former soft tokens)
     -> FINDINGS/report output
-    -> classification and generation evaluators
+    -> classification, generation và XAI evaluators
 ```
 
 Các config Stage 1 chính bật BioViL-T, PubMedCLIP và SwinV2; RadDINO có implementation nhưng đang tắt trong các recipe này. MHCAC dự đoán 14 nhãn theo Positive/Negative/Uncertain, còn Q-Former tạo 32 query tokens.
@@ -57,7 +63,44 @@ Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/
 
 - Entrypoint: [`pretraining/train.py`](pretraining/train.py)
 - Config production (một GPU, recipe duy nhất): [`pretraining/configs/mimic_cxr_full.yaml`](pretraining/configs/mimic_cxr_full.yaml)
-- Checkpoint selection: `f1_positive_macro` trên validation; test được giữ ngoài quá trình chọn checkpoint.
+- Checkpoint selection: `macro_auprc` trên validation; test được giữ ngoài quá trình chọn checkpoint.
+
+### Explanation-aware learning (tùy chọn)
+
+Với mỗi study có ít nhất một nhãn Positive, score Grad-CAM là tổng Logit
+Difference Squared trên các bệnh dương tính:
+
+```text
+s = Σ_positive (logit_pos - logit_neg)²
+H = ReLU(Σ_c mean_ij(∂s/∂A_cij) · A_c)
+H_norm = min-max(H)
+H_plus = H_norm · 1[H_norm >= quantile(H_norm, 1-top_k)]
+L_exp = 1 - Σ(H_plus · M) / (ΣH_plus + eps)
+```
+
+Trong **loss**, `H_plus` giữ giá trị mềm phía trong gate có threshold detach để
+double backprop còn gradient. Top-saliency **metric** mới dùng mask nhị phân đúng
+Eq. (5). Loss chạy riêng trên BioViL 14×14 và PubMedCLIP/Swin 7×7; encoder vẫn
+đóng băng, nên nó nắn cách projection/MHCAC/head đọc feature chứ không đổi
+feature encoder.
+
+`model.loss.lambda_explanation` là cờ bật/tắt duy nhất. Config production hiện
+vẫn an toàn ở `0.0` và cache path rỗng. Sau khi build cache và smoke GPU, bật:
+
+```yaml
+model:
+  loss:
+    lambda_explanation: 0.25
+  explanation:
+    top_k: 0.5
+    warmup_start_epoch: 2
+    warmup_epochs: 2
+    streams: [biovil, pubmedclip, swin]
+    mask_cache_dir: /mnt/drive1tb/datasets/explanation_masks
+```
+
+Warmup: epoch [0]–[1] = 0; [2] = 0.125; [3] = 0.1875; [4]+ = 0.25. Đặt
+`lambda_explanation: 0.0` để tắt hoàn toàn CAM capture/double backprop.
 
 ## Stage 2
 
@@ -118,6 +161,39 @@ Evaluator nằm trong [`training/evaluation/`](training/evaluation/) và đượ
 - three-class confusion matrices, ROC/PR và các plot tùy chọn;
 - all-negative và các baseline comparisons.
 
+### XAI / Grad-CAM
+
+Ba metric theo mục III.C của bài báo explanation-aware:
+
+- top saliency precision: tỉ lệ pixel trong top-50% nhị phân nằm trong mask;
+- all saliency precision: tỉ lệ toàn bộ khối lượng CAM liên tục nằm trong mask;
+- annotation coverage: tỉ lệ **từng bbox** MS-CXR có ít nhất 1% pixel salient.
+
+Báo cáo luôn tách `mask_source=0` (lung anatomical prior) khỏi `mask_source=1`
+(expert pathology bbox). Hai nhóm không có aggregate chung. Annotation coverage
+ở nhóm lung là `unavailable`, không phải 0.
+
+XAI không đi qua `evaluate_stage1.py`: script đó cố ý model-free và chỉ đọc
+`.npz`, trong khi Grad-CAM cần graph autograd sống; evaluation hook LAVIS còn có
+`@torch.no_grad()`. Entrypoint riêng dùng `model.eval()` với grad nhưng không
+optimizer hay update:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
+  --checkpoint <checkpoint_best.pth> \
+  --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+  --split test \
+  --mask-cache-dir /mnt/drive1tb/datasets/explanation_masks \
+  --ms-cxr-csv /mnt/drive1tb/datasets/ms-cxr/MS_CXR_Local_Alignment_v1.1.0.csv \
+  --output-dir /mnt/drive1tb/private-results/xai \
+  --save-cams --export-figures 12 --device cuda
+```
+
+`metrics.json` luôn được ghi; `cams.npz` chỉ khi có `--save-cams`; N PNG overlay
+chỉ khi `--export-figures N`. PNG/NPZ là dữ liệu bệnh nhân: script từ chối path
+trong repo nếu Git không xác nhận path đó đã ignore, không dùng identifier trong
+tên figure và không in identifier ra stdout.
+
 ### Stage 2
 
 - BLEU và ROUGE-L được implement trong repository;
@@ -134,12 +210,12 @@ Meta-CXR/
 ├── configs/                 environment, experiment và prompt configs
 ├── pretraining/             Stage 1 entrypoint và configs
 ├── training/                Stage 2, data I/O và evaluation implementation
-│   └── evaluation/
+│   └── evaluation/          gồm explanation_metrics.py thuần NumPy
 ├── stage2/                  Prompt v2 builder và policies
 ├── model/                   LAVIS fork và model integrations
 ├── mhcac/                   abnormality classification và view fusion
 ├── vision_encoders/         visual encoder implementations
-├── scripts/                 preflight, calibration và evaluator CLIs
+├── scripts/                 preflight, calibration, classification/generation/XAI CLIs
 ├── tests/                   CPU test suite
 └── docs/                    hướng dẫn và audit chi tiết
 ```
@@ -182,13 +258,43 @@ cp configs/env_config.yaml.example configs/env_config.yaml
 - root chứa trực tiếp `files/` của MIMIC-CXR-JPG;
 - train/val/test CSV trong `processed/full_allviews/`;
 - output/checkpoint directories;
-- private GCS và Weights & Biases settings nếu dùng.
+- output local và Weights & Biases settings nếu dùng.
 
 `image_path` trong processed CSV là đường dẫn tương đối dạng `files/p1X/.../<dicom>.jpg` và được nối với `mimic_cxr_jpg_root`; không đổi nó thành đường dẫn tuyệt đối.
 
 ## Dữ liệu
 
 MIMIC-CXR là dữ liệu hạn chế truy cập theo DUA. Người dùng phải tự có quyền truy cập hợp lệ; ảnh, report text, processed splits, credentials và model artifacts không được phân phối trong repository. Pipeline hiện nhắm tới full p10–p19 splits, không phải notebook p10 cũ. Cấu trúc mount chi tiết nằm trong `configs/env_config.yaml.example`.
+
+Dữ liệu explanation trên máy train:
+
+| Nguồn | Vị trí | Ghi chú đã xác minh |
+|---|---|---|
+| CheXmask OriginalResolution | `/mnt/drive1tb/datasets/chexmask/MIMIC-CXR-JPG.csv` | Header thật là `dicom_id` (không phải `Image ID`); dùng hai phổi, Dice mean ≥0.7 |
+| MS-CXR v1.1.0 | `/mnt/drive1tb/datasets/ms-cxr/MS_CXR_Local_Alignment_v1.1.0.csv` | bbox pixel ảnh gốc; **không dùng cột `split`** |
+| Cache đề xuất | `/mnt/drive1tb/datasets/explanation_masks/` | `masks_<split>.npy` + `index_<split>.json`, private |
+
+Cột `split` MS-CXR không khớp manifest project: đã thấy 166 bbox họ gọi là
+`train` nằm trong test của project. Luôn join theo `dicom_id` rồi để manifest
+project quyết định split. Với PhysioNet restricted files, dùng `wget --user ...
+--ask-password`: server chỉ nhận Basic auth sau challenge 401; `curl -n` gửi
+preemptive và trả 403 không giúp phân biệt credential sai với thiếu quyền.
+
+Build cache (CPU, trên máy có data mount):
+
+```bash
+python preporcessing/build_explanation_masks.py --inspect
+python preporcessing/build_explanation_masks.py \
+  --split all \
+  --chexmask-csv /mnt/drive1tb/datasets/chexmask/MIMIC-CXR-JPG.csv \
+  --ms-cxr-csv /mnt/drive1tb/datasets/ms-cxr/MS_CXR_Local_Alignment_v1.1.0.csv \
+  --output-dir /mnt/drive1tb/datasets/explanation_masks
+```
+
+Geometry là Resize cạnh ngắn 512 → CenterCrop 448 → nearest 112². Smoke thật
+với `--split val --limit 200` cho 193 mask hợp lệ: 189 lung, 4 bbox; lung phủ
+18,2–52,9% (trung vị 32,6%), bbox union phủ 3,5–18,2%. Đây là kiểm chứng CPU
+cache, **không phải** kiểm chứng GPU loss/evaluator.
 
 ## Quick start
 
@@ -206,12 +312,13 @@ Preflight không tải model weights; nó kiểm tra Python, CUDA/GPU, RAM/disk/
 ### 2. Stage 1 smoke test và training
 
 Stage 1 hỗ trợ `run.truncate_train/val/test` cho smoke test. Config production
-chạy tối đa 20 epoch, early stopping patience 5 và chọn checkpoint theo
+chạy 10 epoch, early stopping patience 5 (bất động với eval bắt đầu ở epoch [5]) và chọn checkpoint theo
 macro-AUPRC; logits validation được lưu để calibrate threshold F1 sau đó.
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
-  --cfg-path pretraining/configs/mimic_cxr_full.yaml
+  --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+  --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 ```
 
 Sau khi train, calibrate threshold chỉ trên prediction của validation từ
@@ -256,6 +363,12 @@ python scripts/evaluate_stage1.py \
   --predictions <test_predictions.npz> --thresholds <thresholds.json> \
   --output-dir <stage1_eval_dir>
 
+CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
+  --checkpoint <checkpoint_best.pth> \
+  --cfg-path pretraining/configs/mimic_cxr_full.yaml --split test \
+  --mask-cache-dir /mnt/drive1tb/datasets/explanation_masks \
+  --output-dir /mnt/drive1tb/private-results/xai --export-figures 12
+
 python scripts/evaluate_stage2.py \
   --predictions <generated_reports.jsonl> \
   --metrics bleu,rouge,meteor,cider,bertscore \
@@ -271,15 +384,21 @@ LAVIS fork nhưng không có config nào dùng và chưa từng được test. S
 
 ## Testing
 
-CPU checks được integration notes sử dụng:
+CPU checks đã chạy thật trong Phase 3 (2026-08-14):
 
 ```bash
-CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q
+CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
+  --ignore=tests/test_blip2_negative_sampling.py \
+  --ignore=tests/test_encoder_ablation.py
 CUDA_VISIBLE_DEVICES="" python -m compileall -q \
   stage2 training scripts runtime safety tests medgemma_inference
 ```
 
-Con số 465 passed ở bảng trạng thái là baseline được ghi trong integration notes, không phải kết quả vừa chạy lại trong lần chỉnh tài liệu này. Test CPU không thay thế Stage 1/Stage 2 smoke test trên VM GPU.
+Với hai file cần torchvision bị ignore theo lệnh chuẩn, kết quả thật là **541
+passed, 5 failed, 1 skipped**. Bảy test metric XAI mới đều pass. Năm failure là
+baseline có sẵn: `test_native_independence` ×4 thiếu
+`configs/env_config.yaml`, và `test_stage1_eval_hook` ×1 thiếu torchvision; không
+phát sinh từ Phase 3. Test CPU không thay thế smoke Stage-1/Stage-2/XAI trên GPU.
 
 ## Kết quả và cảnh báo metric
 
@@ -311,6 +430,11 @@ Bài báo META-CXR gốc có báo cáo classification và report-generation metr
 - Stage 1 và Stage 2 **training** chưa được GPU smoke-tested trong lần tích hợp
   hiện tại. Riêng Table 5 Stage-1 inference-only encoder ablation đã hoàn tất 4/4
   trên full test split; xem `results/table5_encoder_ablation.*`.
+- Explanation loss chưa từng chạy smoke/full training trên GPU;
+  `scripts/evaluate_explanation.py` chưa từng nạp checkpoint/dataset hay chạy
+  end-to-end. Không dùng metric/heatmap từ đường này trong luận văn trước smoke.
+- Cache explanation mới chỉ được build/kiểm tra ở smoke val 200 study, chưa xác
+  nhận full train/val/test cache.
 - Full training pipeline và Stage 2 metric chưa được tái lập từ pipeline final.
 - Split records hiện chưa mang prior linkage đầy đủ; temporal target policy mặc định vẫn là `keep`.
 - `native_multiview` tồn tại trong Prompt v2, nhưng native manifest hiện chỉ luồn anchor image và để `auxiliary_views` rỗng; Stage 2 native multi-image chưa hoàn chỉnh end-to-end.

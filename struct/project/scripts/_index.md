@@ -1,6 +1,6 @@
-> Source: `scripts/` (12 file)
+> Source: `scripts/` (13 file)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-13
+> Last verified against source: 2026-08-14
 
 # `scripts/`
 
@@ -29,6 +29,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `calibrate_thresholds.py` | [📄](calibrate_thresholds.py.doc.md) | ✅ Calibrate — **chỉ validation** |
 | `evaluate_stage1.py` (328) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz` |
 | `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |
+| `evaluate_explanation.py` | [📄](evaluate_explanation.py.doc.md) | ✅ XAI — load checkpoint, cần autograd sống, không train |
 
 ### Phân tích prompt
 
@@ -70,9 +71,10 @@ Record có đúng hình dạng pipeline thật phát ra (`pred_groups`, views, p
 ## Main responsibilities
 
 1. Kiểm tra máy trước run dài.
-2. Calibrate threshold rồi chấm điểm — không GPU.
+2. Calibrate threshold rồi chấm điểm classification/generation — không GPU.
 3. Phân tích prompt mà không train.
 4. Chặn rò rỉ dữ liệu vào Git.
+5. Chạy pass Stage-1 có grad để tạo và chấm CAM, không optimizer/update.
 
 ## Entry points
 
@@ -81,8 +83,9 @@ Xem [ENTRYPOINTS.md](../_meta/ENTRYPOINTS.md#python--utility).
 ## Dependencies
 
 `training/evaluation/*` (lõi chỉ cần numpy) · `stage2/prompts/*` (stdlib-only) ·
-`training/dataio/manifest` · `numpy`. Plot cần extra `eval-plots`; METEOR/CIDEr/
-BERTScore cần `eval-generation`.
+`training/dataio/manifest` · `numpy`. Riêng `evaluate_explanation.py` import trễ
+Stage-1/LAVIS, torch, pandas/Pillow và cần checkpoint + dataset. Plot cần extra
+`eval-plots`; METEOR/CIDEr/BERTScore cần `eval-generation`.
 
 ## Used by
 
@@ -104,6 +107,10 @@ Người dùng. `check_notebook_privacy.py` được `.pre-commit-config.yaml` g
   chạy được khi không có matplotlib.
 - `evaluate_stage2.py:159` import `clinical` trễ tương tự, và báo **unavailable**
   chứ không phải 0.
+- `evaluate_explanation.py` là ngoại lệ model-driven: `RunnerBase.eval_epoch` có
+  `@torch.no_grad()` nên CAM không thể đi qua evaluator hiện hữu. PNG/NPZ là dữ
+  liệu bệnh nhân; output trong repo chỉ được phép ở vùng Git ignore và không có
+  identifier trong tên file/stdout.
 
 ## Related documentation
 

@@ -1,6 +1,6 @@
-> Source: `tests/` (35 file Python, gồm `conftest.py`)
+> Source: `tests/` (36 file Python, gồm `conftest.py`)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-13
+> Last verified against source: 2026-08-14
 
 # `tests/`
 
@@ -20,19 +20,26 @@ mọi `.doc.md` của source đều có mục `## Tests` link ngược về đâ
 ## Cách chạy
 
 ```bash
-CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q          # toàn bộ
+CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
+  --ignore=tests/test_blip2_negative_sampling.py \
+  --ignore=tests/test_encoder_ablation.py
 python -m pytest tests/test_stage2_prompts.py -q            # một file
 python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # một test
 ```
 
-⚠ **Trên máy CPU không có torchvision/transformers, 5 test fail và 1 file không
-collect được.** Đây là trạng thái đã biết, không phải hỏng:
+Kết quả Phase 3 ngày 2026-08-14, với hai file cần full LAVIS stack được ignore:
+**541 passed, 5 failed, 1 skipped**. Riêng `test_explanation_metrics.py`: 7 passed.
+Năm failure đúng baseline bên dưới.
+
+⚠ **Trên máy CPU không có torchvision/transformers, 5 test fail và 2 file phải
+ignore trước collection.** Đây là trạng thái đã biết, không phải hỏng:
 
 | Không chạy được | Lý do |
 |---|---|
 | `test_native_independence` (4 test) | thiếu private `configs/env_config.yaml` |
 | `test_stage1_eval_hook` (1 test) | import `model.lavis` |
 | `test_blip2_negative_sampling` (cả file) | cần torchvision để collect |
+| `test_encoder_ablation` (cả file) | cần torchvision để collect |
 
 ## `conftest.py` — không có nó thì suite không collect nổi
 
@@ -114,6 +121,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | `test_clinical_metrics.py` | ⚠ **Chỉ số thiếu báo unavailable, KHÔNG trả 0** |
 | `test_counterfactual.py` (320) | ❓ `counterfactual` + `perturbations` — chỉ test này dùng |
 | `test_evaluation_config.py` | ❓ `evaluation/config.py` — chỉ test này dùng |
+| `test_explanation_metrics.py` | Ba XAI metric thuần NumPy: top-k nhị phân exact-cardinality, all-saliency, Eq. (9) từng box; enforce tách lung/bbox và unavailable ≠ 0 |
 
 ## Nhóm 7 — Baseline ngoài & safety
 

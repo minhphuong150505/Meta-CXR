@@ -23,6 +23,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-012](#d-012--đưa-struct-vào-repository) | Track và push `struct/` | ✅ Confirmed | 2026-08-12 |
 | [D-013](#d-013--gỡ-toàn-bộ-đường-chạy-cloud) | Gỡ toàn bộ đường chạy cloud | ✅ Confirmed | 2026-08-13 |
 | [D-014](#d-014--mask-giải-thích-hai-tầng-và-split-project-là-nguồn-chân-lý) | Mask explanation hai tầng | ✅ Confirmed | 2026-08-13 |
+| [D-015](#d-015--đánh-giá-xai-dùng-entrypoint-có-grad-riêng) | XAI evaluator có grad, metric NumPy tách source | ✅ Confirmed | 2026-08-14 |
 
 ---
 
@@ -562,6 +563,53 @@ lý thật nhưng chỉ trên một tập con và mang split riêng không khớ
 
 `preporcessing/`, `ReportDataset.py`, production config, test index và `HOME.md`
 phải cùng mô tả nguồn mask, source code 0/1, geometry và privacy boundary.
+
+---
+
+## D-015 — Đánh giá XAI dùng entrypoint có grad riêng
+
+Status: **Confirmed**
+Date: 2026-08-14
+
+### Context
+
+`scripts/evaluate_stage1.py` cố ý model-free: nó chỉ đọc prediction `.npz` để
+đổi threshold/policy không tốn GPU. Grad-CAM lại cần đạo hàm từ logit score tới
+activation trong một graph autograd còn sống. Luồng evaluation LAVIS hiện có
+cũng không thể cung cấp graph đó vì `RunnerBase.eval_epoch` mang
+`@torch.no_grad()`.
+
+### Decision
+
+- Giữ nguyên `evaluate_stage1.py`; không thêm mask/checkpoint/model vào nó.
+- `training/evaluation/explanation_metrics.py` chỉ dùng NumPy, để công thức
+  Eq. (7)–(9) độc lập model và test được trên máy dev.
+- `scripts/evaluate_explanation.py` là entrypoint riêng: lazy-load Stage-1,
+  `model.eval()` nhưng mở grad, không optimizer/update, và dùng lại
+  `mhcac.explanation.logit_difference_squared` + `grad_cam`.
+- Báo cáo không có aggregate trộn source. `lung` (anatomical prior) và `bbox`
+  (expert pathology annotation) luôn ở hai field riêng; annotation coverage của
+  lung là unavailable, không phải 0.
+- MS-CXR `split` không được đọc; manifest project quyết định split. Từng box đi
+  qua geometry helper đã kiểm chứng của mask builder.
+- PNG/NPZ là dữ liệu bệnh nhân: chỉ ghi private/ignored output, tên figure và
+  stdout không mang identifier.
+
+### Evidence
+
+- Docstring `scripts/evaluate_stage1.py`: re-evaluation từ saved prediction là
+  chủ ý trung tâm.
+- `model/lavis/runners/runner_base.py::eval_epoch`: `@torch.no_grad()`.
+- `tests/test_explanation_loss.py::test_explanation_loss_cannot_run_without_a_live_graph`
+  ghim failure khi Grad-CAM chạy dưới no-grad.
+- `tests/test_explanation_metrics.py` ghim công thức NumPy, per-box coverage,
+  unavailable semantics và source separation.
+
+### Documentation impact
+
+`training/evaluation/`, `scripts/`, test index, `HOME.md`, `ENTRYPOINTS.md`,
+`CALL_GRAPH.md`, `PIPELINES.md`, CLAUDE.md và README.md phải mô tả XAI như một
+đường model-driven riêng, không làm suy yếu invariant evaluator offline.
 
 ---
 

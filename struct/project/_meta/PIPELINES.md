@@ -1,10 +1,10 @@
 > Source: `pretraining/`, `training/`, `scripts/`, `medgemma_inference/`, `preporcessing/`
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-14
 
 # Pipelines
 
-Repository có **mười** pipeline riêng biệt. Chúng không phải mười cách chạy cùng
+Repository có **mười một** pipeline riêng biệt. Chúng không phải mười một cách chạy cùng
 một thứ — mỗi cái có entrypoint, input, output và điều kiện tiên quyết khác nhau.
 
 > GPU evidence hiện có chỉ bao phủ P10 inference-only encoder ablation. Nó không
@@ -22,6 +22,7 @@ một thứ — mỗi cái có entrypoint, input, output và điều kiện tiê
 | [P8](#p8--external-medgemma-inference-baseline) | External MedGemma inference | ✅ ACTIVE (baseline) | ❌ | ✅ |
 | [P9](#p9--gradio-demo-vicuna-7b) | Gradio demo Vicuna-7B | ✅ ACTIVE (demo) | ✅ checkpoint | ✅ |
 | [P10](#p10--stage-1-encoder-ablation-table-5) | Encoder ablation Table 5 | ✅ COMPLETE (4/4) | ✅ checkpoint | ✅ |
+| [P11](#p11--evaluation-xai-grad-cam) | Evaluation XAI Grad-CAM | ✅ IMPLEMENTED, chưa GPU-run | ✅ checkpoint | ✅ |
 
 ---
 
@@ -408,6 +409,32 @@ bốn model encoder đơn được retrain.
 
 ---
 
+## P11 — Evaluation XAI Grad-CAM
+
+**Khác P4:** P4 classification cố ý model-free; P11 phải nạp checkpoint và giữ
+autograd sống vì Grad-CAM lấy đạo hàm theo activation. `model.eval()` tắt dropout,
+nhưng không có optimizer/backward update.
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
+  --checkpoint <checkpoint_best.pth> \
+  --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+  --split test --mask-cache-dir /mnt/drive1tb/datasets/explanation_masks \
+  --ms-cxr-csv /mnt/drive1tb/datasets/ms-cxr/MS_CXR_Local_Alignment_v1.1.0.csv \
+  --output-dir /mnt/drive1tb/private-results/xai \
+  --save-cams --export-figures 12
+```
+
+Output metric tách `lung` anatomical prior và `bbox` expert annotation cho từng
+encoder stream. Annotation coverage chỉ có ở bbox. Cột split MS-CXR không được
+đọc; project manifest định tuyến val/test. PNG/NPZ là dữ liệu bệnh nhân và không
+được đưa vào Git.
+
+**Validation status:** metric/test/import/compile/lint chạy trên CPU dev; script
+checkpoint/GPU **chưa từng chạy**.
+
+---
+
 ## Phân biệt production / baseline / ablation / legacy
 
 Để không nhầm khi viết báo cáo:
@@ -417,7 +444,7 @@ bốn model encoder đơn được retrain.
 | **Production** | P1 (Stage 1), P2 với `medgemma_direct` |
 | **Baseline đối chứng** | P8 (external checkpoint), `text_only_language_prior_ablation` |
 | **Ablation** | P2 với `meta_cxr_qformer*`, P6 (prompt), P10 (encoder; complete) |
-| **Hỗ trợ** | P3, P4, P5, P7 |
+| **Hỗ trợ** | P3, P4, P5, P7, P11 |
 | **Demo** | P9 |
 | **Legacy đã chết** | notebooks 01/02/03 — xem [LEGACY_AND_OPTIONAL.md](LEGACY_AND_OPTIONAL.md) |
 
