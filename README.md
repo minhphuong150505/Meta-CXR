@@ -245,6 +245,16 @@ pip install -r requirements-stage2.txt
 deactivate
 ```
 
+> **Trên máy train hiện tại, môi trường đã dựng sẵn tại
+> `~/.venvs/meta-cxr-stage1-311` (torch 2.9.1+cu129).** Đây là môi trường duy
+> nhất có torch trên máy đó — dùng đúng nó, đừng tạo mới.
+>
+> RTX 5060 Ti là kiến trúc **sm_120**, cần CUDA 12.8 trở lên. Bản torch build
+> cho CUDA 12.4 chỉ có kernel tới sm_90 và sẽ chết bằng
+> `CUDA error: no kernel image is available for execution on the device` —
+> nhưng chỉ sau khi đã nạp xong toàn bộ model, nên rất dễ tưởng là lỗi code.
+> Một venv cũ như vậy (`meta-cxr-rtx4060`) đã bị xoá ngày 2026-08-14.
+
 `requirements-stage2.txt` bao gồm Stage 1 requirements rồi bổ sung Accelerate, bitsandbytes, PEFT và các package Stage 2. MedGemma là gated model; dùng `HF_TOKEN` hoặc đăng nhập Hugging Face và không ghi credential vào repository.
 
 ## Cấu hình
