@@ -491,17 +491,26 @@ def build_mask_caches(
                 shape=(len(anchors_by_split[split_name]), *MASK_SIZE),
             )
 
+        # Resize(512) crops the long axis, so a box hugging the top or bottom
+        # edge can be cropped away entirely. Measured on MS-CXR v1.1.0: 3 of
+        # 1,448 boxes vanish and exactly one DICOM loses every box it has.
+        # Aborting the whole 228k-study build over one study is the wrong
+        # trade; fall back to that study's lung mask and report the count.
+        bbox_cropped_away = 0
         for dicom_id, rows in ms_groups.items():
             bbox_mask = rasterize_bbox_union(rows)
             cached_bbox = transform_mask_geometry(bbox_mask)
             if not cached_bbox.any():
-                raise ValueError(
-                    "An MS-CXR bbox union became empty after Resize/CenterCrop"
-                )
+                bbox_cropped_away += 1
+                continue
             split_name, row = target_locations[dicom_id]
             arrays[split_name][row] = cached_bbox
             sources[dicom_id] = 1
             bbox_available.add(dicom_id)
+        print(
+            "MS-CXR studies whose boxes fell outside the centre crop "
+            f"(fell back to the lung mask): {bbox_cropped_away} / {len(ms_groups)}"
+        )
 
         dtype = {
             "dicom_id": "string",
