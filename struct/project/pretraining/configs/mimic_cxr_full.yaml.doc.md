@@ -23,7 +23,7 @@ run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba ov
 | `arch` / `model_type` | `blip2` / `pretrain` | Registry lookup |
 | `pretrained` | URL BLIP-2 | Tải lần đầu |
 | `freeze_vit` | `true` | + `disabled_train` |
-| `encoders` | biovil ✅ pubmedclip ✅ **swin ❌** raddino ❌ | Swin tắt 2026-08-14. Đổi **kiến trúc**: projector nhận 2 stream, MHCAC thấy 246 token thay vì 344 (xem `image_size`) → checkpoint không chuyển qua lại được |
+| `encoders` | biovil ✅ pubmedclip ✅ **swin ❌** raddino ❌ | Swin tắt 2026-08-14. Đổi **kiến trúc**: projector nhận 2 stream, MHCAC thấy 246 token (biovil 196 + pubmedclip 1 CLS + 49). Bật lại swin còn kéo MHCAC về nhánh legacy resample-về-49, vì `_native_stream_layouts` không mô tả được số token của swin. Swin cũng là encoder đắt nhất: ~220 ms trong bước ~520 ms và ~1,6 GB — SwinV2 ở 448 có 112×112 = 12.544 token ở stage đầu → checkpoint không chuyển qua lại được |
 | `num_query_token` / `cross_attention_freq` | 32 / 2 | |
 | `max_txt_len` | 256 | |
 | `mhcac.uncertain_policy` | `ignore_uncertain` | Cặp mơ hồ không phải target đáng tin |
@@ -62,6 +62,7 @@ Grad-CAM giờ chỉ còn **hai** độ phân giải: BioViL 14×14 và PubMedCL
 
 ## Khối `run:` — các key hay bị hiểu sai
 | Key | Giá trị | Nghĩa thật |
+| `batch_size_train` / `accum_grad_iters` | **16 / 4** | Effective batch 64. Đo 2026-08-14, hai encoder, explanation loss bật, 200 vòng mỗi cấu hình: batch 6 → 0,04647 s/mẫu (3.952 MiB torch), **16 → 0,04093 (4.415)**, 24 → 0,04016 (4.889), 32 → 0,03989 (5.414). **Batch size không phải đòn bẩy tốc độ**: 5,3× batch chỉ được 14,2% và bão hoà ở 16; `data: 0.0000` ở mọi cấu hình nên cũng không phải dataloader; GPU util ~37% bất kể batch, **nguyên nhân chưa xác định**. Bộ nhớ 91,5% là tĩnh (56,2 MiB/mẫu trên nền 3.615 MiB) nên batch 32 vẫn chỉ dùng 39% card. Chọn 16 vì lý do mô hình: `lambda_mpc` mang ~25% tổng loss nhưng MPC lấy negative trong microbatch và chỉ ~55% study có view phụ — batch 6 cho ~3,3 study dùng được, 16 cho ~8,8 |
 | `image_size` | **448** | Thêm 2026-08-14. Phải bằng `vis_processor.*.image_size`. Trước đó model config thừa hưởng `224` từ YAML BLIP-2 gốc và **không ai đọc** (`init_vision_encoder` bỏ qua nó với biovil). Nay nó quyết định lưới token của BioViL: 448/32 → 14×14 → 196 token. Sai giá trị này thì `AbnormalityClassificationModel.forward` raise ngay batch đầu, không train sai âm thầm |
 | `num_workers` | **12** | Máy train có 20 luồng. Ở 4 worker, chúng bám 96–98% CPU trạng thái `R` còn GPU đứng chờ giữa các kernel. Đo tại batch 6, 500 vòng: **0.305 s/it ở 4 worker so với 0.253 ở 12** → 10 epoch từ ~31h xuống ~26h. Không phải nghẽn đĩa: epoch nằm hết trong page cache chạy 0.2529 s/it, bằng epoch cache lạnh, và mount đọc 216 MB/s trong khi workload chỉ cần ~50. Chi phí nằm ở **giải mã JPEG** (ảnh ~1.4 MB, ~2544×3056, giải mã full rồi mới thu về 512) |
 |---|---|---|
