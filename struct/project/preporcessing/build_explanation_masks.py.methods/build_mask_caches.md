@@ -11,6 +11,8 @@
   → stream CheXmask theo chunk → Dice gate → decode union phổi
     (`--limit` dừng sớm sau khi gặp đủ ID của smoke subset)
   → bbox override lung
+    (bbox rỗng sau Resize/CenterCrop → rơi về mask phổi, đếm và in ra;
+     đo trên MS-CXR v1.1.0: 3/1448 box biến mất, đúng 1 DICOM mất toàn bộ box)
   → compact valid rows → atomic replace .npy + JSON
 ```
 

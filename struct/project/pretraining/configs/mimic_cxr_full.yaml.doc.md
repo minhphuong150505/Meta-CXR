@@ -23,7 +23,7 @@ run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba ov
 | `arch` / `model_type` | `blip2` / `pretrain` | Registry lookup |
 | `pretrained` | URL BLIP-2 | Tải lần đầu |
 | `freeze_vit` | `true` | + `disabled_train` |
-| `encoders` | biovil ✅ pubmedclip ✅ swin ✅ **raddino ❌** | |
+| `encoders` | biovil ✅ pubmedclip ✅ **swin ❌** raddino ❌ | Swin tắt 2026-08-14. Đổi **kiến trúc**: projector nhận 2 stream, MHCAC thấy 98 token thay vì 147 → checkpoint không chuyển qua lại được |
 | `num_query_token` / `cross_attention_freq` | 32 / 2 | |
 | `max_txt_len` | 256 | |
 | `mhcac.uncertain_policy` | `ignore_uncertain` | Cặp mơ hồ không phải target đáng tin |
@@ -55,11 +55,14 @@ weight về 0 tắt hoàn toàn explanation module/Grad-CAM ở model.
 | `top_k` | 0.5 | Giữ top 50% CAM mềm |
 | `warmup_start_epoch` | 2 | Epoch [0]–[1] có λ=0 |
 | `warmup_epochs` | 2 | Epoch [2]–[3] ramp; [4]+ λ=0.25 |
-| `streams` | biovil, pubmedclip, swin | Ba stream production |
-| `mask_cache_dir` | private path | `ReportDataset` cần đủ cache train/val/test |
+| `streams` | biovil, pubmedclip, swin | `swin` còn trong danh sách dù encoder đã tắt — đây là **bộ lọc** trên các stream thực sự được capture, tên không được sinh ra thì bị bỏ qua. Bật lại encoder không cần sửa thêm |
+| `mask_cache_dir` | private path | `ReportDataset` cần đủ cache train/val/test; đặt `""` là cách chạy nhánh đối chứng không explanation loss |
+
+Grad-CAM giờ chỉ còn **hai** độ phân giải: BioViL 14×14 và PubMedCLIP 7×7.
 
 ## Khối `run:` — các key hay bị hiểu sai
 | Key | Giá trị | Nghĩa thật |
+| `num_workers` | **12** | Máy train có 20 luồng. Ở 4 worker, chúng bám 96–98% CPU trạng thái `R` còn GPU đứng chờ giữa các kernel. Đo tại batch 6, 500 vòng: **0.305 s/it ở 4 worker so với 0.253 ở 12** → 10 epoch từ ~31h xuống ~26h. Không phải nghẽn đĩa: epoch nằm hết trong page cache chạy 0.2529 s/it, bằng epoch cache lạnh, và mount đọc 216 MB/s trong khi workload chỉ cần ~50. Chi phí nằm ở **giải mã JPEG** (ảnh ~1.4 MB, ~2544×3056, giải mã full rồi mới thu về 512) |
 |---|---|---|
 | `selection_metric` | **`loss`** | Tổng val loss; `selection_mode` cố ý vắng để RunnerBase tự suy ra `min`. Thiên lệch với nhãn hiếm — xem DECISIONS.md |
 | `warmup_steps` | 800 | **Optimizer update**, không phải microbatch |

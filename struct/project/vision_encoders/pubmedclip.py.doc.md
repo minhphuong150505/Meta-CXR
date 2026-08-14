@@ -1,6 +1,6 @@
-> Source: `vision_encoders/pubmedclip/pubmed_clip.py` (68 dòng)
+> Source: `vision_encoders/pubmedclip/pubmed_clip.py` (92 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-14
 
 # `vision_encoders/pubmedclip/pubmed_clip.py`
 
@@ -10,7 +10,7 @@ Bọc PubMedCLIP thành encoder đóng băng, chiều ra **768**.
 
 ## Role in architecture
 
-Một trong ba encoder bật ở config production. Đầu ra đi vào `ViewFusionModule`
+Một trong **hai** encoder bật ở config production (Swin tắt 2026-08-14). Đầu ra đi vào `ViewFusionModule`
 rồi `SharedVisualTokenProjector`.
 
 ## Status
@@ -76,3 +76,33 @@ Không có test trực tiếp; `tests/test_shared_visual_tokens.py` dùng chiề
 - **Related:** [`shared_visual_tokens.py`](shared_visual_tokens.py.doc.md)
 
 ← [HOME](../../HOME.md)
+
+
+## Tiền xử lý ảnh — đúng nội dung, và từ 2026-08-14 chạy trên GPU
+
+`forward` không dùng tensor 448×448 dùng chung trực tiếp: nó cho qua image
+processor riêng của CLIP, ra 224×224 với `image_mean/std` của CLIP.
+`do_rescale=False` là **bắt buộc** — tensor từ dataset đã ở `[0,1]` sau
+`ToTensor()`, để processor chia 255 lần nữa sẽ cho đặc trưng gần như hằng số.
+
+`__init__` dùng `CLIPImageProcessorFast`, **không** phải `CLIPProcessor`:
+
+- Bản chậm kéo tensor CUDA về **CPU numpy**, resize ở đó, trả tensor CPU rồi
+  `forward` copy ngược lên GPU. Đo tại batch 6, 448×448: **55.5 ms/batch so với
+  0.3 ms**, trên một bước ~570 ms — khoảng một phần mười thời gian train, tức
+  ~6 giờ của một run 10 epoch, dùng để resize ảnh trên CPU.
+- Đặc trưng ra gần như không đổi: lệch tương đối **0.883%**, cosine similarity
+  **0.99998** mỗi mẫu. Đo trên nhiễu ngẫu nhiên — trường hợp tệ nhất cho khác
+  biệt resampling vì toàn tần số cao; ảnh X-quang thật mượt hơn nên sát hơn.
+- Gọi thẳng image processor chứ không qua `CLIPProcessor(use_fast=True)`: wrapper
+  đó vẫn giả định class chậm và ném `AttributeError: '_valid_processor_keys'`
+  trên transformers 4.53. `forward` chỉ đọc `pixel_values`, không chạm tokenizer.
+
+`CLIPModel.from_pretrained` truyền `use_safetensors=True`. Trên venv đúng
+(torch 2.9.1) nó nạp được cả hai cách; cờ này giữ lại vì nạp safetensors vẫn hơn
+nạp pickle.
+
+⚠ **`forward` bọc vision model trong `torch.no_grad()` và `train()` ép
+`self.model.eval()`.** Nên đặt `requires_grad=True` để fine-tune encoder này sẽ
+**không có tác dụng gì** — gradient không chảy qua được. Muốn mở đóng băng phải
+sửa cả hai chỗ đó trước.
