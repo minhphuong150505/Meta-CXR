@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from transformers import CLIPModel, CLIPProcessor
+from transformers import CLIPImageProcessorFast, CLIPModel
 
 class Pubmedclip(nn.Module):
     def __init__(self, aug = None, device='cuda', project=True):
@@ -29,7 +29,23 @@ class Pubmedclip(nn.Module):
         for p in self.model.parameters():
             p.requires_grad = False
         self.model.eval()
-        self.processor = CLIPProcessor.from_pretrained(self.model_name)
+        # use_fast keeps preprocessing on the GPU. The slow processor converts
+        # every batch to CPU numpy, resizes there, and hands back a CPU tensor
+        # that forward() then copies to the device again. Measured on the host
+        # at batch 6, 448x448: 55.5 ms/batch against 0.3 ms, and the step is
+        # ~570 ms -- roughly a tenth of training time spent resizing images on
+        # the CPU, about six hours of a ten-epoch run.
+        #
+        # Outputs differ slightly (max 0.083, mean 0.0076 in normalised units)
+        # because the resampling implementations differ. That is a preprocessing
+        # change, so features shift a little; it must be the same at train and
+        # inference time, which it is, both going through this class.
+        # Only the image side is used -- forward() reads pixel_values and
+        # never touches the tokenizer -- so take the image processor directly.
+        # Going through CLIPProcessor(use_fast=True) instead raises
+        # AttributeError: 'CLIPImageProcessorFast' has no '_valid_processor_keys'
+        # on transformers 4.53; the wrapper still assumes the slow class.
+        self.processor = CLIPImageProcessorFast.from_pretrained(self.model_name)
         
         # Define the MLP to project patch embeddings to 1408 dimensions
         self.mlp = (
