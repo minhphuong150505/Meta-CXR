@@ -143,10 +143,15 @@ CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
 # ALL PRE-2026-08-14 CHECKPOINTS WERE DELETED on 2026-08-14, at the user's
 # request, on the grounds that those runs went in the wrong direction. 15 files,
 # 39 GB. Nothing on disk predates the current recipe. They were unloadable
-# against it anyway: encoders.swin went false, so MHCAC now sees 98 visual
-# tokens instead of 147. The Table 5 numbers survive in results/ but cannot be
+# against it anyway: encoders.swin went false, so MHCAC saw 98 visual tokens
+# instead of 147. The Table 5 numbers survive in results/ but cannot be
 # reproduced or extended without retraining, because the checkpoint they were
 # computed from is gone.
+#
+# A SECOND, INDEPENDENT BREAK landed 2026-08-14: each encoder now keeps its
+# native token sequence (246 tokens, not 98) and every stream has its own
+# positional encoding, so pos_enc went from one Parameter to a ModuleDict and
+# cnn_downsampler left the state dict. Nothing from before that commit loads.
 # Smoke: set run.truncate_train / truncate_val / truncate_test in the YAML.
 
 # Stage 2 (single-GPU only — no DDP anywhere in Stage 2)
@@ -192,9 +197,11 @@ vendored fork in `model/lavis/`. Data flow:
 
 ```
 study (not image) → anchor + ≤1 auxiliary view
-  → frozen encoders (BioViL-T 1408 + PubMedCLIP 768 + SwinV2; RadDINO off)
+  → frozen encoders (BioViL-T 1408 + PubMedCLIP 768; SwinV2 and RadDINO off)
+       BioViL   448 in  → 14x14 = 196 tokens          local, 32 px per cell
+       PubMedCLIP 224 in → 1 CLS + 7x7 = 50 tokens    global + regional, 64 px
   → per-encoder ViewFusionModule on RAW pre-projection output  (mhcac/view_fusion.py)
-  → FC projections → 1408, concatenated on the token axis
+  → FC projections → 1408, concatenated on the token axis (246 tokens)
   → MHCAC (mhcac/mhcac_12.py): 14 abnormalities × {Positive, Negative, Uncertain}
        student = image only (this is inference); teacher = image + report text,
        TRAIN ONLY, distilled into the student. Text attention is teacher-gated.
@@ -203,6 +210,40 @@ study (not image) → anchor + ≤1 auxiliary view
 ```
 
 - Sampling is **one row per study**, not per image (`study_sampling: true`).
+- **Every encoder keeps its native scale; nothing is pooled or dropped on the way
+  into MHCAC.** This is the point of running two of them, and until 2026-08-14
+  the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and
+  `_resize_patch_sequence` deleted PubMedCLIP's CLS (`50 == 49+1`), leaving two
+  interchangeable coarse maps and no global token. Measured on real studies:
+  CLIP's CLS is not recoverable from the patches that were kept
+  (`cos(CLS, mean patch) = 0.21`), whereas BioViL's own global output *is* the
+  patch mean (`cos = 1.0000`, `biovil_t/model.py:84`) — so the code was throwing
+  away the irreplaceable one and keeping the redundant one.
+  `Blip2Qformer._native_stream_layouts` now hands MHCAC a `StreamLayout` per
+  encoder; `stream_layouts=None` restores the old path and is what swin/raddino
+  recipes get. Cost of the extra 148 tokens: **0.2543 s/it vs 0.2529, +0.6%**.
+  Pinned by `tests/test_stream_layouts.py`.
+- **PubMedCLIP patch tokens are read through `post_layernorm` and then have their
+  per-image mean subtracted.** HF returns the vision tower's `last_hidden_state`
+  *without* the final LayerNorm (`modeling_clip.py:763-765` applies it to the
+  pooled CLS only), and the raw residual stream has a fixed DC direction that is
+  97% constant across the dataset: mean pairwise cosine between the 49 patches
+  was **0.674** against BioViL's 0.0017, so attention over them came out nearly
+  flat and the whole stream acted as a constant bias. LayerNorm alone only
+  reaches 0.587; subtracting the mean reaches **-0.014**. Keep the split — token
+  0 carries the global view, the 49 patches carry local deviation from it.
+  Do **not** feed this encoder 448: measured worse (0.714) and it puts CLIP's
+  interpolated position embeddings out of distribution while frozen.
+- **`model.image_size` must equal `vis_processor.*.image_size` (448).** It is not
+  self-evident: `init_vision_encoder` ignores it for biovil, so nothing read the
+  value and the BLIP-2 default of 224 sat in the model config unnoticed. It now
+  sets BioViL's token grid. Two guards, both fail loud — a `ValueError` naming
+  the key when it is missing, and a token-count check in `MHCAC.forward`.
+- **Positional encodings are per-encoder and init at `std=0.02`.** Tokens reach
+  them L2-normalised to 1.0, so the old bare `torch.randn` gave the encoding norm
+  27.8 and `cos(token+pos, pos) = 0.999` — at step 0 attention was driven purely
+  by position. One shared encoding also meant BioViL token *k* and PubMedCLIP
+  token *k* received the identical position vector.
 - `ViewFusionBlock` zero-inits `W_O` and the last FFN Linear, so it is an exact
   identity at step 0 and a single-view checkpoint loads without regression.
   Studies with no auxiliary view are gated to zero, not dropped from the batch.

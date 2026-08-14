@@ -1,4 +1,4 @@
-> Source: `mhcac/mhcac_12.py:357-471`
+> Source: `mhcac/mhcac_12.py:419-560`
 > Status: ✅ ACTIVE
 
 # `AbnormalityClassificationModel.forward(...)`
@@ -20,11 +20,16 @@ def forward(self, shared_visual_tokens, text_embeddings=None,
 ## ★ `text_embeddings` là ranh giới teacher/student
 `None` → **student** (đường inference). Có giá trị → **teacher** (chỉ lúc train).
 
-## ★ Một phép chiếu, nhiều view — docstring `:364`
+## ★ Một phép chiếu, nhiều view — docstring `:426`
 > *"Spans are used only to give each encoder its own within-stream positional
 > encoding and its own resize to `target_patch_count`; the projection to
 > `embed_dim` happens once, on the merged tensor, so MHCAC and META-Former share
 > one visual representation."*
+
+## ★ Hai nhánh xử lý stream
+`self.stream_layouts` quyết định. Có layout → **native**: giữ nguyên số token,
+tách token toàn cục, pos-enc riêng theo tên. Không có → **legacy**: mọi stream
+bị đưa về `target_patch_count` và dùng chung một pos-enc.
 
 ## Execution flow
 ```text
@@ -33,12 +38,18 @@ Bước 2 expert_tokens [14,D] → expand [B,14,D]
 Bước 3 embedding_alignment(visual, text, expert)     ← MỘT phép chiếu
 Bước 4 FOR name, span in sorted(spans, key=start):
           stream = visual_proj[:, span, :]
-          capture bật:
-            biovil → float32 + stash trước cnn_downsampler
-            stream khác → resize + float32 + stash
-            chỉ stash nếu số token là số chính phương
-          biovil → cnn_downsampler   |  khác → _resize_patch_sequence
-          → pos_enc(stream)                          ← pos-enc RIÊNG mỗi encoder
+          IF stream_layouts.get(name)  ── NATIVE (cấu hình production) ──
+            số token != layout.num_tokens             → ValueError
+            capture bật → float32
+            global_tokens = stream[:, :num_global]    ← CLS, không có toạ độ
+            spatial       = stream[:, num_global:]
+            stash (spatial, lưới vuông) nếu N chính phương  ← 14×14 / 7×7
+            stream = cat([global_tokens, spatial])    ← ⚠ giữ spatial trên đồ thị
+            → pos_enc[name](stream)                   ← pos-enc RIÊNG mỗi encoder
+          ELSE  ───────────── LEGACY (swin/raddino bật) ─────────────
+            biovil → float32 + stash trước cnn_downsampler → cnn_downsampler
+            khác   → _resize_patch_sequence + float32 + stash
+            → pos_enc(stream)                         ← MỘT pos-enc dùng chung
        image_patches = cat(streams, dim=1)
 Bước 5 FOR i, layer in attention_layers (6 lớp):
           layer.expert_to_text_attention không None → truyền text   (TEACHER)

@@ -1,3 +1,5 @@
+from typing import NamedTuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -101,12 +103,36 @@ class CrossModalEmbeddingAlignment(nn.Module):
 
 # Define trainable positional encoding
 class TrainablePositionalEncoding(nn.Module):
-    def __init__(self, num_patches, embed_dim):
+    def __init__(self, num_patches, embed_dim, std=0.02):
+        """``std`` scales the initialisation, and it matters more than it looks.
+
+        The tokens reaching this module have L2 norm exactly 1.0, because
+        ``CrossModalEmbeddingAlignment`` ends in ``F.normalize(dim=-1)``. A bare
+        ``torch.randn`` init gives the positional encoding norm sqrt(embed_dim)
+        -- 27.8 at embed_dim=768 -- so at step 0 the sum is 0.999 cosine to the
+        positional encoding alone and attention is driven entirely by position
+        rather than by what is in the image. 0.02 is the BERT/ViT convention and
+        puts the encoding at norm ~0.55, the same order as the content.
+        """
         super(TrainablePositionalEncoding, self).__init__()
-        self.positional_encoding = nn.Parameter(torch.randn(1, num_patches, embed_dim))  # Learnable parameter
+        self.positional_encoding = nn.Parameter(
+            torch.randn(1, num_patches, embed_dim) * std
+        )  # Learnable parameter
 
     def forward(self, x):
         return x + self.positional_encoding  # Add positional encoding to input
+
+
+class StreamLayout(NamedTuple):
+    """How many tokens an encoder contributes, and how many carry no position.
+
+    ``num_global_tokens`` counts non-spatial tokens at the FRONT of the stream
+    (PubMedCLIP's CLS). They are kept and attended over, but excluded from the
+    square grid the Grad-CAM capture reshapes to.
+    """
+
+    num_tokens: int
+    num_global_tokens: int = 0
     
 # ExpertTokenCrossAttention layer that performs both image and query cross-attention in a single pass
 class ExpertTokenCrossAttention(nn.Module):
@@ -222,7 +248,22 @@ class AbnormalityClassificationModel(nn.Module):
         num_text_teacher_layers=2,
         use_cnn=True,
         uncertain_policy="three_class",
+        stream_layouts=None,
     ):
+        """``stream_layouts`` maps encoder name -> :class:`StreamLayout`.
+
+        When it is given, every encoder keeps its **native** token sequence:
+        nothing is pooled, interpolated or dropped on the way into MHCAC, and
+        each encoder gets its own positional encoding. That is what lets BioViL
+        contribute a fine 14x14 grid while PubMedCLIP contributes a coarse 7x7
+        grid plus one global token -- three genuinely different scales instead
+        of two identical 7x7 maps.
+
+        When it is ``None`` every stream is resampled to ``target_patch_count``
+        and shares one positional encoding, which is the historical behaviour.
+        The caller passes ``None`` whenever it cannot describe *every* enabled
+        encoder, so a partially-described model can never be built.
+        """
         super(AbnormalityClassificationModel, self).__init__()
 
         self.embed_dim = embed_dim
@@ -230,6 +271,7 @@ class AbnormalityClassificationModel(nn.Module):
         self.num_abnormalities = num_abnormalities
         self.num_layers = num_layers
         self.target_patch_count = target_patch_count
+        self.stream_layouts = dict(stream_layouts) if stream_layouts else {}
         if not 0 <= num_text_teacher_layers <= num_layers:
             raise ValueError("num_text_teacher_layers must be between 0 and num_layers")
         # Initial projection layer to align image, text, and query embeddings.
@@ -300,11 +342,31 @@ class AbnormalityClassificationModel(nn.Module):
         # self.w_cnn = nn.Parameter(torch.tensor(1.0))
         # self.w_vit = nn.Parameter(torch.tensor(1.0))
         
-        self.pos_enc = TrainablePositionalEncoding(num_patches=target_patch_count, embed_dim=embed_dim)
+        # One positional encoding per encoder when layouts are known. Sharing a
+        # single one across streams -- what this used to do -- gave BioViL token
+        # k and PubMedCLIP token k the identical position vector, so nothing in
+        # the input told the model which encoder a token came from.
+        if self.stream_layouts:
+            self.pos_enc = nn.ModuleDict(
+                {
+                    name: TrainablePositionalEncoding(
+                        num_patches=layout.num_tokens, embed_dim=embed_dim
+                    )
+                    for name, layout in self.stream_layouts.items()
+                }
+            )
+        else:
+            self.pos_enc = TrainablePositionalEncoding(
+                num_patches=target_patch_count, embed_dim=embed_dim
+            )
+
         # Runs on the biovil span *after* the shared projection, hence embed_dim.
+        # With a native layout BioViL keeps its full 14x14 grid, so the learned
+        # 196 -> 49 reduction is not built at all: pooling away three quarters of
+        # the only fine-grained stream is exactly what we are undoing here.
         self.cnn_downsampler = (
             DownsamplePatches(196, target_patch_count, embed_dim, method="conv")
-            if use_cnn
+            if use_cnn and "biovil" not in self.stream_layouts
             else None
         )
         
@@ -400,7 +462,32 @@ class AbnormalityClassificationModel(nn.Module):
         image_streams = []
         for name, span in sorted(spans.items(), key=lambda item: item[1].start):
             stream = visual_proj[:, span, :]
-            if name == "biovil":
+            layout = self.stream_layouts.get(name)
+
+            if layout is not None:
+                # Native path: no pooling, no interpolation, no dropped token.
+                if stream.size(1) != layout.num_tokens:
+                    raise ValueError(
+                        f"stream {name!r} carries {stream.size(1)} tokens but its "
+                        f"layout declares {layout.num_tokens}; the layout is derived "
+                        f"from the encoder config, so one of them is wrong"
+                    )
+                if self.capture_streams:
+                    stream = stream.float()
+                # Split before anything else: the captured tensor must stay on
+                # the path to the loss or autograd.grad has nothing to follow.
+                global_tokens = stream[:, : layout.num_global_tokens, :]
+                spatial = stream[:, layout.num_global_tokens :, :]
+                grid_size = int(spatial.size(1) ** 0.5)
+                if self.capture_streams and grid_size * grid_size == spatial.size(1):
+                    self._last_cam_streams[name] = (spatial, (grid_size, grid_size))
+                stream = (
+                    torch.cat([global_tokens, spatial], dim=1)
+                    if layout.num_global_tokens
+                    else spatial
+                )
+                stream = self.pos_enc[name](stream)
+            elif name == "biovil":
                 if self.capture_streams:
                     stream = stream.float()
                 grid_size = int(stream.size(1) ** 0.5)
@@ -416,6 +503,7 @@ class AbnormalityClassificationModel(nn.Module):
                     stream = self.cnn_downsampler(stream)
                 else:
                     stream = self._resize_patch_sequence(stream)
+                stream = self.pos_enc(stream)
             else:
                 stream = self._resize_patch_sequence(stream)
                 if self.capture_streams:
@@ -426,7 +514,8 @@ class AbnormalityClassificationModel(nn.Module):
                         stream,
                         (grid_size, grid_size),
                     )
-            image_streams.append(self.pos_enc(stream))
+                stream = self.pos_enc(stream)
+            image_streams.append(stream)
         if not image_streams:
             raise ValueError("No image stream was provided to MHCAC.")
         image_patches = torch.cat(image_streams, dim=1)

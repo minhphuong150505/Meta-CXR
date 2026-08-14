@@ -16,6 +16,12 @@ model:
   freeze_vit: true
   vit_model: biovil
   vit_model_cls: [pubmedclip]
+  # Must match datasets.mimic_cxr.vis_processor.*.image_size below. It is stated
+  # here because the model config inherits image_size: 224 from the upstream
+  # BLIP-2 default YAML, and nothing used to read it -- init_vision_encoder
+  # ignores it for biovil -- so the wrong value sat here unnoticed. It now
+  # determines BioViL's token grid (448/32 -> 14x14 -> 196 tokens).
+  image_size: 448
   encoders:
     biovil: true
     pubmedclip: true

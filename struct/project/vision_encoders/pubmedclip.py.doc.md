@@ -1,4 +1,4 @@
-> Source: `vision_encoders/pubmedclip/pubmed_clip.py` (92 dòng)
+> Source: `vision_encoders/pubmedclip/pubmed_clip.py` (122 dòng)
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-14
 
@@ -6,7 +6,8 @@
 
 ## Purpose
 
-Bọc PubMedCLIP thành encoder đóng băng, chiều ra **768**.
+Bọc PubMedCLIP thành encoder đóng băng, chiều ra **768**, trả **50 token**:
+1 CLS (toàn cục) + 49 patch đã trừ DC (cục bộ).
 
 ## Role in architecture
 
@@ -26,8 +27,8 @@ rồi `SharedVisualTokenProjector`.
 | Method | Dòng | Ghi chú |
 |---|---|---|
 | `__init__(aug=None, device='cuda', project=True)` | 6 | ⚠ **`device='cuda'` là default cứng** |
-| `train(mode=True)` | 37 | Override để giữ eval mode |
-| `forward(image, apply_aug=True)` | 42 | Trả tuple; `[0]` là patch embedding |
+| `train(mode=True)` | 61 | Override để giữ eval mode |
+| `forward(image, apply_aug=True)` | 66 | Trả tuple; `[0]` là `[B, 50, 768]` |
 
 ## ⚠ Được dựng với `project=False`
 
@@ -44,6 +45,42 @@ nhau, ở một chỗ.
 Augmentation áp **một lần trong `ReportDataset`**, để mọi encoder thấy cùng một
 ảnh đã biến đổi (comment `blip2_qformer.py:254`). Vì thế encoder được gọi với
 `apply_aug=False` ở cả `:445` và `:515`.
+
+## ★ Cách đọc đầu ra — hai chỉnh sửa bắt buộc (2026-08-14)
+
+Đo trên ảnh thật của dataset (16–32 ảnh, CPU). Không có hai bước này thì
+PubMedCLIP gần như không đóng góp gì cho MHCAC.
+
+**1. `post_layernorm`.** HF trả `last_hidden_state` của tháp thị giác **chưa qua**
+LayerNorm cuối (`modeling_clip.py:763-765` chỉ áp cho CLS đã pool). ViT của CLIP
+là pre-LN nên tensor đó là residual stream thô. Token 0 cũng chỉ có nghĩa sau
+LayerNorm này — nó chính là vector CLIP được huấn luyện contrastive.
+
+**2. Trừ DC khỏi patch token.** 49 patch có cosine trung bình đôi một **0.674**:
+hai phần ba mỗi token là một hướng cố định không mang thông tin không gian, nên
+attention lên chúng gần như phẳng và cả stream hoạt động như một hằng số. 97%
+hướng đó là hằng số trên toàn dataset (`cos = 0.970` giữa mean từng ảnh và mean
+toàn cục) → là offset, không phải nội dung.
+
+| Cách đọc | cosine giữa 49 patch |
+|---|---|
+| `last_hidden_state` thô (trước 2026-08-14) | 0.674 |
+| `+ post_layernorm` | 0.587 |
+| `+ post_layernorm + trừ mean từng ảnh` | **−0.014** |
+
+Phép tách là có chủ đích và là thứ làm hai encoder bổ trợ nhau: **token 0 mang
+cái nhìn toàn cục, 49 patch mang sai lệch cục bộ so với nó.** Xem
+[D-016](../_meta/DECISIONS.md#d-016--mỗi-encoder-giữ-thang-đo-riêng).
+
+⚠ **Đừng đưa 448 vào encoder này.** Đã thử `interpolate_pos_encoding=True`:
+cosine *tệ hơn* (0.714 thô) và nó đẩy CLIP ra ngoài phân bố huấn luyện trong khi
+encoder đóng băng nên không có cơ hội thích nghi. 224 là độ phân giải gốc, và
+lưới 7×7 thô của nó là **vai trò** chứ không phải khiếm khuyết — BioViL đã lo
+phần chi tiết ở 14×14.
+
+⚠ `forward` bọc tháp thị giác trong `torch.no_grad()` và `train()` ép `eval()`.
+Đặt `requires_grad=True` lên encoder này **không có tác dụng gì** — muốn
+fine-tune phải gỡ cả hai chỗ.
 
 ## Calls / Called by
 
@@ -69,6 +106,9 @@ Không có test trực tiếp; `tests/test_shared_visual_tokens.py` dùng chiề
 1. **Đừng bật lại `project=True`** — sẽ có hai phép chiếu chồng nhau.
 2. Chiều 768 được **hardcode** ở `blip2_qformer.py:310` và `:333`. Đổi encoder khác
    chiều phải sửa cả hai chỗ đó.
+3. Số token (50) được `Blip2Qformer._native_stream_layouts` suy ra từ
+   `model.config.vision_config` chứ không hardcode; MHCAC kiểm lại lúc forward và
+   raise nếu lệch.
 
 ## Source relationships
 

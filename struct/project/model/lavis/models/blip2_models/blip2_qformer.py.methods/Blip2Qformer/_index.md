@@ -1,4 +1,4 @@
-> Source: `model/lavis/models/blip2_models/blip2_qformer.py:120-1632`
+> Source: `model/lavis/models/blip2_models/blip2_qformer.py:120-1705`
 > Status: ✅ ACTIVE
 
 # `class Blip2Qformer(Blip2Base)`
@@ -65,6 +65,7 @@ generate(samples) hoặc lấy Q-Former output
 
 ## Private methods quan trọng
 [`_encode_image_streams`](_encode_image_streams.md) ★ ·
+[`_native_stream_layouts`](_native_stream_layouts.md) ★ ·
 [`_encode_aux_streams`](_encode_aux_streams.md) ·
 [`_image_text_contrastive`](_image_text_contrastive.md) ·
 [`_image_text_matching`](_image_text_matching.md) ·

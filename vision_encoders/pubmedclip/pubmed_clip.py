@@ -75,11 +75,41 @@ class Pubmedclip(nn.Module):
         if apply_aug and self.aug is not None:
              inputs = self.aug(inputs)
              
-        # Obtain patch embeddings
+        # Obtain patch embeddings.
+        #
+        # Two corrections happen here, both measured on real studies from this
+        # dataset (16-32 images, CPU, 2026-08-14). Without them PubMedCLIP
+        # contributes almost nothing to MHCAC.
+        #
+        # 1. post_layernorm. HF returns ``last_hidden_state`` for the vision
+        #    tower WITHOUT it (modeling_clip.py:763-765 applies it only to the
+        #    pooled CLS). CLIP's ViT is pre-LN, so that tensor is the raw
+        #    residual stream -- the one representation the model was never meant
+        #    to expose. token 0 is also the vector CLIP was contrastively
+        #    trained on, and it is only meaningful after this LayerNorm.
+        #
+        # 2. Removing the DC component from the patch tokens. The 49 patch
+        #    tokens shared a mean pairwise cosine of 0.674, i.e. two thirds of
+        #    every token was one fixed direction carrying no spatial
+        #    information: attention over them came out nearly flat, so the whole
+        #    stream acted as a constant bias. 97% of that direction is constant
+        #    across images (cos 0.970 between the per-image mean and the dataset
+        #    mean), so it is an offset, not content. Subtracting the per-image
+        #    mean takes the cosine to -0.016; post_layernorm alone only reaches
+        #    0.587 and does not fix it.
+        #
+        # The split is deliberate and is what makes the two encoders
+        # complementary: token 0 carries the global view, and the patches now
+        # carry purely local deviation from it.
         with torch.no_grad():
             vision_outputs = self.model.vision_model(pixel_values=inputs)
-            patch_embeddings = vision_outputs.last_hidden_state
-        
+            hidden = self.model.vision_model.post_layernorm(
+                vision_outputs.last_hidden_state
+            )
+            cls_token, patches = hidden[:, :1, :], hidden[:, 1:, :]
+            patches = patches - patches.mean(dim=1, keepdim=True)
+            patch_embeddings = torch.cat([cls_token, patches], dim=1)
+
         if self.mlp is None:
             return patch_embeddings, None
 

@@ -21,7 +21,7 @@ from model.lavis.models.blip2_models.blip2 import (
 from model.lavis.models.blip_models.blip_outputs import BlipOutput, BlipOutputFeatures
 
 from mhcac.explanation import ExplanationLoss, explanation_lambda
-from mhcac.mhcac_12 import AbnormalityClassificationModel
+from mhcac.mhcac_12 import AbnormalityClassificationModel, StreamLayout
 
 
 from vision_encoders.pubmedclip.pubmed_clip import Pubmedclip
@@ -396,6 +396,7 @@ class Blip2Qformer(Blip2Base):
             text_dropout_rate=mhcac_text_dropout,
             use_cnn=self.use_biovil,
             uncertain_policy=uncertain_policy,
+            stream_layouts=self._native_stream_layouts(img_size),
         )
 
         # sqrt(negative prevalence / class prevalence), capped at 10, computed
@@ -530,6 +531,50 @@ class Blip2Qformer(Blip2Base):
         return self.view_fusion[name](
             anchor, aux.to(anchor.dtype), aux_mask, anchor_view_id, aux_view_ids
         )
+
+    def _native_stream_layouts(self, img_size):
+        """Per-encoder token layout, or ``None`` to use the legacy resample path.
+
+        Returning a layout tells MHCAC to keep every encoder's own sequence
+        intact. That is the point of running two encoders: BioViL-T reads the
+        full 448 image into a 14x14 grid (32 px per cell, fine detail),
+        PubMedCLIP reads it at its native 224 into a 7x7 grid (64 px per cell,
+        regional context) plus one CLS token for the global view. Pooling both
+        down to 7x7 -- what this used to do -- collapsed three scales into two
+        copies of the coarsest one.
+
+        ``None`` is returned whenever an enabled encoder cannot be described,
+        because a partial layout would leave that stream without a positional
+        encoding. Swin and RadDINO do not expose their token count here, so
+        those recipes keep the historical behaviour unchanged.
+        """
+        if self.use_swin or self.use_raddino:
+            return None
+        layouts = {}
+        if self.use_biovil:
+            # BioViL-T's ResNet50 trunk has total stride 32: 448 -> 14x14 = 196.
+            # MHCAC re-checks this against the actual span and raises if it is
+            # wrong, so a future change to the trunk fails loudly here.
+            #
+            # img_size must be the size the dataset actually emits. It is NOT
+            # self-evidently so: init_vision_encoder ignores it for biovil, so
+            # for a long time nothing read this value and the BLIP-2 default of
+            # 224 went unnoticed while the vis_processor produced 448. The run
+            # YAML now sets model.image_size explicitly for that reason.
+            if img_size is None:
+                raise ValueError(
+                    "model.image_size is required to lay out the biovil stream; "
+                    "set it to the vis_processor image_size (448)"
+                )
+            grid = int(img_size) // 32
+            layouts["biovil"] = StreamLayout(grid * grid)
+        if self.use_pubmedclip:
+            vision_cfg = self.pubmedclip.model.config.vision_config
+            grid = vision_cfg.image_size // vision_cfg.patch_size
+            layouts["pubmedclip"] = StreamLayout(
+                grid * grid + 1, num_global_tokens=1
+            )
+        return layouts or None
 
     def _apply_encoder_ablation(self, shared):
         """Mask configured encoder spans while preserving the trained layout."""
