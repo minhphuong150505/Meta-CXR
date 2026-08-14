@@ -3,7 +3,7 @@
 # 10-epoch run overrode them on the command line with
 #   run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 # The processed CSV paths come from configs/env_config.yaml and must point at
-# processed/full_allviews. One epoch is one pass over unique studies (~220k),
+# processed/full_allviews_v2. One epoch is one pass over unique studies (~223k),
 # not one pass over the ~365k duplicated image rows.
 
 model:
@@ -201,7 +201,6 @@ run:
   # noisy. Both numbers are logged every scored epoch -- compare which epoch
   # each would have chosen before quoting either in a write-up.
   selection_metric: loss
-  save_freq: 5
   save_freq: 5
 
   # Verified on RTX 5060 Ti 16 GB: batch 8 peaked at 12,755 MB for the full
