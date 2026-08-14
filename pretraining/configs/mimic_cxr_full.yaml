@@ -122,28 +122,34 @@ model:
     itc_queue_size: 1024
 
   explanation:
-    # COST OF THIS TERM, re-measured 2026-08-14 on the current two-encoder,
-    # native-layout recipe. 200 iterations, batch 6, everything else identical:
+    # COST OF THIS TERM: +10.5% wall, +174 MiB.
     #
-    #   term off  0.2424 s/it   torch peak 3,778 MiB
-    #   term on   0.2788 s/it   torch peak 3,952 MiB
+    # Measured 2026-08-15 from a real 10-epoch run at batch 16, which is the
+    # only way to get this right: the warmup below holds lambda at 0 through
+    # epoch [1] and ramps from [2], so consecutive epochs of the same run differ
+    # in nothing else. Per-epoch wall clock over 13,922 iterations:
     #
-    # ⚠ THE TIME FIGURE IS NOT USABLE. Both numbers were taken while the
-    # dataloader was the bottleneck, so they largely measure it and not this
-    # term. An earlier note here claimed +3.6% and was wrong for the same kind
-    # of reason (measured with three encoders, when a 0.56 s step hid Grad-CAM).
-    # The memory figure, +174 MiB, is unaffected and stands.
+    #   epoch [1]  lambda 0       0.2118 s/it
+    #   epoch [2]  lambda 0.125   0.2352 s/it
+    #   epoch [3]  lambda 0.1875  0.2350 s/it
+    #   epoch [4]  lambda 0.25    0.2340 s/it
     #
-    # The clean measurement is free and nobody needs to burn GPU time on it:
-    # warmup_start_epoch below keeps lambda at 0 through epoch [1] and ramps at
-    # [2], so comparing s/it between those two epochs of any real run isolates
-    # the term exactly. Do that and replace this note.
+    # Note [2] through [4] are flat while lambda doubles: the cost is switched,
+    # not scaled. Grad-CAM runs in full whenever lambda > 0, so a smaller alpha
+    # buys nothing in time -- only warmup_start_epoch does.
     #
     # It stays this cheap because the Grad-CAM backward only traverses the
     # MHCAC subgraph, not the frozen encoders, and the term fires on 56.7% of
     # studies (a study needs both a mask and a positive finding).
     #
-    # At batch 16 with the fixed data path a 10-epoch run is ~9.1 h.
+    # Two earlier figures here were wrong and are recorded so nobody re-derives
+    # them: "+3.6%" was measured with three encoders, when a 0.56 s step hid
+    # Grad-CAM inside it; "+15.0%" was measured while the dataloader was the
+    # bottleneck and so mostly measured the dataloader. Both are superseded by
+    # the table above. The +174 MiB was never affected.
+    #
+    # At batch 16 with the fixed data path a 10-epoch run is ~9.0 h wall
+    # (measured: epochs average 55 min with this term on, 49 min without).
     top_k: 0.5
     # Epoch indices [0]-[1] are zero; [2]-[3] ramp; [4]+ use the full weight.
     warmup_start_epoch: 2
