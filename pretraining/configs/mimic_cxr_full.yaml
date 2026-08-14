@@ -99,6 +99,20 @@ model:
     itc_queue_size: 1024
 
   explanation:
+    # MEASURED on the host, 200 iterations at batch 6, RTX 5060 Ti, torch 2.9.1
+    # (2026-08-14). Same config, same manifest, explanation loss the only
+    # difference:
+    #                       off        on
+    #   s/it              0.560      0.580     +3.6%
+    #   peak VRAM        6112 MiB   6136 MiB   +24 MiB, 37% of 16 GB
+    #   loss             1.4213     1.5404
+    #   loss_explanation     --     0.4402
+    #
+    # +3.6%, not the 30-50% first estimated: the Grad-CAM backward only
+    # traverses the MHCAC subgraph, not the frozen encoders, and the term fires
+    # on 56.7% of studies (a study needs both a mask and a positive finding).
+    # A 10-epoch run is ~60 h with the term against ~58 h without
+    # (222,758 studies / batch 6 = 37,126 it/epoch).
     top_k: 0.5
     # Epoch indices [0]-[1] are zero; [2]-[3] ramp; [4]+ use the full weight.
     warmup_start_epoch: 2
