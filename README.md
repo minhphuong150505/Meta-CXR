@@ -25,7 +25,8 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 | Explanation masks | Đã build CPU thử 200 study val: 193 hợp lệ (189 lung, 4 bbox); full cache chưa được xác nhận |
 | XAI evaluation | Metric NumPy + checkpoint script + PNG/NPZ implemented; script checkpoint/GPU chưa từng chạy |
 | CPU tests | Xem mục [Testing](#testing) cho output chạy thật của Phase 3 |
-| GPU evidence | Table 5 encoder ablation 4/4 hoàn tất trên full test; chưa phải training smoke/full validation |
+| GPU evidence | Stage-1 smoke train/val/test đã chạy với và không có explanation loss (2026-08-14); full run đang chạy |
+| Checkpoint cũ | **Đã xoá toàn bộ 2026-08-14** (15 file, 39 GB) — các run đó đi sai hướng và không nạp được vào recipe hiện tại (Swin tắt → 98 token thay vì 147). Số liệu Table 5 còn trong `results/` nhưng không tái lập được |
 | Full MIMIC-CXR training | Chưa được xác nhận với pipeline final |
 | Reproduced metrics | Chưa có metric mô hình mới được tái lập từ pipeline final |
 
@@ -63,7 +64,9 @@ Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/
 
 - Entrypoint: [`pretraining/train.py`](pretraining/train.py)
 - Config production (một GPU, recipe duy nhất): [`pretraining/configs/mimic_cxr_full.yaml`](pretraining/configs/mimic_cxr_full.yaml)
-- Checkpoint selection: `macro_auprc` trên validation; test được giữ ngoài quá trình chọn checkpoint.
+- Checkpoint selection: **`loss`** (tổng val loss) trên validation; test được giữ ngoài quá trình chọn checkpoint.
+  `macro_auprc` vẫn được log mỗi epoch được chấm để đối chiếu — val loss bị các nhãn phổ biến chi phối,
+  nên một model bỏ hẳn nhãn hiếm có thể ăn điểm hơn model đôi khi tìm ra nó.
 
 ### Explanation-aware learning (tùy chọn)
 

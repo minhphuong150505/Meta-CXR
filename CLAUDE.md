@@ -34,7 +34,7 @@ Two consequences worth remembering:
   the user.
 - **It is a Windows system partition**, not a data disk: `Windows/`,
   `Program Files/`, `pagefile.sys`, `hiberfil.sys` sit next to the 573 GB
-  dataset and 22 GB of checkpoints. Treat write access as consequential.
+  dataset. Treat write access as consequential.
 - **The volume has real NTFS errors.** `dmesg` on 2026-08-13:
   `ntfs3(nvme1n1p2): Mark volume as dirty due to NTFS errors` /
   `It is recommended to use chkdsk.` This is not a stale hibernation flag; the
@@ -131,15 +131,22 @@ python scripts/vm_preflight.py --stage 1
 # Launch it PLAIN, not through torch.distributed.run: with one GPU and
 # run.distributed=false, torchrun only sets RANK/WORLD_SIZE, which sends
 # init_distributed_mode down its distributed branch for no benefit. This plain
-# form is what produced the existing checkpoint (wandb metadata: program =
+# form is what produced the earlier checkpoints (wandb metadata: program =
 # "-m pretraining.train"). torchrun does work now that run.dist_url is present,
 # but it buys nothing here.
 CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
     --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
-# Those three overrides are what the completed 10-epoch run actually used on the
-# 5060 Ti. The YAML's own defaults (batch 8 / accum 8) fit in 16 GB but were not
-# the settings that produced the current checkpoint.
+# Those three overrides are what the earlier 10-epoch run used on the 5060 Ti.
+# The YAML's own defaults (batch 8 / accum 8) also fit in 16 GB.
+#
+# ALL PRE-2026-08-14 CHECKPOINTS WERE DELETED on 2026-08-14, at the user's
+# request, on the grounds that those runs went in the wrong direction. 15 files,
+# 39 GB. Nothing on disk predates the current recipe. They were unloadable
+# against it anyway: encoders.swin went false, so MHCAC now sees 98 visual
+# tokens instead of 147. The Table 5 numbers survive in results/ but cannot be
+# reproduced or extended without retraining, because the checkpoint they were
+# computed from is gone.
 # Smoke: set run.truncate_train / truncate_val / truncate_test in the YAML.
 
 # Stage 2 (single-GPU only — no DDP anywhere in Stage 2)
