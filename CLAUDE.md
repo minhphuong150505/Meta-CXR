@@ -458,8 +458,12 @@ What the coverage allows:
 | **both -> loss actually fires** | **56.7%** | — | 69.8% |
 | **of those, real MS-CXR box** | **823** | **5** | **138** |
 
-Two consequences. Cost: the Grad-CAM backward is paid on ~57% of training steps,
-not all of them, so scale any s/it measurement by that and not by 100%. Evidence:
+The cost is now measured, not estimated. 200 iterations at batch 6 on the
+5060 Ti, same config and manifest, the term the only difference: **0.580 s/it
+against 0.560, +3.6%**, peak VRAM 6,136 MiB against 6,112 (37% of 16 GB). A
+10-epoch run is ~60 h with it and ~58 h without. The first estimate of 30-50%
+was wrong because the Grad-CAM backward only traverses the MHCAC subgraph, not
+the frozen encoders, and the term fires on 56.7% of studies. Evidence:
 the only population that supports "the model looks at the pathology" is the box
 one, and that is **138 test studies** — val's 5 cannot calibrate or select
 anything. The lung-mask population is 30x larger but only supports the weaker
