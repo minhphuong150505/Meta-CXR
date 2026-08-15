@@ -12,7 +12,11 @@ Vòng epoch: train → validate → chọn checkpoint → early stop → test m�
 
 ## Execution flow
 ```text
+best_agg_metric = +inf nếu mode "min", -inf nếu mode "max"   ← :694
+   ↓
 resume_ckpt_path có → _load_checkpoint()
+   → best_agg_metric = giá trị từ checkpoint, CHỈ KHI khác None   ← :719-722
+     ⚠ đây là chỗ bẫy khi đổi selection_metric, xem _load_checkpoint.md
    ↓
 FOR epoch in range(max_epoch):
    train_epoch(epoch) → model.set_epoch(epoch), nếu có
@@ -36,7 +40,7 @@ Ngoài vòng lặp, sau khi reload `checkpoint_best`. Test **không tham gia** c
 checkpoint ở bất kỳ bước nào.
 
 ## Config dependencies
-`run.max_epoch` · `selection_metric` (**`macro_auprc`**) · `selection_mode` ·
+`run.max_epoch` · `selection_metric` (**`loss`**) · `selection_mode` ·
 `early_stop_patience` (5) · `early_stop_min_delta` · `save_freq` (5) ·
 `resume_ckpt_path` · `accum_grad_iters` · `max_grad_norm`
 
