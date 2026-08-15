@@ -637,14 +637,29 @@ work**: on the run that finished 2026-08-16 (test split, calibrated thresholds,
 precision 0.6835, with specificity ~0 on Support Devices, Fracture, Lung Opacity
 (0.017) and Atelectasis (0.100). Setting this weight > 0 makes them one likelihood
 — `-log(1-m)` when unmentioned, `-log(m) - log(q[y])` when mentioned — and
-marginalises `P(Neg) = (1-m) + m·q_neg`, `P(Pos) = m·q_pos`, so silence multiplies
-a positive down instead of sitting beside it. `classification_logits` becomes the
-log marginal distribution; softmax of it recovers the marginals, so the evaluator
-and the saved `.npz` are unaffected, and the raw heads stay on
-`conditional_classification_logits`. It carries **no** inverse-frequency or kappa
+exports the four-state joint alongside — `P(blank) = 1-m`, `P(Neg) = m·q_neg`,
+`P(Pos) = m·q_pos`, `P(Unc) = m·q_unc` — as `mention_marginal_log_probs`.
+
+**`classification_logits` stays `q`, the polarity distribution conditional on the
+finding being mentioned.** Substituting a three-state marginal there was a category
+error and cost a GPU smoke to find: the CheXpert P/N/U metric masks blank cells, so
+it scores polarity *given* mention, which is `q`. Worse, argmax over that marginal
+can only choose Positive when `m > 1/(1 + q_pos - q_neg)`, which is ≥ 0.5 even for a
+perfect conditional classifier and 0.55–0.8 in practice — so with 79.5% of cells
+blank, a correctly calibrated sparse gate makes Positive **mathematically
+unwinnable**. Validation F1 sat at exactly 0.000000 for every epoch while the old
+mode reached 0.62 on identical data. Report-time emission is meant to be two-stage:
+open the gate on a per-label threshold fitted on validation, then read the class off
+`q`. Do not reintroduce an argmax over the marginal, and note that validation takes a
+literal three-way argmax (`image_text_pretrain.py:114`), not a calibrated threshold.
+
+The hierarchy reads `mention_mask` from the batch. It briefly read
+`has_chexpert_label`, which the dataset does not emit — the absent key fell through
+to `default=True` and trained every unmatched study as fourteen "not mentioned"
+cells. It carries **no** inverse-frequency or kappa
 weights on purpose: the operating point belongs in the thresholds this project
 already calibrates on validation. Enabling it **requires** `lambda_cls: 0.0` and
-`lambda_gate: 0.0`; the constructor raises otherwise. **Not yet run on GPU.**
+`lambda_gate: 0.0`; the constructor raises otherwise. **Smoke-tested on GPU only** (600 studies, 3 epochs): F1 0.3640 → 0.4611 → 0.5325, against 0.2805 → 0.5164 → 0.6249 for the old mode on identical data. That smoke shows the mode trains; it is far too small to say which mode is better.
 
 **Classification weights are full inverse frequency now, not the square root.**
 sqrt deliberately under-corrects and the residual was not small: 12 of 14 labels
