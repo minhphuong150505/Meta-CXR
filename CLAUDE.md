@@ -506,6 +506,35 @@ config or the machine; nothing hardcodes `cuda:0`.
 
 Three things here are easy to get wrong and produce a run that looks healthy.
 
+**The model can now say "nothing to report" — `model.loss.lambda_gate`.** MHCAC
+carries a second head, one binary output per abnormality, answering *will the
+report mention this finding at all?* It is the only consumer of the **79.5%** of
+the CheXpert matrix that is blank; every other loss masks those cells out, which
+is right for a Positive/Negative/Uncertain question but left the model forced to
+pick one of three classes for all fourteen findings on every image. Measured
+consequence before the head existed: **10.8 of 14 findings called Positive per
+test study**, and **every single one of 3,269 studies labelled `No Finding =
+Positive` while 8.8 other findings were flagged on it** — 100% self-contradictory
+output. `No Finding` stays in the gate on purpose even though it is excluded from
+the classifier: *was it mentioned* is *did the radiologist call this study
+normal*, 74,305 against 148,453, which is well posed.
+Gate weights are `(n_not_mentioned / n_mentioned) x kappa_gate`, kappa 2, capped
+at 10 — the cap is load-bearing, five labels have raw ratios of 17–157 and
+uncapped they simply relocate "always answer the majority class" into the gate.
+`mention_mask` drops studies with no CheXpert record: their blank pattern is
+unknown, not empty. Pinned by `tests/test_mention_gate.py`.
+
+**Classification weights are full inverse frequency now, not the square root.**
+sqrt deliberately under-corrects and the residual was not small: 12 of 14 labels
+still pushed toward Positive, up to **5.36x** for Atelectasis, and measured
+specificity tracked it almost monotonically — Atelectasis 0.000, Support Devices
+0.000, Lung Opacity 0.017, against 0.675 for Edema whose ratio was already 1.02.
+`(n_neg/n_pos)` brings every label to 1.00, then a per-label `kappa` (4 for
+Pneumothorax, 3 for Pneumonia/Edema/Consolidation, 2 or 1 for the rest) applies
+the clinical preference. **That kappa table is a proposal and needs a clinician's
+sign-off before any published claim**, and kappa does not create skill: AUROC is
+fixed at 0.7776 and kappa only picks an operating point on that curve.
+
 **`No Finding` is excluded from training and evaluation** (`model.mhcac.excluded_labels`).
 The labeler sets it to 1.0 when the report describes no abnormality and leaves it
 blank otherwise -- it never emits 0.0 -- so across the whole dataset it is

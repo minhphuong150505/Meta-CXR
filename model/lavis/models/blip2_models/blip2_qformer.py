@@ -35,6 +35,7 @@ VISUAL_DIM = 1408
 
 from mhcac.loss import (
     ClassificationLoss,
+    MentionGateLoss,
     MultiPositiveContrastiveLoss,
     soft_target_kl_loss,
     view_consistency_loss,
@@ -173,6 +174,8 @@ class Blip2Qformer(Blip2Base):
         lambda_orthogonality=0.05,
         lambda_sparsity=0.01,
         lambda_explanation=0.0,
+        lambda_gate=0.0,
+        gate_class_weights=None,
         explanation_cfg=None,
         distill_temperature=2.0,
         mhcac_text_dropout=0.2,
@@ -243,6 +246,7 @@ class Blip2Qformer(Blip2Base):
         self.lambda_orthogonality = float(lambda_orthogonality)
         self.lambda_sparsity = float(lambda_sparsity)
         self.lambda_explanation = float(lambda_explanation)
+        self.lambda_gate = float(lambda_gate)
         self.current_epoch = 0
         explanation_cfg = dict(explanation_cfg or {})
         self.explanation_warmup_start_epoch = int(
@@ -443,6 +447,12 @@ class Blip2Qformer(Blip2Base):
             num_abnormalities=14,
             label_smoothing=cls_label_smoothing,
             uncertain_policy=uncertain_policy,
+        )
+        # The mention gate is what gives the model somewhere to put "nothing to
+        # report". Built unconditionally so the parameter set does not depend on
+        # a loss weight, but it only receives gradient while lambda_gate > 0.
+        self.gate_loss_fn = MentionGateLoss(
+            num_abnormalities=14, pos_weights=gate_class_weights
         )
         
     def set_epoch(self, epoch):
@@ -1096,7 +1106,7 @@ class Blip2Qformer(Blip2Base):
         cam_streams = None
         self.mhcac.capture_streams = capture_explanation
         try:
-            student_logits, _, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
+            student_logits, _, contrastive_loss, orth_loss, sparsity_loss, mention_logits = self.mhcac(
                 shared_visual,
                 text_embeddings=None,
                 labels=cls_labels,
@@ -1137,7 +1147,7 @@ class Blip2Qformer(Blip2Base):
         if teacher_mask.any() and (
             self.lambda_teacher_cls > 0 or self.lambda_distill > 0
         ):
-            teacher_logits, _, _, _, _ = self.mhcac(
+            teacher_logits, _, _, _, _, _ = self.mhcac(
                 shared_visual,
                 text_embeddings=text_output.last_hidden_state,
                 text_attention_mask=text_tokens.attention_mask,
@@ -1177,7 +1187,7 @@ class Blip2Qformer(Blip2Base):
                     if name in pre
                 }
                 anchor_shared = self.shared_visual_projector(anchor_raw_streams)
-                anchor_logits, _, _, _, _ = self.mhcac(
+                anchor_logits, _, _, _, _, _ = self.mhcac(
                     anchor_shared,
                     text_embeddings=None,
                     labels=None,
@@ -1199,6 +1209,22 @@ class Blip2Qformer(Blip2Base):
             + self.lambda_mpc * loss_mpc
             + self.lambda_view_consistency * loss_view_consistency
         )
+        loss_gate = student_logits.sum() * 0.0
+        if self.lambda_gate > 0:
+            mention_targets = samples.get("mention_targets")
+            if mention_targets is None:
+                raise ValueError(
+                    "lambda_gate > 0 but the batch carries no mention_targets; "
+                    "the dataset must be rebuilt (ReportDataset emits them)"
+                )
+            loss_gate = self.gate_loss_fn(
+                mention_logits,
+                mention_targets.to(mention_logits.device),
+                sample_mask=self._batch_mask(
+                    samples, "mention_mask", batch_size, device, default=True
+                ),
+            )
+            total_loss = total_loss + self.lambda_gate * loss_gate
         if lambda_eff > 0:
             total_loss = total_loss + lambda_eff * loss_explanation
         return BlipOutput(
@@ -1213,6 +1239,7 @@ class Blip2Qformer(Blip2Base):
             loss_orthagonal=orth_loss,
             loss_sparsity=sparsity_loss,
             loss_explanation=loss_explanation,
+            loss_gate=loss_gate,
             loss_mpc=loss_mpc,
             loss_view_consistency=loss_view_consistency,
             classification_logits=student_logits,
@@ -1340,7 +1367,7 @@ class Blip2Qformer(Blip2Base):
 
         concat_image_embeds = shared_visual.tokens
 
-        classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss = self.mhcac(
+        classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss, _ = self.mhcac(
             shared_visual,
             text_embeddings=None,
             labels=None,
@@ -1612,6 +1639,7 @@ class Blip2Qformer(Blip2Base):
         lambda_orthogonality = float(loss_cfg.get("lambda_orthogonality", 0.05))
         lambda_sparsity = float(loss_cfg.get("lambda_sparsity", 0.01))
         lambda_explanation = float(loss_cfg.get("lambda_explanation", 0.0))
+        lambda_gate = float(loss_cfg.get("lambda_gate", 0.0))
         itc_queue_size = int(loss_cfg.get("itc_queue_size", 1024))
 
         explanation_cfg_raw = cfg.get("explanation", {}) or {}
@@ -1632,6 +1660,7 @@ class Blip2Qformer(Blip2Base):
         }
 
         mhcac_cfg = cfg.get("mhcac", {}) or {}
+        gate_class_weights = mhcac_cfg.get("gate_class_weights", None)
         distill_temperature = float(mhcac_cfg.get("distill_temperature", 2.0))
         mhcac_text_dropout = float(mhcac_cfg.get("text_dropout", 0.2))
         class_weights = mhcac_cfg.get("class_weights", None)
@@ -1676,6 +1705,8 @@ class Blip2Qformer(Blip2Base):
             lambda_orthogonality=lambda_orthogonality,
             lambda_sparsity=lambda_sparsity,
             lambda_explanation=lambda_explanation,
+            lambda_gate=lambda_gate,
+            gate_class_weights=gate_class_weights,
             explanation_cfg=explanation_cfg,
             distill_temperature=distill_temperature,
             mhcac_text_dropout=mhcac_text_dropout,

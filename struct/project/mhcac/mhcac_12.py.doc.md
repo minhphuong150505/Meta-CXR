@@ -257,3 +257,40 @@ sau khi tính explanation loss. `attention_weights_list` vẫn chỉ được tr
 - **Related:** [`loss.py`](loss.py.doc.md) · [`shared_visual_tokens.py`](../vision_encoders/shared_visual_tokens.py.doc.md)
 
 ← [HOME](../../HOME.md)
+
+
+## Cong tac im lang (`mention_heads`) — 2026-08-15
+
+`forward` tra ve **6 phan tu**, khong con 5:
+
+```python
+logits, attention_weights_list, contrastive_loss, orth_loss, sparsity_loss, mention_logits
+```
+
+`mention_logits` la `[B, 14]`, mot dau nhi phan moi benh ly, doc tu cung
+`pooled_representations` nhu classifier. No tra loi **"bao cao co nhac toi dau
+hieu nay khong?"**.
+
+Ly do ton tai: 79,5% ma tran nhan la o trong va **moi loss khac deu mask chung
+di**. Dung cho cau hoi Duong/Am/Khong ro — o trong khong phai am tinh — nhung no
+khien model bi ep chon mot trong ba lop cho ca 14 dau hieu tren moi anh. Do
+duoc tren test truoc khi co dau nay: **10,8/14 benh ly bi goi la Duong moi
+study**, va **ca 3.269 study deu bi gan `No Finding = Duong` trong khi dong thoi
+co 8,8 benh ly khac bi gan Duong** — dau ra tu mau thuan 100%.
+
+Bon diem phai giu:
+
+1. **Bon call site** cua `self.mhcac(...)` trong `blip2_qformer.py` deu phai
+   giai nen 6 phan tu (`:1099` student, `:1140` teacher, `:1180` anchor,
+   `:1343`). Quen mot cho la `ValueError: too many values to unpack`.
+2. `mention_heads` duoc **dung vo dieu kien**, khong phu thuoc `lambda_gate`, de
+   tap tham so on dinh giua cac cau hinh. `lambda_gate = 0` chi khien no khong
+   nhan gradient.
+3. `MentionGateLoss` (`mhcac/loss.py`) **chan tran trong so o 10**. Nam nhan co
+   ty le tho 17–157; ap thang la chuyen dung bay "luon doan lop da so" sang cho
+   moi.
+4. Nhan bi `excluded_labels` **van nam trong cong**. `No Finding` bi loai khoi
+   dau phan loai vi khong co am tinh, nhung "co duoc nhac khong" cua no la
+   74.305 / 148.453 — mot bai toan nhi phan hoan chinh.
+
+Ghim boi `tests/test_mention_gate.py` (6 test).
