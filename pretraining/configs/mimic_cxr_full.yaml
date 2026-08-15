@@ -81,7 +81,24 @@ model:
     # presence of any other positive finding. That would keep those 49,760
     # studies and make the label learnable, at the cost of inventing labels the
     # export does not contain. Set this to [] to train it as-is instead.
-    excluded_labels: ["No Finding"]
+    # PUT BACK 2026-08-15, at the user's request, now that the mention gate
+    # exists. The reasoning is sound and worth recording: only 33.4% of studies
+    # have `No Finding` written at all, so "was it mentioned" carries real
+    # information, and the 49,760 train studies that carry it as their only
+    # label are no longer stranded -- they train the gate across all fourteen
+    # cells regardless of what this list says.
+    #
+    # What it does NOT recover is a learnable Positive/Negative split: among the
+    # 74,305 mentioned cells, 74,305 are Positive and none are Negative, in all
+    # three splits. The classification head can only learn a constant for it,
+    # and it re-enters the per-pathology table at a free F1 of 1.0000. It stays
+    # out of the macro through run.include_meta_labels: false.
+    #
+    # A limitation to state rather than paper over: some of the 148,453
+    # not-mentioned studies genuinely are normal and simply were not described
+    # that way, so the gate's target for this label is noisy in one direction --
+    # missing positives, never spurious ones.
+    excluded_labels: []
     # ⚠ excluded_labels applies to the CLASSIFICATION head only. The mention
     # gate below still covers No Finding, and deliberately: "was No Finding
     # mentioned" is "did the radiologist call this study normal", 74,305 vs
