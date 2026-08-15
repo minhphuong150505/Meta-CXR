@@ -216,7 +216,28 @@ model:
     lambda_mhcac_contrastive: 0.3
     lambda_orthogonality: 0.7
     lambda_sparsity: 0.3
-    lambda_mpc: 0.1
+    # MPC WAS DEAD until 2026-08-16 and this weight is lower because of it.
+    # It was computed on raw frozen-encoder output stashed before the only
+    # trainable module, so it had zero gradient: 3.9929 / 3.9949 / 3.9941 /
+    # 3.9943 across four epochs, a constant carrying 22% of the reported loss
+    # value and teaching nothing. A per-encoder residual adapter now sits between
+    # the frozen encoder and the stash point, and a SimCLR-style projection head
+    # gives the objective its own space.
+    #
+    # 0.02, not the old 0.1: at the chance-level value of ~4.0 that contributes
+    # ~0.08 rather than ~0.40, i.e. ~5% of the loss instead of 22%. The old share
+    # was only harmless while the gradient was zero.
+    #
+    # mpc_warmup_steps ramps it linearly from 0 over roughly one epoch --
+    # 13,922 microbatches at batch 16 on the full split. The head starts random,
+    # and it pulls on an adapter every other loss also reads. Set 0 to disable.
+    #
+    # ⚠ The adapter adds INFERENCE-path parameters. Checkpoints from before this
+    # change cannot be resumed into it; start a fresh run.
+    #
+    # NOT YET RUN ON GPU beyond a smoke.
+    lambda_mpc: 0.02
+    mpc_warmup_steps: 13922
     lambda_view_consistency: 0.05
     # TWO explanation terms, split 2026-08-16 because they are not the same
     # kind of evidence and must not carry the same weight.

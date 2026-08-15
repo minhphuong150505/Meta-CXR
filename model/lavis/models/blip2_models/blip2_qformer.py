@@ -27,6 +27,11 @@ from mhcac.mhcac_12 import AbnormalityClassificationModel, StreamLayout
 from vision_encoders.pubmedclip.pubmed_clip import Pubmedclip
 from vision_encoders.swin.swin_encoder import SwinEncoder
 from vision_encoders.rad_dino.rad_dino_encoder import RadDinoEncoder
+from vision_encoders.stream_adapter import (
+    ContrastiveProjectionHead,
+    StreamAdapter,
+    pool_stream,
+)
 from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector
 # from vision_encoders.medclip.medclip import Medclip
 
@@ -165,6 +170,7 @@ class Blip2Qformer(Blip2Base):
         multi_view=False,
         view_fusion_cfg=None,
         lambda_mpc=0.0,
+        mpc_warmup_steps=0,
         lambda_view_consistency=0.0,
         view_consistency_cfg=None,
         lambda_itc=1.0,
@@ -372,6 +378,12 @@ class Blip2Qformer(Blip2Base):
         # checkpoint.
         self.multi_view = bool(multi_view)
         self.lambda_mpc = float(lambda_mpc)
+        # Counted in microbatches, not optimizer updates: this only shapes a
+        # loss weight, so the cheaper counter is fine. 0 disables the ramp.
+        self.mpc_warmup_steps = int(mpc_warmup_steps)
+        self.register_buffer(
+            "mpc_step", torch.zeros((), dtype=torch.long), persistent=False
+        )
         self.lambda_view_consistency = float(lambda_view_consistency)
         # Soft/conditional agreement knobs. Defaults reproduce the original
         # unconditional symmetric KL, so the previous recipe stays runnable.
@@ -408,8 +420,29 @@ class Blip2Qformer(Blip2Base):
                 name: ViewFusionModule(dim=dim, **vf_cfg)
                 for name, dim in stream_dims.items()
             })
+            # Trainable capacity between the frozen encoders and the stash
+            # point. Without it MultiPositiveContrastiveLoss has no parameter
+            # upstream and is a constant -- measured at 3.994 +/- 0.001 for four
+            # epochs while carrying 0.1 of the loss weight. Zero-init makes each
+            # adapter an exact identity at step 0.
+            # ⚠ These are INFERENCE-path parameters: a checkpoint trained
+            # without them cannot be resumed into a model that has them.
+            self.stream_adapters = nn.ModuleDict({
+                name: StreamAdapter(dim=dim) for name, dim in stream_dims.items()
+            })
             self.mpc_loss_fn = (
                 MultiPositiveContrastiveLoss() if self.lambda_mpc > 0 else None
+            )
+            # SimCLR-style g(.), training-only, one per stream so the contrastive
+            # objective gets its own space instead of pulling on the features
+            # MHCAC reads.
+            self.mpc_heads = (
+                nn.ModuleDict({
+                    name: ContrastiveProjectionHead(dim=dim)
+                    for name, dim in stream_dims.items()
+                })
+                if self.lambda_mpc > 0
+                else None
             )
             logging.info(f"multi-view fusion enabled for streams: {stream_dims}")
 
@@ -578,6 +611,28 @@ class Blip2Qformer(Blip2Base):
         if self._keep_prefusion:
             self._last_prefusion_streams[name] = (anchor, aux_streams.get(name))
 
+    def _mpc_lambda(self):
+        """Linear ramp for the contrastive weight over the first epoch.
+
+        The head is randomly initialised, so at step 0 this term is pure noise
+        pulling on the adapter that everything else also reads. Ramping it in is
+        cheap insurance; the previous 0.1 was only harmless because the term had
+        no gradient at all.
+        """
+        if self.lambda_mpc <= 0 or self.mpc_warmup_steps <= 0:
+            return self.lambda_mpc
+        if self.training:
+            self.mpc_step += 1
+        progress = float(self.mpc_step.item()) / float(self.mpc_warmup_steps)
+        return self.lambda_mpc * min(1.0, progress)
+
+    def _adapt(self, name, tokens):
+        """Residual adapter for one stream; identity when fusion is disabled."""
+        adapters = getattr(self, "stream_adapters", None)
+        if adapters is None or name not in adapters:
+            return tokens
+        return adapters[name](tokens)
+
     def _fuse(self, name, anchor, aux_streams, aux_mask, anchor_view_id, aux_view_ids):
         """Fuse one encoder stream with its auxiliary views, if multi-view is on."""
         if not self.multi_view or self.view_fusion is None:
@@ -669,6 +724,12 @@ class Blip2Qformer(Blip2Base):
             if fuse_on and has_aux_input
             else {}
         )
+        # The encoder forward above runs under torch.no_grad(); the adapter must
+        # not. Applying it here is what lets the auxiliary side carry gradient.
+        aux_streams = {
+            name: self._adapt(name, tokens)
+            for name, tokens in aux_streams.items()
+        }
 
         if self.use_biovil:
             cnn_raw = cached["biovil"] if "biovil" in cached else (
@@ -676,6 +737,7 @@ class Blip2Qformer(Blip2Base):
                     image.shape[0], -1, VISUAL_DIM
                 )
             )
+            cnn_raw = self._adapt("biovil", cnn_raw)
             self._stash_prefusion("biovil", cnn_raw, aux_streams)
             cnn_raw = self._fuse("biovil", cnn_raw, aux_streams, aux_mask,
                                  anchor_view_id, aux_view_ids)
@@ -688,6 +750,7 @@ class Blip2Qformer(Blip2Base):
                 vit_patches = cached["pubmedclip"]
             else:
                 vit_patches, _ = self.pubmedclip(image, apply_aug=apply_aug)
+            vit_patches = self._adapt("pubmedclip", vit_patches)
             self._stash_prefusion("pubmedclip", vit_patches, aux_streams)
             vit_patches = self._fuse("pubmedclip", vit_patches, aux_streams,
                                      aux_mask, anchor_view_id, aux_view_ids)
@@ -697,6 +760,7 @@ class Blip2Qformer(Blip2Base):
 
         if self.use_swin:
             swin_patches = cached["swin"] if "swin" in cached else self.swin(image)
+            swin_patches = self._adapt("swin", swin_patches)
             self._stash_prefusion("swin", swin_patches, aux_streams)
             raw_streams["swin"] = self._fuse(
                 "swin", swin_patches, aux_streams, aux_mask, anchor_view_id, aux_view_ids
@@ -704,6 +768,7 @@ class Blip2Qformer(Blip2Base):
 
         if self.use_raddino:
             raddino_patches = cached["raddino"] if "raddino" in cached else self.raddino(image)
+            raddino_patches = self._adapt("raddino", raddino_patches)
             self._stash_prefusion("raddino", raddino_patches, aux_streams)
             raddino_patches = self._fuse("raddino", raddino_patches, aux_streams,
                                          aux_mask, anchor_view_id, aux_view_ids)
@@ -1277,11 +1342,26 @@ class Blip2Qformer(Blip2Base):
         aux_mask = samples.get("aux_mask")
         if self.multi_view and aux_mask is not None and aux_mask.any():
             if self.mpc_loss_fn is not None:
-                terms = [
-                    self.mpc_loss_fn(anchor_raw, aux_raw, aux_mask)
-                    for anchor_raw, aux_raw in self._last_prefusion_streams.values()
-                    if aux_raw is not None
-                ]
+                # Pool per stream, then project. PubMedCLIP has a real CLS
+                # token; BioViL has none and its own global output IS the patch
+                # mean. Pooling the 246 concatenated tokens instead would weight
+                # BioViL 196/246 against PubMedCLIP 50/246 by token count alone,
+                # across two different feature spaces.
+                terms = []
+                for name, (anchor_raw, aux_raw) in (
+                    self._last_prefusion_streams.items()
+                ):
+                    if aux_raw is None or name not in self.mpc_heads:
+                        continue
+                    head = self.mpc_heads[name]
+                    has_cls = name == "pubmedclip"
+                    terms.append(
+                        self.mpc_loss_fn(
+                            head(pool_stream(anchor_raw, has_cls)),
+                            head(pool_stream(aux_raw.to(anchor_raw.dtype), has_cls)),
+                            aux_mask,
+                        )
+                    )
                 if terms:
                     loss_mpc = torch.stack(terms).mean()
             if self.lambda_view_consistency > 0:
@@ -1318,7 +1398,7 @@ class Blip2Qformer(Blip2Base):
             + self.lambda_mhcac_contrastive * contrastive_loss
             + self.lambda_orthogonality * orth_loss
             + self.lambda_sparsity * sparsity_loss
-            + self.lambda_mpc * loss_mpc
+            + self._mpc_lambda() * loss_mpc
             + self.lambda_view_consistency * loss_view_consistency
             + self.lambda_mention_conditioned_cls * loss_mention_conditioned
         )
@@ -1740,6 +1820,7 @@ class Blip2Qformer(Blip2Base):
         }
         loss_cfg = cfg.get("loss", {}) or {}
         lambda_mpc = float(loss_cfg.get("lambda_mpc", 0.0))
+        mpc_warmup_steps = int(loss_cfg.get("mpc_warmup_steps", 0))
         lambda_view_consistency = float(loss_cfg.get("lambda_view_consistency", 0.0))
         view_consistency_cfg = cfg.get("view_consistency", {}) or {}
         lambda_itc = float(loss_cfg.get("lambda_itc", 1.0))
@@ -1815,6 +1896,7 @@ class Blip2Qformer(Blip2Base):
             multi_view=multi_view,
             view_fusion_cfg=view_fusion_cfg,
             lambda_mpc=lambda_mpc,
+            mpc_warmup_steps=mpc_warmup_steps,
             lambda_view_consistency=lambda_view_consistency,
             view_consistency_cfg=view_consistency_cfg,
             lambda_itc=lambda_itc,
