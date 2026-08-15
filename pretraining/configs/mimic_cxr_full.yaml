@@ -305,8 +305,14 @@ model:
     #   evidence looks like; smearing is what noise looks like. The gate is
     #   detached, so the model cannot minimise the term by gaming the gate.
     #
-    # NOT YET RUN ON GPU. Both values are proposals, not measurements.
-    margin: 0.05
+    # margin 0.05 was WRONG and is corrected to 0.01. The unhinged term averaged
+    # 0.0228 / 0.0193 / 0.0164 / 0.0168 over the first four epochs of the
+    # 2026-08-15 run, and a smoke at margin 0.05 produced exactly 0.0000 -- the
+    # hinge swallowed the whole term. (Strictly, a mean below the margin does not
+    # by itself prove a zero loss; only having no un-gated cell above it does.
+    # The measured 0.0000 is what settles it.) 0.01 forgives negligible drift
+    # while still charging the disagreement tail.
+    margin: 0.01
     confidence_gate: true
     gate_tolerance: 0.0
 
