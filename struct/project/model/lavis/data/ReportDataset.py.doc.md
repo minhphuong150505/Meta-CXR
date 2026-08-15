@@ -245,3 +245,52 @@ Thủ phạm tiếp theo nếu muốn nhanh hơn: **giải mã JPEG**, giờ chi
 `Image.draft()` giải ở 1/4 kích thước trong miền DCT sẽ cắt vài lần, nhưng nó
 **đổi chuỗi lấy mẫu tức là đổi pixel** — là thay đổi tiền xử lý thật, không miễn
 phí, và chưa làm.
+
+
+## `excluded_labels` — `No Finding` bị loại hẳn (2026-08-15)
+
+`model.mhcac.excluded_labels`, mặc định `["No Finding"]`. Cột được đặt toàn
+`IGNORE_LABEL` ngay sau bước ánh xạ nhãn, nên loss, ma trận nhầm lẫn và trình
+đánh giá ngoại tuyến **cùng bỏ qua** nó — cả ba vốn đã lọc ô `< 0`.
+
+Lý do là **cấu trúc, không phải thiếu dữ liệu**. Đếm trên export CheXpert gốc ở
+mức study:
+
+| split | dương | âm | không rõ | trống |
+|---|---:|---:|---:|---:|
+| train | 74.305 | **0** | 0 | 148.453 |
+| val | 582 | **0** | 0 | 1.226 |
+| test | 568 | **0** | 0 | 2.701 |
+
+Labeler gán 1.0 khi báo cáo mô tả không có bất thường và để **trống** trong mọi
+trường hợp khác — nó **không bao giờ phát ra 0.0**. Dưới chính sách mask ô
+trống, mọi ô còn sống đều là dương tính, nên thứ duy nhất loss dạy được là "luôn
+đoán dương", trong khi một expert token và một classification head bị tiêu tốn
+để học một hằng số.
+
+### ⚠ Cái giá, và cái bẫy đi kèm
+
+**22,3% study train (49.760) có `No Finding` là nhãn DUY NHẤT.** Che cột đó đi
+thì chúng không còn ô nào dùng được: rơi khỏi classification loss, và khỏi cả
+explanation loss vì term đó đòi ít nhất một nhãn dương. Tổng cộng **50.484 trên
+227.827** study có nhãn trở thành rỗng. Chúng vẫn nuôi `lambda_mpc` và view
+consistency, vốn không cần nhãn.
+
+Vì vậy có **hai cờ hợp lệ**, không được gộp:
+
+| cờ | tính khi nào | dùng để |
+|---|---|---|
+| `_has_chexpert_label_raw` | **trước** khi loại | kiểm tra toàn vẹn phép join |
+| `_has_usable_label` | **sau** khi loại | trở thành `classification_valid`, tức `sample_mask` |
+
+Gộp hai cờ làm một khiến guard "processed rows claim CheXpert labels but no
+non-null source labels were found" bắn nhầm trên **mọi** hàng bị loại có chủ ý —
+đã xảy ra thật trong lúc cài đặt, 788 hàng trên val.
+
+Ghim bởi `tests/test_excluded_labels.py`.
+
+### Phương án không chọn
+
+Suy ra âm tính cho `No Finding` từ việc có bất kỳ nhãn dương nào khác. Cách đó
+giữ lại 49.760 study và làm nhãn này học được, nhưng **bịa ra nhãn mà export
+không có**. Đặt `excluded_labels: []` để huấn luyện nguyên trạng cho ablation.

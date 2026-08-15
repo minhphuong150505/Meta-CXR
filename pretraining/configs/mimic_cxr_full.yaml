@@ -57,6 +57,31 @@ model:
   max_txt_len: 256
 
   mhcac:
+    # Labels masked out of training AND evaluation entirely, because they cannot
+    # be learned under the blank-masking policy. Counted on the source CheXpert
+    # export at study level, 2026-08-15:
+    #
+    #   No Finding   train 74,305 positive / 0 negative / 0 uncertain
+    #                val      582 / 0 / 0      test  568 / 0 / 0
+    #
+    # This is structural, not a data shortage: the labeler sets No Finding to
+    # 1.0 when the report describes no abnormality and leaves it blank
+    # otherwise -- it never emits 0.0. Every surviving cell is a positive, so
+    # the only thing the loss can teach is "always predict positive", with
+    # nothing to push back, while one expert token and one classification head
+    # are spent learning a constant.
+    #
+    # ⚠ IT IS NOT FREE. 22.3% of train studies (49,760) carry No Finding as
+    # their ONLY label; masking it leaves them with no usable cell, so they stop
+    # contributing to the classification loss and to the explanation loss, which
+    # needs at least one positive. Studies left with nothing: 50,484 of 227,827.
+    # They still feed lambda_mpc and view consistency, which need no labels.
+    #
+    # The alternative, NOT done here, is to derive No Finding negatives from the
+    # presence of any other positive finding. That would keep those 49,760
+    # studies and make the label learnable, at the cost of inventing labels the
+    # export does not contain. Set this to [] to train it as-is instead.
+    excluded_labels: ["No Finding"]
     distill_temperature: 2.0
     text_dropout: 0.2
     # Ambiguous pairs are not reliable positive/negative targets.

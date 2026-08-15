@@ -506,6 +506,33 @@ config or the machine; nothing hardcodes `cuda:0`.
 
 Three things here are easy to get wrong and produce a run that looks healthy.
 
+**`No Finding` is excluded from training and evaluation** (`model.mhcac.excluded_labels`).
+The labeler sets it to 1.0 when the report describes no abnormality and leaves it
+blank otherwise -- it never emits 0.0 -- so across the whole dataset it is
+74,305 positives and **zero** negatives on train, 582/0 on val, 568/0 on test.
+Under blank masking every surviving cell is a positive, so the loss can only
+teach a constant. The cost is real and was not obvious: **22.3% of train studies
+(49,760) carry it as their only label** and are left with no usable cell at all,
+dropping out of the classification loss and of the explanation loss, which needs
+a positive. 50,484 of 227,827 labelled studies end up empty. They still feed
+`lambda_mpc` and view consistency. Two validity flags exist for this reason --
+`_has_chexpert_label_raw` (pre-exclusion, guards the join) and
+`_has_usable_label` (post-exclusion, becomes the sample mask); collapsing them
+makes the join-integrity check fire on every intentionally excluded row.
+Pinned by `tests/test_excluded_labels.py`. The untaken alternative is to derive
+No Finding negatives from the presence of any other positive.
+
+Two more labels are degenerate on the **test** split specifically and should not
+be quoted: `Pleural Other` has 63 positives and **0 negatives** there, and
+`Fracture` has 89 and **3**. `positive_macro_f1` already excludes the meta
+labels `No Finding` and `Support Devices` but still includes `Pleural Other` at
+a free F1 of 1.0000 -- 0.8745 becomes **0.8631** without it. More broadly,
+`positive_macro_f1` is not a usable headline on this label distribution: for six
+labels the model scores recall exactly 1.0000 with precision equal to the
+prevalence, i.e. it predicts positive for everything, and `Fracture` reaches
+F1 0.983 on an AUROC of **0.442**. Quote `macro_auroc` (0.7776) and per-label
+AUROC with prevalence beside it.
+
 **A blank CheXpert cell is masked, not negative.** The export leaves a cell blank
 when the labeler found no mention of the finding, which is not the radiologist
 ruling it out. 79.4% of the label matrix is blank, so the old `.fillna(0)` made
