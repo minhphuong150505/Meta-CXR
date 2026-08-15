@@ -123,3 +123,12 @@ hf_cache/
 # Source knowledge base is versioned; override broad rules such as data/ above.
 !struct/
 !struct/**
+
+# Local scratch for looking at patient-derived artifacts. MIMIC-CXR radiographs
+# and any overlay rendered on top of them are PhysioNet credentialed data under
+# a DUA that forbids redistribution, and this remote is public. Nothing under
+# Test/ is ever committed.
+Test/
+*.png
+*.jpg
+*.jpeg
