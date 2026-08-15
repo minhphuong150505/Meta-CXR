@@ -5,6 +5,11 @@ Run with `python -m tests.test_multiview_losses`. No GPU required.
 import torch
 
 from mhcac.loss import MultiPositiveContrastiveLoss, view_consistency_loss
+from vision_encoders.stream_adapter import (
+    ContrastiveProjectionHead,
+    StreamAdapter,
+    pool_stream,
+)
 
 
 B, N, P, D = 4, 2, 5, 16
@@ -13,11 +18,11 @@ B, N, P, D = 4, 2, 5, 16
 def test_mpc_zero_without_aux():
     """No auxiliary view anywhere -> no positives -> exactly zero, no NaN."""
     loss_fn = MultiPositiveContrastiveLoss()
-    anchor = torch.randn(B, P, D)
-    aux = torch.randn(B, N, P, D)
+    anchor = torch.randn(B, D)
+    aux = torch.randn(B, N, D)
     out = loss_fn(anchor, aux, torch.zeros(B, N, dtype=torch.bool))
     assert torch.isfinite(out) and out.item() == 0.0, out
-    assert loss_fn(anchor, torch.zeros(B, 0, P, D), torch.zeros(B, 0, dtype=torch.bool)).item() == 0.0
+    assert loss_fn(anchor, torch.zeros(B, 0, D), torch.zeros(B, 0, dtype=torch.bool)).item() == 0.0
     print("ok: MPC is exactly zero when no study has an auxiliary view")
 
 
@@ -25,10 +30,10 @@ def test_mpc_rewards_same_study_similarity():
     """Aux views that match their own anchor score a lower loss than shuffled ones."""
     loss_fn = MultiPositiveContrastiveLoss()
     torch.manual_seed(0)
-    anchor = torch.randn(B, P, D)
+    anchor = torch.randn(B, D)
     aux_mask = torch.ones(B, N, dtype=torch.bool)
 
-    aligned = anchor.unsqueeze(1).repeat(1, N, 1, 1) + 0.01 * torch.randn(B, N, P, D)
+    aligned = anchor.unsqueeze(1).repeat(1, N, 1) + 0.01 * torch.randn(B, N, D)
     shuffled = aligned[torch.tensor([1, 2, 3, 0])]
 
     l_aligned = loss_fn(anchor, aligned, aux_mask)
@@ -44,8 +49,8 @@ def test_mpc_rewards_same_study_similarity():
 def test_mpc_partial_mask_is_finite():
     """Ragged per-study auxiliary counts stay finite and differentiable."""
     loss_fn = MultiPositiveContrastiveLoss()
-    anchor = torch.randn(B, P, D, requires_grad=True)
-    aux = torch.randn(B, N, P, D)
+    anchor = torch.randn(B, D, requires_grad=True)
+    aux = torch.randn(B, N, D)
     aux_mask = torch.tensor([[True, True], [True, False], [False, False], [True, False]])
     out = loss_fn(anchor, aux, aux_mask)
     assert torch.isfinite(out), out
@@ -176,3 +181,64 @@ if __name__ == "__main__":
     test_view_consistency_gate_is_detached_but_loss_still_trains()
     test_view_consistency_rejects_negative_knobs()
     print("\nall multi-view loss tests passed")
+
+
+# --------------------------------------------------------------------------
+# The regression that made MPC a constant for an entire run
+# --------------------------------------------------------------------------
+
+def test_adapter_is_exactly_identity_at_initialisation():
+    """Turning this on must not perturb a freshly built model."""
+    adapter = StreamAdapter(dim=16)
+    tokens = torch.randn(2, 5, 16)
+    assert torch.allclose(adapter(tokens), tokens, atol=0), "not identity at init"
+
+
+def test_adapter_stops_being_identity_once_trained():
+    adapter = StreamAdapter(dim=16)
+    torch.nn.init.normal_(adapter.up.weight, std=0.1)
+    tokens = torch.randn(2, 5, 16)
+    assert not torch.allclose(adapter(tokens), tokens, atol=1e-6)
+
+
+def test_projection_head_returns_unit_vectors():
+    head = ContrastiveProjectionHead(dim=16, hidden_dim=8, output_dim=4)
+    out = head(torch.randn(3, 16))
+    assert out.shape == (3, 4)
+    assert torch.allclose(out.norm(dim=-1), torch.ones(3), atol=1e-5)
+
+
+def test_pool_stream_picks_cls_or_mean():
+    tokens = torch.arange(2 * 3 * 4, dtype=torch.float32).reshape(2, 3, 4)
+    assert torch.equal(pool_stream(tokens, has_cls_token=True), tokens[:, 0, :])
+    assert torch.allclose(pool_stream(tokens, has_cls_token=False), tokens.mean(dim=1))
+
+
+def test_mpc_gradient_reaches_the_adapter_through_frozen_features():
+    """The test that would have caught the dead loss.
+
+    MPC used to be computed on raw frozen-encoder output stashed before the only
+    trainable module, so it had no parameter upstream and its value sat at
+    3.994 +/- 0.001 for four epochs while carrying 0.1 of the loss weight. What
+    must hold now is that a gradient reaches the adapter and the head, *starting
+    from tensors that do not require grad* -- exactly the frozen-encoder case.
+    """
+    frozen_anchor = torch.randn(B, P, D)                 # requires_grad False
+    frozen_aux = torch.randn(B, N, P, D)                 # ditto, and no_grad in real use
+    assert not frozen_anchor.requires_grad and not frozen_aux.requires_grad
+
+    adapter = StreamAdapter(dim=D)
+    torch.nn.init.normal_(adapter.up.weight, std=0.02)   # leave the identity init
+    head = ContrastiveProjectionHead(dim=D, hidden_dim=8, output_dim=4)
+
+    anchor_vec = head(pool_stream(adapter(frozen_anchor), has_cls_token=False))
+    aux_vec = head(pool_stream(adapter(frozen_aux), has_cls_token=False))
+
+    loss = MultiPositiveContrastiveLoss()(
+        anchor_vec, aux_vec, torch.ones(B, N, dtype=torch.bool)
+    )
+    loss.backward()
+
+    assert adapter.down.weight.grad is not None
+    assert adapter.down.weight.grad.abs().sum() > 0, "adapter received no gradient"
+    assert head.net[1].weight.grad.abs().sum() > 0, "head received no gradient"

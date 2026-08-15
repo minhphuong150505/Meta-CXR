@@ -103,8 +103,16 @@ class TestShippedRecipe:
         assert loss_cfg["lambda_sparsity"] == 0.3
 
     def test_multiview_terms_are_kept(self, loss_cfg):
-        """Upstream has no multi-view path; these are this work's own and stay on."""
-        assert loss_cfg["lambda_mpc"] == 0.1
+        """Upstream has no multi-view path; these are this work's own and stay on.
+
+        lambda_mpc dropped 0.1 -> 0.02 on 2026-08-16, when the term stopped being
+        a constant. It had no trainable parameter upstream and sat at 3.994 for
+        four epochs, so its 22% share of the reported loss value was harmless
+        noise; once it actually trains, that share is too aggressive for a
+        randomly initialised projection head.
+        """
+        assert loss_cfg["lambda_mpc"] == 0.02
+        assert loss_cfg["mpc_warmup_steps"] > 0, "a live MPC needs its ramp"
         assert loss_cfg["lambda_view_consistency"] == 0.05
 
     def test_shipped_recipe_skips_the_qformer(self, loss_cfg):

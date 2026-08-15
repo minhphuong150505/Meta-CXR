@@ -539,9 +539,16 @@ class MultiPositiveContrastiveLoss(nn.Module):
 
     def forward(self, anchor, aux, aux_mask):
         """
-        anchor:   [B, P, D]      pre-fusion anchor tokens
-        aux:      [B, N, P, D]   pre-fusion auxiliary tokens (padded)
-        aux_mask: [B, N] bool    True = real view
+        anchor:   [B, D]      pooled + projected anchor vector
+        aux:      [B, N, D]   pooled + projected auxiliary vectors (padded)
+        aux_mask: [B, N] bool True = real view
+
+        ⚠ Signature changed 2026-08-16. It used to take token sequences
+        (``[B,P,D]`` / ``[B,N,P,D]``) and mean-pool them itself. Pooling now
+        happens in the caller because the two encoders need different pooling —
+        PubMedCLIP has a real CLS token, BioViL does not — and because the
+        vectors must pass a projection head before being contrasted. Mean-pooling
+        the raw frozen features here is exactly what made this loss a constant.
         """
         if aux is None or aux.shape[1] == 0 or aux_mask is None:
             return anchor.new_zeros(())
@@ -552,8 +559,13 @@ class MultiPositiveContrastiveLoss(nn.Module):
         device = anchor.device
         aux_mask = aux_mask.to(device=device, dtype=torch.bool)
 
-        a_vec = F.normalize(anchor.mean(dim=1), dim=-1)             # [B, D]
-        x_vec = F.normalize(aux.mean(dim=2), dim=-1).reshape(B * N, -1)  # [B*N, D]
+        if anchor.ndim != 2 or aux.ndim != 3:
+            raise ValueError(
+                "expected pooled vectors: anchor [B,D] and aux [B,N,D]; got "
+                f"{tuple(anchor.shape)} and {tuple(aux.shape)}"
+            )
+        a_vec = F.normalize(anchor, dim=-1)                          # [B, D]
+        x_vec = F.normalize(aux, dim=-1).reshape(B * N, -1)          # [B*N, D]
 
         # Candidate pool: every anchor, then every auxiliary slot.
         cand = torch.cat([a_vec, x_vec], dim=0)                     # [M, D]
