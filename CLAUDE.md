@@ -535,7 +535,23 @@ the clinical preference. **That kappa table is a proposal and needs a clinician'
 sign-off before any published claim**, and kappa does not create skill: AUROC is
 fixed at 0.7776 and kappa only picks an operating point on that curve.
 
-**`No Finding` is excluded from training and evaluation** (`model.mhcac.excluded_labels`).
+**`No Finding` is back in the classification head as of 2026-08-15**
+(`model.mhcac.excluded_labels: []`), because the mention gate changed what it is
+worth. Only 33.4% of studies have it written at all, so *was it mentioned* is a
+real binary — 74,305 against 148,453 — and the 49,760 train studies carrying it
+as their only label are no longer stranded: they train the gate across all
+fourteen cells whatever this list says. What that does **not** recover is a
+learnable Positive/Negative split. Among the mentioned cells, all 74,305 are
+Positive and none are Negative, in every split, so the classification head can
+only learn a constant for it and it re-enters the per-pathology table at a free
+F1 of 1.0000; `run.include_meta_labels: false` keeps it out of the macro. State
+this limitation rather than paper over it: some of the 148,453 not-mentioned
+studies genuinely are normal and simply were not described that way, so the
+gate's target here is noisy in one direction — missing positives, never spurious
+ones. `excluded_labels` remains the switch, and it applies to the classification
+head only; the gate always covers all fourteen.
+
+Historical note, since the reasoning matters more than the setting: it was excluded on 2026-08-14 (`model.mhcac.excluded_labels`).
 The labeler sets it to 1.0 when the report describes no abnormality and leaves it
 blank otherwise -- it never emits 0.0 -- so across the whole dataset it is
 74,305 positives and **zero** negatives on train, 582/0 on val, 568/0 on test.
