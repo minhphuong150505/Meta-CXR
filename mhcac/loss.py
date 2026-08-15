@@ -754,3 +754,142 @@ class MentionGateLoss(nn.Module):
             reduction="none",
         )
         return per_cell.mean()
+
+
+# Class index convention, shared with ClassificationLoss and the evaluator:
+#   0 = Negative, 1 = Positive, 2 = Uncertain
+_NEGATIVE, _POSITIVE, _UNCERTAIN = 0, 1, 2
+
+
+def mention_marginal_log_probs(conditional_logits, mention_logits):
+    """Marginalise the mention gate into the classification distribution.
+
+    The gate and the classifier used to be two independent heads: the gate could
+    say "this finding is never mentioned" while the classifier said "Positive",
+    and nothing reconciled them, because the gate's prediction was consumed by
+    its own BCE and by nothing else. Measured consequence on the 2026-08-15 run:
+    macro specificity 0.2637, with specificity ~0 on four labels.
+
+    Making the two hierarchical is what actually couples them::
+
+        P(Negative)  = (1 - m) + m * q_negative
+        P(Positive)  =           m * q_positive
+        P(Uncertain) =           m * q_uncertain
+
+    where ``m = sigmoid(mention_logits)`` and ``q = softmax(conditional_logits)``.
+    "Not mentioned" maps onto Negative because that is what an absent finding
+    means in a report. Silence now suppresses positives instead of sitting
+    beside them.
+
+    Computed in log space throughout: ``logsigmoid`` and ``log_softmax`` are
+    stable where ``log(sigmoid(x))`` is not, and the returned tensor is meant to
+    be used exactly like the old logits — ``softmax`` of it recovers the
+    marginals, since they already sum to one.
+
+    conditional_logits: [B, A, C>=2]   mention_logits: [B, A]
+    returns:            [B, A, C]      log of the marginal probabilities
+    """
+    if conditional_logits.ndim != 3:
+        raise ValueError("conditional_logits must be [B, A, C]")
+    if mention_logits.shape != conditional_logits.shape[:2]:
+        raise ValueError(
+            f"mention_logits must be [B, A]; got {tuple(mention_logits.shape)} "
+            f"against {tuple(conditional_logits.shape[:2])}"
+        )
+    num_classes = conditional_logits.shape[-1]
+    if num_classes < 2:
+        raise ValueError("need at least Negative and Positive classes")
+
+    log_m = F.logsigmoid(mention_logits).unsqueeze(-1)          # [B,A,1]
+    log_not_m = F.logsigmoid(-mention_logits).unsqueeze(-1)     # [B,A,1]
+    log_q = F.log_softmax(conditional_logits.float(), dim=-1)   # [B,A,C]
+
+    log_joint = log_m + log_q                                   # mentioned path
+    negative = torch.logaddexp(
+        log_not_m.squeeze(-1), log_joint[..., _NEGATIVE]
+    )
+    parts = [
+        negative if index == _NEGATIVE else log_joint[..., index]
+        for index in range(num_classes)
+    ]
+    return torch.stack(parts, dim=-1)
+
+
+class MentionConditionedClassificationLoss(nn.Module):
+    """One hierarchical likelihood in place of a gate BCE plus a weighted CE.
+
+    Replaces ``ClassificationLoss`` + ``MentionGateLoss``, which optimised two
+    heads that never met::
+
+        not mentioned      ->  -log(1 - m)
+        mentioned, class y ->  -log(m) - log(q[y])
+
+    **No inverse-frequency or clinical-kappa weights.** Those weights were an
+    attempt to buy a decision preference inside the likelihood, and the run they
+    produced shows what that costs: recall 0.9021 against precision 0.6835, four
+    labels at specificity ~0. An operating point belongs in the calibrated
+    thresholds, which this project already fits on validation after training;
+    the training objective should estimate probabilities, not pick a threshold.
+
+    An ignored class cell (uncertain policy, or a blank the labeler never wrote)
+    still trains the **mention** term — whether a finding was written about is
+    known even when its polarity is not. Only the conditional class term drops.
+    """
+
+    def forward(
+        self,
+        conditional_logits,
+        mention_logits,
+        labels,
+        mention_targets,
+        sample_mask=None,
+    ):
+        if conditional_logits.ndim != 3:
+            raise ValueError("conditional_logits must be [B, A, C]")
+        if mention_logits.shape != conditional_logits.shape[:2]:
+            raise ValueError("mention_logits must be [B, A]")
+        if labels.shape != conditional_logits.shape[:2]:
+            raise ValueError("labels must be [B, A]")
+        if mention_targets.shape != conditional_logits.shape[:2]:
+            raise ValueError("mention_targets must be [B, A]")
+
+        device = conditional_logits.device
+        labels = labels.to(device)
+        mention_targets = mention_targets.to(device=device)
+        if sample_mask is None:
+            rows = torch.ones(
+                conditional_logits.shape[0], dtype=torch.bool, device=device
+            )
+        else:
+            rows = torch.as_tensor(
+                sample_mask, dtype=torch.bool, device=device
+            ).reshape(-1)
+            if rows.numel() != conditional_logits.shape[0]:
+                raise ValueError("sample_mask must hold one value per batch item")
+
+        zero = conditional_logits.sum() * 0.0
+        if not rows.any():
+            return zero
+
+        log_m = F.logsigmoid(mention_logits)
+        log_not_m = F.logsigmoid(-mention_logits)
+        mentioned = mention_targets > 0.5
+        active = rows[:, None].expand_as(mentioned)
+
+        # Mention term: every cell of every supervised study.
+        mention_term = torch.where(mentioned, -log_m, -log_not_m)
+        mention_term = mention_term * active.to(mention_term.dtype)
+        mention_count = active.sum()
+
+        # Conditional term: only mentioned cells whose class survived masking.
+        log_q = F.log_softmax(conditional_logits.float(), dim=-1)
+        usable = active & mentioned & (labels >= 0) & (labels < log_q.shape[-1])
+        if usable.any():
+            picked = log_q.gather(
+                -1, labels.clamp_min(0).unsqueeze(-1).long()
+            ).squeeze(-1)
+            class_term = (-picked * usable.to(picked.dtype)).sum() / usable.sum()
+        else:
+            class_term = zero
+
+        return mention_term.sum() / mention_count.clamp_min(1) + class_term
