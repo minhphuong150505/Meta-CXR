@@ -1210,8 +1210,11 @@ class Blip2Qformer(Blip2Base):
                     "lambda_mention_conditioned_cls > 0 but the batch carries no "
                     "mention_targets; the dataset must emit them"
                 )
+            # MUST be mention_mask: that is the key ReportDataset emits. Asking
+            # for has_chexpert_label silently fell through to default=True and
+            # trained every unmatched study as fourteen "not mentioned" cells.
             mention_mask = self._batch_mask(
-                samples, "has_chexpert_label", batch_size, device, default=True
+                samples, "mention_mask", batch_size, device, default=True
             )
             loss_mention_conditioned = self.mention_conditioned_loss_fn(
                 student_logits,
@@ -1220,12 +1223,24 @@ class Blip2Qformer(Blip2Base):
                 mention_targets.to(mention_logits.device),
                 sample_mask=mention_mask,
             )
-            conditional_logits = student_logits
-            student_logits = mention_marginal_log_probs(
+            # Keep `student_logits` = q, the polarity distribution CONDITIONAL on
+            # the finding being mentioned. The CheXpert P/N/U metric masks blank
+            # cells, so that is exactly the quantity it scores.
+            #
+            # The four-state joint is exported alongside, never in place of it:
+            #   P(blank) = 1 - m,  P(Neg) = m*q_neg,  P(Pos) = m*q_pos,
+            #   P(Unc) = m*q_unc
+            # Substituting the three-state marginal here (which aliased blank
+            # onto Negative) made Positive unwinnable under argmax and pinned
+            # validation F1 at exactly 0.000 for every epoch of the smoke.
+            # Report-time emission is a two-stage decision -- open the gate on a
+            # per-label threshold fitted on validation, then read the class off
+            # q -- not an argmax over a marginal.
+            marginal_log_probs = mention_marginal_log_probs(
                 student_logits, mention_logits
             )
         else:
-            conditional_logits = student_logits
+            marginal_log_probs = None
 
         cls_loss = self.cls_loss_fn(
             student_logits, cls_labels, sample_mask=classification_mask
@@ -1341,7 +1356,7 @@ class Blip2Qformer(Blip2Base):
             loss_mpc=loss_mpc,
             loss_view_consistency=loss_view_consistency,
             classification_logits=student_logits,
-            conditional_classification_logits=conditional_logits,
+            mention_marginal_log_probs=marginal_log_probs,
             classification_mask=classification_mask,
         )
 
