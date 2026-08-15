@@ -37,6 +37,8 @@ from mhcac.loss import (
     ClassificationLoss,
     MentionGateLoss,
     MultiPositiveContrastiveLoss,
+    MentionConditionedClassificationLoss,
+    mention_marginal_log_probs,
     soft_target_kl_loss,
     view_consistency_loss,
 )
@@ -177,6 +179,7 @@ class Blip2Qformer(Blip2Base):
         lambda_explanation=0.0,
         lambda_explanation_strong=0.0,
         lambda_gate=0.0,
+        lambda_mention_conditioned_cls=0.0,
         gate_class_weights=None,
         explanation_cfg=None,
         distill_temperature=2.0,
@@ -255,6 +258,27 @@ class Blip2Qformer(Blip2Base):
         self.lambda_explanation = float(lambda_explanation)
         self.lambda_explanation_strong = float(lambda_explanation_strong)
         self.lambda_gate = float(lambda_gate)
+        # Hierarchical replacement for (cls_loss + gate BCE). When > 0 it owns
+        # the classification objective and both of those are rejected, because
+        # optimising the same heads under two disagreeing objectives is how the
+        # gate ended up disconnected from the prediction in the first place.
+        self.lambda_mention_conditioned_cls = float(lambda_mention_conditioned_cls)
+        if self.lambda_mention_conditioned_cls > 0:
+            if self.lambda_gate > 0:
+                raise ValueError(
+                    "lambda_mention_conditioned_cls subsumes lambda_gate; set "
+                    "lambda_gate: 0.0"
+                )
+            if float(lambda_cls) > 0:
+                raise ValueError(
+                    "lambda_mention_conditioned_cls subsumes lambda_cls; set "
+                    "lambda_cls: 0.0"
+                )
+        self.mention_conditioned_loss_fn = (
+            MentionConditionedClassificationLoss()
+            if self.lambda_mention_conditioned_cls > 0
+            else None
+        )
         self.current_epoch = 0
         explanation_cfg = dict(explanation_cfg or {})
         self.explanation_warmup_start_epoch = int(
@@ -1174,9 +1198,38 @@ class Blip2Qformer(Blip2Base):
                     + (self.lambda_explanation_strong / peak)
                     * loss_explanation_strong
                 )
+        # Hierarchy, when enabled: the gate multiplies into the classifier and
+        # `student_logits` becomes the LOG MARGINAL distribution, so everything
+        # downstream (argmax, softmax, the saved .npz) keeps working unchanged
+        # while silence can finally veto a positive.
+        loss_mention_conditioned = student_logits.sum() * 0.0
+        if self.mention_conditioned_loss_fn is not None:
+            mention_targets = samples.get("mention_targets")
+            if mention_targets is None:
+                raise ValueError(
+                    "lambda_mention_conditioned_cls > 0 but the batch carries no "
+                    "mention_targets; the dataset must emit them"
+                )
+            mention_mask = self._batch_mask(
+                samples, "has_chexpert_label", batch_size, device, default=True
+            )
+            loss_mention_conditioned = self.mention_conditioned_loss_fn(
+                student_logits,
+                mention_logits,
+                cls_labels,
+                mention_targets.to(mention_logits.device),
+                sample_mask=mention_mask,
+            )
+            conditional_logits = student_logits
+            student_logits = mention_marginal_log_probs(
+                student_logits, mention_logits
+            )
+        else:
+            conditional_logits = student_logits
+
         cls_loss = self.cls_loss_fn(
             student_logits, cls_labels, sample_mask=classification_mask
-        )
+        ) if self.lambda_cls > 0 else student_logits.sum() * 0.0
 
         # The teacher may read only a valid FINDINGS target.  The image-only
         # student remains the sole classification path exported at inference.
@@ -1252,6 +1305,7 @@ class Blip2Qformer(Blip2Base):
             + self.lambda_sparsity * sparsity_loss
             + self.lambda_mpc * loss_mpc
             + self.lambda_view_consistency * loss_view_consistency
+            + self.lambda_mention_conditioned_cls * loss_mention_conditioned
         )
         loss_gate = student_logits.sum() * 0.0
         if self.lambda_gate > 0:
@@ -1287,6 +1341,7 @@ class Blip2Qformer(Blip2Base):
             loss_mpc=loss_mpc,
             loss_view_consistency=loss_view_consistency,
             classification_logits=student_logits,
+            conditional_classification_logits=conditional_logits,
             classification_mask=classification_mask,
         )
 
@@ -1688,6 +1743,9 @@ class Blip2Qformer(Blip2Base):
             loss_cfg.get("lambda_explanation_strong", 0.0)
         )
         lambda_gate = float(loss_cfg.get("lambda_gate", 0.0))
+        lambda_mention_conditioned_cls = float(
+            loss_cfg.get("lambda_mention_conditioned_cls", 0.0)
+        )
         itc_queue_size = int(loss_cfg.get("itc_queue_size", 1024))
 
         explanation_cfg_raw = cfg.get("explanation", {}) or {}
@@ -1756,6 +1814,7 @@ class Blip2Qformer(Blip2Base):
             lambda_explanation=lambda_explanation,
             lambda_explanation_strong=lambda_explanation_strong,
             lambda_gate=lambda_gate,
+            lambda_mention_conditioned_cls=lambda_mention_conditioned_cls,
             gate_class_weights=gate_class_weights,
             explanation_cfg=explanation_cfg,
             distill_temperature=distill_temperature,

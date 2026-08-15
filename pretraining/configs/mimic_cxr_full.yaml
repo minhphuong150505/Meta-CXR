@@ -247,6 +247,42 @@ model:
     # Mention gate. 0.0 disables it entirely (no gradient reaches the heads,
     # though they are still built so the parameter set is stable).
     lambda_gate: 0.5
+    # HIERARCHICAL ALTERNATIVE to (lambda_cls + lambda_gate). OFF by default.
+    #
+    # The gate and the classifier are two heads that never met: the gate could
+    # answer "never mentioned" while the classifier answered "Positive", and
+    # nothing reconciled them, because the gate's prediction fed its own BCE and
+    # nothing else. It was added to stop the model over-calling findings and it
+    # did not work -- measured on the run that finished 2026-08-16, test split,
+    # calibrated thresholds, ignore_uncertain:
+    #
+    #   macro_specificity 0.2637   recall 0.9021 vs precision 0.6835
+    #   specificity ~0 on Support Devices (0.000), Fracture (0.000),
+    #   Lung Opacity (0.017), Atelectasis (0.100)
+    #
+    # Setting this > 0 makes them one likelihood instead:
+    #
+    #   not mentioned      ->  -log(1 - m)
+    #   mentioned, class y ->  -log(m) - log(q[y])
+    #   P(Neg) = (1-m) + m*q_neg   P(Pos) = m*q_pos   P(Unc) = m*q_unc
+    #
+    # so silence multiplies the positive down instead of sitting beside it, and
+    # `classification_logits` becomes the LOG MARGINAL distribution (softmax of
+    # it recovers the marginals, so the evaluator and the saved .npz are
+    # unaffected). The raw heads stay available as
+    # `conditional_classification_logits` and `mention_logits`.
+    #
+    # It deliberately carries NO inverse-frequency or clinical-kappa weights:
+    # an operating point belongs in the thresholds this project already
+    # calibrates on validation after training, not inside the likelihood. That
+    # also retires the kappa table that still lacks a clinician's sign-off.
+    #
+    # Enabling it REQUIRES lambda_cls: 0.0 and lambda_gate: 0.0 -- the
+    # constructor raises otherwise rather than let two objectives fight over the
+    # same heads.
+    #
+    # NOT YET RUN ON GPU.
+    lambda_mention_conditioned_cls: 0.0
     # Only read when lambda_itc > 0; inert under the classification-only recipe.
     # Kept so re-enabling ITC does not also require rediscovering this value.
     itc_queue_size: 1024

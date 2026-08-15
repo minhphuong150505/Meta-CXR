@@ -104,6 +104,57 @@ Với `margin=0.0, confidence_gate=False` hàm trả về **đúng** giá trị 
 Config: `model.view_consistency.{margin, confidence_gate, gate_tolerance}`.
 Prod dùng `margin: 0.05`, `confidence_gate: true` — **chưa chạy trên GPU**.
 
+### `MentionConditionedClassificationLoss` + `mention_marginal_log_probs`
+
+Thêm 2026-08-16. Thay **cả** `ClassificationLoss` lẫn `MentionGateLoss` bằng một
+likelihood phân cấp duy nhất, bật bằng `loss.lambda_mention_conditioned_cls > 0`
+(constructor **raise** nếu `lambda_cls` hoặc `lambda_gate` cũng > 0).
+
+⚠ **Vấn đề nó sửa.** Gate và classifier là hai head **không bao giờ gặp nhau**:
+gate có thể trả lời "không hề được nhắc" trong khi classifier trả lời "Positive",
+và không có gì hoà giải, vì dự đoán của gate chỉ nuôi BCE của chính nó. Gate được
+thêm vào chính là để chặn việc đoán dương tràn lan, và **nó đã không làm được** —
+đo trên test split ngày 2026-08-16, ngưỡng đã hiệu chỉnh, `ignore_uncertain`:
+
+```text
+macro_specificity 0.2637      recall 0.9021 vs precision 0.6835
+specificity ~0: Support Devices 0.000, Fracture 0.000,
+                Lung Opacity 0.017, Atelectasis 0.100
+```
+
+```text
+không được nhắc     ->  -log(1 - m)
+được nhắc, lớp y    ->  -log(m) - log(q[y])
+
+P(Negative)  = (1 - m) + m * q_negative
+P(Positive)  =           m * q_positive
+P(Uncertain) =           m * q_uncertain
+```
+
+`m = sigmoid(mention_logits)`, `q = softmax(conditional_logits)`. Nhờ nhân vào
+nhau, **im lặng dìm được dự đoán dương** thay vì nằm cạnh nó.
+
+★ **Không có trọng số inverse-frequency hay kappa lâm sàng.** Điểm vận hành thuộc
+về ngưỡng hiệu chỉnh sau train (project này đã làm sẵn), không thuộc về hàm hợp
+lý. Điều này cũng cho nghỉ luôn bảng kappa vốn chưa có bác sĩ ký duyệt.
+
+★ **Ô có lớp bị mask vẫn train term mention.** "Có được viết ra không" là thứ biết
+được kể cả khi không biết cực tính; chỉ term lớp có điều kiện bị bỏ.
+
+`mention_marginal_log_probs` tính toàn bộ trong log space (`logsigmoid`,
+`log_softmax`, `logaddexp`). Trả về **log của xác suất biên**, nên `softmax` của
+nó khôi phục đúng phân bố — evaluator, `argmax` và file `.npz` không cần đổi gì.
+`Blip2Qformer` gán nó vào `classification_logits` và giữ head thô ở
+`conditional_classification_logits` + `mention_logits` để chẩn đoán.
+
+Pinned bởi `tests/test_mention_gate.py` — đặc biệt
+`test_silence_suppresses_a_confident_positive` (conditional hét Positive ở logit
++6, mention −8 → P(Positive) < 0.001, dự đoán Negative) và
+`test_unmentioned_target_trains_only_the_mention_head` (gradient của conditional
+đúng bằng 0).
+
+⚠ **Chưa chạy trên GPU.** Prod để `lambda_mention_conditioned_cls: 0.0`.
+
 ### `AbnormalitySpecificLoss`
 Ba loss phụ giữ expert token lành mạnh:
 - `orthogonality_loss` (`:272`) — giữ 14 expert token trực giao nhau

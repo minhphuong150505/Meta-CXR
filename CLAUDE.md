@@ -627,6 +627,25 @@ uncapped they simply relocate "always answer the majority class" into the gate.
 `mention_mask` drops studies with no CheXpert record: their blank pattern is
 unknown, not empty. Pinned by `tests/test_mention_gate.py`.
 
+**A hierarchical alternative to both of the above exists and is off by default:
+`model.loss.lambda_mention_conditioned_cls`.** The gate and the classifier are two
+heads that never met — the gate could answer "never mentioned" while the classifier
+answered "Positive", and nothing reconciled them, because the gate's prediction fed
+its own BCE and nothing else. It was added to stop over-calling and **it did not
+work**: on the run that finished 2026-08-16 (test split, calibrated thresholds,
+`ignore_uncertain`) macro specificity was **0.2637**, recall 0.9021 against
+precision 0.6835, with specificity ~0 on Support Devices, Fracture, Lung Opacity
+(0.017) and Atelectasis (0.100). Setting this weight > 0 makes them one likelihood
+— `-log(1-m)` when unmentioned, `-log(m) - log(q[y])` when mentioned — and
+marginalises `P(Neg) = (1-m) + m·q_neg`, `P(Pos) = m·q_pos`, so silence multiplies
+a positive down instead of sitting beside it. `classification_logits` becomes the
+log marginal distribution; softmax of it recovers the marginals, so the evaluator
+and the saved `.npz` are unaffected, and the raw heads stay on
+`conditional_classification_logits`. It carries **no** inverse-frequency or kappa
+weights on purpose: the operating point belongs in the thresholds this project
+already calibrates on validation. Enabling it **requires** `lambda_cls: 0.0` and
+`lambda_gate: 0.0`; the constructor raises otherwise. **Not yet run on GPU.**
+
 **Classification weights are full inverse frequency now, not the square root.**
 sqrt deliberately under-corrects and the residual was not small: 12 of 14 labels
 still pushed toward Positive, up to **5.36x** for Atelectasis, and measured

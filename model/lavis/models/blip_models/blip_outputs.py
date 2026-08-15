@@ -97,6 +97,10 @@ class BlipOutput(ModelOutput):
     loss_gate: Optional[torch.FloatTensor] = None
 
     loss_mpc: Optional[torch.FloatTensor] = None
+    # Raw pre-marginalisation logits, kept for diagnostics when the
+    # mention-conditioned hierarchy is on. classification_logits carries the
+    # LOG MARGINAL distribution in that mode.
+    conditional_classification_logits: Optional[torch.FloatTensor] = None
 
     loss_view_consistency: Optional[torch.FloatTensor] = None
 

@@ -121,3 +121,121 @@ def test_gate_targets_are_not_left_in_the_dataframe():
     item = inspect.getsource(MIMIC_CXR_Dataset.__getitem__)
     assert "self._mention_matrix[" in item, "read the array, not the DataFrame row"
     assert "ann[self.mention_cols]" not in item
+
+
+# --------------------------------------------------------------------------
+# Mention-conditioned classification (hierarchical gate x classifier)
+# --------------------------------------------------------------------------
+
+from mhcac.loss import (  # noqa: E402
+    MentionConditionedClassificationLoss,
+    mention_marginal_log_probs,
+)
+
+
+def test_silence_suppresses_a_confident_positive():
+    """The whole point: a closed gate must veto the classifier, not sit next to it.
+
+    Before the hierarchy the two heads were independent — the gate could say
+    "never mentioned" while the classifier said "Positive" and nothing
+    reconciled them. Measured cost on the 2026-08-15 run: macro specificity
+    0.2637, four labels at ~0.
+    """
+    conditional = torch.tensor([[[-6.0, 6.0, 0.0]]])   # screams Positive
+    mention = torch.tensor([[-8.0]])                   # says: never mentioned
+
+    log_p = mention_marginal_log_probs(conditional, mention)
+    probs = log_p.exp()
+
+    assert torch.allclose(probs.sum(-1), torch.ones(1, 1), atol=1e-6), probs
+    assert probs[0, 0, 1].item() < 1e-3, probs[0, 0, 1].item()
+    assert probs.argmax(-1).item() == 0, "must fall back to Negative"
+
+
+def test_open_gate_lets_the_classifier_through():
+    conditional = torch.tensor([[[-6.0, 6.0, 0.0]]])
+    mention = torch.tensor([[8.0]])                    # definitely mentioned
+
+    probs = mention_marginal_log_probs(conditional, mention).exp()
+
+    assert torch.allclose(probs.sum(-1), torch.ones(1, 1), atol=1e-6)
+    assert probs.argmax(-1).item() == 1
+    assert probs[0, 0, 1].item() > 0.99
+
+
+def test_unmentioned_target_trains_only_the_mention_head():
+    conditional = torch.tensor([[[-6.0, 6.0, 0.0]]], requires_grad=True)
+    mention = torch.tensor([[-8.0]], requires_grad=True)
+    loss_fn = MentionConditionedClassificationLoss()
+
+    loss = loss_fn(
+        conditional,
+        mention,
+        labels=torch.tensor([[-100]]),            # class unknown
+        mention_targets=torch.tensor([[0.0]]),    # not mentioned
+    )
+    loss.backward()
+
+    assert mention.grad.item() > 0, (
+        "gradient descent must push the logit further toward silence"
+    )
+    assert torch.count_nonzero(conditional.grad).item() == 0, (
+        "an unmentioned cell must not train the conditional classifier"
+    )
+
+
+def test_mentioned_positive_trains_both_heads_in_opposite_directions():
+    conditional = torch.tensor([[[2.0, -2.0, 0.0]]], requires_grad=True)
+    mention = torch.tensor([[-3.0]], requires_grad=True)
+    loss_fn = MentionConditionedClassificationLoss()
+
+    loss = loss_fn(
+        conditional,
+        mention,
+        labels=torch.tensor([[1]]),               # Positive
+        mention_targets=torch.tensor([[1.0]]),    # mentioned
+    )
+    loss.backward()
+
+    assert mention.grad.item() < 0, "must open the gate"
+    assert conditional.grad[0, 0, 1].item() < 0, "must raise the Positive logit"
+    assert conditional.grad[0, 0, 0].item() > 0, "must lower the Negative logit"
+
+
+def test_ignored_class_still_trains_the_mention_head():
+    """Whether a finding was written about is known even when its polarity is not."""
+    conditional = torch.tensor([[[1.0, 1.0, 1.0]]], requires_grad=True)
+    mention = torch.tensor([[-1.0]], requires_grad=True)
+
+    loss = MentionConditionedClassificationLoss()(
+        conditional,
+        mention,
+        labels=torch.tensor([[-100]]),
+        mention_targets=torch.tensor([[1.0]]),    # mentioned, class masked out
+    )
+    loss.backward()
+
+    assert mention.grad.item() < 0
+    assert torch.count_nonzero(conditional.grad).item() == 0
+
+
+def test_marginals_reject_shape_mismatch():
+    with pytest.raises(ValueError, match=r"mention_logits must be \[B, A\]"):
+        mention_marginal_log_probs(torch.zeros(1, 2, 3), torch.zeros(1, 5))
+    with pytest.raises(ValueError, match="must be"):
+        mention_marginal_log_probs(torch.zeros(2, 3), torch.zeros(2, 3))
+
+
+def test_sample_mask_drops_unlabelled_studies():
+    conditional = torch.zeros(2, 1, 3, requires_grad=True)
+    mention = torch.zeros(2, 1, requires_grad=True)
+    loss = MentionConditionedClassificationLoss()(
+        conditional,
+        mention,
+        labels=torch.tensor([[1], [1]]),
+        mention_targets=torch.tensor([[1.0], [1.0]]),
+        sample_mask=torch.tensor([True, False]),
+    )
+    loss.backward()
+    assert torch.count_nonzero(mention.grad[1]).item() == 0
+    assert torch.count_nonzero(mention.grad[0]).item() > 0
