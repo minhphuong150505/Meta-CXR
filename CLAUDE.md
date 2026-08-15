@@ -305,6 +305,17 @@ study (not image) → anchor + ≤1 auxiliary view
 - `ViewFusionBlock` zero-inits `W_O` and the last FFN Linear, so it is an exact
   identity at step 0 and a single-view checkpoint loads without regression.
   Studies with no auxiliary view are gated to zero, not dropped from the batch.
+- **`view_consistency_loss` is soft and conditional as of 2026-08-16.** It used to
+  be an unconditional symmetric KL, justified as "adding views must not change
+  *which* abnormalities are predicted". That premise is wrong here: a lateral view
+  exists to show what the frontal cannot, and 55.3% of train studies have one, so
+  the old term charged the model for using the second view at all. Two knobs, under
+  `model.view_consistency`: `margin` (hinge — divergence below it is free) and
+  `confidence_gate` (waive the penalty where fusing made the cell *more* confident,
+  i.e. sharpened rather than smeared). The gate is **detached**, or the model could
+  minimise the term by manipulating the gate instead of the prediction. Both
+  default to off, so the previous run stays exactly reproducible for ablation; prod
+  sets `margin: 0.05, confidence_gate: true`, **not yet run on GPU**.
 - `mhcac/loss.py` holds every loss; `ClassificationLoss` takes a `sample_mask` so
   unlabelled rows contribute nothing. `soft_target_kl_loss` detaches the teacher.
 - Production config `mimic_cxr_full.yaml`: **10 epochs**, `selection_metric:
@@ -397,23 +408,70 @@ are supervised separately at BioViL 14×14 and PubMedCLIP/Swin 7×7, then averag
 as loss terms. Frozen encoders do not move; the loss reshapes the trainable
 projection/MHCAC/head path that reads their features.
 
-`model.loss.lambda_explanation` is the only enable/disable gate. There is no
-separate `enabled` flag that can disagree with it:
+**Split into two terms on 2026-08-16.** Before that a single pooled score summed
+every positive finding, so the CAM answered "where is the evidence for *anything*
+this study has?" — the right question for a lung mask, the wrong one for an expert
+box drawn around one named finding.
+
+| | weak | strong |
+|---|---|---|
+| target | CheXmask **lung** mask | MS-CXR **box** for one finding |
+| granularity | one pooled CAM per study | one CAM per (study, finding) |
+| coverage | ~93% of studies | 823 train / 5 val / 138 test |
+| supports the claim | "looks inside the lungs" | "looks at the pathology" |
+| `lambda` | 0.05 | 0.25 |
+| `top_k` | 0.2 | 0.5 |
+
+They are returned separately by `ExplanationLoss.forward` and never summed inside
+it: collapsing them lets the plentiful anatomical prior drown the scarce expert
+signal while still looking like it learned localisation.
+
+**The strong term costs one backward per *distinct finding* boxed in the batch —
+typically one or two, not 14.** Studies without a box cost nothing.
+
+Either lambda being > 0 enables the module; both 0 disables it entirely, including
+CAM capture. There is still no separate `enabled` flag.
 
 ```yaml
 model:
   loss:
-    lambda_explanation: 0.25   # 0.0 = completely off, including CAM capture
+    lambda_explanation: 0.05          # weak, CheXmask lung
+    lambda_explanation_strong: 0.25   # strong, MS-CXR per-finding box
   explanation:
-    top_k: 0.5
+    top_k: 0.2            # weak
+    strong_top_k: 0.5     # strong
     warmup_start_epoch: 2
     warmup_epochs: 2
     streams: [biovil, pubmedclip, swin]
     mask_cache_dir: /mnt/drive1tb/datasets/explanation_masks
 ```
 
-Production config remains **off** (`lambda_explanation: 0.0`, empty cache path)
-until the GPU smoke is performed. The approved schedule at 0.25 is epoch [0]–[1]
+Three traps in this path:
+
+- **`ExplanationLoss.forward` returns three values** `(weak, strong, per_stream)`.
+  A caller unpacking two breaks loudly, on purpose — silently dropping the strong
+  term would be far worse.
+- **Grad-CAM needs at least two channels to localise at all.** The channel weight
+  is the gradient averaged over *tokens*, so a single-channel activation can only
+  produce a flat CAM. This invalidated the first disease-specificity test; the
+  fixture now uses two channels split left/right.
+- **The per-finding boxes must ride the same sampled affine as the image.**
+  `_apply_synced_image_mask_transforms` takes `extra_masks` and returns three
+  values for exactly this reason. A separate draw would train the strong term on
+  noise and still look healthy.
+
+The cache gained a **second pair of files**, `masks_bbox_<split>.npy` and
+`index_bbox_<split>.json` keyed `"<dicom_id>:<label_index>"`. A cache built before
+2026-08-16 has no strong supervision rather than failing to load, so this needs a
+rebuild before the strong term does anything. `label_index` is a position in
+`CHEXPERT_LABELS`, which **must** stay identical to `chexpert_cols` in
+`blip2_qformer.py` — reordering supervises the wrong finding silently. MS-CXR
+categories with no CheXpert column are skipped and counted, never guessed.
+
+Production config has this **on** (weak 0.05 / strong 0.25) against the cache at
+`/mnt/drive1tb/datasets/explanation_masks`. The two-term split has **not yet run
+on GPU**; the pooled single-term version did, for ten epochs.
+The approved schedule at 0.25 is epoch [0]–[1]
 0, [2] 0.125, [3] 0.1875, [4]+ 0.25. `RunnerBase.eval_epoch` is
 `@torch.no_grad()`, so the training forward skips this loss during validation.
 Do not remove that guard: Grad-CAM requires a live graph.

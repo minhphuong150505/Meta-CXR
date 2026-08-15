@@ -164,6 +164,7 @@ class Blip2Qformer(Blip2Base):
         view_fusion_cfg=None,
         lambda_mpc=0.0,
         lambda_view_consistency=0.0,
+        view_consistency_cfg=None,
         lambda_itc=1.0,
         lambda_itm=1.0,
         lambda_lm=1.0,
@@ -174,6 +175,7 @@ class Blip2Qformer(Blip2Base):
         lambda_orthogonality=0.05,
         lambda_sparsity=0.01,
         lambda_explanation=0.0,
+        lambda_explanation_strong=0.0,
         lambda_gate=0.0,
         gate_class_weights=None,
         explanation_cfg=None,
@@ -245,7 +247,13 @@ class Blip2Qformer(Blip2Base):
         self.lambda_mhcac_contrastive = float(lambda_mhcac_contrastive)
         self.lambda_orthogonality = float(lambda_orthogonality)
         self.lambda_sparsity = float(lambda_sparsity)
+        # Two explanation terms with different evidentiary status:
+        #   weak   = pooled CAM vs CheXmask lung (anatomical prior, ~93% of studies)
+        #   strong = per-pathology CAM vs MS-CXR expert box (823 train studies)
+        # Either being > 0 enables the module; both 0 disables it entirely,
+        # including CAM capture.
         self.lambda_explanation = float(lambda_explanation)
+        self.lambda_explanation_strong = float(lambda_explanation_strong)
         self.lambda_gate = float(lambda_gate)
         self.current_epoch = 0
         explanation_cfg = dict(explanation_cfg or {})
@@ -264,8 +272,11 @@ class Blip2Qformer(Blip2Base):
             else tuple(str(name) for name in explanation_streams)
         )
         self.explanation_loss_fn = (
-            ExplanationLoss(top_k=float(explanation_cfg.get("top_k", 0.5)))
-            if self.lambda_explanation > 0
+            ExplanationLoss(
+                top_k=float(explanation_cfg.get("top_k", 0.5)),
+                strong_top_k=explanation_cfg.get("strong_top_k"),
+            )
+            if (self.lambda_explanation > 0 or self.lambda_explanation_strong > 0)
             else None
         )
         self.distill_temperature = float(distill_temperature)
@@ -338,6 +349,18 @@ class Blip2Qformer(Blip2Base):
         self.multi_view = bool(multi_view)
         self.lambda_mpc = float(lambda_mpc)
         self.lambda_view_consistency = float(lambda_view_consistency)
+        # Soft/conditional agreement knobs. Defaults reproduce the original
+        # unconditional symmetric KL, so the previous recipe stays runnable.
+        view_consistency_cfg = dict(view_consistency_cfg or {})
+        self.view_consistency_margin = float(
+            view_consistency_cfg.get("margin", 0.0)
+        )
+        self.view_consistency_confidence_gate = bool(
+            view_consistency_cfg.get("confidence_gate", False)
+        )
+        self.view_consistency_gate_tolerance = float(
+            view_consistency_cfg.get("gate_tolerance", 0.0)
+        )
         self.view_fusion = None
         self.mpc_loss_fn = None
         # Pre-fusion streams are only stashed when an auxiliary loss consumes
@@ -1073,7 +1096,7 @@ class Blip2Qformer(Blip2Base):
         if self.explanation_loss_fn is not None:
             lambda_eff = explanation_lambda(
                 self.current_epoch,
-                self.lambda_explanation,
+                max(self.lambda_explanation, self.lambda_explanation_strong),
                 self.explanation_warmup_start_epoch,
                 self.explanation_warmup_epochs,
             )
@@ -1128,12 +1151,28 @@ class Blip2Qformer(Blip2Base):
                     if self.explanation_streams is None
                     or name in self.explanation_streams
                 }
-                loss_explanation, _ = self.explanation_loss_fn(
+                (
+                    loss_explanation_weak,
+                    loss_explanation_strong,
+                    _,
+                ) = self.explanation_loss_fn(
                     student_logits,
                     cls_labels,
                     selected_streams,
                     explanation_mask,
                     explanation_valid,
+                    bbox_masks=samples.get("explanation_bbox_masks"),
+                    bbox_valid=samples.get("explanation_bbox_valid"),
+                )
+                # Ratio against the shared warmup so each term keeps its own
+                # weight while the schedule shape stays common.
+                peak = max(
+                    self.lambda_explanation, self.lambda_explanation_strong
+                )
+                loss_explanation = (
+                    (self.lambda_explanation / peak) * loss_explanation_weak
+                    + (self.lambda_explanation_strong / peak)
+                    * loss_explanation_strong
                 )
         cls_loss = self.cls_loss_fn(
             student_logits, cls_labels, sample_mask=classification_mask
@@ -1193,7 +1232,12 @@ class Blip2Qformer(Blip2Base):
                     labels=None,
                 )
                 loss_view_consistency = view_consistency_loss(
-                    student_logits, anchor_logits, aux_mask.any(dim=1)
+                    student_logits,
+                    anchor_logits,
+                    aux_mask.any(dim=1),
+                    margin=self.view_consistency_margin,
+                    confidence_gate=self.view_consistency_confidence_gate,
+                    gate_tolerance=self.view_consistency_gate_tolerance,
                 )
 
         total_loss = (
@@ -1627,6 +1671,7 @@ class Blip2Qformer(Blip2Base):
         loss_cfg = cfg.get("loss", {}) or {}
         lambda_mpc = float(loss_cfg.get("lambda_mpc", 0.0))
         lambda_view_consistency = float(loss_cfg.get("lambda_view_consistency", 0.0))
+        view_consistency_cfg = cfg.get("view_consistency", {}) or {}
         lambda_itc = float(loss_cfg.get("lambda_itc", 1.0))
         lambda_itm = float(loss_cfg.get("lambda_itm", 1.0))
         lambda_lm = float(loss_cfg.get("lambda_lm", 1.0))
@@ -1639,6 +1684,9 @@ class Blip2Qformer(Blip2Base):
         lambda_orthogonality = float(loss_cfg.get("lambda_orthogonality", 0.05))
         lambda_sparsity = float(loss_cfg.get("lambda_sparsity", 0.01))
         lambda_explanation = float(loss_cfg.get("lambda_explanation", 0.0))
+        lambda_explanation_strong = float(
+            loss_cfg.get("lambda_explanation_strong", 0.0)
+        )
         lambda_gate = float(loss_cfg.get("lambda_gate", 0.0))
         itc_queue_size = int(loss_cfg.get("itc_queue_size", 1024))
 
@@ -1695,6 +1743,7 @@ class Blip2Qformer(Blip2Base):
             view_fusion_cfg=view_fusion_cfg,
             lambda_mpc=lambda_mpc,
             lambda_view_consistency=lambda_view_consistency,
+            view_consistency_cfg=view_consistency_cfg,
             lambda_itc=lambda_itc,
             lambda_itm=lambda_itm,
             lambda_lm=lambda_lm,
@@ -1705,6 +1754,7 @@ class Blip2Qformer(Blip2Base):
             lambda_orthogonality=lambda_orthogonality,
             lambda_sparsity=lambda_sparsity,
             lambda_explanation=lambda_explanation,
+            lambda_explanation_strong=lambda_explanation_strong,
             lambda_gate=lambda_gate,
             gate_class_weights=gate_class_weights,
             explanation_cfg=explanation_cfg,

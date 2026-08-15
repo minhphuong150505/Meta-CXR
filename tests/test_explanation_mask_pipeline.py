@@ -124,6 +124,7 @@ def synthetic_cache(tmp_path_factory):
     ms_cxr_path = root / "ms_cxr.csv"
     bbox_row = {
         "dicom_id": ids["bbox"],
+        "category_name": "Pneumonia",
         "x": 5,
         "y": 2,
         "w": 3,
@@ -234,9 +235,14 @@ def test_image_and_mask_receive_one_identical_affine_sample(report_dataset_modul
     mask_array = np.zeros((112, 112), dtype=np.uint8)
     mask_array[25:33, 30:38] = 255
 
-    transformed_image, transformed_mask = dataset._apply_synced_image_mask_transforms(
+    (
+        transformed_image,
+        transformed_mask,
+        transformed_extras,
+    ) = dataset._apply_synced_image_mask_transforms(
         Image.fromarray(image_array), Image.fromarray(mask_array)
     )
+    assert transformed_extras == [], "no per-finding boxes were supplied"
     image_at_mask_resolution = transformed_image.resize(
         (112, 112), resample=Image.Resampling.NEAREST
     )
@@ -295,6 +301,8 @@ def test_no_cache_configuration_keeps_new_keys_out_of_getitem(report_dataset_mod
     dataset.img_ids = {"synthetic-image": 0}
     dataset.multi_view = False
     dataset.explanation_mask_cache_dir = None
+    dataset.explanation_bbox_index = {}
+    dataset.explanation_bbox_path = None
     dataset._row_visual = lambda _ann: {
         "image_path": "synthetic.jpg",
         "image": torch.zeros(3, 448, 448),
@@ -335,17 +343,24 @@ def test_cache_configuration_emits_expected_shapes_and_dtypes(report_dataset_mod
     dataset.multi_view = False
     dataset.feature_cache = None
     dataset.explanation_mask_cache_dir = Path("configured")
+    dataset.explanation_bbox_index = {}
+    dataset.explanation_bbox_path = None
+    dataset.explanation_mask_size = (112, 112)
     dataset._read_explanation_mask = lambda _identifier: (
         (expected_mask.numpy() * 255).astype(np.uint8),
         True,
         1,
     )
-    dataset._row_visual = lambda _ann, explanation_mask=None: {
+    dataset._row_visual = lambda _ann, explanation_mask=None, extra_masks=None: {
         "image_path": "synthetic.jpg",
         "image": torch.zeros(3, 448, 448),
         "explanation_mask": torch.from_numpy(
             (np.asarray(explanation_mask) > 0).astype(np.float32)
         ),
+        "explanation_extra_masks": [
+            torch.from_numpy((np.asarray(m) > 0).astype(np.float32))
+            for m in (extra_masks or [])
+        ],
     }
 
     sample = dataset.__getitem__(0)
@@ -452,9 +467,11 @@ def test_ms_cxr_rows_absent_from_the_manifest_are_dropped_not_fatal(tmp_path, ca
     csv_path = Path(tmp_path) / "ms_cxr.csv"
     pd.DataFrame(
         [
-            {"dicom_id": known, "x": 1, "y": 1, "w": 2, "h": 2,
+            {"dicom_id": known, "category_name": "Pneumonia",
+             "x": 1, "y": 1, "w": 2, "h": 2,
              "image_width": 8, "image_height": 8, "split": "train"},
-            {"dicom_id": unknown, "x": 1, "y": 1, "w": 2, "h": 2,
+            {"dicom_id": unknown, "category_name": "Pneumonia",
+             "x": 1, "y": 1, "w": 2, "h": 2,
              "image_width": 8, "image_height": 8, "split": "train"},
         ]
     ).to_csv(csv_path, index=False)

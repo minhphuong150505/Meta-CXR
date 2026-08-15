@@ -726,6 +726,13 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.explanation_mask_index = {}
         self._explanation_mask_memmap = None
         self._explanation_mask_memmap_pid = None
+        # Per-finding MS-CXR cache. Optional on purpose: a cache built before
+        # 2026-08-16 has no bbox files, and the run must still work -- it simply
+        # gets no strong supervision rather than failing to start.
+        self.explanation_bbox_path = None
+        self.explanation_bbox_index = {}
+        self._explanation_bbox_memmap = None
+        self._explanation_bbox_memmap_pid = None
 
         explanation_cfg = cfg.model_cfg.get("explanation", {}) or {}
         cache_dir = explanation_cfg.get("mask_cache_dir", None)
@@ -781,10 +788,61 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.explanation_mask_cache_dir = cache_dir
         self.explanation_mask_path = masks_path
         self.explanation_mask_index = index
+
+        bbox_masks_path = cache_dir / f"masks_bbox_{self.cur_split}.npy"
+        bbox_index_path = cache_dir / f"index_bbox_{self.cur_split}.json"
+        bbox_pairs = 0
+        if bbox_masks_path.is_file() and bbox_index_path.is_file():
+            with bbox_index_path.open("r", encoding="utf-8") as handle:
+                bbox_index = json.load(handle)
+            parsed = {}
+            for key, entry in bbox_index.items():
+                dicom_id, _, label_text = str(key).rpartition(":")
+                if not dicom_id or not label_text.isdigit():
+                    raise ValueError(
+                        "bbox index keys must be '<dicom_id>:<label_index>'"
+                    )
+                parsed.setdefault(dicom_id, []).append(
+                    (int(label_text), int(entry["row"]))
+                )
+            self.explanation_bbox_path = bbox_masks_path
+            self.explanation_bbox_index = parsed
+            bbox_pairs = len(bbox_index)
+
         print(
             f"[{self.cur_split}] explanation mask index active for "
-            f"{len(index)} studies"
+            f"{len(index)} studies; per-finding boxes for "
+            f"{len(self.explanation_bbox_index)} studies ({bbox_pairs} pairs)"
         )
+
+    def _get_explanation_bbox_memmap(self):
+        """Open/reopen the per-finding memmap in the process that consumes it."""
+        if self.explanation_bbox_path is None:
+            return None
+        current_pid = os.getpid()
+        if (
+            self._explanation_bbox_memmap is not None
+            and self._explanation_bbox_memmap_pid == current_pid
+        ):
+            return self._explanation_bbox_memmap
+        masks = np.load(self.explanation_bbox_path, mmap_mode="r", allow_pickle=False)
+        self._explanation_bbox_memmap = masks
+        self._explanation_bbox_memmap_pid = current_pid
+        return masks
+
+    def _read_explanation_bbox_masks(self, dicom_id):
+        """Return [(label_index, uint8 mask), ...] for one study; [] if none."""
+        entries = self.explanation_bbox_index.get(str(dicom_id))
+        if not entries:
+            return []
+        masks = self._get_explanation_bbox_memmap()
+        out = []
+        for label_index, row in entries:
+            mask = np.array(masks[row], dtype=np.uint8, copy=True)
+            if not mask.any():
+                raise ValueError("bbox cache row is empty")
+            out.append((label_index, (mask > 0).astype(np.uint8) * 255))
+        return out
 
     def _get_explanation_mask_memmap(self):
         """Open/reopen the read-only memmap in the process that consumes it."""
@@ -822,12 +880,26 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             raise ValueError("Explanation-mask index points to an empty mask row")
         return (mask > 0).astype(np.uint8) * 255, True, int(entry["mask_source"])
 
-    def _apply_synced_image_mask_transforms(self, image, explanation_mask):
-        """Apply one sampled affine to image (bilinear) and mask (nearest)."""
+    def _apply_synced_image_mask_transforms(
+        self, image, explanation_mask, extra_masks=None
+    ):
+        """Apply ONE sampled affine to image (bilinear) and every mask (nearest).
+
+        ``extra_masks`` are the per-finding MS-CXR boxes. They must ride the
+        same sampled parameters as the image and the pooled mask -- a separate
+        draw would leave every box pointing at the wrong part of its own image,
+        and the strong explanation term would then be trained against noise
+        while still looking like it was learning localisation.
+        """
+        extra_masks = list(extra_masks or [])
         image = self.base_geometry_trans(image)
         explanation_mask = explanation_mask.resize(
             image.size, resample=Image.Resampling.NEAREST
         )
+        extra_masks = [
+            mask.resize(image.size, resample=Image.Resampling.NEAREST)
+            for mask in extra_masks
+        ]
         if self.augmentation_enabled and torch.rand(1).item() < self.affine_p:
             angle, translate, scale, shear = transforms.RandomAffine.get_params(
                 self.affine_degrees,
@@ -854,15 +926,32 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                 interpolation=InterpolationMode.NEAREST,
                 fill=0,
             )
+            extra_masks = [
+                transforms.functional.affine(
+                    mask,
+                    angle=angle,
+                    translate=translate,
+                    scale=scale,
+                    shear=shear,
+                    interpolation=InterpolationMode.NEAREST,
+                    fill=0,
+                )
+                for mask in extra_masks
+            ]
 
         image = self.optical_trans(image)
-        explanation_mask = explanation_mask.resize(
-            self.explanation_mask_size, resample=Image.Resampling.NEAREST
-        )
-        explanation_mask = torch.from_numpy(
-            np.array(explanation_mask, dtype=np.uint8, copy=True) > 0
-        ).float()
-        return image, explanation_mask
+
+        def _to_tensor(mask):
+            mask = mask.resize(
+                self.explanation_mask_size, resample=Image.Resampling.NEAREST
+            )
+            return torch.from_numpy(
+                np.array(mask, dtype=np.uint8, copy=True) > 0
+            ).float()
+
+        return image, _to_tensor(explanation_mask), [
+            _to_tensor(mask) for mask in extra_masks
+        ]
 
     def set_custom_epoch(self, custom_epoch):
         self.current_custom_epoch = custom_epoch
@@ -955,7 +1044,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         return Image.fromarray(image).convert("L")
 
 
-    def _row_visual(self, ann, explanation_mask=None):
+    def _row_visual(self, ann, explanation_mask=None, extra_masks=None):
         """Visual input for one CSV row: decoded image, or cached raw features.
 
         ``explanation_mask`` is supplied only for the anchor.  Its presence
@@ -986,8 +1075,12 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             if explanation_mask is None:
                 out["image"] = self.optical_trans(self.geometric_trans(image))
             else:
-                out["image"], out["explanation_mask"] = (
-                    self._apply_synced_image_mask_transforms(image, explanation_mask)
+                (
+                    out["image"],
+                    out["explanation_mask"],
+                    out["explanation_extra_masks"],
+                ) = self._apply_synced_image_mask_transforms(
+                    image, explanation_mask, extra_masks
                 )
         else:
             for enc, store in self.feature_cache.items():
@@ -1014,19 +1107,37 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                 ann["dicom_id"]
             )
             explanation_mask = Image.fromarray(mask_array)
+            bbox_entries = self._read_explanation_bbox_masks(ann["dicom_id"])
+            bbox_labels = [label for label, _ in bbox_entries]
             anchor_visual = self._row_visual(
                 ann,
                 explanation_mask=(
                     explanation_mask if self.feature_cache is None else None
                 ),
+                extra_masks=(
+                    [Image.fromarray(m) for _, m in bbox_entries]
+                    if self.feature_cache is None
+                    else None
+                ),
             )
             if self.feature_cache is None:
                 mask_tensor = anchor_visual.pop("explanation_mask")
+                bbox_tensors = anchor_visual.pop("explanation_extra_masks")
             else:
                 mask_tensor = torch.from_numpy(
                     np.array(mask_array, dtype=np.uint8, copy=True) > 0
                 ).float()
-            explanation_payload = (mask_tensor, mask_valid, mask_source)
+                bbox_tensors = [
+                    torch.from_numpy(np.array(m, dtype=np.uint8, copy=True) > 0).float()
+                    for _, m in bbox_entries
+                ]
+            explanation_payload = (
+                mask_tensor,
+                mask_valid,
+                mask_source,
+                bbox_labels,
+                bbox_tensors,
+            )
         else:
             anchor_visual = self._row_visual(ann)
         image_path = anchor_visual.pop("image_path")
@@ -1100,12 +1211,36 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         }
         sample.update(anchor_visual)  # "image", or the cached "<enc>_feat" tensors
         if explanation_payload is not None:
-            mask_tensor, mask_valid, mask_source = explanation_payload
+            (
+                mask_tensor,
+                mask_valid,
+                mask_source,
+                bbox_labels,
+                bbox_tensors,
+            ) = explanation_payload
             sample["explanation_mask"] = mask_tensor
             sample["explanation_mask_valid"] = torch.tensor(
                 mask_valid, dtype=torch.bool
             )
             sample["explanation_mask_source"] = int(mask_source)
+            # Dense [A,H,W] rather than a ragged list: 99.6% of studies carry no
+            # box at all, so this is 175 KB of mostly zeros per sample, and it
+            # lets the default collate stack it without a custom collator.
+            num_labels = len(self.chexpert_cols)
+            bbox_masks = torch.zeros(
+                num_labels, *self.explanation_mask_size, dtype=torch.float32
+            )
+            bbox_valid = torch.zeros(num_labels, dtype=torch.bool)
+            for label_index, box_tensor in zip(bbox_labels, bbox_tensors):
+                if not 0 <= label_index < num_labels:
+                    raise ValueError(
+                        f"bbox cache label index {label_index} outside "
+                        f"[0, {num_labels})"
+                    )
+                bbox_masks[label_index] = box_tensor
+                bbox_valid[label_index] = True
+            sample["explanation_bbox_masks"] = bbox_masks
+            sample["explanation_bbox_valid"] = bbox_valid
 
         if self.multi_view:
             aux_visuals = [

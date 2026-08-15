@@ -587,24 +587,77 @@ class MultiPositiveContrastiveLoss(nn.Module):
         return per_anchor.mean()
 
 
-def view_consistency_loss(fused_logits, anchor_logits, has_aux):
-    """Symmetric KL between the fused and anchor-only MHCAC predictions.
+def view_consistency_loss(
+    fused_logits,
+    anchor_logits,
+    has_aux,
+    margin=0.0,
+    confidence_gate=False,
+    gate_tolerance=0.0,
+):
+    """Soft, conditional agreement between the fused and anchor-only predictions.
 
-    Adding views must not change *which* abnormalities are predicted, so the two
-    logit distributions are pulled together. Applied only to studies that
-    actually have an auxiliary view; the rest would contribute an exact zero.
+    The original form was an unconditional symmetric KL, justified as "adding
+    views must not change *which* abnormalities are predicted". That premise is
+    wrong for this dataset: a lateral view exists precisely to show what the
+    frontal cannot, and 55% of studies have one. Forcing the fused prediction
+    onto the anchor-only prediction penalises the model for *using* the extra
+    view, which is the opposite of what multi-view fusion is for.
+
+    Two knobs relax it, and both default to off so the historical behaviour is
+    reproducible for ablation:
+
+    ``margin``
+        Divergence below this costs nothing (hinge). Small drift is normal
+        re-weighting, not contradiction; only real flips should be charged.
+
+    ``confidence_gate``
+        Waive the penalty on cells where the fused distribution is *more*
+        confident (lower entropy) than the anchor-only one by more than
+        ``gate_tolerance`` nats. Sharpening is the signature of new evidence;
+        smearing is the signature of noise. The gate is **detached** — it
+        selects where the loss applies and must not itself carry gradient, or
+        the model could minimise the term by manipulating the gate instead of
+        the prediction.
+
+    With ``margin=0.0`` and ``confidence_gate=False`` this returns exactly the
+    previous value.
 
     fused_logits / anchor_logits: [B, num_abnormalities, num_classes]
     has_aux: [B] bool
     """
     if has_aux is None or not has_aux.any():
         return fused_logits.new_zeros(())
+    margin = float(margin)
+    if margin < 0.0:
+        raise ValueError("margin must be >= 0")
+    gate_tolerance = float(gate_tolerance)
+    if gate_tolerance < 0.0:
+        raise ValueError("gate_tolerance must be >= 0")
 
     p = F.log_softmax(fused_logits[has_aux], dim=-1)
     q = F.log_softmax(anchor_logits[has_aux], dim=-1)
     kl_pq = F.kl_div(q, p, log_target=True, reduction="none").sum(-1)
     kl_qp = F.kl_div(p, q, log_target=True, reduction="none").sum(-1)
-    return 0.5 * (kl_pq + kl_qp).mean()
+    divergence = 0.5 * (kl_pq + kl_qp)
+
+    if margin > 0.0:
+        divergence = F.relu(divergence - margin)
+
+    if not confidence_gate:
+        return divergence.mean()
+
+    # Entropy per (study, abnormality); lower means more confident.
+    entropy_fused = -(p.exp() * p).sum(-1)
+    entropy_anchor = -(q.exp() * q).sum(-1)
+    # Charge the cell unless fusing made it decisively more confident.
+    keep = (entropy_fused >= entropy_anchor - gate_tolerance).detach().to(
+        divergence.dtype
+    )
+    kept = keep.sum()
+    if kept.item() == 0:
+        return fused_logits.new_zeros(())
+    return (divergence * keep).sum() / kept
 
 
 

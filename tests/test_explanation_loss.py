@@ -117,13 +117,14 @@ def test_explanation_gradient_reaches_tiny_module_parameter():
     mask = torch.tensor([[[0.0, 0.0], [0.0, 1.0]]])
     loss_fn = ExplanationLoss(top_k=0.5)
 
-    loss, per_stream = loss_fn(
+    loss, strong, per_stream = loss_fn(
         logits,
         labels,
         {"tiny": (activations, (2, 2))},
         mask,
         torch.tensor([True]),
     )
+    assert strong.item() == 0.0, "no boxes supplied -> strong term must be zero"
     gradient = torch.autograd.grad(loss, module.spatial)[0]
 
     assert set(per_stream) == {"tiny"}
@@ -215,3 +216,137 @@ def test_explanation_loss_cannot_run_without_a_live_graph():
                 torch.ones(1, 4, 4),
                 torch.ones(1, dtype=torch.bool),
             )
+
+
+# --------------------------------------------------------------------------
+# Strong (MS-CXR, per-pathology) term
+# --------------------------------------------------------------------------
+
+class _TwoLabelModule(nn.Module):
+    """Logits for 2 findings driven by disjoint halves of a 2x2 activation grid.
+
+    Finding 0 is driven by the LEFT column, finding 1 by the RIGHT column, so a
+    per-finding CAM must light up a different half depending on which finding is
+    scored. A pooled CAM cannot tell them apart -- which is the whole point of
+    the strong term.
+
+    Grad-CAM weights a channel by its gradient averaged over *tokens*, so a
+    single-channel activation can only ever yield a flat CAM. Two channels are
+    the minimum that can localise: channel 0 lives on the left column, channel 1
+    on the right, and each finding reads one channel.
+    """
+
+    def __init__(self):
+        super().__init__()
+        # [B=1, N=4, C=2]; token order over a 2x2 grid is (0,0) (0,1) (1,0) (1,1).
+        spatial = torch.zeros(1, 4, 2)
+        spatial[0, [0, 2], 0] = 1.0        # channel 0 -> left column
+        spatial[0, [1, 3], 1] = 1.0        # channel 1 -> right column
+        self.spatial = nn.Parameter(spatial)
+
+    def forward(self):
+        activations = self.spatial
+        pos0 = activations[..., 0].sum(dim=1)
+        pos1 = activations[..., 1].sum(dim=1)
+        zero = pos0 * 0.0
+        finding0 = torch.stack((zero, pos0, zero), dim=-1).unsqueeze(1)
+        finding1 = torch.stack((zero, pos1, zero), dim=-1).unsqueeze(1)
+        return torch.cat((finding0, finding1), dim=1), activations
+
+
+def _strong_inputs(box_label, box_grid):
+    """Build [B,A,H,W] boxes with one finding boxed on a 2x2 grid."""
+    bbox_masks = torch.zeros(1, 2, 2, 2)
+    bbox_masks[0, box_label] = box_grid
+    bbox_valid = torch.zeros(1, 2, dtype=torch.bool)
+    bbox_valid[0, box_label] = True
+    return bbox_masks, bbox_valid
+
+
+def test_strong_term_is_zero_without_boxes():
+    module = _TwoLabelModule()
+    logits, activations = module()
+    labels = torch.zeros(1, 2, dtype=torch.long)
+    labels[0, 0] = 1
+
+    _, strong, _ = ExplanationLoss(top_k=0.5)(
+        logits, labels, {"tiny": (activations, (2, 2))},
+        torch.ones(1, 2, 2), torch.ones(1, dtype=torch.bool),
+        bbox_masks=torch.zeros(1, 2, 2, 2),
+        bbox_valid=torch.zeros(1, 2, dtype=torch.bool),
+    )
+    assert strong.item() == 0.0, strong
+
+
+def test_strong_term_is_disease_specific():
+    """A box on the half that drives the boxed finding must score better.
+
+    If the strong CAM were still the pooled one, both placements would give the
+    same loss and this test would fail -- that is exactly the regression it
+    exists to catch.
+    """
+    module = _TwoLabelModule()
+    logits, activations = module()
+    labels = torch.ones(1, 2, dtype=torch.long)
+
+    left_box = torch.tensor([[1.0, 0.0], [1.0, 0.0]])
+    right_box = torch.tensor([[0.0, 1.0], [0.0, 1.0]])
+
+    # Finding 0 is driven by the LEFT column.
+    masks_aligned, valid = _strong_inputs(0, left_box)
+    masks_wrong, _ = _strong_inputs(0, right_box)
+
+    kwargs = dict(
+        logits=logits, labels=labels,
+        streams={"tiny": (activations, (2, 2))},
+        mask=torch.ones(1, 2, 2), valid_mask=torch.ones(1, dtype=torch.bool),
+    )
+    _, aligned, _ = ExplanationLoss(top_k=0.5)(
+        **kwargs, bbox_masks=masks_aligned, bbox_valid=valid
+    )
+    _, wrong, _ = ExplanationLoss(top_k=0.5)(
+        **kwargs, bbox_masks=masks_wrong, bbox_valid=valid
+    )
+    assert aligned.item() < wrong.item(), (aligned.item(), wrong.item())
+
+
+def test_strong_term_backprops_and_handles_two_findings():
+    module = _TwoLabelModule()
+    logits, activations = module()
+    labels = torch.ones(1, 2, dtype=torch.long)
+
+    bbox_masks = torch.zeros(1, 2, 2, 2)
+    bbox_masks[0, 0] = torch.tensor([[1.0, 0.0], [1.0, 0.0]])
+    bbox_masks[0, 1] = torch.tensor([[0.0, 1.0], [0.0, 1.0]])
+    bbox_valid = torch.ones(1, 2, dtype=torch.bool)
+
+    _, strong, _ = ExplanationLoss(top_k=0.5)(
+        logits, labels, {"tiny": (activations, (2, 2))},
+        torch.ones(1, 2, 2), torch.ones(1, dtype=torch.bool),
+        bbox_masks=bbox_masks, bbox_valid=bbox_valid,
+    )
+    assert torch.isfinite(strong)
+    gradient = torch.autograd.grad(strong, module.spatial)[0]
+    assert gradient is not None and torch.isfinite(gradient).all()
+
+
+def test_strong_term_rejects_shape_mismatch():
+    module = _TwoLabelModule()
+    logits, activations = module()
+    labels = torch.ones(1, 2, dtype=torch.long)
+    with pytest.raises(ValueError, match=r"bbox_valid must be \[B,A\]"):
+        ExplanationLoss(top_k=0.5)(
+            logits, labels, {"tiny": (activations, (2, 2))},
+            torch.ones(1, 2, 2), torch.ones(1, dtype=torch.bool),
+            bbox_masks=torch.zeros(1, 5, 2, 2),
+            bbox_valid=torch.zeros(1, 5, dtype=torch.bool),
+        )
+
+
+def test_separate_top_k_for_strong_and_weak():
+    loss_fn = ExplanationLoss(top_k=0.2, strong_top_k=0.5)
+    assert loss_fn.top_k == 0.2 and loss_fn.strong_top_k == 0.5
+    assert ExplanationLoss(top_k=0.3).strong_top_k == 0.3
+    for bad in (0.0, 1.5):
+        with pytest.raises(ValueError):
+            ExplanationLoss(top_k=0.5, strong_top_k=bad)

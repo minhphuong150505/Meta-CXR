@@ -69,6 +69,17 @@ Mỗi split được ghi atomically:
 - `masks_<split>.npy`: memmap-compatible `uint8`, shape `[N_valid,112,112]`,
   giá trị `{0,255}`;
 - `index_<split>.json`: mapping identifier → `{"row": int, "mask_source": 0|1}`.
+- `masks_bbox_<split>.npy` (mới 2026-08-16): `uint8 [N_pairs,112,112]`, một hàng
+  cho mỗi cặp **(study, bệnh)** có box MS-CXR.
+- `index_bbox_<split>.json`: khoá `"<dicom_id>:<label_index>"` →
+  `{"row": int, "label_index": int}`. `label_index` là vị trí trong
+  `CHEXPERT_LABELS`, **phải** khớp `chexpert_cols` của `blip2_qformer.py`.
+
+  Hai file bbox là **cặp file thứ hai, không nhập vào index cũ**. Nhờ đó cache
+  dựng trước 2026-08-16 vẫn nạp được (chỉ là không có strong supervision), và
+  tắt strong term chỉ cần không ship hai file này.
+  Category MS-CXR không map được sang cột CheXpert sẽ bị **bỏ qua và đếm**, chứ
+  không đoán bừa — gắn box vào sai cột còn tệ hơn là không giám sát.
 
 Trong lúc build có một working memmap theo số study; cuối cùng chỉ hàng hợp lệ
 được compact sang file công khai của cache.
