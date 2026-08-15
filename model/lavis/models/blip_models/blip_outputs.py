@@ -97,10 +97,11 @@ class BlipOutput(ModelOutput):
     loss_gate: Optional[torch.FloatTensor] = None
 
     loss_mpc: Optional[torch.FloatTensor] = None
-    # Raw pre-marginalisation logits, kept for diagnostics when the
-    # mention-conditioned hierarchy is on. classification_logits carries the
-    # LOG MARGINAL distribution in that mode.
-    conditional_classification_logits: Optional[torch.FloatTensor] = None
+    # Four-state joint log-probabilities when the mention-conditioned hierarchy
+    # is on: P(blank)=1-m, P(Neg)=m*q_neg, P(Pos)=m*q_pos, P(Unc)=m*q_unc.
+    # classification_logits stays the CONDITIONAL polarity distribution q, which
+    # is what the blank-masked CheXpert metric actually scores.
+    mention_marginal_log_probs: Optional[torch.FloatTensor] = None
 
     loss_view_consistency: Optional[torch.FloatTensor] = None
 
