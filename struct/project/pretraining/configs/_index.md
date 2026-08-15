@@ -83,7 +83,7 @@ model:
 | `multi_view` | `true` | `false` |
 | `warmup_steps` | `800` | ⚠ `32000` — **không bao giờ hoàn tất ramp** |
 | `lambda_mpc` | `0.1` | `0.0` |
-| `selection_metric` | `macro_auprc` | ⚠ khác |
+| `selection_metric` | `loss` | ⚠ khác |
 | `amp_dtype` | `bfloat16` | ⚠ khác |
 
 ### Các key hay bị hiểu sai
@@ -94,7 +94,7 @@ model:
 | `model.loss.lambda_explanation` | Gate duy nhất của explanation loss; 0 tắt module/Grad-CAM |
 | `model.explanation.mask_cache_dir` | Cache private mà `ReportDataset` đọc theo split |
 | `save_freq: 5` | Checkpoint theo epoch mỗi 5 epoch; `0` → chỉ giữ best + last |
-| `selection_metric: macro_auprc` | ⚠ `CLAUDE.md`/`README.md` nói `f1_positive_macro` — **sai**, config thắng |
+| `selection_metric: loss` | Đã đổi từ `macro_auprc`. ⚠ thiên lệch về nhãn phổ biến; và đổi metric này lúc **resume** sẽ vô hiệu hoá `checkpoint_best` nếu không vá `best_agg_metric` — xem [`_load_checkpoint`](../../model/lavis/runners/runner_base.py.methods/_load_checkpoint.md)  |
 | `batch_size_train: 8` + `accum_grad_iters: 8` | Effective batch = 64 |
 | `test_splits: [test]` | Được giữ ngoài chọn checkpoint; eval **một lần** sau train |
 

@@ -20,11 +20,12 @@ over SSH on 2026-08-13:
 |---|---|
 | GPU | 1× NVIDIA **RTX 5060 Ti, 16 GB** (`nvidia-smi`), driver 580.173.02, CUDA 13.0 |
 | `/` | 58 GB, ~5 GB free — tight, do not install into it casually |
-| `/home` | 185 GB, ~19 GB free |
-| Data + checkpoints | `/mnt/drive1tb` — partition `nvme1n1p2`, **930 GB NTFS**, **not in `/etc/fstab`** |
+| `/home` | 185 GB, ~23 GB free (2026-08-15) — now holds checkpoints, so watch it |
+| Dataset (read-only) | `/mnt/drive1tb` — partition `nvme1n1p2`, **930 GB NTFS**, **not in `/etc/fstab`**, mounted `ntfs3 -o ro` since 2026-08-15 |
+| Checkpoints | `/home/phuong/<run>/` — ext4. **Not** the 1 TB drive any more; see the mount note below |
 | Repo checkout there | `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git` |
 
-Two consequences worth remembering:
+Consequences worth remembering:
 
 - `/mnt/drive1tb` does **not** auto-mount — it is not in `/etc/fstab`. After a
   reboot every path in `configs/env_config.yaml` dangles until it is mounted by
@@ -40,13 +41,54 @@ Two consequences worth remembering:
   `It is recommended to use chkdsk.` This is not a stale hibernation flag; the
   kernel driver hit errors and flagged the volume itself. Only `chkdsk` from
   Windows fixes it — `ntfsfix` clears the dirty bit without repairing anything.
-  The kernel `ntfs3` driver refuses rw while it stands; `ntfs-3g` (FUSE) mounts
-  it anyway, which is how the drive is currently writable.
-- **Driver choice does not affect training throughput.** Measured 2026-08-13,
-  200 iterations at batch 6: kernel `ntfs3` 0.5251 s/it vs FUSE `ntfs-3g`
-  0.5277 s/it, +0.5%, which is 0.3 h across a 54 h run. The workload is
-  GPU-bound, not I/O-bound. Do not switch drivers for speed; the only reason to
-  prefer `ntfs3` is that it refuses to write to a damaged volume.
+  The kernel `ntfs3` driver refuses rw while it stands; `ntfs-3g` (FUSE) mounted
+  it anyway, which is how the drive used to be writable. It is **no longer
+  mounted that way** — see the two entries below.
+- **`ntfs-3g` stalled a real run. The old "driver choice does not matter"
+  measurement is superseded — do not act on it.** That measurement (2026-08-13,
+  200 iterations at batch 6: `ntfs3` 0.5251 s/it vs `ntfs-3g` 0.5277 s/it,
+  +0.5%) was taken while the volume was behaving, and it does not generalise.
+  On 2026-08-15, five epochs into a run, `ntfs-3g` degraded until training
+  effectively stopped: `time:` went from 0.23 to 1.0–1.4 s/it with **10–14
+  minute stretches of no log output at all**, GPU at 0% and 25–40 W. Effective
+  throughput fell to ~60 iter/min against ~260 healthy, turning a 55-minute
+  epoch into 3 h 15.
+  The signature is unambiguous and worth recognising fast — check
+  `ps -eo pid,stat,wchan:22` **before** suspecting the model, batch size, RAM or
+  swap: the `ntfs-3g` process sits in state `D`, 10–11 of the 12
+  `pt_data_worker` processes sit in WCHAN `request_wait_answer` (the FUSE kernel
+  wait), and the main process sits in `futex_do_wait` behind them. Reads from
+  twelve workers funnel through one single-threaded userspace daemon, so when it
+  blocks, everything blocks. Swap being full is a red herring: `vmstat` showed
+  `si/so = 0`, i.e. full but static.
+- **The fix, verified 2026-08-15 — no reboot, no `chkdsk`.** Mount read-only
+  with the kernel driver and write checkpoints elsewhere. Training only *reads*
+  the dataset; the only thing it writes is checkpoints, so read-only costs
+  nothing and removes the FUSE daemon entirely.
+
+  ```bash
+  # needs the user — no passwordless sudo, and nothing may hold the mount
+  sudo umount /mnt/drive1tb
+  sudo mount -t ntfs3 -o ro /dev/nvme1n1p2 /mnt/drive1tb
+  df -T /mnt/drive1tb            # must say ntfs3, not fuseblk
+  ```
+
+  Then pass `run.output_dir=/home/phuong/<run>` so checkpoints land on ext4
+  (~23 GB free; a 10-epoch run needs ~6 GB). Reads off the ro mount clock
+  893 MB/s and GPU utilisation goes back to 97–98%.
+
+  **It recovers most of the loss, not all of it — do not quote this as "fixed".**
+  Over the first 1,550 iterations of epoch 5: median **0.231 s/it**, exactly the
+  healthy 0.2347 baseline, and the multi-minute stalls are gone. But a slow tail
+  survives — 6 of 32 sampled iterations exceeded 0.5 s, p90 0.786, max 4.25 —
+  and the epoch ETA settled at ~69 min against the 55 min a healthy epoch takes.
+  So roughly 3x better than the crippled FUSE state and ~25% short of baseline.
+  That residue is consistent with the volume's own damage rather than the driver,
+  which is the part only `chkdsk` can address.
+  `-o force` mounts rw instead, but it overrides the kernel's own damage check
+  on the volume holding the 573 GB dataset and only buys the convenience of
+  keeping checkpoints on the same disk. `chkdsk` from Windows is still the only
+  actual repair.
 
 ### The venv
 
@@ -135,7 +177,10 @@ python scripts/vm_preflight.py --stage 1
 # "-m pretraining.train"). torchrun does work now that run.dist_url is present,
 # but it buys nothing here.
 CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
-    --cfg-path pretraining/configs/mimic_cxr_full.yaml
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+    --options run.output_dir=/home/phuong/<run>
+# output_dir MUST be on /home: /mnt/drive1tb is mounted read-only (ntfs3) since
+# 2026-08-15 and a write there fails. See "The training host" for why.
 # Launch it with NO batch overrides. The YAML ships batch 16 / accum 4
 # (effective 64), measured 2026-08-14 as the best of {6, 16, 24, 32}. The old
 # `batch_size_train=6 ... accum_grad_iters=11` command line is superseded.
@@ -647,6 +692,33 @@ because val is thin for two labels (Pleural Other 14 positives, Fracture 16).
 Both are logged every scored epoch — check which epoch each would pick before
 quoting either. `selection_mode` is deliberately absent from the YAML so
 RunnerBase infers `min`; an explicit `max` left behind would keep the worst epoch.
+
+**Changing `selection_metric` on a resume silently disables `checkpoint_best`
+unless you also neutralise `best_agg_metric` in the checkpoint.** `train()`
+initialises it to `+inf` under mode `min` and `-inf` under `max`
+(`runner_base.py:694`), then `_save_checkpoint` persists whatever it holds — so
+a `loss` run that has not yet scored an epoch writes **`best_agg_metric: inf`**
+into `checkpoint_last.pth`. Resume that checkpoint under an F1/AUPRC metric and
+`runner_base.py:719` restores the `inf`, after which `_metric_improved` tests
+`value > inf + min_delta` and is **False forever**: training looks completely
+healthy and `checkpoint_best.pth` is never written. Verified on the live
+checkpoint 2026-08-15 (`epoch=4, best_agg_metric=inf, best_epoch=0`).
+The fix is to set the key to `None` before resuming — `runner_base.py:719`
+guards with `if resumed_metric is not None`, so `None` leaves the freshly
+initialised `-inf` in place:
+
+```python
+ck = torch.load(p, map_location="cpu", weights_only=False)
+assert ck["epoch"] == <expected>          # refuse to patch the wrong checkpoint
+ck["best_agg_metric"] = None; ck["best_epoch"] = None
+torch.save(ck, p)
+```
+
+Patch a *copy* on ext4 and resume from that, not the original on the NTFS mount.
+Confirm it took by grepping the log for
+`Resume checkpoint from ... (best_agg_metric=None, best_epoch=None)`.
+`selection_mode` needs no change: it is inferred `max` for any metric whose name
+does not contain the substring `loss` (`runner_base.py:501`).
 
 ## Data handling — non-negotiable
 

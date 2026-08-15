@@ -16,12 +16,22 @@ unwrap_dist_model(model)          ← bỏ lớp DDP
    ↓
 lọc state_dict: bỏ param có requires_grad=False   ← encoder đóng băng KHÔNG vào checkpoint
    ↓
-payload = {model, optimizer, config, scaler, epoch}
+payload = {model, optimizer, config, scaler, epoch,
+           best_agg_metric, best_epoch}     ← :1028, dùng khi resume
    ↓
 is_best  → checkpoint_best.pth
 is_last  → checkpoint_last.pth
 ngược lại → checkpoint_{epoch}.pth
 ```
+
+## ⚠ `best_agg_metric` được ghi kể cả khi chưa chấm epoch nào
+`train()` khởi tạo nó là `+inf` (mode `min`) hoặc `-inf` (mode `max`) tại `:694`,
+và `_save_checkpoint` ghi nguyên giá trị đó xuống đĩa. Với `eval_start_epoch: 5`,
+mọi `checkpoint_last.pth` của epoch [0]–[4] mang **`best_agg_metric: inf`** — một
+giá trị vô nghĩa, không phải điểm số thật.
+
+Nó chỉ vô hại khi resume **cùng** `selection_metric`. Đổi metric lúc resume thì
+đây là bẫy — xem [`_load_checkpoint`](_load_checkpoint.md).
 
 ## ★ Encoder đóng băng không vào checkpoint
 Ba encoder chiếm phần lớn tham số nhưng **không đổi**. Bỏ chúng làm checkpoint nhỏ

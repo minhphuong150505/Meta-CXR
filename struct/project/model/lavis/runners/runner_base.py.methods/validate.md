@@ -36,7 +36,7 @@ Validation chạy trên **tất cả** mẫu val. Với DDP, `_reduce_eval_stats
 trước khi so sánh — nếu không, mỗi rank sẽ chọn checkpoint khác nhau.
 
 ## Config dependencies
-`run.selection_metric` = `macro_auprc` · `selection_mode` = `max` ·
+`run.selection_metric` = `loss` (mode suy ra `min`) ·
 `early_stop_min_delta` = 1e-4 · `save_predictions`
 
 ## Side effects

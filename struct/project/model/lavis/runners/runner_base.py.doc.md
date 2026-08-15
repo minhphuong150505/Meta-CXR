@@ -1,6 +1,6 @@
 > Source: `model/lavis/runners/runner_base.py` (1.229 dòng)
 > Status: ✅ ACTIVE — ★
-> Last verified against source: 2026-08-13
+> Last verified against source: 2026-08-15
 
 # `runner_base.py`
 
@@ -77,8 +77,8 @@ log W&B, và (qua task) `.npz` prediction.
 |---|---|---|
 | `max_epoch` | `run.max_epoch` | **10** |
 | `eval_start_epoch` | `run.eval_start_epoch` | **5** — epoch index đầu tiên được chấm; [0]–[4] chỉ train |
-| `selection_metric` | `run.selection_metric` | **`macro_auprc`** ⚠ không phải `f1_positive_macro` |
-| `selection_mode` | `run.selection_mode` | `max` |
+| `selection_metric` | `run.selection_metric` | **`loss`** (YAML `:366`) — đã đổi từ `macro_auprc` |
+| `selection_mode` | `run.selection_mode` | **vắng mặt trong YAML một cách có chủ ý** → suy ra `min` vì tên metric chứa `loss` (`:501`) |
 | `early_stop_patience` | `run.early_stop_patience` | 5 — ⚠ **hiện không thể kích hoạt**, xem ghi chú dưới |
 | `early_stop_min_delta` | `run.early_stop_min_delta` | 1.0e-4 |
 | `save_freq` | `run.save_freq` | 5 (`0` → chỉ best + last) |
@@ -141,7 +141,8 @@ khi nạp (`:1129`)
 
 | Tình huống | Hành vi |
 |---|---|
-| `selection_metric` không có trong eval stats | ⚠ cần runtime verification |
+| `selection_metric` không có trong eval stats | `raise KeyError` kèm danh sách metric có sẵn (`:675`) — hỏng **ồn ào**, không âm thầm |
+| `best_agg_metric` resume vào sai mode (`inf` dưới mode `max`) | ⚠ **không raise** — `checkpoint_best` lặng lẽ không bao giờ được ghi, xem [`_load_checkpoint`](runner_base.py.methods/_load_checkpoint.md) |
 | Checkpoint resume không tồn tại | Raise từ `torch.load` |
 | Early stop đạt patience | `break` khỏi vòng epoch |
 | Resume từ file local | `output_dir` là thư mục cha của checkpoint; không tạo run timestamp mới |
@@ -176,13 +177,21 @@ logic resume-directory được bảo vệ bởi hành vi `setup_output_dir` và
 
 ## Developer notes
 
-1. **`selection_metric` thực tế là `macro_auprc`.** `CLAUDE.md` và `README.md` nói
-   `f1_positive_macro` — **sai**. Config thắng.
-2. **Test split không tham gia chọn checkpoint** ở bất kỳ bước nào. Nó chỉ chạy
+1. **`selection_metric` thực tế là `loss`** (YAML `:366`, xác minh 2026-08-15).
+   Ghi chú cũ ở đây nói `macro_auprc` và kết luận `CLAUDE.md`/`README.md` sai —
+   ghi chú đó **nay đã lỗi thời**, config đã đổi từ lúc nó được viết. Nguyên tắc
+   vẫn đúng: đọc YAML, đừng tin doc.
+   ⚠ `loss` có thiên lệch đã biết (bị các nhãn phổ biến chi phối) — xem `CLAUDE.md`.
+2. **Đổi `selection_metric` khi resume sẽ vô hiệu hoá `checkpoint_best` trong im
+   lặng** nếu không trung hoà `best_agg_metric` trong file checkpoint. Đây là bẫy
+   nguy hiểm nhất của module này —
+   [`_load_checkpoint`](runner_base.py.methods/_load_checkpoint.md) mô tả đầy đủ
+   cơ chế và cách vá.
+3. **Test split không tham gia chọn checkpoint** ở bất kỳ bước nào. Nó chỉ chạy
    một lần trong `evaluate(cur_epoch="best")`.
-3. **`lr_scheduler.step()` gọi mỗi optimizer update**, không phải mỗi microbatch —
+4. **`lr_scheduler.step()` gọi mỗi optimizer update**, không phải mỗi microbatch —
    nên `warmup_steps` đếm bằng update.
-4. **`save_freq: 0`** giữ **chỉ** best + last. Một run 20 epoch với `save_freq: 5`
+5. **`save_freq: 0`** giữ **chỉ** best + last. Một run 20 epoch với `save_freq: 5`
    để lại 4 checkpoint theo epoch + 2.
 5. Sửa file này ảnh hưởng mọi Stage 1 run và gián tiếp Stage 2 mode Q-Former.
 6. `train_epoch` gọi `set_epoch` trên `_model` gốc, không phụ thuộc DDP wrapper;

@@ -21,6 +21,10 @@ model.load_state_dict(checkpoint["model"], strict=False)   ← ⚠ strict=False
 optimizer.load_state_dict, scaler.load_state_dict (nếu có)
 start_epoch = checkpoint["epoch"] + 1
    ↓
+_resumed_best_metric = checkpoint.get("best_agg_metric")   ← :1176
+_resumed_best_epoch  = checkpoint.get("best_epoch")
+   → train() khôi phục vào best_agg_metric nếu **không phải None** (:719)
+   ↓
 logic đóng băng: :1050 `for param in self.model.mhcac.parameters()` …
    ↓
 _delete_local_resume_checkpoint_after_load(path)   ← :1129, có thể XÓA file
@@ -30,6 +34,35 @@ _delete_local_resume_checkpoint_after_load(path)   ← :1129, có thể XÓA fil
 Cho phép nạp checkpoint thiếu key encoder đóng băng (xem
 [`_save_checkpoint`](_save_checkpoint.md)). Nhưng cũng nghĩa là **key sai tên sẽ bị
 bỏ qua lặng lẽ** — kiểm log nếu model có vẻ chưa được nạp.
+
+## ⚠⚠ Đổi `selection_metric` khi resume làm `checkpoint_best` không bao giờ được ghi
+Hỏng **hoàn toàn im lặng**: training chạy bình thường, log sạch, chỉ là không có
+file best nào xuất hiện.
+
+Cơ chế: một run `selection_metric: loss` (mode `min`) chưa chấm epoch nào ghi
+`best_agg_metric: inf` xuống checkpoint (xem [`_save_checkpoint`](_save_checkpoint.md)).
+Resume checkpoint đó dưới một metric F1/AUPRC (mode `max`) thì `:719` khôi phục lại
+`inf`, sau đó [`validate`](validate.md) gọi `_metric_improved(value, inf)` — tức
+`value > inf + min_delta` — và kết quả **luôn là False**.
+
+Đã xác minh trên checkpoint thật 2026-08-15: `epoch=4, best_agg_metric=inf,
+best_epoch=0`.
+
+Cách xử lý — đặt key về `None`, vì `:719` chặn bằng `if resumed_metric is not None`
+nên `None` giữ nguyên `-inf` vừa khởi tạo:
+
+```python
+ck = torch.load(p, map_location="cpu", weights_only=False)
+assert ck["epoch"] == <epoch mong đợi>      # từ chối vá nhầm checkpoint
+ck["best_agg_metric"] = None; ck["best_epoch"] = None
+torch.save(ck, p)
+```
+
+Kiểm chứng bằng dòng log
+`Resume checkpoint from ... (best_agg_metric=None, best_epoch=None)` (`:1179`).
+
+`selection_mode` không cần đụng tới: nó được suy ra là `max` cho mọi metric có tên
+**không chứa** chuỗi `loss` (`:501`).
 
 ## ⚠ Freeze-list mồ côi
 ```python
