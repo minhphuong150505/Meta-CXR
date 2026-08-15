@@ -626,3 +626,78 @@ loss = loss_fn(logits, true_labels)
 
 print(f"Loss with class weighting: {loss.item()}")
 """
+
+
+class MentionGateLoss(nn.Module):
+    """"Will the report mention this finding at all?", one binary head per label.
+
+    This is the only consumer of the 79.5% of the CheXpert matrix that is blank.
+    Everything else masks those cells out, which is correct for a Positive /
+    Negative / Uncertain question -- a blank is not a negative -- but it leaves
+    the model unable to say "I have nothing to report here". Forced to pick one
+    of three classes for all fourteen findings on every image, it emitted an
+    average of 10.8 positives per study on the test split, and called every
+    single study `No Finding = Positive` while simultaneously flagging 8.8 other
+    findings on it.
+
+    ``pos_weights`` carries (n_not_mentioned / n_mentioned) x kappa per label, so
+    a wrongly silent gate -- the model hiding a finding the radiologist wrote
+    about -- costs kappa times a gate that speaks up unnecessarily. The cap
+    matters as much as the weights: three labels are mentioned so rarely that
+    their raw ratio is 26-79, and applying that unclipped just moves the
+    degenerate "always the majority class" behaviour into the gate.
+
+    ``sample_mask`` drops studies that matched no CheXpert record. Their blank
+    pattern is unknown, not empty, and training them as fourteen zeros would
+    teach the gate to stay silent on exactly the rows with no supervision.
+    """
+
+    def __init__(self, num_abnormalities=14, pos_weights=None, weight_cap=10.0):
+        super().__init__()
+        self.num_abnormalities = num_abnormalities
+        if pos_weights is None:
+            weights = torch.ones(num_abnormalities)
+        else:
+            if len(pos_weights) != num_abnormalities:
+                raise ValueError(
+                    f"pos_weights must hold one value per abnormality: "
+                    f"got {len(pos_weights)} for {num_abnormalities}"
+                )
+            weights = torch.tensor([float(w) for w in pos_weights])
+            if (weights <= 0).any():
+                raise ValueError("pos_weights must be positive")
+            weights = weights.clamp(max=float(weight_cap))
+        self.register_buffer("pos_weight", weights)
+
+    def forward(self, logits, targets, sample_mask=None):
+        if logits.shape != targets.shape:
+            raise ValueError(
+                f"gate logit/target shape mismatch: {tuple(logits.shape)} vs "
+                f"{tuple(targets.shape)}"
+            )
+        if logits.shape[1] != self.num_abnormalities:
+            raise ValueError(
+                f"expected {self.num_abnormalities} abnormalities, got {logits.shape[1]}"
+            )
+
+        if sample_mask is None:
+            sample_mask = torch.ones(
+                logits.shape[0], dtype=torch.bool, device=logits.device
+            )
+        else:
+            sample_mask = torch.as_tensor(
+                sample_mask, dtype=torch.bool, device=logits.device
+            ).reshape(-1)
+            if sample_mask.numel() != logits.shape[0]:
+                raise ValueError("sample_mask must contain one value per batch item")
+        if not sample_mask.any():
+            # Keep the zero connected to the graph for backward/DDP.
+            return logits.sum() * 0.0
+
+        per_cell = F.binary_cross_entropy_with_logits(
+            logits[sample_mask],
+            targets[sample_mask].to(logits.dtype),
+            pos_weight=self.pos_weight.to(logits.dtype),
+            reduction="none",
+        )
+        return per_cell.mean()

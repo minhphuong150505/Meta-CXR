@@ -82,6 +82,73 @@ model:
     # studies and make the label learnable, at the cost of inventing labels the
     # export does not contain. Set this to [] to train it as-is instead.
     excluded_labels: ["No Finding"]
+    # ⚠ excluded_labels applies to the CLASSIFICATION head only. The mention
+    # gate below still covers No Finding, and deliberately: "was No Finding
+    # mentioned" is "did the radiologist call this study normal", 74,305 vs
+    # 148,453 -- a well-posed binary, unlike its P/N split which has no
+    # negatives at all.
+    #
+    # GATE WEIGHTS: w = (n_not_mentioned / n_mentioned) x kappa_gate, kappa 2,
+    # capped at 10. kappa 2 makes the gate wrongly silent -- the model hiding a
+    # finding the radiologist did write about -- cost twice a gate that speaks
+    # up needlessly. The cap is not cosmetic: five labels have raw ratios of
+    # 17-157 and applying those unclipped just relocates "always answer the
+    # majority class" into the gate. Measured on train, 2026-08-15.
+    gate_class_weights:
+      -  3.996   # No Finding                 mentioned  74,305 / not 148,453
+      - 10.000   # Enlarged Cardiomediastinum     21,219 / 201,539  raw 19.00 CAPPED
+      -  4.845   # Cardiomegaly                   65,084 / 157,674
+      -  5.841   # Lung Opacity                   56,818 / 165,940
+      - 10.000   # Lung Lesion                     8,046 / 214,712  raw 53.37 CAPPED
+      -  4.961   # Edema                          64,003 / 158,755
+      - 10.000   # Consolidation                  22,479 / 200,279  raw 17.82 CAPPED
+      -  5.709   # Pneumonia                      57,794 / 164,964
+      -  5.919   # Atelectasis                    56,261 / 166,497
+      -  6.478   # Pneumothorax                   52,548 / 170,210
+      -  3.241   # Pleural Effusion               85,013 / 137,745
+      - 10.000   # Pleural Other                   2,802 / 219,956  raw 157.0 CAPPED
+      - 10.000   # Fracture                        5,708 / 217,050  raw 76.05 CAPPED
+      -  4.502   # Support Devices                68,520 / 154,238
+    # CLASSIFICATION WEIGHTS: [w_negative, w_positive, w_uncertain].
+    # w_positive = (n_negative / n_positive) x kappa, capped at 10.
+    #
+    # The (n_neg/n_pos) part is FULL inverse frequency, not the square root the
+    # previous values used. sqrt deliberately under-corrects, and the residual
+    # was not small: it left 12 of 14 labels pushing toward Positive, by up to
+    # 5.36x for Atelectasis, and the measured specificity tracked it almost
+    # monotonically -- Atelectasis 0.000, Support Devices 0.000, Lung Opacity
+    # 0.017, against 0.675 for Edema whose ratio was already 1.02. Full inverse
+    # frequency brings every label to 1.00 before any clinical preference is
+    # applied.
+    #
+    # kappa is that clinical preference: how much worse a miss is than a false
+    # alarm. It is a medical judgement, not a tuning knob, and this table is a
+    # PROPOSAL that needs a clinician's sign-off before any published claim.
+    #   kappa 4  Pneumothorax
+    #   kappa 3  Pneumonia, Edema, Consolidation
+    #   kappa 2  Pleural Effusion, Cardiomegaly, Atelectasis, Lung Lesion,
+    #            Fracture, Pleural Other
+    #   kappa 1  Support Devices, Lung Opacity, Enlarged Cardiomediastinum
+    #
+    # ⚠ kappa does not create skill. AUROC is fixed at 0.7776; kappa only picks
+    # an operating point on that curve, trading specificity for sensitivity.
+    # What may actually improve the model here is the gate, which puts the 79.5%
+    # blank share of the label matrix to work for the first time.
+    class_weights:
+      - [1.0,  1.000, 1.000]  # No Finding -- excluded from this head entirely
+      - [1.0,  0.742, 0.569]  # Enlarged Cardiomediastinum  k=1
+      - [1.0,  0.716, 2.660]  # Cardiomegaly                k=2
+      - [1.0,  0.060, 0.803]  # Lung Opacity                k=1
+      - [1.0,  0.276, 0.755]  # Lung Lesion                 k=2
+      - [1.0,  2.890, 1.967]  # Edema                       k=3
+      - [1.0,  2.239, 1.867]  # Consolidation               k=3
+      - [1.0,  4.456, 1.343]  # Pneumonia                   k=3
+      - [1.0,  0.067, 0.150]  # Atelectasis                 k=2
+      - [1.0, 10.000, 10.000] # Pneumothorax  k=4, raw 16.23 CAPPED -> eff k 2.46
+      - [1.0,  1.009, 4.720]  # Pleural Effusion            k=2
+      - [1.0,  0.130, 0.170]  # Pleural Other               k=2
+      - [1.0,  0.410, 1.600]  # Fracture                    k=2
+      - [1.0,  0.053, 10.000] # Support Devices             k=1
     distill_temperature: 2.0
     text_dropout: 0.2
     # Ambiguous pairs are not reliable positive/negative targets.
@@ -142,6 +209,9 @@ model:
     # explanation trade-off (Fig. 4). Warmup below keeps it at 0 for epochs
     # [0]-[1] so the classification head settles first.
     lambda_explanation: 0.25
+    # Mention gate. 0.0 disables it entirely (no gradient reaches the heads,
+    # though they are still built so the parameter set is stable).
+    lambda_gate: 0.5
     # Only read when lambda_itc > 0; inert under the classification-only recipe.
     # Kept so re-enabling ITC does not also require rediscovering this value.
     itc_queue_size: 1024

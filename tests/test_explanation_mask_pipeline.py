@@ -286,6 +286,8 @@ def test_no_cache_configuration_keeps_new_keys_out_of_getitem(report_dataset_mod
     dataset.studies = [{"anchor": 0, "aux": []}]
     dataset.annotation = pd.DataFrame([row])
     dataset.chexpert_cols = label_columns
+    # __new__ skips __init__, so stub what the chexpert block would have set.
+    dataset.mention_cols = []
     dataset.img_ids = {"synthetic-image": 0}
     dataset.multi_view = False
     dataset.explanation_mask_cache_dir = None
@@ -319,6 +321,8 @@ def test_cache_configuration_emits_expected_shapes_and_dtypes(report_dataset_mod
     dataset.studies = [{"anchor": 0, "aux": []}]
     dataset.annotation = pd.DataFrame([row])
     dataset.chexpert_cols = label_columns
+    # __new__ skips __init__, so stub what the chexpert block would have set.
+    dataset.mention_cols = []
     dataset.img_ids = {"synthetic-image": 0}
     dataset.multi_view = False
     dataset.feature_cache = None

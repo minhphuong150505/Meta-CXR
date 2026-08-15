@@ -336,6 +336,21 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.chexpert["_has_chexpert_label_raw"] = (
             self.chexpert[self.chexpert_cols].notna().any(axis=1)
         )
+        # Mention-gate targets: "did the report mention this finding at all?",
+        # one per abnormality. Taken here, BEFORE blanks become IGNORE_LABEL and
+        # before excluded_labels are masked, because the whole point of the gate
+        # is to learn the blank pattern that everything downstream throws away.
+        # 79.5% of the label matrix is blank and currently produces no gradient;
+        # this is its only consumer.
+        #
+        # `No Finding` is deliberately still covered here even though it is
+        # excluded from the classification head: "was No Finding mentioned" is
+        # "did the radiologist call this study normal", which has 74,305
+        # positives and 148,453 negatives and is perfectly well posed -- unlike
+        # its Positive/Negative split, which has no negatives at all.
+        self.mention_cols = [f"_mention_{c}" for c in self.chexpert_cols]
+        for column, target in zip(self.chexpert_cols, self.mention_cols):
+            self.chexpert[target] = self.chexpert[column].notna().astype("int8")
         # CE uses 0=negative, 1=positive, 2=uncertain, and IGNORE_LABEL for a
         # blank cell.
         #
@@ -494,6 +509,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         labels = self.chexpert[
             label_key
             + self.chexpert_cols
+            + self.mention_cols
             + ["_has_chexpert_label_raw", "_has_usable_label"]
         ]
         self.annotation = self.annotation.merge(
@@ -523,6 +539,14 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         # must not read back as negatives either.
         self.annotation[self.chexpert_cols] = (
             self.annotation[self.chexpert_cols].fillna(IGNORE_LABEL).astype("int8")
+        )
+        # A study that matched no CheXpert record tells us nothing about what
+        # the report mentioned, so it must not train the gate as fourteen
+        # zeros. That is a different question from classification_valid, which
+        # asks whether any usable P/N/U cell survived.
+        self.annotation["mention_valid"] = self.annotation["_chexpert_merge"].eq("both")
+        self.annotation[self.mention_cols] = (
+            self.annotation[self.mention_cols].fillna(0).astype("int8")
         )
         self.annotation = self.annotation.drop(
             columns=[
@@ -1046,6 +1070,12 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             "classification_labels": torch.tensor(chexpert_labels, dtype=torch.long),  # Convert to tensor
             "classification_mask": torch.tensor(
                 bool(ann["classification_valid"]), dtype=torch.bool
+            ),
+            "mention_targets": torch.tensor(
+                ann[self.mention_cols].values.astype("float32"), dtype=torch.float
+            ),
+            "mention_mask": torch.tensor(
+                bool(ann.get("mention_valid", False)), dtype=torch.bool
             ),
             "generation_mask": torch.tensor(bool(ann["target_valid"]), dtype=torch.bool),
             "dicom_id": ann["dicom_id"],

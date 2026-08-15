@@ -328,6 +328,16 @@ class AbnormalityClassificationModel(nn.Module):
             for _ in range(num_abnormalities)
         ])
 
+        # Mention gate: one binary head per abnormality, reading the same pooled
+        # expert representation as the classifier. It answers "will the report
+        # mention this finding at all?", which is what lets the model stay
+        # silent instead of being forced into Positive/Negative/Uncertain on the
+        # 79.5% of cells the radiologist never wrote about. Those cells produce
+        # no gradient today; this head is the only consumer of them.
+        self.mention_heads = nn.ModuleList([
+            nn.Linear(embed_dim, 1) for _ in range(num_abnormalities)
+        ])
+
         self.expert_loss = AbnormalitySpecificLoss(
             temperature=0.05,
             margin=0.5,
@@ -554,7 +564,17 @@ class AbnormalityClassificationModel(nn.Module):
             # combined_features = torch.cat([expert_tokens.flatten(1), pooled_representations[:, i, :]], dim=1)  # Shape: [batch_size, embed_dim * (num_tokens + 1)]
             # logits.append(self.classifiers[i](combined_features))
         logits = torch.stack(logits, dim=1)  # Shape: [batch_size, num_abnormalities, num_classes]
-        
-            
-        return logits, attention_weights_list, contrastive_loss, orth_loss, sparsity_loss
+        mention_logits = torch.cat(
+            [head(pooled_representations[:, i]) for i, head in enumerate(self.mention_heads)],
+            dim=1,
+        )  # [B, num_abnormalities]
+
+        return (
+            logits,
+            attention_weights_list,
+            contrastive_loss,
+            orth_loss,
+            sparsity_loss,
+            mention_logits,
+        )
         

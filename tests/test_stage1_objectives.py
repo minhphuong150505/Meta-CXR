@@ -144,13 +144,13 @@ def test_mhcac_text_is_teacher_only_and_student_shape_matches_inference():
     handle = model.attention_layers[0].expert_to_text_attention.register_forward_hook(
         lambda *args: text_attention_calls.append(True)
     )
-    student_logits, _, contrastive, orthogonal, sparse = model(
+    student_logits, _, contrastive, orthogonal, sparse, _ = model(
         shared,
         text_embeddings=None,
         labels=labels,
     )
     assert text_attention_calls == []
-    teacher_logits, _, _, _, _ = model(
+    teacher_logits, _, _, _, _, _ = model(
         shared,
         text_embeddings=text_embeddings,
         labels=labels,
