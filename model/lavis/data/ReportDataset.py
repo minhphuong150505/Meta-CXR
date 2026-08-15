@@ -548,11 +548,28 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.annotation[self.mention_cols] = (
             self.annotation[self.mention_cols].fillna(0).astype("int8")
         )
+        # Hand the gate targets to __getitem__ as a plain [N, 14] array indexed
+        # by row position, and drop the columns again.
+        #
+        # This is not premature optimisation. Leaving them in the DataFrame took
+        # __getitem__ from 42.5 ms to 687 ms per study -- 16x -- because
+        # `self.annotation.iloc[i]` on a mixed-dtype frame has to consolidate
+        # every block into one object Series, so the cost scales with the column
+        # count and adding fourteen int8 columns fell off a pandas cliff. It cut
+        # the loader from 92.9 studies/s to roughly 17 and put GPU utilisation
+        # back down to 15%, which is how it was found. Measured 2026-08-15.
+        self._mention_matrix = self.annotation[self.mention_cols].to_numpy(
+            dtype="float32", copy=True
+        )
+        self._mention_valid = self.annotation["mention_valid"].to_numpy(
+            dtype=bool, copy=True
+        )
         self.annotation = self.annotation.drop(
             columns=[
                 "_has_chexpert_label_raw",
                 "_has_usable_label",
                 "_chexpert_merge",
+                *self.mention_cols,
                 *(["_has_chexpert_label_processed"] if has_processed_label_flag else []),
             ]
         ).reset_index(drop=True)
@@ -1071,11 +1088,11 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             "classification_mask": torch.tensor(
                 bool(ann["classification_valid"]), dtype=torch.bool
             ),
-            "mention_targets": torch.tensor(
-                ann[self.mention_cols].values.astype("float32"), dtype=torch.float
+            "mention_targets": torch.from_numpy(
+                self._mention_matrix[study["anchor"]].copy()
             ),
             "mention_mask": torch.tensor(
-                bool(ann.get("mention_valid", False)), dtype=torch.bool
+                bool(self._mention_valid[study["anchor"]]), dtype=torch.bool
             ),
             "generation_mask": torch.tensor(bool(ann["target_valid"]), dtype=torch.bool),
             "dicom_id": ann["dicom_id"],

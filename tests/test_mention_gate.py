@@ -9,6 +9,8 @@ wrote about. Measured consequence on the test split before this head existed:
 Each failure mode here is silent -- the loss stays finite and falls either way.
 """
 
+import inspect
+
 import pytest
 import torch
 
@@ -92,3 +94,30 @@ def test_gate_head_emits_one_logit_per_abnormality():
     assert mention_logits.shape == (2, 14)
     mention_logits.sum().backward()
     assert model.mention_heads[0].weight.grad is not None
+
+
+def test_gate_targets_are_not_left_in_the_dataframe():
+    """Fourteen extra columns cost 16x per __getitem__, so they must be dropped.
+
+    `self.annotation.iloc[i]` on a mixed-dtype frame consolidates every block
+    into one object Series, so its cost scales with the column count. Adding the
+    fourteen int8 mention columns took a study from 42.5 ms to 687 ms, cut the
+    loader from 92.9 studies/s to about 17, and put GPU utilisation back to 15%
+    -- with no error anywhere, just a run four times longer than it should be.
+    The targets live in a positional numpy array instead.
+    """
+    pytest.importorskip("torchvision")
+    try:
+        from model.lavis.data.ReportDataset import MIMIC_CXR_Dataset
+    except Exception as exc:  # private configs/env_config.yaml
+        pytest.skip(f"ReportDataset not importable here ({type(exc).__name__})")
+
+    source = inspect.getsource(MIMIC_CXR_Dataset.__init__)
+    assert "*self.mention_cols," in source, (
+        "mention columns must be dropped from self.annotation after the matrix "
+        "is built; leaving them in is a silent 16x slowdown"
+    )
+    assert "_mention_matrix" in source
+    item = inspect.getsource(MIMIC_CXR_Dataset.__getitem__)
+    assert "self._mention_matrix[" in item, "read the array, not the DataFrame row"
+    assert "ann[self.mention_cols]" not in item
