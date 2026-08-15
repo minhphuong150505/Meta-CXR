@@ -287,7 +287,11 @@ def test_no_cache_configuration_keeps_new_keys_out_of_getitem(report_dataset_mod
     dataset.annotation = pd.DataFrame([row])
     dataset.chexpert_cols = label_columns
     # __new__ skips __init__, so stub what the chexpert block would have set.
+    # The gate targets are a positional array, not DataFrame columns -- keeping
+    # them in the frame cost 16x per __getitem__.
     dataset.mention_cols = []
+    dataset._mention_matrix = np.zeros((1, len(label_columns)), dtype="float32")
+    dataset._mention_valid = np.zeros(1, dtype=bool)
     dataset.img_ids = {"synthetic-image": 0}
     dataset.multi_view = False
     dataset.explanation_mask_cache_dir = None
@@ -322,7 +326,11 @@ def test_cache_configuration_emits_expected_shapes_and_dtypes(report_dataset_mod
     dataset.annotation = pd.DataFrame([row])
     dataset.chexpert_cols = label_columns
     # __new__ skips __init__, so stub what the chexpert block would have set.
+    # The gate targets are a positional array, not DataFrame columns -- keeping
+    # them in the frame cost 16x per __getitem__.
     dataset.mention_cols = []
+    dataset._mention_matrix = np.zeros((1, len(label_columns)), dtype="float32")
+    dataset._mention_valid = np.zeros(1, dtype=bool)
     dataset.img_ids = {"synthetic-image": 0}
     dataset.multi_view = False
     dataset.feature_cache = None
