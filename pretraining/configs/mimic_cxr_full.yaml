@@ -218,20 +218,61 @@ model:
     lambda_sparsity: 0.3
     lambda_mpc: 0.1
     lambda_view_consistency: 0.05
-    # The loss weight is the sole enable/disable gate.  There is deliberately no
-    # separate explanation.enabled key that could disagree with this value.
+    # TWO explanation terms, split 2026-08-16 because they are not the same
+    # kind of evidence and must not carry the same weight.
     #
-    # ON as of 2026-08-14, once the cache existed and the cost was measured.
-    # alpha = 0.25 is the value Faruqui & Dubey report as the best accuracy /
-    # explanation trade-off (Fig. 4). Warmup below keeps it at 0 for epochs
-    # [0]-[1] so the classification head settles first.
-    lambda_explanation: 0.25
+    #   lambda_explanation        WEAK. One pooled CAM per study against a
+    #     CheXmask LUNG mask. The mask is anatomical and identical for all
+    #     fourteen findings, so the only claim it supports is "the model looks
+    #     inside the lungs". Covers ~93% of studies.
+    #
+    #   lambda_explanation_strong STRONG. One CAM per (study, finding) against
+    #     an MS-CXR expert BOX drawn around that named finding. The only term
+    #     that supports "the model looks at the pathology". Covers 823 train
+    #     and 138 test studies.
+    #
+    # Either being > 0 enables the module; both 0 disables it entirely,
+    # including CAM capture. There is deliberately no separate
+    # explanation.enabled key that could disagree with these.
+    #
+    # 0.25 for the strong term is the alpha Faruqui & Dubey report as the best
+    # accuracy/explanation trade-off (Fig. 4). The weak term is held to 0.05 so
+    # the plentiful anatomical prior cannot drown the scarce expert signal --
+    # before the split, one lambda of 0.25 applied to the pooled term only, and
+    # the strong term did not exist.
+    #
+    # NOT YET RUN ON GPU in this configuration.
+    lambda_explanation: 0.05
+    lambda_explanation_strong: 0.25
     # Mention gate. 0.0 disables it entirely (no gradient reaches the heads,
     # though they are still built so the parameter set is stable).
     lambda_gate: 0.5
     # Only read when lambda_itc > 0; inert under the classification-only recipe.
     # Kept so re-enabling ITC does not also require rediscovering this value.
     itc_queue_size: 1024
+
+  view_consistency:
+    # Soft/conditional agreement between the fused and anchor-only predictions.
+    # `lambda_view_consistency` above still gates the whole term; these two knobs
+    # only change its SHAPE.
+    #
+    # The original form was an unconditional symmetric KL, on the premise that
+    # "adding views must not change which abnormalities are predicted". That
+    # premise is wrong here: a lateral view exists to show what the frontal
+    # cannot, and 55.3% of train studies (121,738 of 220,216) have one. The old
+    # term charged the model for using the second view at all.
+    #
+    # margin: divergence below this is free. Small re-weighting is normal; only
+    #   an actual flip should cost. 0.0 restores the old unconditional form.
+    # confidence_gate: waive the penalty where fusing made the prediction MORE
+    #   confident (lower entropy) than anchor-only. Sharpening is what new
+    #   evidence looks like; smearing is what noise looks like. The gate is
+    #   detached, so the model cannot minimise the term by gaming the gate.
+    #
+    # NOT YET RUN ON GPU. Both values are proposals, not measurements.
+    margin: 0.05
+    confidence_gate: true
+    gate_tolerance: 0.0
 
   explanation:
     # COST OF THIS TERM: +10.5% wall, +174 MiB.
@@ -262,7 +303,11 @@ model:
     #
     # At batch 16 with the fixed data path a 10-epoch run is ~9.0 h wall
     # (measured: epochs average 55 min with this term on, 49 min without).
-    top_k: 0.5
+    # top_k = fraction of CAM mass held to the mask. The weak lung mask is a
+    # broad anatomical prior, so it constrains only the most salient activation
+    # (0.2); the strong box is specific and constrains half the mass (0.5).
+    top_k: 0.2            # weak / pooled, CheXmask lung
+    strong_top_k: 0.5     # strong / per-pathology, MS-CXR box
     # Epoch indices [0]-[1] are zero; [2]-[3] ramp; [4]+ use the full weight.
     warmup_start_epoch: 2
     warmup_epochs: 2

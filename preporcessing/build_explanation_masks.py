@@ -36,6 +36,7 @@ CHEXMASK_COLUMNS = (
 )
 MS_CXR_COLUMNS = (
     "dicom_id",
+    "category_name",
     "x",
     "y",
     "w",
@@ -45,6 +46,30 @@ MS_CXR_COLUMNS = (
     "split",
 )
 PROJECT_SPLITS = ("train", "val", "test")
+# Must stay identical to `chexpert_cols` in blip2_qformer.py: the per-pathology
+# cache is keyed by POSITION in this tuple, so a reordering here silently
+# supervises the wrong finding.
+CHEXPERT_LABELS = (
+    "No Finding", "Enlarged Cardiomediastinum", "Cardiomegaly", "Lung Opacity",
+    "Lung Lesion", "Edema", "Consolidation", "Pneumonia", "Atelectasis",
+    "Pneumothorax", "Pleural Effusion", "Pleural Other", "Fracture",
+    "Support Devices",
+)
+_LABEL_INDEX = {name.lower(): index for index, name in enumerate(CHEXPERT_LABELS)}
+
+
+def category_to_label_index(category_name: object) -> int | None:
+    """Map an MS-CXR category to a CheXpert column, or None if it has none.
+
+    MS-CXR v1.1.0 uses eight categories, all of which are CheXpert findings.
+    Anything unmapped is skipped rather than guessed: a box attached to the
+    wrong column would teach the model to look at the wrong place, which is
+    worse than no supervision at all.
+    """
+    if category_name is None:
+        return None
+    key = str(category_name).strip().lower()
+    return _LABEL_INDEX.get(key)
 MASK_SIZE = (112, 112)
 DEFAULT_CHEXMASK_CSV = Path(
     "/mnt/drive1tb/datasets/chexmask/MIMIC-CXR-JPG.csv"
@@ -474,6 +499,14 @@ def build_mask_caches(
         split_name: output_dir / f".index_{split_name}.{process_tag}.tmp.json"
         for split_name in selected_splits
     }
+    temp_bbox_masks = {
+        split_name: output_dir / f".masks_bbox_{split_name}.{process_tag}.npy"
+        for split_name in selected_splits
+    }
+    temp_bbox_indices = {
+        split_name: output_dir / f".index_bbox_{split_name}.{process_tag}.tmp.json"
+        for split_name in selected_splits
+    }
     arrays: dict[str, np.memmap] = {}
     sources: dict[str, int] = {}
     lung_available: set[str] = set()
@@ -497,13 +530,39 @@ def build_mask_caches(
         # Aborting the whole 228k-study build over one study is the wrong
         # trade; fall back to that study's lung mask and report the count.
         bbox_cropped_away = 0
+        # Per-(study, finding) boxes, kept separate from the pooled union above.
+        # The pooled mask answers "is the model inside any annotated region";
+        # these answer "is the model on THIS finding", which is the only
+        # question an expert box can actually settle.
+        per_label_masks: dict[str, list[tuple[str, int, np.ndarray]]] = {
+            split_name: [] for split_name in selected_splits
+        }
+        unmapped_categories: dict[str, int] = {}
+        per_label_cropped_away = 0
         for dicom_id, rows in ms_groups.items():
+            split_name, row = target_locations[dicom_id]
+
+            for category, category_rows in rows.groupby("category_name", sort=False):
+                label_index = category_to_label_index(category)
+                if label_index is None:
+                    key = str(category)
+                    unmapped_categories[key] = unmapped_categories.get(key, 0) + 1
+                    continue
+                cached_label = transform_mask_geometry(
+                    rasterize_bbox_union(category_rows)
+                )
+                if not cached_label.any():
+                    per_label_cropped_away += 1
+                    continue
+                per_label_masks[split_name].append(
+                    (dicom_id, label_index, cached_label)
+                )
+
             bbox_mask = rasterize_bbox_union(rows)
             cached_bbox = transform_mask_geometry(bbox_mask)
             if not cached_bbox.any():
                 bbox_cropped_away += 1
                 continue
-            split_name, row = target_locations[dicom_id]
             arrays[split_name][row] = cached_bbox
             sources[dicom_id] = 1
             bbox_available.add(dicom_id)
@@ -511,6 +570,18 @@ def build_mask_caches(
             "MS-CXR studies whose boxes fell outside the centre crop "
             f"(fell back to the lung mask): {bbox_cropped_away} / {len(ms_groups)}"
         )
+        print(
+            "MS-CXR per-finding boxes cropped away: "
+            f"{per_label_cropped_away}"
+        )
+        if unmapped_categories:
+            print(
+                "MS-CXR categories with no CheXpert column (skipped): "
+                + ", ".join(
+                    f"{name} x{count}"
+                    for name, count in sorted(unmapped_categories.items())
+                )
+            )
 
         dtype = {
             "dicom_id": "string",
@@ -608,10 +679,49 @@ def build_mask_caches(
                 f"no_mask={no_mask_count}"
             )
 
+        # Per-pathology MS-CXR cache. Written as a SECOND pair of files rather
+        # than folded into the index above, so a checkpoint trained before this
+        # existed still loads the pooled cache unchanged, and so the strong term
+        # can be disabled by simply not shipping these two files.
+        for split_name in selected_splits:
+            entries = per_label_masks[split_name]
+            bbox_array = np.lib.format.open_memmap(
+                temp_bbox_masks[split_name],
+                mode="w+",
+                dtype=np.uint8,
+                shape=(len(entries), *MASK_SIZE),
+            )
+            bbox_index: dict[str, dict[str, int]] = {}
+            for cache_row, (dicom_id, label_index, mask) in enumerate(entries):
+                bbox_array[cache_row] = mask
+                bbox_index[f"{dicom_id}:{label_index}"] = {
+                    "row": cache_row,
+                    "label_index": int(label_index),
+                }
+            bbox_array.flush()
+            del bbox_array
+            _safe_json_dump(bbox_index, temp_bbox_indices[split_name])
+            stats[split_name]["bbox_label_pairs"] = len(entries)
+            stats[split_name]["bbox_label_studies"] = len(
+                {dicom_id for dicom_id, _, _ in entries}
+            )
+            print(
+                f"[{split_name}] per-finding boxes: {len(entries)} pairs over "
+                f"{stats[split_name]['bbox_label_studies']} studies"
+            )
+
         arrays.clear()
         for split_name in selected_splits:
             os.replace(compact_masks[split_name], output_dir / f"masks_{split_name}.npy")
             os.replace(temp_indices[split_name], output_dir / f"index_{split_name}.json")
+            os.replace(
+                temp_bbox_masks[split_name],
+                output_dir / f"masks_bbox_{split_name}.npy",
+            )
+            os.replace(
+                temp_bbox_indices[split_name],
+                output_dir / f"index_bbox_{split_name}.json",
+            )
         return stats
     finally:
         arrays.clear()
@@ -619,6 +729,8 @@ def build_mask_caches(
             *temp_masks.values(),
             *compact_masks.values(),
             *temp_indices.values(),
+            *temp_bbox_masks.values(),
+            *temp_bbox_indices.values(),
         ):
             if path.exists():
                 path.unlink()

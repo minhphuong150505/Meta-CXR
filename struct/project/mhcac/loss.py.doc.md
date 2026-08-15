@@ -76,9 +76,33 @@ ngược vào teacher. `temperature` từ `mhcac.distill_temperature` (prod: 2.0
 Kéo các view **của cùng một study** lại gần nhau. `temperature=0.07`. Chỉ chạy khi
 `multi_view` bật và batch có aux thật.
 
-### `view_consistency_loss(fused_logits, anchor_logits, has_aux)`
-Ép dự đoán từ bản đã fuse gần với dự đoán chỉ-anchor. Ngăn fusion làm lệch kết quả
-một cách tùy tiện. `has_aux` giới hạn về đúng những study có aux.
+### `view_consistency_loss(fused_logits, anchor_logits, has_aux, margin=0.0, confidence_gate=False, gate_tolerance=0.0)`
+
+Kéo dự đoán đã fuse về gần dự đoán chỉ-anchor, **có điều kiện**. `has_aux` giới
+hạn về đúng những study có aux view.
+
+⚠ **Tiền đề cũ đã bị bác bỏ 2026-08-16.** Docstring gốc biện minh rằng "thêm view
+không được làm đổi *những* bất thường nào được dự đoán". Điều đó sai với bộ dữ
+liệu này: view lateral tồn tại chính là để cho thấy thứ view frontal không thấy,
+và 55.3% study train (121,738 / 220,216) có aux view. Dạng symmetric KL vô điều
+kiện phạt mô hình vì đã *dùng* view thứ hai.
+
+Hai knob nới nó ra, **cả hai mặc định tắt** để tái lập được hành vi cũ cho ablation:
+
+| Knob | Ý nghĩa |
+|---|---|
+| `margin` | Hinge: phân kỳ dưới ngưỡng này không tốn gì. Trôi nhẹ là tái cân bằng bình thường, chỉ lật thật mới bị tính. |
+| `confidence_gate` | Miễn phạt ở ô mà bản fuse **tự tin hơn** (entropy thấp hơn) so với anchor quá `gate_tolerance` nat. Sắc nét lại là dấu hiệu của bằng chứng mới; nhoè đi là dấu hiệu của nhiễu. |
+
+★ **Gate được `.detach()`.** Nó chỉ chọn *nơi* loss được áp, không được mang
+gradient — nếu không, mô hình có thể tối thiểu hoá term bằng cách thao túng gate
+thay vì sửa dự đoán.
+
+Với `margin=0.0, confidence_gate=False` hàm trả về **đúng** giá trị cũ; pinned bởi
+`tests/test_multiview_losses.py::test_view_consistency_defaults_reproduce_legacy_value`.
+
+Config: `model.view_consistency.{margin, confidence_gate, gate_tolerance}`.
+Prod dùng `margin: 0.05`, `confidence_gate: true` — **chưa chạy trên GPU**.
 
 ### `AbnormalitySpecificLoss`
 Ba loss phụ giữ expert token lành mạnh:

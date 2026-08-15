@@ -80,7 +80,7 @@ thuộc `vision_encoders/` (nhận `SharedVisualTokens` như một duck-typed ob
 | `tests/test_stage1_objectives.py` | `mhcac_12`, `loss` |
 | `tests/test_explanation_loss.py` | `explanation`, `mhcac_12` |
 | `tests/test_view_fusion.py` | `view_fusion` |
-| `tests/test_multiview_losses.py` | `loss.MultiPositiveContrastiveLoss`, `view_consistency_loss` |
+| `tests/test_multiview_losses.py` | `loss.MultiPositiveContrastiveLoss`, `view_consistency_loss` (gồm margin + confidence gate) |
 
 ## Execution flow
 

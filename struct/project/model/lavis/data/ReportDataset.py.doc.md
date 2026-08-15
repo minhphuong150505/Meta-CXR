@@ -81,7 +81,9 @@ Dict sample — xem [DATA_FLOW.md §2.2](../../../_meta/DATA_FLOW.md#22-__getite
 | `_init_feature_cache` (`:546`) | — | Mở store feature cache |
 | `_init_explanation_mask_cache` (`:592`) | — | Đọc JSON index; chưa mở `.npy` |
 | `_get_explanation_mask_memmap` (`:654`) | — | Mở memmap lazy theo PID worker |
-| `_read_explanation_mask` (`:679`) | — | Cache row → mask/valid/source |
+| `_read_explanation_mask` | — | Cache row → mask/valid/source (weak, CheXmask) |
+| `_get_explanation_bbox_memmap` | — | Memmap lazy cho cache bbox theo bệnh |
+| `_read_explanation_bbox_masks` | — | `[(label_index, mask), ...]` cho một study; `[]` nếu không có |
 | `_apply_synced_image_mask_transforms` (`:690`) | — | Một affine cho ảnh bilinear + mask nearest |
 | `load_image` (`:837`), `remap_to_uint8` (`:790`) | — | Đọc ảnh + kéo giãn min–max. ★ **`remap_to_uint8` từng là nút cổ chai của toàn bộ training** — xem bên dưới |
 | `_view_id` (`:495`) | — | `ViewPosition` → int |
@@ -100,6 +102,8 @@ __getitem__(i)
    ├─ _row_visual(anchor)        → image (+ synchronized mask) HOẶC <enc>_feat
    ├─ findings, chexpert labels, classification_mask, generation_mask
    ├─ IF mask cache: explanation_mask [112,112], valid, source
+   │                 explanation_bbox_masks [14,112,112] (dense, phần lớn là 0)
+   │                 explanation_bbox_valid [14] bool
    └─ IF multi_view: _row_visual cho từng aux → "aux_image" (ragged)
 collater(samples)
    ├─ default collate cho key thường
@@ -132,6 +136,8 @@ store · Không ghi gì.
 | DICOM vắng trong feature cache | **`KeyError`** nêu tên DICOM + gợi ý `study_sampling=false` (`:826`) |
 | Cache mask thiếu file/index sai schema/shape | fail-closed trước hoặc ở lần đọc worker đầu |
 | Study không có entry mask | mask zero, `explanation_mask_valid=False` |
+| Cache bbox không tồn tại (cache dựng trước 2026-08-16) | Không lỗi; `explanation_bbox_valid` toàn False, strong term = 0 |
+| `label_index` trong cache bbox ngoài `[0,14)` | `ValueError` |
 | Marker Kaggle cũ `/mimic-cxr-jpg-lite/` | Vẫn hỗ trợ, cắt lấy phần sau |
 | `N_max == 0` | Tensor rỗng `[B,0,…]`, **không** `None` |
 
@@ -294,3 +300,17 @@ Ghim bởi `tests/test_excluded_labels.py`.
 Suy ra âm tính cho `No Finding` từ việc có bất kỳ nhãn dương nào khác. Cách đó
 giữ lại 49.760 study và làm nhãn này học được, nhưng **bịa ra nhãn mà export
 không có**. Đặt `excluded_labels: []` để huấn luyện nguyên trạng cho ablation.
+
+
+## ★ Mask bbox theo bệnh phải đi cùng phép affine của ảnh
+
+`_apply_synced_image_mask_transforms` nhận thêm `extra_masks` và áp **đúng một**
+bộ tham số affine đã lấy mẫu cho ảnh, mask phổi và mọi box. Lấy mẫu riêng sẽ làm
+mọi box trỏ sai chỗ trên chính ảnh của nó, và strong explanation term khi đó
+huấn luyện trên nhiễu mà nhìn vẫn như đang học localization.
+
+Hàm trả về **ba** giá trị `(image, mask, extra_masks)` kể từ 2026-08-16.
+
+`explanation_bbox_masks` được phát dạng dense `[14,112,112]` thay vì list thưa:
+99.6% study không có box nào, nên đây là ~175 KB số 0 mỗi sample, đổi lại
+`default_collate` xếp chồng được mà không cần collator riêng.

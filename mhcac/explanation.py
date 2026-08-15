@@ -29,6 +29,38 @@ def logit_difference_squared(logits, labels, sample_mask=None):
     return score, positive.any(dim=1)
 
 
+def single_label_score(logits, label_index, sample_selector):
+    """(logit_pos - logit_neg)^2 for ONE abnormality, summed over selected rows.
+
+    The pooled :func:`logit_difference_squared` sums every positive finding into
+    a single scalar, so its Grad-CAM answers "where is the evidence for anything
+    this study has?". That is the right question for a lung prior and the wrong
+    one for an expert box, which is drawn around one named finding. Taking the
+    gradient of this score instead yields a CAM for that finding alone.
+
+    Only the rows in ``sample_selector`` contribute, so one backward pass covers
+    every study in the batch that carries a box for ``label_index``.
+    """
+    if logits.ndim != 3 or logits.shape[-1] < 2:
+        raise ValueError("expected logits [B,A,C] with at least 2 classes")
+    label_index = int(label_index)
+    if not 0 <= label_index < logits.shape[1]:
+        raise ValueError(
+            f"label_index {label_index} outside [0, {logits.shape[1]})"
+        )
+    selector = torch.as_tensor(
+        sample_selector, dtype=torch.bool, device=logits.device
+    ).reshape(-1)
+    if selector.numel() != logits.shape[0]:
+        raise ValueError("sample_selector must contain one value per batch item")
+
+    logits_fp32 = logits.float()
+    difference = (
+        logits_fp32[:, label_index, 1] - logits_fp32[:, label_index, 0]
+    )
+    return (difference.square() * selector.to(difference.dtype)).sum()
+
+
 def _cam_from_gradients(activations, gradients, grid_hw):
     height, width = (int(grid_hw[0]), int(grid_hw[1]))
     if height <= 0 or width <= 0:
@@ -96,39 +128,61 @@ def resize_mask_to_grid(mask, grid_hw):
 
 
 class ExplanationLoss(nn.Module):
-    def __init__(self, top_k=0.5):
+    """Two explanation terms with different evidentiary status.
+
+    ``weak`` — one pooled CAM per study against a CheXmask **lung** mask. The
+    mask is anatomical and identical for all fourteen findings, so the only
+    claim it can support is "the model looks inside the lungs". Broad coverage
+    (~93% of studies).
+
+    ``strong`` — one CAM **per (study, finding)** against an MS-CXR expert
+    **bounding box** drawn around that named finding. This is the only term that
+    can support "the model looks at the pathology". Coverage is tiny: 823 train
+    and 138 test studies.
+
+    They are returned separately, never summed here, because they deserve
+    different weights and because collapsing them would let the plentiful weak
+    signal drown the scarce strong one and still look like it was learning
+    localisation.
+
+    Efficiency: the strong term takes one backward pass per *distinct finding*
+    present among the boxed rows of the batch — typically one or two — not one
+    per abnormality. Studies without a box cost nothing.
+    """
+
+    def __init__(self, top_k=0.5, strong_top_k=None):
         super().__init__()
         if not 0.0 < top_k <= 1.0:
             raise ValueError("top_k must be in (0, 1]")
         self.top_k = float(top_k)
+        strong_top_k = self.top_k if strong_top_k is None else float(strong_top_k)
+        if not 0.0 < strong_top_k <= 1.0:
+            raise ValueError("strong_top_k must be in (0, 1]")
+        self.strong_top_k = strong_top_k
 
-    def forward(self, logits, labels, streams, mask, valid_mask):
-        score, valid = logit_difference_squared(
-            logits, labels, sample_mask=valid_mask
-        )
-        zero = logits.sum() * 0.0
-        if not streams:
-            return zero, {}
-
-        names = []
-        activations = []
-        grids = []
+    @staticmethod
+    def _collect_streams(streams, batch_size):
+        names, activations, grids = [], [], []
         for name, (stream, grid_hw) in streams.items():
-            if stream.shape[0] != logits.shape[0]:
+            if stream.shape[0] != batch_size:
                 raise ValueError(
                     f"stream {name!r} batch size does not match logits"
                 )
             names.append(name)
             activations.append(stream)
             grids.append(grid_hw)
+        return names, activations, grids
 
+    def _weak_term(self, logits, labels, names, activations, grids, mask,
+                   valid_mask, zero):
+        score, valid = logit_difference_squared(
+            logits, labels, sample_mask=valid_mask
+        )
         if not valid.any():
             return zero, {name: zero for name in names}
 
         gradients = torch.autograd.grad(
-            outputs=score.sum(),
-            inputs=activations,
-            create_graph=True,
+            outputs=score.sum(), inputs=activations, create_graph=True
         )
         valid_float = valid.to(dtype=torch.float32)
         valid_count = valid_float.sum()
@@ -140,8 +194,83 @@ class ExplanationLoss(nn.Module):
             grid_mask = resize_mask_to_grid(mask.to(device=cam.device), grid_hw)
             sample_losses = explanation_loss(cam, grid_mask, top_k=self.top_k)
             per_stream[name] = (sample_losses * valid_float).sum() / valid_count
-
         return torch.stack(list(per_stream.values())).mean(), per_stream
+
+    def _strong_term(self, logits, names, activations, grids, bbox_masks,
+                     bbox_valid, zero):
+        """Per-(study, finding) CAM against expert boxes.
+
+        ``bbox_masks``: [B, A, H, W]  ``bbox_valid``: [B, A] bool
+        """
+        if bbox_masks is None or bbox_valid is None:
+            return zero
+        bbox_valid = bbox_valid.to(device=logits.device, dtype=torch.bool)
+        if bbox_valid.shape != logits.shape[:2]:
+            raise ValueError(
+                f"bbox_valid must be [B,A]; got {tuple(bbox_valid.shape)} "
+                f"against logits {tuple(logits.shape[:2])}"
+            )
+        if bbox_masks.shape[:2] != bbox_valid.shape:
+            raise ValueError("bbox_masks and bbox_valid disagree on [B,A]")
+        if not bbox_valid.any():
+            return zero
+
+        # One backward per distinct finding, not per abnormality.
+        label_indices = torch.nonzero(bbox_valid.any(dim=0), as_tuple=False)
+        losses = []
+        weights = []
+        for label_tensor in label_indices.flatten():
+            label_index = int(label_tensor.item())
+            rows = bbox_valid[:, label_index]
+            score = single_label_score(logits, label_index, rows)
+            gradients = torch.autograd.grad(
+                outputs=score, inputs=activations, create_graph=True
+            )
+            rows_float = rows.to(dtype=torch.float32)
+            row_count = rows_float.sum()
+            per_stream = []
+            for stream, gradient, grid_hw in zip(
+                activations, gradients, grids, strict=True
+            ):
+                cam = _cam_from_gradients(stream, gradient, grid_hw)
+                grid_mask = resize_mask_to_grid(
+                    bbox_masks[:, label_index].to(device=cam.device), grid_hw
+                )
+                sample_losses = explanation_loss(
+                    cam, grid_mask, top_k=self.strong_top_k
+                )
+                per_stream.append(
+                    (sample_losses * rows_float).sum() / row_count
+                )
+            losses.append(torch.stack(per_stream).mean())
+            weights.append(row_count)
+
+        if not losses:
+            return zero
+        # Weight each finding by how many boxed studies carried it, so the mean
+        # is over (study, finding) pairs rather than over findings.
+        weight_tensor = torch.stack(weights).to(dtype=torch.float32)
+        return (
+            torch.stack(losses) * weight_tensor
+        ).sum() / weight_tensor.sum()
+
+    def forward(self, logits, labels, streams, mask, valid_mask,
+                bbox_masks=None, bbox_valid=None):
+        """Return ``(weak, strong, per_stream_weak)``."""
+        zero = logits.sum() * 0.0
+        if not streams:
+            return zero, zero, {}
+
+        names, activations, grids = self._collect_streams(
+            streams, logits.shape[0]
+        )
+        weak, per_stream = self._weak_term(
+            logits, labels, names, activations, grids, mask, valid_mask, zero
+        )
+        strong = self._strong_term(
+            logits, names, activations, grids, bbox_masks, bbox_valid, zero
+        )
+        return weak, strong, per_stream
 
 
 def explanation_lambda(epoch, lambda_max, warmup_start_epoch, warmup_epochs):
