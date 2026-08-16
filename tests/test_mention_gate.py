@@ -166,7 +166,7 @@ def test_open_gate_lets_the_classifier_through():
 def test_unmentioned_target_trains_only_the_mention_head():
     conditional = torch.tensor([[[-6.0, 6.0, 0.0]]], requires_grad=True)
     mention = torch.tensor([[-8.0]], requires_grad=True)
-    loss_fn = MentionConditionedClassificationLoss()
+    loss_fn = MentionConditionedClassificationLoss(num_abnormalities=1)
 
     loss = loss_fn(
         conditional,
@@ -187,7 +187,7 @@ def test_unmentioned_target_trains_only_the_mention_head():
 def test_mentioned_positive_trains_both_heads_in_opposite_directions():
     conditional = torch.tensor([[[2.0, -2.0, 0.0]]], requires_grad=True)
     mention = torch.tensor([[-3.0]], requires_grad=True)
-    loss_fn = MentionConditionedClassificationLoss()
+    loss_fn = MentionConditionedClassificationLoss(num_abnormalities=1)
 
     loss = loss_fn(
         conditional,
@@ -207,7 +207,7 @@ def test_ignored_class_still_trains_the_mention_head():
     conditional = torch.tensor([[[1.0, 1.0, 1.0]]], requires_grad=True)
     mention = torch.tensor([[-1.0]], requires_grad=True)
 
-    loss = MentionConditionedClassificationLoss()(
+    loss = MentionConditionedClassificationLoss(num_abnormalities=1)(
         conditional,
         mention,
         labels=torch.tensor([[-100]]),
@@ -229,7 +229,7 @@ def test_marginals_reject_shape_mismatch():
 def test_sample_mask_drops_unlabelled_studies():
     conditional = torch.zeros(2, 1, 3, requires_grad=True)
     mention = torch.zeros(2, 1, requires_grad=True)
-    loss = MentionConditionedClassificationLoss()(
+    loss = MentionConditionedClassificationLoss(num_abnormalities=1)(
         conditional,
         mention,
         labels=torch.tensor([[1], [1]]),
@@ -239,3 +239,56 @@ def test_sample_mask_drops_unlabelled_studies():
     loss.backward()
     assert torch.count_nonzero(mention.grad[1]).item() == 0
     assert torch.count_nonzero(mention.grad[0]).item() > 0
+
+
+def test_wrong_silence_costs_more_than_speaking_up():
+    """Hiding a finding the radiologist DID write about must not be cheap.
+
+    Unweighted, the hierarchy charges both directions identically (1.00x) even
+    though 79.5% of cells are blank, so silence is the majority answer. The
+    separate gate BCE it replaces charged a wrong silence 4-10x more.
+    """
+    cond = torch.zeros(1, 1, 3)
+    silent, spoke = torch.tensor([[-3.0]]), torch.tensor([[3.0]])
+    mentioned, blank = torch.tensor([[1.0]]), torch.tensor([[0.0]])
+    labels = torch.tensor([[-100]])
+
+    flat = MentionConditionedClassificationLoss(num_abnormalities=1)
+    a = flat(cond, silent, labels, mentioned).item()
+    b = flat(cond, spoke, labels, blank).item()
+    assert abs(a / b - 1.0) < 1e-6, "unweighted must stay symmetric"
+
+    weighted = MentionConditionedClassificationLoss(
+        pos_weights=[2.959], num_abnormalities=1
+    )
+    a_w = weighted(cond, silent, labels, mentioned).item()
+    b_w = weighted(cond, spoke, labels, blank).item()
+    assert abs(a_w / b_w - 2.959) < 1e-3, (a_w, b_w)
+    assert abs(b_w - b) < 1e-6, "speaking up must be untouched by the weight"
+
+
+def test_mention_weight_is_capped_and_validated():
+    capped = MentionConditionedClassificationLoss(
+        pos_weights=[50.0], num_abnormalities=1, weight_cap=10.0
+    )
+    assert capped.pos_weight.item() == 10.0
+
+    with pytest.raises(ValueError, match="one value per abnormality"):
+        MentionConditionedClassificationLoss(pos_weights=[1.0, 2.0], num_abnormalities=1)
+    with pytest.raises(ValueError, match="must be positive"):
+        MentionConditionedClassificationLoss(pos_weights=[0.0], num_abnormalities=1)
+
+
+def test_weighting_leaves_the_conditional_class_term_calibrated():
+    """Only the mention term is weighted; q must be untouched."""
+    cond = torch.tensor([[[0.0, 0.0, 0.0]]], requires_grad=True)
+    mention = torch.tensor([[5.0]])          # gate wide open, mention term ~0
+    flat = MentionConditionedClassificationLoss(num_abnormalities=1)(
+        cond, mention, torch.tensor([[1]]), torch.tensor([[1.0]])
+    )
+    weighted = MentionConditionedClassificationLoss(
+        pos_weights=[10.0], num_abnormalities=1
+    )(cond, mention, torch.tensor([[1]]), torch.tensor([[1.0]]))
+    # The class term is identical; only the (tiny) mention term is scaled.
+    assert weighted.item() > flat.item()
+    assert abs((weighted - flat).item()) < 0.1, "class term must not be rescaled"
