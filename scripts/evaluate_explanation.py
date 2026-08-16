@@ -336,12 +336,18 @@ def _compute_batch_cams(model, batch, device, amp_context) -> dict[str, np.ndarr
         streams = None
         model.mhcac.capture_streams = True
         try:
-            logits, _, _, _, _ = model.mhcac(
+            # MHCAC returns six values since the mention gate was added; this
+            # unpacked five and had been broken ever since, unnoticed because
+            # the script had never been run on a GPU. Index rather than unpack,
+            # so the next head added here fails at its own call site instead of
+            # here.
+            mhcac_outputs = model.mhcac(
                 shared_visual,
                 text_embeddings=None,
                 labels=labels,
                 sample_mask=classification_mask,
             )
+            logits = mhcac_outputs[0]
             streams = model.mhcac._last_cam_streams
         finally:
             model.mhcac.capture_streams = False
