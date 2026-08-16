@@ -318,6 +318,22 @@ study (not image) → anchor + ≤1 auxiliary view
   sets `margin: 0.05, confidence_gate: true`, **not yet run on GPU**.
 - `mhcac/loss.py` holds every loss; `ClassificationLoss` takes a `sample_mask` so
   unlabelled rows contribute nothing. `soft_target_kl_loss` detaches the teacher.
+- **`lambda_mpc` was a constant for an entire run, and is now live.**
+  `MultiPositiveContrastiveLoss` read tensors stashed *before* the only trainable
+  module — raw frozen-encoder output, with the auxiliary branch under
+  `torch.no_grad()` — so it had no parameter upstream and no gradient. Measured
+  across four epochs: **3.9929 / 3.9949 / 3.9941 / 3.9943**, carrying 0.1 of the
+  loss weight and ~22% of the reported total while teaching nothing. A per-encoder
+  residual `StreamAdapter` (`vision_encoders/stream_adapter.py`) now sits between
+  the frozen encoder and the stash point, applied to anchor and every auxiliary
+  view, zero-init so it is identity at step 0; a SimCLR-style head gives the
+  objective its own 256-d space. Smoke, 4 epochs: **4.0875 → 3.7786 → 3.3919 →
+  3.0873**. `lambda_mpc` is now **0.02** with `mpc_warmup_steps` ramping it in.
+  Pool per stream (PubMedCLIP CLS, BioViL patch mean), never over the 246
+  concatenated tokens — that would weight BioViL 196/246 by token count alone.
+  ⚠ The adapter adds **inference-path** parameters: earlier checkpoints cannot be
+  resumed into it. Attaching the loss *after* fusion would be self-defeating, since
+  the fused anchor already contains the auxiliary view.
 - Production config `mimic_cxr_full.yaml`: **10 epochs**, `selection_metric:
   macro_auprc` on **validation only**, bf16 AMP, `save_freq: 5`, `warmup_steps:
   300` counted in **optimizer updates, not microbatches**. Thresholds are
