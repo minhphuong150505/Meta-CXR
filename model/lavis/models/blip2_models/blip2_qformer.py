@@ -187,6 +187,7 @@ class Blip2Qformer(Blip2Base):
         lambda_gate=0.0,
         lambda_mention_conditioned_cls=0.0,
         gate_class_weights=None,
+        mention_conditioned_pos_weights=None,
         explanation_cfg=None,
         distill_temperature=2.0,
         mhcac_text_dropout=0.2,
@@ -281,7 +282,10 @@ class Blip2Qformer(Blip2Base):
                     "lambda_cls: 0.0"
                 )
         self.mention_conditioned_loss_fn = (
-            MentionConditionedClassificationLoss()
+            MentionConditionedClassificationLoss(
+                num_abnormalities=14,
+                pos_weights=mention_conditioned_pos_weights,
+            )
             if self.lambda_mention_conditioned_cls > 0
             else None
         )
@@ -1863,6 +1867,9 @@ class Blip2Qformer(Blip2Base):
 
         mhcac_cfg = cfg.get("mhcac", {}) or {}
         gate_class_weights = mhcac_cfg.get("gate_class_weights", None)
+        mention_conditioned_pos_weights = mhcac_cfg.get(
+            "mention_conditioned_pos_weights", None
+        )
         distill_temperature = float(mhcac_cfg.get("distill_temperature", 2.0))
         mhcac_text_dropout = float(mhcac_cfg.get("text_dropout", 0.2))
         class_weights = mhcac_cfg.get("class_weights", None)
@@ -1913,6 +1920,7 @@ class Blip2Qformer(Blip2Base):
             lambda_gate=lambda_gate,
             lambda_mention_conditioned_cls=lambda_mention_conditioned_cls,
             gate_class_weights=gate_class_weights,
+            mention_conditioned_pos_weights=mention_conditioned_pos_weights,
             explanation_cfg=explanation_cfg,
             distill_temperature=distill_temperature,
             mhcac_text_dropout=mhcac_text_dropout,

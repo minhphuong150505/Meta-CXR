@@ -846,7 +846,36 @@ class MentionConditionedClassificationLoss(nn.Module):
     An ignored class cell (uncertain policy, or a blank the labeler never wrote)
     still trains the **mention** term — whether a finding was written about is
     known even when its polarity is not. Only the conditional class term drops.
+    ``pos_weights`` upweights the **wrong-silence** term only. 79.5% of cells are
+    blank, so an unweighted mention term makes silence the majority answer and
+    charges hiding a finding the radiologist did write about exactly as much as
+    mentioning one they did not -- measured ratio 1.00x, against 4-10x in the
+    separate gate BCE this replaces. ``alpha = n_not_mentioned / n_mentioned``
+    per label, capped. That is class balancing and nothing more: no clinical
+    kappa is applied here.
+
+    WARNING: weighting the mention term means ``m`` is no longer a calibrated
+    mention probability. Its odds are inflated by ``alpha``, so a raw 0.5
+    threshold corresponds to a true probability of ``1/(1+alpha)``. Recover it
+    with ``logit(p) = logit(m) - log(alpha)``, or fit the gate threshold on
+    validation. The conditional class term stays unweighted and calibrated.
     """
+
+    def __init__(self, pos_weights=None, num_abnormalities=14, weight_cap=10.0):
+        super().__init__()
+        if pos_weights is None:
+            weights = torch.ones(num_abnormalities)
+        else:
+            if len(pos_weights) != num_abnormalities:
+                raise ValueError(
+                    "pos_weights must hold one value per abnormality: got "
+                    f"{len(pos_weights)} for {num_abnormalities}"
+                )
+            weights = torch.tensor([float(w) for w in pos_weights])
+            if (weights <= 0).any():
+                raise ValueError("pos_weights must be positive")
+            weights = weights.clamp(max=float(weight_cap))
+        self.register_buffer("pos_weight", weights)
 
     def forward(
         self,
@@ -889,7 +918,15 @@ class MentionConditionedClassificationLoss(nn.Module):
         active = rows[:, None].expand_as(mentioned)
 
         # Mention term: every cell of every supervised study.
-        mention_term = torch.where(mentioned, -log_m, -log_not_m)
+        weight = self.pos_weight.to(device=device, dtype=log_m.dtype)
+        if weight.numel() != mentioned.shape[1]:
+            raise ValueError(
+                f"pos_weight has {weight.numel()} entries but there are "
+                f"{mentioned.shape[1]} abnormalities"
+            )
+        mention_term = torch.where(
+            mentioned, -log_m * weight[None, :], -log_not_m
+        )
         mention_term = mention_term * active.to(mention_term.dtype)
         mention_count = active.sum()
 
