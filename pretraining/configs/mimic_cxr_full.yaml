@@ -222,15 +222,50 @@ model:
   # `meta_cxr_qformer` and `meta_cxr_qformer_with_mhcac_prompt` would read
   # untrained soft tokens and are NOT valid against it. Stage-2
   # `medgemma_direct` (the default) is unaffected -- it never touches Stage 1.
-  # To restore the vision-language path, set lambda_itc/itm/lm back to 1.0.
+  # RESTORED 2026-08-16 at 0.1 each; see the note on the weights below.
   loss:
-    # Vision-language objectives, off. Measured at exactly chance before being
-    # disabled: val loss_itc 1.7918 = ln(6) at eval batch 6, train 6.9375 =
-    # ln(1024) at queue 1024, loss_itm 0.6365 against ln(2) = 0.6931. They were
-    # contributing gradient noise, not signal.
-    lambda_itc: 0.0
-    lambda_itm: 0.0
-    lambda_lm: 0.0
+    # Vision-language objectives. BACK ON 2026-08-16 at 0.1, after being 0.0
+    # since 2026-08-13. Turning them on also un-skips two BERT forwards, ITM
+    # hard-negative mining and an LM decoder pass in forward().
+    #
+    # WHY THEY WERE OFF, and it was not the cost: they sat at EXACTLY chance.
+    #   train loss_itc 6.9375 = ln(1024) exactly, at queue 1024
+    #   val   loss_itc 1.7918 = ln(6)    exactly, at eval batch 6
+    #         loss_itm 0.6365
+    # That ITM figure is the sharper evidence. The old note here compared it to
+    # ln(2) = 0.6931 and called it "near chance". It is not near anything: this
+    # implementation builds one positive against two negatives (`:1010-1012`,
+    # [pos,pos,neg] text vs [pos,neg,pos] image), and 0.6365 is exactly the
+    # entropy of that 1:2 prior -- the optimum for CONSTANT logits. The head had
+    # collapsed, not merely failed to converge.
+    #
+    # WHY RETRY NOW: what the Q-Former reads changed materially since. BioViL is
+    # no longer pooled 14x14 -> 7x7 and PubMedCLIP's CLS is no longer deleted, so
+    # cross-attention sees 246 native tokens instead of 98 interchangeable coarse
+    # ones; PubMedCLIP patches lost a DC direction that was 97% constant (mean
+    # pairwise cosine 0.674 -> -0.014); positional encodings init at std=0.02
+    # instead of a bare randn that made cos(token+pos, pos) = 0.999 at step 0.
+    # Any of those could explain a collapsed contrastive head. None of it is
+    # proof it will work now.
+    #
+    # 0.1 rather than BLIP-2's 1.0: keeps the 1:1:1 balance among the three while
+    # making the whole vision-language block auxiliary to lambda_cls: 1.0. The
+    # Q-Former's exclusive parameters receive only these gradients, so Adam
+    # largely normalises the common scale anyway.
+    #
+    # COST: measured 0.8196 s/it against 0.5251 with them off, i.e. 1.56x. On the
+    # current healthy 0.235 s/it that projects to ~14 h for 10 epochs instead of
+    # ~9 h. A projection, not a measurement -- the 1.56x was taken at batch 6
+    # before the dataloader was fixed.
+    #
+    # GATE BEFORE SPENDING 14 HOURS: on a fixed 256-pair validation subset in
+    # eval() mode, compute one all-to-all bidirectional ITC loss and report
+    # delta = ln(256) - L_itc, at initialisation and again after 500 optimizer
+    # updates. Proceed only if delta >= 0.10 nats AND it grew. delta ~ 0 means
+    # chance has reproduced and the extra 5 hours buy nothing.
+    lambda_itc: 0.1
+    lambda_itm: 0.1
+    lambda_lm: 0.1
     lambda_cls: 1.0
     # Privileged-text teacher, off. Measured loss_distill 1.4e-08 with teacher
     # and student logits agreeing to 9 significant figures -- the teacher was
@@ -335,9 +370,10 @@ model:
     #
     # NOT YET RUN ON GPU.
     lambda_mention_conditioned_cls: 0.0
-    # Only read when lambda_itc > 0; inert under the classification-only recipe.
-    # Kept so re-enabling ITC does not also require rediscovering this value.
-    itc_queue_size: 1024
+    # 1024 -> 256 on 2026-08-16. The queue did not cause the collapse, but at
+    # batch 16 a 1024 queue holds 64 microbatches of increasingly stale
+    # embeddings; 256 still supplies plenty of negatives and refreshes every 16.
+    itc_queue_size: 256
 
   view_consistency:
     # Soft/conditional agreement between the fused and anchor-only predictions.
