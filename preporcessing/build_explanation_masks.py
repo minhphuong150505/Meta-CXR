@@ -45,6 +45,13 @@ MS_CXR_COLUMNS = (
     "image_height",
     "split",
 )
+# Columns rasterize_bbox_union actually reads. Kept separate from
+# MS_CXR_COLUMNS: that tuple is the INPUT SCHEMA the builder loads, and
+# validating a geometry helper against it coupled the two. Adding
+# `category_name` to MS_CXR_COLUMNS on 2026-08-16 broke
+# scripts/evaluate_explanation.py, which loads its own column subset and has no
+# use for the category.
+BBOX_GEOMETRY_COLUMNS = ("x", "y", "w", "h", "image_width", "image_height")
 PROJECT_SPLITS = ("train", "val", "test")
 # Must stay identical to `chexpert_cols` in blip2_qformer.py: the per-pathology
 # cache is keyed by POSITION in this tuple, so a reordering here silently
@@ -224,9 +231,9 @@ def rasterize_bbox_union(rows: pd.DataFrame) -> np.ndarray:
 
     if rows.empty:
         raise ValueError("cannot rasterize an empty MS-CXR bbox group")
-    missing = sorted(set(MS_CXR_COLUMNS) - set(rows.columns))
+    missing = sorted(set(BBOX_GEOMETRY_COLUMNS) - set(rows.columns))
     if missing:
-        raise ValueError(f"MS-CXR CSV is missing columns: {missing}")
+        raise ValueError(f"bbox geometry is missing columns: {missing}")
 
     widths = {_positive_int(value, "image_width") for value in rows["image_width"]}
     heights = {
