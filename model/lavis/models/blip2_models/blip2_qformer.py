@@ -1214,6 +1214,27 @@ class Blip2Qformer(Blip2Base):
                     device,
                     default=False,
                 ) & classification_mask
+                # The WEAK term must see CheXmask lungs only. The pooled cache
+                # stores whichever annotation the builder preferred, and
+                # `choose_preferred_mask` prefers the MS-CXR bbox when a study
+                # has one -- so without this filter the weak term would run on a
+                # bbox union for exactly the 869 train / 164 test studies that
+                # also feed the strong term, supervising them twice and making
+                # "weak = anatomical prior" false where it matters most.
+                # mask_source: 0 = CheXmask lung, 1 = MS-CXR bbox.
+                mask_source = samples.get("explanation_mask_source")
+                if mask_source is not None:
+                    is_lung = torch.as_tensor(
+                        mask_source, device=device
+                    ).reshape(-1) == 0
+                    if is_lung.numel() != batch_size:
+                        raise ValueError(
+                            "explanation_mask_source must hold one value per "
+                            "batch item"
+                        )
+                    weak_valid = explanation_valid & is_lung
+                else:
+                    weak_valid = explanation_valid
                 positive_study = (cls_labels.to(device=device) == 1).any(dim=1)
                 capture_explanation = bool(
                     (explanation_valid & positive_study).any().item()
@@ -1253,9 +1274,20 @@ class Blip2Qformer(Blip2Base):
                     cls_labels,
                     selected_streams,
                     explanation_mask,
-                    explanation_valid,
-                    bbox_masks=samples.get("explanation_bbox_masks"),
-                    bbox_valid=samples.get("explanation_bbox_valid"),
+                    weak_valid,
+                    # Skipped outright when the strong weight is zero, rather
+                    # than computed and multiplied by zero: each distinct boxed
+                    # finding in the batch costs its own autograd.grad.
+                    bbox_masks=(
+                        samples.get("explanation_bbox_masks")
+                        if self.lambda_explanation_strong > 0
+                        else None
+                    ),
+                    bbox_valid=(
+                        samples.get("explanation_bbox_valid")
+                        if self.lambda_explanation_strong > 0
+                        else None
+                    ),
                 )
                 # Ratio against the shared warmup so each term keeps its own
                 # weight while the schedule shape stays common.
