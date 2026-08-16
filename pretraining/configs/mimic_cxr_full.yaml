@@ -222,7 +222,7 @@ model:
   # `meta_cxr_qformer` and `meta_cxr_qformer_with_mhcac_prompt` would read
   # untrained soft tokens and are NOT valid against it. Stage-2
   # `medgemma_direct` (the default) is unaffected -- it never touches Stage 1.
-  # RESTORED 2026-08-16 at 0.1 each; see the note on the weights below.
+  # Tried at 0.1 each on 2026-08-16 and reverted the same day; see below.
   loss:
     # Vision-language objectives. BACK ON 2026-08-16 at 0.1, after being 0.0
     # since 2026-08-13. Turning them on also un-skips two BERT forwards, ITM
@@ -258,14 +258,38 @@ model:
     # ~9 h. A projection, not a measurement -- the 1.56x was taken at batch 6
     # before the dataloader was fixed.
     #
-    # GATE BEFORE SPENDING 14 HOURS: on a fixed 256-pair validation subset in
-    # eval() mode, compute one all-to-all bidirectional ITC loss and report
-    # delta = ln(256) - L_itc, at initialisation and again after 500 optimizer
-    # updates. Proceed only if delta >= 0.10 nats AND it grew. delta ~ 0 means
-    # chance has reproduced and the extra 5 hours buy nothing.
-    lambda_itc: 0.1
-    lambda_itm: 0.1
-    lambda_lm: 0.1
+    # OFF AGAIN 2026-08-16, same day, at the user's decision: this project needs
+    # Stage-1 classification and nothing else, and the Q-Former contributes
+    # nothing to it.
+    #
+    # ⚠ THE Q-FORMER DOES NOT FEED CLASSIFICATION. `shared_visual` goes to MHCAC
+    # (`:1226`) and, separately, to the Q-Former (`:1088`); `query_output` reaches
+    # ITC, ITM and LM and NEVER reaches MHCAC. Forward-wise the two are parallel
+    # branches. But `image_embeds = shared_visual.tokens` is not detached, so with
+    # these weights above zero the vision-language gradients DO reshape the shared
+    # projector, the stream adapters and the view fusion -- exactly the parameters
+    # MHCAC's features come from. A collapsed contrastive head still emits
+    # gradient; it is just noise pulling on the classification trunk.
+    #
+    # WHAT THE 2026-08-16 ATTEMPT MEASURED, so nobody retries blindly:
+    #   - OOM on the FIRST iteration at batch 16 (14.90 GiB allocated of 15.45).
+    #     ITM triples the batch, so 48 joint sequences over 246 visual tokens.
+    #     Batch had to drop to 8, which doubles the iteration count.
+    #   - True cost ~36 h for 10 epochs against ~9 h, i.e. 4x, not the 1.56x this
+    #     file used to claim -- that figure was taken at batch 6 with 98 tokens.
+    #   - loss_itm reached 0.6420 after two epochs, against the 1:2 prior entropy
+    #     of 0.6365. The collapse signature reproduced almost immediately.
+    #   - scripts/check_itc_gate.py at initialisation: mean rank of the true pair
+    #     119.8 / 134.5 against 127.5 at chance. The pretrained BLIP-2 Q-Former
+    #     cannot tell a chest radiograph from its own report.
+    #
+    # Setting these back above zero is a real decision with a real price. Run
+    # scripts/check_itc_gate.py before and after ~500 optimizer updates and
+    # require delta >= 0.10 nats AND growth. It is the whole reason that script
+    # exists.
+    lambda_itc: 0.0
+    lambda_itm: 0.0
+    lambda_lm: 0.0
     lambda_cls: 1.0
     # Privileged-text teacher, off. Measured loss_distill 1.4e-08 with teacher
     # and student logits agreeing to 9 significant figures -- the teacher was
@@ -587,7 +611,13 @@ run:
   # at batch 6 that is ~3.3 usable studies, which is not a contrastive problem.
   # 16 gives ~8.8. 32 would give ~17.6 but moves the recipe further than the
   # 2.3 speed points justify.
-  # 16 -> 8 on 2026-08-16, forced by re-enabling the vision-language objectives.
+  # BACK TO 16 on 2026-08-16 once the vision-language objectives went off again.
+  # The reduction below was forced by them and by nothing else; with them off the
+  # classification-only peak is 4,417 MiB of 15.45 GiB and 16 is the measured best
+  # of {6, 16, 24, 32}. The note is kept because the constraint returns the moment
+  # anyone sets lambda_itc/itm/lm above zero:
+  #
+  # 16 -> 8 was forced by re-enabling the vision-language objectives.
   # At batch 16 the run OOMs on the FIRST iteration, inside the Q-Former's
   # cross-attention (Qformer.py:263): 15.45 GiB total, 14.90 GiB allocated,
   # 39.94 MiB free. Classification-only peaked at 4,417 MiB, so the VL block
@@ -609,10 +639,9 @@ run:
   # 16 to 8, which matters less than it used to now that it has its own
   # projection head at lambda 0.02. ITM still samples only the current
   # microbatch, so it drops to 7 non-self candidates.
-  batch_size_train: 8
-  batch_size_eval: 8
-  # 8 x 8 = 64, the same effective batch as 16 x 4.
-  accum_grad_iters: 8
+  batch_size_train: 16
+  batch_size_eval: 16
+  accum_grad_iters: 4
   # The training host has 20 threads and JPEG decode is the dataloader's cost:
   # at 4 workers they sit at 96-98% CPU in state R while the GPU idles between
   # kernels. Measured at batch 6 over 500 iterations: 0.305 s/it at 4 workers

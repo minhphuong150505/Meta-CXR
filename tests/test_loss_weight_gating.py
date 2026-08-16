@@ -83,25 +83,22 @@ class TestGate:
 class TestShippedRecipe:
     """The recipe is a deliberate choice; these assert it, so a silent edit shows."""
 
-    def test_vision_language_objectives_are_on_and_balanced(self, loss_cfg):
-        """Back on at 0.1 each on 2026-08-16, after sitting at exactly chance.
+    def test_vision_language_objectives_are_off(self, loss_cfg):
+        """Off, and the price of turning them on is recorded in the config.
 
-        They were 0.0 from 2026-08-13 because ITC hit ln(queue) exactly and ITM
-        hit 0.6365 -- the entropy of this implementation's 1:2 positive:negative
-        prior, i.e. the optimum for constant logits. They are retried because the
-        tokens the Q-Former reads changed: 246 native instead of 98 pooled, and
-        PubMedCLIP lost a DC direction that was 97% constant.
+        Tried at 0.1 each on 2026-08-16 and reverted the same day: this project
+        needs Stage-1 classification, and the Q-Former does not feed it. The
+        attempt measured an OOM on the first iteration at batch 16, a true cost
+        of ~36 h against ~9 h, and loss_itm back at 0.6420 against the 1:2 prior
+        entropy of 0.6365 after two epochs -- the collapse signature reproduced.
 
-        The three stay EQUAL to each other: that 1:1:1 ratio is BLIP-2's, and
-        0.1 is what makes the whole block auxiliary to lambda_cls at 1.0.
+        Turning them on is not a one-line change: it forces batch 16 -> 8, and
+        it puts vision-language gradient onto the shared projector and adapters
+        that MHCAC reads. Use scripts/check_itc_gate.py first.
         """
-        assert loss_cfg["lambda_itc"] == 0.1
-        assert loss_cfg["lambda_itm"] == 0.1
-        assert loss_cfg["lambda_lm"] == 0.1
-        assert loss_cfg["lambda_itc"] < loss_cfg["lambda_cls"], (
-            "the vision-language block must stay auxiliary to classification"
-        )
-        assert loss_cfg["itc_queue_size"] == 256
+        assert loss_cfg["lambda_itc"] == 0.0
+        assert loss_cfg["lambda_itm"] == 0.0
+        assert loss_cfg["lambda_lm"] == 0.0
 
     def test_teacher_and_distillation_are_off(self, loss_cfg):
         assert loss_cfg["lambda_teacher_cls"] == 0.0
@@ -130,16 +127,15 @@ class TestShippedRecipe:
         assert loss_cfg["mpc_warmup_steps"] > 0, "a live MPC needs its ramp"
         assert loss_cfg["lambda_view_consistency"] == 0.05
 
-    def test_shipped_recipe_now_runs_the_qformer(self, loss_cfg):
+    def test_shipped_recipe_skips_the_qformer(self, loss_cfg):
         """The skip is a consequence of the weights, never an independent flag.
 
-        With the vision-language weights back on, forward() must run the
-        Q-Former and text-encoder passes again -- and the checkpoint becomes
-        usable by the Stage-2 soft-token modes, which it was not while they
-        were zero.
+        Consequence to keep in view: the Q-Former receives no gradient and stays
+        at its pretrained initialisation, so this checkpoint serves Stage-1
+        classification only and is NOT valid for the Stage-2 soft-token modes.
         """
-        assert _needs_vision_language(loss_cfg) is True
-        assert _needs_text_encoder(loss_cfg) is True
+        assert _needs_vision_language(loss_cfg) is False
+        assert _needs_text_encoder(loss_cfg) is False
 
     def test_learning_rate_floor_matches_upstream(self):
         yaml = pytest.importorskip("yaml")
