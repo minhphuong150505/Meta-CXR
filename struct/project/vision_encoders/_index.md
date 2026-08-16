@@ -1,6 +1,6 @@
 > Source: `vision_encoders/`
 > Status: ✅ ACTIVE (một phần)
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-16
 
 # `vision_encoders/`
 
@@ -45,6 +45,7 @@ và có thể trôi dạt sang hai biểu diễn khác nhau.
 | Đường dẫn | Doc | Status | Chiều ra | Ghi chú |
 |---|---|---|---|---|
 | `shared_visual_tokens.py` | [📄](shared_visual_tokens.py.doc.md) | ✅ ★ | → 1408 | `SharedVisualTokens`, `SharedVisualTokenProjector` |
+| `stream_adapter.py` | [📄](stream_adapter.py.doc.md) | 🟡 | giữ `D` | `StreamAdapter` (đường chính, identity ở init), `ContrastiveProjectionHead`, `pool_stream`. Lý do tồn tại: MPC từng có **gradient bằng 0** |
 | `pubmedclip/pubmed_clip.py` | [📄](pubmedclip.py.doc.md) | ✅ | 768 | Dựng với `project=False` — projector sở hữu phép chiếu |
 | `swin/swin_encoder.py` | [📄](swin_encoder.py.doc.md) | ✅ | `embed_dim` ⚠ runtime | `ChayanM/SwinV2-GPT2_Mimic` |
 | `rad_dino/rad_dino_encoder.py` | [📄](rad_dino_encoder.py.doc.md) | 🟡 | `embed_dim` ⚠ runtime | `microsoft/rad-dino`; `raddino: false` ở **mọi** config |

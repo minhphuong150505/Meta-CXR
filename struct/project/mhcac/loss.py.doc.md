@@ -76,6 +76,23 @@ ngược vào teacher. `temperature` từ `mhcac.distill_temperature` (prod: 2.0
 Kéo các view **của cùng một study** lại gần nhau. `temperature=0.07`. Chỉ chạy khi
 `multi_view` bật và batch có aux thật.
 
+⚠ **Chữ ký đổi 2026-08-16: nhận VECTOR đã pool, không phải chuỗi token.**
+`anchor: [B, D]`, `aux: [B, N, D]` — trước đây là `[B,P,D]` / `[B,N,P,D]` và hàm tự
+mean-pool bên trong. Pooling chuyển ra ngoài vì hai encoder cần cách pool khác nhau
+(PubMedCLIP có CLS thật, BioViL không) và vì vector phải đi qua một projection head
+trước khi được so sánh. Xem
+[`stream_adapter.py`](../vision_encoders/stream_adapter.py.doc.md).
+
+⚠ **Hàm này từng CHẾT suốt một run thật.** Nó tính trên tensor stash trước module
+trainable duy nhất, tức đầu ra encoder đóng băng, nhánh aux còn trong `no_grad()` —
+không vế nào có tham số ở thượng nguồn. Bốn epoch: `3.9929 / 3.9949 / 3.9941 /
+3.9943`, một hằng số mang `lambda_mpc = 0.1` (~22% giá trị loss). Sau khi thêm
+adapter + head, smoke 4 epoch cho `4.0875 → 3.7786 → 3.3919 → 3.0873`, và
+`lambda_mpc` hạ xuống `0.02` kèm ramp `mpc_warmup_steps`.
+
+Chính mean-pool đặt bên trong hàm này là thứ khiến nó trông hợp lý trong khi bất
+động — bài học đáng giữ khi đọc bất kỳ loss phụ nào khác.
+
 ### `view_consistency_loss(fused_logits, anchor_logits, has_aux, margin=0.0, confidence_gate=False, gate_tolerance=0.0)`
 
 Kéo dự đoán đã fuse về gần dự đoán chỉ-anchor, **có điều kiện**. `has_aux` giới
