@@ -431,7 +431,7 @@ box drawn around one named finding.
 
 | | weak | strong |
 |---|---|---|
-| target | CheXmask **lung** mask | MS-CXR **box** for one finding |
+| target | CheXmask **lung** mask only | MS-CXR **box** for one finding |
 | granularity | one pooled CAM per study | one CAM per (study, finding) |
 | coverage | ~93% of studies | 823 train / 5 val / 138 test |
 | supports the claim | "looks inside the lungs" | "looks at the pathology" |
@@ -444,6 +444,15 @@ signal while still looking like it learned localisation.
 
 **The strong term costs one backward per *distinct finding* boxed in the batch —
 typically one or two, not 14.** Studies without a box cost nothing.
+
+⚠ **The weak term is gated to `explanation_mask_source == 0`.** The pooled cache
+stores whichever annotation the builder preferred and
+`choose_preferred_mask` prefers the MS-CXR bbox when a study has one, so without
+that filter the weak term would run on a *bbox union* for exactly the 869 train /
+164 test studies that also feed the strong term — supervising them twice and
+making "weak = anatomical prior" false where it matters most. The strong term is
+likewise skipped outright when `lambda_explanation_strong` is 0, rather than
+computed and multiplied by zero.
 
 Either lambda being > 0 enables the module; both 0 disables it entirely, including
 CAM capture. There is still no separate `enabled` flag.
