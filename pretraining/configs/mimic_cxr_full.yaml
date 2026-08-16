@@ -587,9 +587,32 @@ run:
   # at batch 6 that is ~3.3 usable studies, which is not a contrastive problem.
   # 16 gives ~8.8. 32 would give ~17.6 but moves the recipe further than the
   # 2.3 speed points justify.
-  batch_size_train: 16
-  batch_size_eval: 16
-  accum_grad_iters: 4
+  # 16 -> 8 on 2026-08-16, forced by re-enabling the vision-language objectives.
+  # At batch 16 the run OOMs on the FIRST iteration, inside the Q-Former's
+  # cross-attention (Qformer.py:263): 15.45 GiB total, 14.90 GiB allocated,
+  # 39.94 MiB free. Classification-only peaked at 4,417 MiB, so the VL block
+  # adds ~11 GB. ITM is the driver -- it triples the batch, [pos,pos,neg] text
+  # against [pos,neg,pos] image (blip2_qformer.py:1009), so batch 16 pushes 48
+  # joint sequences through the Q-Former and text encoder over 246 visual
+  # tokens. Batch 8 makes that 24.
+  #
+  # Gradient checkpointing was considered and REJECTED, not merely skipped:
+  # Qformer.py:530 forces use_cache=False whenever it is on, while the
+  # image-query pass at blip2_qformer.py:1144 explicitly requests use_cache=True
+  # and the LM path consumes those cached query states. Enabling it would break
+  # the visual-prefix LM. `model.use_grad_checkpoint` is also the wrong knob --
+  # it is routed to the vision encoder (`:214`), which is frozen.
+  #
+  # Consequences, stated rather than discovered later: the 2026-08-14
+  # measurement that made 16 the best of {6, 16, 24, 32} was taken with the VL
+  # objectives OFF and no longer decides this. MPC's live negatives halve from
+  # 16 to 8, which matters less than it used to now that it has its own
+  # projection head at lambda 0.02. ITM still samples only the current
+  # microbatch, so it drops to 7 non-self candidates.
+  batch_size_train: 8
+  batch_size_eval: 8
+  # 8 x 8 = 64, the same effective batch as 16 x 4.
+  accum_grad_iters: 8
   # The training host has 20 threads and JPEG decode is the dataloader's cost:
   # at 4 workers they sit at 96-98% CPU in state R while the GPU idles between
   # kernels. Measured at batch 6 over 500 iterations: 0.305 s/it at 4 workers
