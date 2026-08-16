@@ -175,7 +175,7 @@ def _features(model, samples, device):
     )
 
     text_tokens = model.tokenizer(
-        samples["text_input"],
+        samples["text_output"],   # the dataset emits text_output; text_input is commented out
         padding="max_length",
         truncation=True,
         max_length=model.max_txt_len,
