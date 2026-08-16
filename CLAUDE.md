@@ -672,9 +672,17 @@ literal three-way argmax (`image_text_pretrain.py:114`), not a calibrated thresh
 The hierarchy reads `mention_mask` from the batch. It briefly read
 `has_chexpert_label`, which the dataset does not emit — the absent key fell through
 to `default=True` and trained every unmatched study as fourteen "not mentioned"
-cells. It carries **no** inverse-frequency or kappa
+cells. Its **conditional class term** carries no inverse-frequency or kappa
 weights on purpose: the operating point belongs in the thresholds this project
-already calibrates on validation. Enabling it **requires** `lambda_cls: 0.0` and
+already calibrates on validation. Its **mention term** does carry
+`mhcac.mention_conditioned_pos_weights` (`alpha = n_not_mentioned / n_mentioned`,
+capped at 10, no kappa). Unweighted, it charged hiding a finding the radiologist
+*did* write about exactly as much as mentioning one they did not — measured
+**1.00x**, against 4–10x in the gate BCE it replaces — and with 79.5% of cells
+blank that symmetry makes silence the majority answer. ⚠ The weight means `m` is
+no longer a calibrated mention probability: its odds are inflated by alpha, so a
+raw 0.5 threshold means a true probability of `1/(1+alpha)`. Recover with
+`logit(p) = logit(m) - log(alpha)`, or fit the gate threshold on validation. Enabling it **requires** `lambda_cls: 0.0` and
 `lambda_gate: 0.0`; the constructor raises otherwise. **Smoke-tested on GPU only** (600 studies, 3 epochs): F1 0.3640 → 0.4611 → 0.5325, against 0.2805 → 0.5164 → 0.6249 for the old mode on identical data. That smoke shows the mode trains; it is far too small to say which mode is better.
 
 **Classification weights are full inverse frequency now, not the square root.**
@@ -684,7 +692,19 @@ specificity tracked it almost monotonically — Atelectasis 0.000, Support Devic
 0.000, Lung Opacity 0.017, against 0.675 for Edema whose ratio was already 1.02.
 `(n_neg/n_pos)` brings every label to 1.00, then a per-label `kappa` (4 for
 Pneumothorax, 3 for Pneumonia/Edema/Consolidation, 2 or 1 for the rest) applies
-the clinical preference. **That kappa table is a proposal and needs a clinician's
+the clinical preference.
+
+⚠ **`w_pos < 1` on 9 of 14 labels is not a light penalty, and raising it would
+make things worse.** Blank masking inverted the imbalance, so positives are the
+majority and `(n_neg/n_pos)` is below 1 for most labels; every shipped `w_pos`
+sits at exactly `balance x kappa`, i.e. a missed positive is already charged 1–4x
+a false alarm *once imbalance is accounted for*. Only the ratio to `w_neg` means
+anything — the absolute value does not. Given macro specificity of 0.2637 with
+four labels near zero, the lever that would actually raise specificity is
+**reducing kappa toward 1** and then fitting thresholds on validation against an
+explicit specificity target, not raising `w_pos`.
+
+**That kappa table is a proposal and needs a clinician's
 sign-off before any published claim**, and kappa does not create skill: AUROC is
 fixed at 0.7776 and kappa only picks an operating point on that curve.
 
