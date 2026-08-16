@@ -148,7 +148,7 @@ def _features(model, samples, device):
 
     # Same entry point and same arguments forward() uses, so the features this
     # gate scores are the features training would have produced.
-    image_embeds = model._encode_image_streams(
+    shared_visual = model._encode_image_streams(
         image,
         apply_aug=False,
         aux_image=aux_image,
@@ -156,6 +156,9 @@ def _features(model, samples, device):
         anchor_view_id=samples.get("anchor_view_id"),
         aux_view_ids=samples.get("aux_view_ids"),
     )
+    # SharedVisualTokens carries the per-encoder spans MHCAC needs; the Q-Former
+    # takes the concatenated sequence, exactly as forward() does at `:1088`.
+    image_embeds = shared_visual.tokens
     image_atts = torch.ones(
         image_embeds.shape[:-1], dtype=torch.long, device=device
     )
