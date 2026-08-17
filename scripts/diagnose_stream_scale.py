@@ -26,7 +26,7 @@ reads. Interpretation lives in the caller, not here.
 
 Run it on the training host, not on a dev checkout::
 
-    ssh phuong@minhphuong
+    ssh phuong@phuong-b760m-pro-rs-d4-wifi
     cd ~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git
     git pull origin main
     CUDA_VISIBLE_DEVICES=0 python scripts/diagnose_stream_scale.py --num-studies 32

@@ -2,14 +2,18 @@
 
 Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh báo cáo. Stage 1 học biểu diễn thị giác theo study, hợp nhất nhiều view, tạo Q-Former tokens và dự đoán bất thường. Stage 2 dùng MedGemma để sinh nội dung báo cáo, với đường ảnh native hoặc Q-Former soft tokens. Repository cũng có evaluator cho classification và report generation.
 
-> **Trạng thái hiện tại:** ba giai đoạn explanation-aware đã hoàn tất ở mức
-> implementation/CPU test; cache val nhỏ đã kiểm chứng trên dữ liệu thật; Table 5
-> Stage-1 inference ablation hoàn tất. Explanation loss và evaluator XAI mới
-> **chưa từng chạy trên GPU**; training pipelines vẫn cần GPU smoke/full validation.
+> **Trạng thái hiện tại:** Stage-1 đã chạy đủ trên GPU. Explanation loss đã được
+> A/B có kiểm soát 5 epoch (bật/tắt) và evaluator XAI đã chạy trên cả hai
+> checkpoint — kết quả: **không có tác dụng đo được, và CAM ở mức ngẫu nhiên ở cả
+> hai nhánh**, nên hướng này đã **tắt trong production từ 2026-08-17** (chi tiết ở
+> [Explanation-aware learning](#explanation-aware-learning-đã-tắt-trong-production-từ-2026-08-17)).
+> Table 5 Stage-1 inference ablation hoàn tất. Stage 2 vẫn cần GPU validation.
 >
-> Đây là trạng thái theo tài liệu tích hợp tại commit hiện tại, không phải xác nhận đã train trên GPU hay đã tái lập metric mô hình.
+> Stage-1 đã có bằng chứng GPU thật (xem bảng dưới). Stage-2 thì chưa — phần
+> trạng thái của Stage 2 vẫn chỉ là tình trạng tích hợp code tại commit hiện tại,
+> không phải xác nhận đã train trên GPU hay đã tái lập metric mô hình.
 >
-> **Máy train:** một host duy nhất, `phuong@minhphuong` (máy cá nhân của tác giả).
+> **Máy train:** một host duy nhất, `phuong@phuong-b760m-pro-rs-d4-wifi` (máy cá nhân của tác giả).
 > Xác minh 2026-08-13: **1× RTX 5060 Ti 16 GB**, dữ liệu và checkpoint nằm trên
 > `/mnt/drive1tb` (930 GB NTFS, **không auto-mount** — phải mount tay sau mỗi lần
 > reboot). Không còn đường chạy cloud: các recipe GCP/L4/Kaggle/2×3090 đã bị gỡ
@@ -20,12 +24,12 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 | Thành phần | Trạng thái |
 |---|---|
 | Branch integration | Các nhánh tính năng đã được tích hợp tuyến tính vào `main`; xem [integration audit](docs/final_branch_integration_audit.md) |
-| Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC và explanation loss tùy chọn có trong code; Table 5 inference-only ablation đã chạy, training/explanation path chưa GPU-validated |
+| Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC có trong code và đã chạy full trên GPU. Explanation loss vẫn có trong code nhưng **tắt** (lambda 0/0) sau A/B 2026-08-17 |
 | Stage 2 implementation | MedGemma QLoRA, native-image và Q-Former routes có trong code; chưa GPU-validated |
-| Explanation masks | Đã build CPU thử 200 study val: 193 hợp lệ (189 lung, 4 bbox); full cache chưa được xác nhận |
-| XAI evaluation | Metric NumPy + checkpoint script + PNG/NPZ implemented; script checkpoint/GPU chưa từng chạy |
+| Explanation masks | Full cache đã build và kiểm chứng (`explanation_masks_v2`, có `masks_bbox_*`). Không còn được training tiêu thụ; giữ cho evaluator |
+| XAI evaluation | Đã chạy trên GPU với 2 checkpoint (test split). **Cảnh báo: saliency precision ở mức ngẫu nhiên** — luôn kèm baseline diện tích mask |
 | CPU tests | Xem mục [Testing](#testing) cho output chạy thật của Phase 3 |
-| GPU evidence | Stage-1 smoke train/val/test đã chạy với và không có explanation loss (2026-08-14); full run đang chạy |
+| GPU evidence | Stage-1 full run xong; A/B explanation loss bật/tắt 5 epoch xong (2026-08-16/17) kèm calibration + eval test + XAI cả hai nhánh |
 | Checkpoint cũ | **Đã xoá toàn bộ 2026-08-14** (15 file, 39 GB) — các run đó đi sai hướng và không nạp được vào recipe hiện tại (Swin tắt → 98 token thay vì 147). Số liệu Table 5 còn trong `results/` nhưng không tái lập được |
 | Full MIMIC-CXR training | Chưa được xác nhận với pipeline final |
 | Reproduced metrics | Chưa có metric mô hình mới được tái lập từ pipeline final |
@@ -87,7 +91,52 @@ Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/
   `macro_auprc` vẫn được log mỗi epoch được chấm để đối chiếu — val loss bị các nhãn phổ biến chi phối,
   nên một model bỏ hẳn nhãn hiếm có thể ăn điểm hơn model đôi khi tìm ra nó.
 
-### Explanation-aware learning (tùy chọn)
+### Explanation-aware learning (ĐÃ TẮT trong production từ 2026-08-17)
+
+> **Kết luận: hướng này đã được dừng.** `lambda_explanation` và
+> `lambda_explanation_strong` đều là `0.0` trong `mimic_cxr_full.yaml`. Code,
+> mask cache và `scripts/evaluate_explanation.py` **được giữ nguyên** — evaluator
+> chính là thứ tạo ra bằng chứng dưới đây, và là cách duy nhất để thử lại sau khi
+> mở băng encoder. Phần mô tả bên dưới giữ lại để tham chiếu.
+>
+> **Bằng chứng (A/B có kiểm soát, 5 epoch, cùng seed/manifest/recipe, chỉ khác
+> hai lambda; test split, ngưỡng calibrate trên val, `ignore_uncertain`):**
+>
+> | | ON (0.05/0.25) | OFF (0/0) |
+> |---|---:|---:|
+> | positive_macro_f1 | 0.8757 | **0.8767** |
+> | macro_auroc | 0.7850 | **0.7879** |
+> | macro_specificity | 0.3840 | **0.4127** |
+> | wall clock | 5:06:44 | **4:25:27** (−15.5%) |
+>
+> Mọi khoảng tin cậy 95% chồng nhau và mọi chênh lệch nghiêng về OFF.
+>
+> **Quan trọng hơn: nó cũng không đạt được chính mục tiêu của nó.** `L_exp` tối đa
+> hoá phần saliency nằm trong mask — đúng đại lượng `evaluate_explanation.py` đo.
+> Baseline trung thực của con số đó là **tỉ lệ diện tích mask**, vì một CAM ngẫu
+> nhiên ghi đúng bằng đó: test lung **0.3301**, bbox **0.2366**.
+>
+> | stream | quần thể | ON | OFF | ngẫu nhiên |
+> |---|---|---:|---:|---:|
+> | biovil | lung | 0.3692 | 0.3383 | 0.3301 |
+> | biovil | bbox | 0.2552 | 0.2533 | 0.2366 |
+> | pubmedclip | lung | 0.3810 | 0.4085 | 0.3301 |
+> | pubmedclip | bbox | 0.1769 | 0.2021 | 0.2366 |
+>
+> Một stream nhích đúng hướng +0.031; stream kia lệch ~0.026 **ngược hướng** trên
+> cả hai quần thể và nằm **dưới mức ngẫu nhiên** ở bbox. CAM ở mức ngẫu nhiên
+> trong **cả hai** nhánh — kể cả nhánh chưa từng bị ràng buộc — nên giới hạn nằm
+> ở biểu diễn, không phải ở hàm mất mát. **Với encoder đóng băng, term này chỉ có
+> thể đánh lại trọng số kênh của một feature map cố định; nó không dạy được
+> encoder nhìn chỗ khác.** Chỉ xem xét lại sau khi mở băng encoder.
+>
+> ⚠ **Không bao giờ trích dẫn saliency precision mà thiếu baseline diện tích mask
+> bên cạnh.** 0.25 trông như một kết quả nhưng bằng ngẫu nhiên.
+>
+> ⚠ Hai term **không được log riêng** (`blip2_qformer.py:1297` trộn thành một
+> scalar), và term strong chỉ kích hoạt trên **869/222.758 study train (0.39%)**,
+> đạt trọng số đầy đủ đúng 1 epoch. Nên A/B này kiểm chứng *công thức hiện tại*,
+> không phải ý tưởng nói chung.
 
 Với mỗi study có ít nhất một nhãn Positive, score Grad-CAM là tổng Logit
 Difference Squared trên các bệnh dương tính:
@@ -107,23 +156,26 @@ Eq. (5). Loss chạy riêng trên BioViL 14×14 và PubMedCLIP 7×7 (CLS không 
 đóng băng, nên nó nắn cách projection/MHCAC/head đọc feature chứ không đổi
 feature encoder.
 
-`model.loss.lambda_explanation` là cờ bật/tắt duy nhất. Config production hiện
-vẫn an toàn ở `0.0` và cache path rỗng. Sau khi build cache và smoke GPU, bật:
+Hai `lambda` là cờ bật/tắt duy nhất: chỉ cần một trong hai `> 0` là module bật;
+**cả hai bằng `0.0` tắt hoàn toàn CAM capture/double backprop**. Không có key
+`explanation.enabled` riêng để tránh mâu thuẫn. Config production hiện ở `0.0` /
+`0.0`. Cấu hình lúc còn bật, giữ lại vì bật lại nghĩa là khôi phục đúng khối này:
 
 ```yaml
 model:
   loss:
-    lambda_explanation: 0.25
+    lambda_explanation: 0.05          # weak, mask phổi CheXmask
+    lambda_explanation_strong: 0.25   # strong, box MS-CXR theo bệnh
   explanation:
-    top_k: 0.5
+    top_k: 0.2
+    strong_top_k: 0.5
     warmup_start_epoch: 2
     warmup_epochs: 2
     streams: [biovil, pubmedclip, swin]
     mask_cache_dir: /mnt/drive1tb/datasets/explanation_masks
 ```
 
-Warmup: epoch [0]–[1] = 0; [2] = 0.125; [3] = 0.1875; [4]+ = 0.25. Đặt
-`lambda_explanation: 0.0` để tắt hoàn toàn CAM capture/double backprop.
+Warmup: epoch [0]–[1] = 0; [2] = 0.125; [3] = 0.1875; [4]+ = 0.25.
 
 ## Stage 2
 

@@ -13,8 +13,10 @@ inside this directory.**
 
 ## The training host — there is only one, and it is local
 
-All training runs on **`phuong@minhphuong`**, the user's own machine. Verified
-over SSH on 2026-08-13:
+All training runs on **`phuong@phuong-b760m-pro-rs-d4-wifi`**, the user's own
+machine. It was reachable as `phuong@minhphuong` until 2026-08-17; that name is
+dead — Tailscale no longer lists it. Hardware verified over SSH on 2026-08-13,
+under the old name:
 
 | | |
 |---|---|
@@ -114,10 +116,19 @@ dataset**. Nothing that actually runs the project — training, evaluation,
 inference, smoke tests, GPU-dependent scripts — runs here. SSH to the host:
 
 ```bash
-ssh phuong@minhphuong
+ssh phuong@phuong-b760m-pro-rs-d4-wifi
 cd ~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git
 git pull origin main        # ALWAYS pull first — this checkout drifts behind
 ```
+
+⚠ **The name changed on 2026-08-17 and so did the SSH host key.** The old
+`minhphuong` entry in `known_hosts` carries a different ed25519 key from the one
+`phuong-b760m-pro-rs-d4-wifi` now presents, so the first connection fails with
+`Host key verification failed`. A rename alone does not regenerate host keys, so
+treat this as an unverified change until the user confirms what happened to the
+machine — and do not assume the venv, the checkout, the checkpoints under
+`/home/phuong/<run>/` or the `/mnt/drive1tb` mount survived it. Re-verify each
+before quoting anything from the table above.
 
 That checkout has the same `origin` (`git@github.com:minhphuong150505/Meta-CXR.git`,
 branch `main`), so the workflow is: commit and push from here, then pull and run
@@ -144,7 +155,8 @@ that either training pipeline is GPU-validated.
 
 ```bash
 # CPU test suite. On a box without torchvision/transformers (verified 2026-08-14):
-#   546 passed, 5 failed, 1 skipped, and 2 modules excluded before collection
+#   590 passed, 5 failed, 3 skipped (re-measured 2026-08-17), and 2 modules
+#   excluded before collection
 #   — test_blip2_negative_sampling.py and test_encoder_ablation.py, both of which
 #   import model.lavis and therefore torchvision. Collection errors abort the run,
 #   so ignore them explicitly to see the real result:
@@ -219,7 +231,14 @@ CUDA_VISIBLE_DEVICES=0 python training/run_medgemma_qlora.py \
 # Evaluation — calibrate on validation only, then score the test split
 python scripts/calibrate_thresholds.py --predictions <val.npz> --objective f1 \
     --uncertain-policy ignore_uncertain --min-positive 20 --output <thresholds.json>
-python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresholds.json> --output-dir <dir>
+# --uncertain-policy is NOT optional here: it defaults to three_class in BOTH
+# scripts, while training runs ignore_uncertain. Omitting it on the eval line
+# after calibrating with ignore_uncertain silently scores the thresholds under a
+# different label binarisation -- measured 2026-08-16 on the same npz:
+# macro_auroc 0.6537 vs 0.7850, positive_macro_f1 0.7734 vs 0.8757. It does not
+# warn; the report just prints "Uncertain policy: three_class" in its metadata.
+python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresholds.json> \
+    --uncertain-policy ignore_uncertain --output-dir <dir>
 CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
     --checkpoint <checkpoint_best.pth> --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --split test --mask-cache-dir /mnt/drive1tb/datasets/explanation_masks \
@@ -400,11 +419,67 @@ study (not image) → anchor + ≤1 auxiliary view
 
 #### Explanation-aware loss and XAI evaluation
 
-Phase 1–3 added an optional Grad-CAM constraint, two-tier private mask cache and
-XAI evaluator. **None of this explanation-aware path has run on GPU yet.** The
-loss/math and cache pipeline have CPU tests; a real 200-study validation cache
-was built on CPU, but neither a smoke/full train with the loss nor
-`scripts/evaluate_explanation.py` has ever run against a checkpoint.
+**OFF IN PRODUCTION as of 2026-08-17 — `lambda_explanation` and
+`lambda_explanation_strong` are both `0.0` in `mimic_cxr_full.yaml`.** The user
+retired the approach after the A/B below. The code, the mask cache and
+`scripts/evaluate_explanation.py` are all kept and still work: the evaluator is
+what produced the evidence, and it is the only way to re-test the idea after the
+encoders are unfrozen. Do not delete them, and do not re-enable the lambdas
+without reading the next four paragraphs.
+
+**It did not help classification.** A controlled 5-epoch A/B on the host,
+identical seed/manifest/recipe, the two lambdas the only difference; test split,
+thresholds calibrated on val, `ignore_uncertain`:
+
+| | ON (0.05/0.25) | OFF (0/0) |
+|---|---:|---:|
+| positive_macro_f1 | 0.8757 | **0.8767** |
+| macro_auroc | 0.7850 | **0.7879** |
+| macro_specificity | 0.3840 | **0.4127** |
+| wall clock | 5:06:44 | **4:25:27** |
+
+Every 95% CI overlapped; every difference favoured OFF; the term cost **+15.5%**
+wall clock overall and +13.5/+17.0/+17.6% on epochs [2]/[3]/[4] where the lambdas
+were live. (The +10.5% recorded elsewhere is the older *single pooled term*; the
+split weak+strong version is dearer.)
+
+**It also failed at its own objective, which is the stronger result.** `L_exp`
+maximises saliency mass inside the mask — exactly what
+`evaluate_explanation.py` measures. **The honest baseline for that number is the
+mask area fraction, because a random CAM scores precisely that**; measured on the
+test cache it is lung **0.3301**, bbox **0.2366**. Against that:
+
+| stream | population | ON | OFF | random |
+|---|---|---:|---:|---:|
+| biovil | lung | 0.3692 | 0.3383 | 0.3301 |
+| biovil | bbox | 0.2552 | 0.2533 | 0.2366 |
+| pubmedclip | lung | 0.3810 | 0.4085 | 0.3301 |
+| pubmedclip | bbox | 0.1769 | 0.2021 | 0.2366 |
+
+One stream moved +0.031 the right way; the other moved ~0.026 the **wrong** way
+on both populations and sits **below random** on bbox. CAMs are at chance in
+**both** arms — including the arm that was never constrained — so the limit is
+the representation, not the loss. **With the encoders frozen this term can only
+re-weight channels of a fixed feature map; it cannot teach an encoder to look
+elsewhere.** That is the mechanism to fix first.
+
+⚠ **Never quote a saliency precision without the mask-area baseline beside it.**
+0.25 reads like a result and is chance. `evaluate_explanation.py` does not yet
+emit the baseline itself — compute it from the cache
+(`(masks > 0).mean(axis=(1,2))`).
+
+⚠ **The two terms are not separately logged**, so no past run can tell you what
+the strong term did. `blip2_qformer.py:1297` blends them into one scalar as
+`(lambda_weak/peak)*weak + (lambda_strong/peak)*strong`, i.e. `0.2*weak +
+1.0*strong` at the old weights. Fix that before running any further ablation
+here, or the experiment is unobservable. Note also the strong term fired on only
+**869 of 222,758 train studies (0.39%)** and, under `warmup_start_epoch: 2,
+warmup_epochs: 2` in a 5-epoch run, reached full weight for exactly one epoch —
+so the A/B tests *this recipe*, not the idea in general.
+
+Historical note: before that A/B, this section said "none of this path has run on
+GPU yet". It has now — both arms, five epochs each, plus the evaluator against
+both checkpoints.
 
 For each study with at least one Positive CheXpert label:
 
@@ -457,11 +532,14 @@ computed and multiplied by zero.
 Either lambda being > 0 enables the module; both 0 disables it entirely, including
 CAM capture. There is still no separate `enabled` flag.
 
+The shipped values are `0.0` / `0.0`. What the block looked like when it was on,
+kept because re-enabling means restoring exactly this:
+
 ```yaml
 model:
   loss:
-    lambda_explanation: 0.05          # weak, CheXmask lung
-    lambda_explanation_strong: 0.25   # strong, MS-CXR per-finding box
+    lambda_explanation: 0.05          # weak, CheXmask lung      (now 0.0)
+    lambda_explanation_strong: 0.25   # strong, MS-CXR box       (now 0.0)
   explanation:
     top_k: 0.2            # weak
     strong_top_k: 0.5     # strong
@@ -493,10 +571,10 @@ rebuild before the strong term does anything. `label_index` is a position in
 `blip2_qformer.py` — reordering supervises the wrong finding silently. MS-CXR
 categories with no CheXpert column are skipped and counted, never guessed.
 
-Production config has this **on** (weak 0.05 / strong 0.25) against the cache at
-`/mnt/drive1tb/datasets/explanation_masks`. The two-term split has **not yet run
-on GPU**; the pooled single-term version did, for ten epochs.
-The approved schedule at 0.25 is epoch [0]–[1]
+Production config has this **off** — see the top of this section. When it was on
+it ran against the cache at `/mnt/drive1tb/datasets/explanation_masks`; the
+ablation used a rebuilt copy at `/home/phuong/explanation_masks_v2`, which is the
+one carrying `masks_bbox_*`. The warmup schedule at 0.25 was epoch [0]–[1]
 0, [2] 0.125, [3] 0.1875, [4]+ 0.25. `RunnerBase.eval_epoch` is
 `@torch.no_grad()`, so the training forward skips this loss during validation.
 Do not remove that guard: Grad-CAM requires a live graph.

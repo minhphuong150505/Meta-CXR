@@ -1,7 +1,12 @@
 > Source: `mhcac/explanation.py`
 > Status: 🟡 CONDITIONAL — được wire vào Stage 1, chỉ chạy khi
-> `lambda_explanation > 0` **hoặc** `lambda_explanation_strong > 0`
-> Last verified against source: 2026-08-16
+> `lambda_explanation > 0` **hoặc** `lambda_explanation_strong > 0`.
+> **TRONG PRODUCTION CẢ HAI = 0.0 từ 2026-08-17, nên file này hiện KHÔNG chạy**
+> — user dừng hướng này sau A/B có kiểm soát, xem
+> [D-017](../_meta/DECISIONS.md#d-017--dừng-explanation-aware-loss-trong-production).
+> Code giữ nguyên, không xoá: chỉ xem xét lại sau khi mở băng encoder, vì với
+> encoder đóng băng term chỉ đánh lại trọng số kênh của feature map cố định.
+> Last verified against source: 2026-08-17
 
 # `mhcac/explanation.py`
 

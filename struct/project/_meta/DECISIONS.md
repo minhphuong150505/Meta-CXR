@@ -19,11 +19,12 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-008](#d-008--struct-là-bộ-nhớ-local-không-commit) | struct/ từng git-ignored | ↪ Superseded by D-012 | 2026-08-12 |
 | [D-009](#d-009--rule-đồng-bộ-đặt-ở-cả-hai-claudemd) | Vị trí agent rule | ✅ Confirmed | 2026-08-12 |
 | [D-010](#d-010--tests-document-theo-nhóm-component) | Độ sâu doc tests | ✅ Confirmed | 2026-08-12 |
-| [D-011](#d-011--máy-train-hiện-tại) | Host train `phuong@minhphuong` — RTX 5060 Ti 16 GB | ✅ Confirmed | 2026-08-13 |
+| [D-011](#d-011--máy-train-hiện-tại) | Host train `phuong@phuong-b760m-pro-rs-d4-wifi` — RTX 5060 Ti 16 GB | ✅ Confirmed | 2026-08-13 |
 | [D-012](#d-012--đưa-struct-vào-repository) | Track và push `struct/` | ✅ Confirmed | 2026-08-12 |
 | [D-013](#d-013--gỡ-toàn-bộ-đường-chạy-cloud) | Gỡ toàn bộ đường chạy cloud | ✅ Confirmed | 2026-08-13 |
 | [D-014](#d-014--mask-giải-thích-hai-tầng-và-split-project-là-nguồn-chân-lý) | Mask explanation hai tầng | ✅ Confirmed | 2026-08-13 |
 | [D-015](#d-015--đánh-giá-xai-dùng-entrypoint-có-grad-riêng) | XAI evaluator có grad, metric NumPy tách source | ✅ Confirmed | 2026-08-14 |
+| [D-017](#d-017--dừng-explanation-aware-loss-trong-production) | Dừng explanation-aware loss | ✅ Confirmed | 2026-08-17 |
 
 ---
 
@@ -430,9 +431,16 @@ nhưng tên recipe không chứng minh môi trường đang được dùng ở t
 
 ### User decision
 
-Project dùng **một máy train duy nhất**: `phuong@minhphuong`, máy cá nhân.
+Project dùng **một máy train duy nhất**: `phuong@phuong-b760m-pro-rs-d4-wifi`, máy cá nhân.
 
-### Evidence (SSH, 2026-08-13)
+⚠ **Đổi tên host ngày 2026-08-17.** Trước đó là `phuong@minhphuong`; tên cũ đã
+chết, Tailscale không còn liệt kê. **Host key SSH cũng đổi** — key ed25519 mới
+khác key trong `known_hosts` của tên cũ, mà đổi tên thì không sinh lại host key.
+Cho đến khi user xác nhận chuyện gì đã xảy ra với máy, coi bảng Evidence bên dưới
+là **chưa được xác minh lại**: venv, checkout, checkpoint trong `/home/phuong/<run>/`
+và mount `/mnt/drive1tb` đều phải kiểm tra trước khi trích dẫn.
+
+### Evidence (SSH, 2026-08-13 — dưới tên cũ `minhphuong`)
 
 | Thuộc tính | Giá trị |
 |---|---|
@@ -771,3 +779,80 @@ encoder đóng băng mới là phần chiếm thời gian.
   nên về nguyên tắc làm được, và đây là lý do vấn đề này là "xuất phát điểm tệ"
   chứ không phải bug. Nhưng không có gì trong loss thúc nó về đó, và cái giá của
   việc đoán sai là cả stream vô dụng suốt 10 epoch.
+
+---
+
+## D-017 — Dừng explanation-aware loss trong production
+
+**Ngày:** 2026-08-17 · **Status:** ✅ Confirmed (quyết định của user)
+
+`model.loss.lambda_explanation` và `lambda_explanation_strong` đặt về **`0.0`**
+trong `pretraining/configs/mimic_cxr_full.yaml`. Cả hai bằng 0 tắt toàn bộ
+module, kể cả CAM capture (`blip2_qformer.py:313`).
+
+**Không xoá code.** `mhcac/explanation.py`,
+`preporcessing/build_explanation_masks.py`, `scripts/evaluate_explanation.py`,
+mask cache và test CPU đều giữ nguyên. Evaluator chính là thứ tạo ra bằng chứng
+dưới đây và là cách duy nhất kiểm chứng lại sau khi mở băng encoder.
+
+### Bằng chứng
+
+A/B có kiểm soát, 5 epoch mỗi nhánh, cùng seed/manifest/recipe, **chỉ khác hai
+lambda**. Test split, ngưỡng calibrate trên validation, `ignore_uncertain`:
+
+| | ON (0.05/0.25) | OFF (0/0) |
+|---|---:|---:|
+| positive_macro_f1 | 0.8757 [0.8657, 0.8844] | **0.8767** [0.8667, 0.8851] |
+| macro_auroc | 0.7850 [0.7547, 0.8157] | **0.7879** [0.7539, 0.8204] |
+| macro_specificity | 0.3840 | **0.4127** |
+| best val f1 | 0.713874 (epoch [4]) | **0.715404** (epoch [3]) |
+| wall clock | 5:06:44 | **4:25:27** |
+
+Mọi CI 95% chồng nhau; mọi chênh lệch nghiêng về OFF; term tốn **+15,5%** wall
+clock toàn run và +13,5/+17,0/+17,6% trên epoch [2]/[3]/[4] khi lambda còn sống.
+(Con số +10,5% ghi ở chỗ khác là của bản **một term gộp** trước khi tách.)
+
+### Lý do thật sự: term không đạt được chính mục tiêu của nó
+
+`L_exp` tối đa hoá phần saliency nằm trong mask — đúng đại lượng
+`evaluate_explanation.py` đo. **Baseline trung thực là tỉ lệ diện tích mask**, vì
+một CAM ngẫu nhiên ghi đúng bằng đó. Đo trực tiếp trên cache test:
+lung **0.3301**, bbox **0.2366**.
+
+| stream | quần thể | ON | OFF | ngẫu nhiên |
+|---|---|---:|---:|---:|
+| biovil | lung | 0.3692 | 0.3383 | 0.3301 |
+| biovil | bbox | 0.2552 | 0.2533 | 0.2366 |
+| pubmedclip | lung | 0.3810 | 0.4085 | 0.3301 |
+| pubmedclip | bbox | 0.1769 | 0.2021 | 0.2366 |
+
+Một stream nhích +0.031 đúng hướng; stream kia lệch ~0.026 **ngược hướng** trên
+cả hai quần thể và nằm **dưới mức ngẫu nhiên** ở bbox. CAM ở mức ngẫu nhiên
+trong **cả hai** nhánh — kể cả nhánh chưa từng bị ràng buộc.
+
+**Cơ chế:** encoder đóng băng. Bằng chứng không gian cố định ở đầu ra encoder;
+gradient của term chỉ tới projection/MHCAC/head, nên nó chỉ **đánh lại trọng số
+kênh** của một feature map có sẵn, không dạy được encoder nhìn chỗ khác. Nếu
+feature map đó không phân biệt vùng bệnh với phần còn lại của phổi thì không tổ
+hợp kênh nào tạo ra CAM trỏ đúng chỗ.
+
+### Điều kiện xem xét lại
+
+Chỉ sau khi **mở băng encoder**, và chỉ sau khi sửa hai lỗi đo lường:
+
+1. **Tách log weak/strong.** `blip2_qformer.py:1297` trộn thành một scalar
+   (`0.2*weak + 1.0*strong` ở weight cũ), nên không run nào trong quá khứ cho
+   biết term strong đã làm gì. Chạy thêm ablation trước khi sửa là vô ích.
+2. **Đưa baseline diện tích mask vào `evaluate_explanation.py`.** Thiếu nó,
+   0.25 trông như kết quả trong khi bằng ngẫu nhiên.
+
+### Giới hạn của chính A/B này — không được suy rộng
+
+Term strong chỉ kích hoạt trên **869/222.758 study train (0.39%)** và với
+`warmup_start_epoch: 2, warmup_epochs: 2` trong run 5 epoch, đạt trọng số đầy đủ
+đúng **1 epoch**. Chỉ có **159 study test** có bbox để đo. A/B này kiểm chứng
+*công thức như đang cấu hình*, **không** kết luận rằng ý tưởng
+explanation-aware nói chung là sai.
+
+**Liên quan:** [D-014](#d-014--mask-giải-thích-hai-tầng-và-split-project-là-nguồn-chân-lý) ·
+[D-015](#d-015--đánh-giá-xai-dùng-entrypoint-có-grad-riêng)

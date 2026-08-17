@@ -21,12 +21,15 @@ tồn tại, *ai* gọi nó, *cái gì* vỡ nếu bạn sửa nó, và *cái g�
 
 ### Máy train hiện tại
 
-Project dùng **một máy train duy nhất**: `phuong@minhphuong`, máy cá nhân của
+Project dùng **một máy train duy nhất**: `phuong@phuong-b760m-pro-rs-d4-wifi`, máy cá nhân của
 tác giả ([D-011](project/_meta/DECISIONS.md#d-011--máy-train-hiện-tại)). Xác minh
 qua SSH ngày 2026-08-13: **1× RTX 5060 Ti 16 GB**, driver 580.173.02 / CUDA 13.0;
 `/` còn ~5 GB, `/home` còn ~19 GB; dữ liệu và checkpoint nằm trên `/mnt/drive1tb`
 (930 GB NTFS, **không có trong `/etc/fstab`** nên phải mount tay sau reboot).
 Checkout trên máy đó: `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git`.
+⚠ Host đổi tên ngày 2026-08-17 (trước là `phuong@minhphuong`) và **host key SSH
+cũng đổi**; các con số xác minh 2026-08-13 ở trên chưa được kiểm lại sau đó —
+xem [D-011](project/_meta/DECISIONS.md#d-011--máy-train-hiện-tại).
 
 Mọi thao tác **chạy** project (train, evaluate, inference, smoke test) phải thực
 hiện qua SSH vào máy này, và **luôn `git pull origin main` trước khi chạy** —
@@ -433,8 +436,8 @@ CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
   --ignore=tests/test_blip2_negative_sampling.py \
   --ignore=tests/test_encoder_ablation.py
 
-# Mọi lệnh dưới đây chạy TRÊN phuong@minhphuong, không phải checkout này
-#   ssh phuong@minhphuong
+# Mọi lệnh dưới đây chạy TRÊN phuong@phuong-b760m-pro-rs-d4-wifi, không phải checkout này
+#   ssh phuong@phuong-b760m-pro-rs-d4-wifi
 #   cd ~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git && git pull origin main
 
 # Preflight trước mọi run GPU

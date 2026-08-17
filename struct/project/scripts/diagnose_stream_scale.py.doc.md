@@ -66,7 +66,7 @@ phân biệt nhãn mà classifier dùng — nguyên nhân khác với scale.
 ## Entry points
 
 ```bash
-# Chạy TRÊN phuong@minhphuong, không phải checkout dev
+# Chạy TRÊN phuong@phuong-b760m-pro-rs-d4-wifi, không phải checkout dev
 CUDA_VISIBLE_DEVICES=0 python scripts/diagnose_stream_scale.py --num-studies 64
 ```
 

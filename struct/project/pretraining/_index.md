@@ -58,7 +58,7 @@ pretraining/  ──►  checkpoint_best.pth  ──►  training/  (chỉ mode 
 
 ## Entry points
 
-> **Chạy ở đâu:** mọi lệnh dưới đây thực thi trên `phuong@minhphuong`, không phải
+> **Chạy ở đâu:** mọi lệnh dưới đây thực thi trên `phuong@phuong-b760m-pro-rs-d4-wifi`, không phải
 > ở checkout này (máy dev không có GPU và không có dataset). SSH vào máy đó,
 > `cd ~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git`, rồi
 > `git pull origin main` **trước khi chạy**.
