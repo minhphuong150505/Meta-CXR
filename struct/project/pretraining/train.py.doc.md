@@ -26,7 +26,7 @@ Không có file này, `registry.get_model_class("blip2")` trả về `None`.
 ## Role in architecture
 
 ```text
-người dùng (SSH vào phuong@minhphuong)
+người dùng (SSH vào phuong@phuong-b760m-pro-rs-d4-wifi)
         ↓
     train.py          ← BẠN ĐANG Ở ĐÂY
         ↓

@@ -68,7 +68,7 @@ này. Xem [GLOSSARY.md](GLOSSARY.md#pnu).
 
 **MIMIC-CXR-JPG**, subset p10–p19 (toàn bộ).
 
-Môi trường train là **một host duy nhất**, `phuong@minhphuong`
+Môi trường train là **một host duy nhất**, `phuong@phuong-b760m-pro-rs-d4-wifi`
 ([D-011](DECISIONS.md#d-011--máy-train-hiện-tại)) — máy cá nhân, **1× RTX 5060 Ti
 16 GB**, verify qua SSH 2026-08-13. Dữ liệu nằm ở `/mnt/drive1tb` (NTFS, không
 auto-mount). Không còn đường chạy cloud nào

@@ -14,7 +14,7 @@ bệnh lý × 3 lớp, cộng các hàm loss của Stage 1 và module hợp nh�
 | File | Status | Bằng chứng |
 |---|---|---|
 | `mhcac_12.py` | ✅ | `blip2_qformer.py:24` |
-| `explanation.py` | 🟡 | explanation-aware loss, chỉ khi `lambda_explanation > 0` |
+| `explanation.py` | 🟡 | explanation-aware loss. **TẮT trong production từ 2026-08-17** (`lambda_explanation` = `lambda_explanation_strong` = 0.0), xem [D-017](../_meta/DECISIONS.md#d-017--dừng-explanation-aware-loss-trong-production) |
 | `loss.py` | ✅ | `blip2_qformer.py:36` |
 | `view_fusion.py` | 🟡 | `blip2_qformer.py:42`, chỉ khi `multi_view: true` |
 | `mhcac.py`, `mhcac_2.py` … `mhcac_11.py` (11 file) | 🕰 | **zero reference** |

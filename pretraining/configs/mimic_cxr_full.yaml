@@ -346,15 +346,44 @@ model:
     # including CAM capture. There is deliberately no separate
     # explanation.enabled key that could disagree with these.
     #
-    # 0.25 for the strong term is the alpha Faruqui & Dubey report as the best
-    # accuracy/explanation trade-off (Fig. 4). The weak term is held to 0.05 so
-    # the plentiful anatomical prior cannot drown the scarce expert signal --
-    # before the split, one lambda of 0.25 applied to the pooled term only, and
-    # the strong term did not exist.
+    # BOTH ARE 0.0 AS OF 2026-08-17: the term is OFF in production, on measured
+    # evidence, by the user's decision. It was 0.05 / 0.25 (0.25 being the alpha
+    # Faruqui & Dubey report as the best accuracy/explanation trade-off, Fig. 4,
+    # with the weak term held to 0.05 so the plentiful anatomical prior could not
+    # drown the scarce expert signal).
     #
-    # NOT YET RUN ON GPU in this configuration.
-    lambda_explanation: 0.05
-    lambda_explanation_strong: 0.25
+    # A controlled 5-epoch A/B on the host, identical seed/manifest/recipe, the
+    # two lambdas the only difference (`abl_on` vs `abl_off`), test split with
+    # thresholds calibrated on val under ignore_uncertain:
+    #
+    #                        ON (0.05/0.25)   OFF (0/0)
+    #   positive_macro_f1        0.8757        0.8767
+    #   macro_auroc              0.7850        0.7879
+    #   macro_specificity        0.3840        0.4127
+    #   wall clock               5:06:44       4:25:27      (+15.5%)
+    #
+    # Every 95% CI overlapped and every difference favoured OFF. It also failed
+    # at its OWN objective. `L_exp` maximises saliency mass inside the mask,
+    # which is exactly what evaluate_explanation.py measures, and the honest
+    # baseline for that number is the mask area fraction (test: lung 0.3301,
+    # bbox 0.2366) because a random CAM scores precisely that:
+    #
+    #                        ON        OFF      random
+    #   biovil     lung     0.3692    0.3383    0.3301
+    #   biovil     bbox     0.2552    0.2533    0.2366
+    #   pubmedclip lung     0.3810    0.4085    0.3301
+    #   pubmedclip bbox     0.1769    0.2021    0.2366
+    #
+    # One stream moved +0.031 the right way; the other moved ~0.026 the WRONG
+    # way on both populations, and sits BELOW random on bbox. CAMs are at chance
+    # in both arms -- including the arm that was never constrained -- so the
+    # limit is the representation, not the loss. With the encoders frozen this
+    # term can only re-weight channels of a fixed feature map; it cannot teach
+    # an encoder to look elsewhere. Revisit only after unfreezing, and fix the
+    # blended logging first (blip2_qformer.py logs 0.2*weak + 1.0*strong as one
+    # scalar, so neither term is observable on its own).
+    lambda_explanation: 0.0
+    lambda_explanation_strong: 0.0
     # Mention gate. 0.0 disables it entirely (no gradient reaches the heads,
     # though they are still built so the parameter set is stable).
     lambda_gate: 0.5
@@ -429,7 +458,17 @@ model:
     gate_tolerance: 0.0
 
   explanation:
-    # COST OF THIS TERM: +10.5% wall, +174 MiB.
+    # INERT as of 2026-08-17: both lambda_explanation* above are 0.0, which
+    # disables this whole path including CAM capture. Everything below is kept
+    # so the term can be switched back on in one edit; see the lambda comment
+    # for why it was turned off. The mask cache and evaluate_explanation.py are
+    # unaffected and still usable -- the evaluator is what produced the evidence.
+    #
+    # COST OF THE TERM WHEN ON: +10.5% wall, +174 MiB for the single pooled
+    # version measured below. The two-term (weak + strong) version measured
+    # +15.5% over a full 5-epoch run, and +13.5/+17.0/+17.6% on epochs [2]/[3]/[4]
+    # where the lambdas were live -- so prefer that figure, not the one below,
+    # if this is ever re-enabled in its split form.
     #
     # Measured 2026-08-15 from a real 10-epoch run at batch 16, which is the
     # only way to get this right: the warmup below holds lambda at 0 through
