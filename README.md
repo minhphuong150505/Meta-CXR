@@ -328,9 +328,18 @@ pip install -r requirements-stage2.txt
 deactivate
 ```
 
-> ⚠ **Máy train hiện KHÔNG có venv nào và KHÔNG có torch** (kiểm tra 2026-08-18).
-> `~/.venvs/meta-cxr-stage1-311` (torch 2.9.1+cu129) đã mất cùng lần cài lại
-> 2026-08-17 và phải dựng lại từ đầu trước khi chạy bất cứ thứ gì.
+> **Môi trường trên máy train đã được dựng lại ngày 2026-08-18** tại
+> `~/.venvs/meta-cxr-stage1-311`: **Python 3.11.16, torch 2.9.1+cu129,
+> torchvision 0.24.1+cu129, transformers 4.53.2**. Đã xác minh trên GPU thật —
+> `capability (12, 0)`, `sm_120` có trong `get_arch_list()`, matmul chạy được.
+> Checkout ở `~/Meta-CXR`. Test CPU: **565 passed, 4 failed, 4 skipped** (4 fail
+> là baseline cũ, do thiếu `configs/env_config.yaml` riêng tư).
+>
+> ⚠ Python hệ thống là **3.14** và không dùng được — bản 3.11 lấy qua `uv`.
+> ⚠ **Đừng `pip install -r requirements-stage1.txt` nguyên bản**: nó ghim
+> `torch==2.5.1` (kernel chỉ tới sm_90) trong khi GPU là sm_120. Cài torch từ
+> kênh cu129 trước, rồi cài phần còn lại sau khi bỏ hai dòng torch.
+> Chi tiết: mục "The venv" trong `CLAUDE.md`.
 >
 > RTX 5060 Ti là kiến trúc **sm_120**, cần CUDA 12.8 trở lên. Bản torch build
 > cho CUDA 12.4 chỉ có kernel tới sm_90 và sẽ chết bằng

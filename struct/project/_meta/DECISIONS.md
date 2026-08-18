@@ -456,7 +456,7 @@ cùng ngày:
 | Đĩa dữ liệu | `nvme0n1` 931,5 GB — `p2` **930,7 GB NTFS**, **chưa mount** |
 | `/mnt/drive1tb` | **không tồn tại** |
 | Checkpoint | **0 file `.pth`** |
-| venv / torch | **không có** |
+| venv / torch | mất — **đã dựng lại 2026-08-18**: Python 3.11.16 (qua `uv`), torch 2.9.1+cu129, `sm_120` OK trên GPU thật |
 | Checkout trên máy | **không có** |
 | sudo | có mật khẩu — agent qua SSH không mount được |
 
