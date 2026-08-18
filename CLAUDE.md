@@ -514,6 +514,66 @@ study (not image) → anchor + ≤1 auxiliary view
   not recreate or copy it from history; `mimic_cxr_full.yaml` is the only
   supported Stage-1 recipe.
 
+#### Throughput with three encoders and the teacher on — measured 2026-08-18
+
+The **0.2347 s/it** baseline quoted throughout this file was measured with
+**two** encoders and the privileged-text teacher **off**. It does not describe
+the configuration that ships today. With `encoders.swin: true` and
+`lambda_teacher_cls`/`lambda_distill` at 0.5, on the 5060 Ti at batch 16 /
+accum 4, 800 iterations into a real run:
+
+| | |
+|---|---|
+| step time | **1.0364 s/it**, range 1.0358–1.0370 over 12 consecutive samples |
+| epoch | 13,922 iters → **4.0 h** |
+| 10-epoch run | **~40 h**, plus five validation passes from epoch [5] |
+| `max mem` | **9,433 MiB** torch, 12,061 MiB by nvidia-smi — 74% of the card, no OOM |
+
+That is **4.4x the two-encoder/no-teacher baseline**, turning a ~9 h run into
+~40 h. The split between swin and the teacher branch has **not** been measured
+separately, so do not attribute it. What can be said: it is not I/O. The
+variance across samples is ±0.0006 s and `max mem` is constant, with none of the
+slow tail that the ntfs3 volume damage produces (p90 0.786, max 4.25 s/it) — so
+this is compute, not the disk.
+
+Sanity signals from the same 800 iterations, all healthy:
+`loss_itc/itm/lm` exactly 0.0000 (the gating works, the Q-Former is skipped),
+`loss_mpc` falling 3.35 → 2.66 within the epoch (the `StreamAdapter` fix holds),
+`loss_distill` **0.0084–0.0115** against the degenerate **1.4e-08** that got the
+teacher switched off before, and `lr` 2.6e-5 at optimizer update 200 of an
+800-update warmup, which is exactly the linear ramp.
+
+#### Running Stage 1 unattended — `~/supervise.sh` on the host
+
+Not in the repo; it lives on `/home` on the training host. Three traps it
+encodes, each found the hard way on 2026-08-18:
+
+- **Startup is not a stall.** The watchdog counts `Train: data epoch` lines, and
+  there are none while the run downloads `blip2_pretrained.pth` (1.9 GB) and
+  builds the encoders. A single timeout applied from launch kills a healthy run
+  ~12 minutes in. Startup needs its own, much larger budget until the first
+  training line appears.
+- **stdout is block-buffered.** The run writes to a file, not a tty, so
+  MetricLogger `print()` lines arrive in ~8 KB bursts — measured at one flush per
+  ~75 s, 0 → 17 lines at once. `[INFO]` lines come through immediately because
+  `logging` writes to stderr, which is why the log looks alive while the line
+  count sits at zero. The line count is therefore a **coarse** progress signal
+  and a run that merely slows stretches the gap proportionally.
+- **GPU utilisation is the signal that actually catches the known failures.**
+  Both the DataLoader IPC deadlock and the ntfs-3g stall sat at 0% while the
+  process stayed alive. It is unbuffered and immediate. The script trips on
+  6 minutes of <=5% utilisation independently of the log.
+
+It also falls back on OOM (halve batch, double accum, effective batch
+unchanged), resumes from `checkpoint_last`, and aborts after three consecutive
+failures that produce no new checkpoint. `ADOPT_PID=<pid>` attaches it to an
+already-running train process instead of starting a new one — which is how the
+watchdog itself can be fixed without losing a run in progress.
+
+`blip2_pretrained.pth` re-downloads on a fresh `/home` even though a copy
+survives at `<data drive>/torch-cache/hub/checkpoints/`. Symlink
+`~/.cache/torch/hub/checkpoints` at it to skip 1.9 GB.
+
 #### Explanation-aware loss and XAI evaluation
 
 **OFF IN PRODUCTION as of 2026-08-17** — `lambda_explanation` and
