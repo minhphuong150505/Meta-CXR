@@ -151,3 +151,39 @@ class ViewFusionModule(nn.Module):
         for block in self.blocks:
             out = block(out, anchor_view_emb, aux_tokens, attn_bias, gate)
         return out
+
+
+def real_aux_rows(aux_mask, total, device):
+    """Flat boolean index of the auxiliary slots that hold a real view.
+
+    ``aux_mask`` is [B, N]; ``total`` is B*N, the length of the flattened image
+    batch the frozen encoders would otherwise see. Returns ``None`` when there
+    is nothing to filter -- either no mask was supplied or every slot is real --
+    so the caller keeps its original dense path and pays no indexing cost.
+
+    This exists because the collater pads ragged studies with
+    ``torch.zeros_like(anchor)`` and ``ViewFusionModule`` then gates those rows
+    to exactly zero. Encoding them is pure waste: on the MIMIC-CXR study split
+    44.7% of train studies have no auxiliary view at all.
+    """
+    if aux_mask is None:
+        return None
+    keep = aux_mask.reshape(-1).to(device=device, dtype=torch.bool)
+    if int(keep.sum().item()) == total:
+        return None
+    return keep
+
+
+def scatter_aux_rows(x, keep, batch_size, num_views):
+    """[n_keep, P, D] -> [B, N, P, D], padded slots left at exactly zero.
+
+    Inverse of indexing with ``real_aux_rows``. Zero is the correct filler and
+    not merely a placeholder: ``ViewFusionModule`` masks those slots out of the
+    attention softmax and gates the residual branches off for studies with no
+    auxiliary view, so nothing downstream reads the value.
+    """
+    if keep is None:
+        return x.reshape(batch_size, num_views, *x.shape[1:])
+    full = x.new_zeros((int(keep.shape[0]),) + tuple(x.shape[1:]))
+    full[keep] = x
+    return full.reshape(batch_size, num_views, *full.shape[1:])

@@ -4,7 +4,7 @@ No GPU and no dataset required.
 """
 import torch
 
-from mhcac.view_fusion import ViewFusionModule
+from mhcac.view_fusion import ViewFusionModule, real_aux_rows, scatter_aux_rows
 
 
 B, P, D = 3, 7, 32
@@ -127,10 +127,87 @@ def test_view_dropout_train_only():
     print("ok: view dropout active under train(), inert under eval()")
 
 
+def test_real_aux_rows_selects_only_padded_slots():
+    """The filter keeps exactly the real views and nothing else."""
+    aux_mask = torch.tensor([[True, False], [False, False], [True, True]])
+    keep = real_aux_rows(aux_mask, total=6, device=torch.device("cpu"))
+    assert keep is not None
+    assert keep.tolist() == [True, False, False, False, True, True]
+    assert int(keep.sum()) == 3
+    print("ok: real_aux_rows selects only the real auxiliary slots")
+
+
+def test_real_aux_rows_returns_none_when_nothing_to_filter():
+    """A fully real mask, or no mask at all, keeps the dense path."""
+    full = torch.ones(2, 3, dtype=torch.bool)
+    assert real_aux_rows(full, total=6, device=torch.device("cpu")) is None
+    assert real_aux_rows(None, total=6, device=torch.device("cpu")) is None
+    print("ok: real_aux_rows is a no-op when every slot is real")
+
+
+def test_scatter_aux_rows_round_trip_leaves_padding_at_zero():
+    """Encoding only the real rows reproduces the dense result exactly.
+
+    This is the invariant the auxiliary-encoder filter rests on: a padded slot
+    is all-zero input whose output ViewFusionModule gates away, so replacing it
+    with literal zeros must be indistinguishable downstream.
+    """
+    Bx, Nx, Px, Dx = 3, 2, 5, 4
+    aux_mask = torch.tensor([[True, False], [False, False], [True, True]])
+    keep = real_aux_rows(aux_mask, total=Bx * Nx, device=torch.device("cpu"))
+
+    encoded_real = torch.randn(int(keep.sum()), Px, Dx)
+    out = scatter_aux_rows(encoded_real, keep, Bx, Nx)
+
+    assert out.shape == (Bx, Nx, Px, Dx)
+    torch.testing.assert_close(out.reshape(Bx * Nx, Px, Dx)[keep], encoded_real)
+    assert out.reshape(Bx * Nx, Px, Dx)[~keep].abs().max().item() == 0.0
+    print("ok: scatter_aux_rows round-trips and zeroes padding")
+
+
+def test_filtered_aux_fuses_identically_to_dense_aux():
+    """End-to-end: fusion output is unchanged by dropping the padded rows.
+
+    Stands in for the frozen encoders -- a padded slot carries *some* value in
+    the dense path (the encoder's response to an all-zero image) and exactly
+    zero in the filtered path. The fused anchor must not be able to tell.
+    """
+    m = make_module(p_view_drop=0.0, dropout=0.0).eval()
+    for blk in m.blocks:  # break the zero init so fusion actually does something
+        torch.nn.init.normal_(blk.w_o.weight, std=0.5)
+        torch.nn.init.normal_(blk.ffn[-1].weight, std=0.5)
+
+    N = 2
+    anchor = torch.randn(B, P, D)
+    aux_mask = torch.tensor([[True, False], [False, False], [True, True]])
+    aux_view_ids = torch.tensor([[1, 0], [0, 0], [2, 3]])
+    keep = real_aux_rows(aux_mask, total=B * N, device=torch.device("cpu"))
+
+    real = torch.randn(int(keep.sum()), P, D)
+    filtered = scatter_aux_rows(real, keep, B, N)
+
+    # Dense path: padded slots hold arbitrary junk instead of zeros.
+    dense = filtered.reshape(B * N, P, D).clone()
+    dense[~keep] = torch.randn(int((~keep).sum()), P, D)
+    dense = dense.reshape(B, N, P, D)
+
+    out_filtered = m(anchor, filtered, aux_mask, torch.tensor([0, 1, 2]), aux_view_ids)
+    out_dense = m(anchor, dense, aux_mask, torch.tensor([0, 1, 2]), aux_view_ids)
+
+    torch.testing.assert_close(out_filtered, out_dense)
+    # And study 1, which has no real view at all, still gets the anchor back.
+    torch.testing.assert_close(out_filtered[1], anchor[1])
+    print("ok: filtered auxiliary rows fuse identically to the dense batch")
+
+
 if __name__ == "__main__":
     test_zero_init_identity()
     test_no_aux_returns_anchor()
     test_shapes()
     test_gradient_reaches_kv()
     test_view_dropout_train_only()
+    test_real_aux_rows_selects_only_padded_slots()
+    test_real_aux_rows_returns_none_when_nothing_to_filter()
+    test_scatter_aux_rows_round_trip_leaves_padding_at_zero()
+    test_filtered_aux_fuses_identically_to_dense_aux()
     print("\nall view-fusion tests passed")

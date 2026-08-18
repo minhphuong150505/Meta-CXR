@@ -1,6 +1,6 @@
-> Source: `mhcac/view_fusion.py` (153 dòng)
+> Source: `mhcac/view_fusion.py` (189 dòng)
 > Status: 🟡 CONDITIONAL — `multi_view: true`
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-18
 
 # `mhcac/view_fusion.py`
 
@@ -78,6 +78,31 @@ Thêm key mới mà quên thêm dòng đọc = key không có hiệu lực.
 | `ViewFusionBlock` | 11 | [📄](view_fusion.py.methods/ViewFusionBlock.md) |
 | `ViewFusionModule` | 78 | [📄](view_fusion.py.methods/ViewFusionModule.md) |
 
+## Module-level helpers — lọc slot aux rỗng (2026-08-18)
+
+| Hàm | Dòng | Vai trò |
+|---|---|---|
+| `real_aux_rows(aux_mask, total, device)` | 156 | index bool `[B*N]` của các slot **thật**; `None` khi không có gì để lọc |
+| `scatter_aux_rows(x, keep, B, N)` | 177 | `[n_keep,P,D]` → `[B,N,P,D]`, slot padding để đúng 0 |
+
+Chúng sống ở đây chứ không ở `blip2_qformer.py` vì hai lý do, cả hai đều thực tế:
+
+1. **Ngữ nghĩa thuộc về fusion.** "Slot nào là thật" là điều `ViewFusionModule`
+   định nghĩa qua `aux_mask`; hai hàm này chỉ là mặt trước của cùng hợp đồng đó.
+2. **Test được trên máy CPU.** `blip2_qformer.py` kéo theo torchvision nên không
+   import được ở nơi test chạy; file này chỉ phụ thuộc `torch`.
+
+`Blip2Qformer._encode_aux_streams` dùng chúng để **không encode** các slot padding:
+44.7% study train không có auxiliary view, và trước đó mỗi slot padding vẫn tốn một
+lượt forward qua cả ba encoder đóng băng chỉ để bị gate về 0. Xem
+[`_encode_aux_streams`](../model/lavis/models/blip2_models/blip2_qformer.py.methods/Blip2Qformer/_encode_aux_streams.md).
+
+⚠ **Số 0 ở slot padding là bắt buộc phải vô hại, không phải là giá trị có nghĩa.**
+Bất biến này do `ViewFusionModule` giữ (mask khỏi softmax + gate residual = 0) và
+`MultiPositiveContrastiveLoss` giữ (`cand_valid`). Nếu có consumer mới đọc `aux`
+mà **không** tôn trọng `aux_mask`, nó sẽ đọc phải số 0 — sửa consumer đó, đừng bỏ
+bộ lọc.
+
 ## Ba quyết định thiết kế — mỗi cái giải một vấn đề cụ thể
 
 ### 1. Zero-init → identity chính xác tại step 0
@@ -135,7 +160,8 @@ ViewFusionModule.forward(anchor, aux, aux_mask, anchor_view_id, aux_view_ids)
 ## Called by
 
 `Blip2Qformer.__init__:315` (dựng `nn.ModuleDict`, một cho mỗi encoder) ·
-`Blip2Qformer._fuse:465` · `tests/test_view_fusion.py`
+`Blip2Qformer._fuse:640` · `Blip2Qformer._encode_aux_streams:600` (helper lọc) ·
+`tests/test_view_fusion.py`
 
 ## Data flow
 
@@ -152,11 +178,15 @@ Dropout khi training. Không mutate state ngoài.
 | `dim % num_heads != 0` | `ValueError` nêu cả hai số (`:26`) |
 | `aux` là `None` | `_fuse` trả `anchor` nguyên vẹn, không gọi module |
 | `N_max == 0` | `has_aux_input` False → không encode aux |
+| `aux_mask` toàn False | `_encode_aux_streams` return sớm → `_fuse` trả `anchor` |
 | Hàng toàn padding | `MASK_NEG` giữ softmax hợp lệ |
 
 ## Related tests
 
-`tests/test_view_fusion.py` — **identity tại step 0**, đây là test quan trọng nhất
+`tests/test_view_fusion.py` — **identity tại step 0**, đây là test quan trọng nhất;
+cộng bốn test cho `real_aux_rows` / `scatter_aux_rows`, trong đó
+`test_filtered_aux_fuses_identically_to_dense_aux` là cái khoá bất biến "lọc không
+đổi kết quả" (nó cố tình nhét số ngẫu nhiên vào slot padding của đường dense)
 `tests/test_multiview_losses.py` — loss đi kèm
 
 ## Related documentation

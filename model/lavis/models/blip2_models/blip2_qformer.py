@@ -47,7 +47,7 @@ from mhcac.loss import (
     soft_target_kl_loss,
     view_consistency_loss,
 )
-from mhcac.view_fusion import ViewFusionModule
+from mhcac.view_fusion import ViewFusionModule, real_aux_rows, scatter_aux_rows
 
 chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
                               "Cardiomegaly", "Lung Opacity",
@@ -557,19 +557,25 @@ class Blip2Qformer(Blip2Base):
         mask = mask.unsqueeze(-1)  # Add dimension for broadcasting
         return embeddings * mask  # Apply mask by element-wise multiplication
 
-    def _encode_aux_streams(self, aux_image, cached=None):
+    def _encode_aux_streams(self, aux_image, cached=None, aux_mask=None):
         """[B, N, 3, H, W] -> dict[name, [B, N, P, D]] of raw frozen-encoder output.
 
-        Batched (one encoder call over B*N images, not a per-image loop) and
-        under no_grad. That detaches the auxiliary *features* only -- the fusion
-        module's W_K/W_V are applied outside this block and still get gradient.
+        Batched (one encoder call over the real auxiliary images, not a per-image
+        loop) and under no_grad. That detaches the auxiliary *features* only --
+        the fusion module's W_K/W_V are applied outside this block and still get
+        gradient.
+
+        ``aux_mask`` [B, N] marks which slots hold a real view. The collater pads
+        ragged studies with ``torch.zeros_like(anchor)``, and 44.7% of train
+        studies have no auxiliary view at all, so without this filter roughly
+        half of every auxiliary encoder forward is spent on all-zero images whose
+        output ``ViewFusionModule`` then gates to exactly zero. Padded rows are
+        left at zero here and never reach an encoder; the returned shape is
+        unchanged, so every caller is untouched.
         """
         cached = cached or {}
         B, N = aux_image.shape[:2] if aux_image is not None else (0, 0)
         streams = {}
-
-        def unflatten(x):
-            return x.reshape(B, N, *x.shape[1:])
 
         # Cached auxiliary features arrive already shaped [B, N, P, D].
         for name in ("biovil", "pubmedclip", "swin", "raddino"):
@@ -591,23 +597,35 @@ class Blip2Qformer(Blip2Base):
             )
 
         flat = aux_image.flatten(0, 1)
+        keep = real_aux_rows(aux_mask, flat.shape[0], flat.device)
+        if keep is not None and not bool(keep.any()):
+            # No study in the batch has an auxiliary view. Returning without the
+            # requested streams makes _fuse fall through to the anchor, which is
+            # exactly what the all-zero gate would have produced anyway -- one
+            # fewer encoder forward and one fewer fusion block, same result.
+            return streams
+        real = flat if keep is None else flat[keep]
+
+        def scatter(x):
+            return scatter_aux_rows(x, keep, B, N)
+
         with torch.no_grad():
             if "biovil" in need:
-                streams["biovil"] = unflatten(
-                    self.visual_encoder(flat).projected_patch_embeddings.reshape(
-                        flat.shape[0], -1, 1408
+                streams["biovil"] = scatter(
+                    self.visual_encoder(real).projected_patch_embeddings.reshape(
+                        real.shape[0], -1, 1408
                     )
                 )
             if "pubmedclip" in need:
                 # Fuse the 768-dim ViT stream; the 1408 projection is recomputed
                 # from the fused tokens, so the aux projection is discarded here.
-                streams["pubmedclip"] = unflatten(
-                    self.pubmedclip(flat, apply_aug=False)[0]
+                streams["pubmedclip"] = scatter(
+                    self.pubmedclip(real, apply_aug=False)[0]
                 )
             if "swin" in need:
-                streams["swin"] = unflatten(self.swin(flat))
+                streams["swin"] = scatter(self.swin(real))
             if "raddino" in need:
-                streams["raddino"] = unflatten(self.raddino(flat))
+                streams["raddino"] = scatter(self.raddino(real))
         return streams
 
     def _stash_prefusion(self, name, anchor, aux_streams):
@@ -724,7 +742,7 @@ class Blip2Qformer(Blip2Base):
         ) or any(v is not None and v.shape[1] > 0 for v in (aux_cached or {}).values())
         fuse_on = self.multi_view and self.view_fusion is not None
         aux_streams = (
-            self._encode_aux_streams(aux_image, cached=aux_cached)
+            self._encode_aux_streams(aux_image, cached=aux_cached, aux_mask=aux_mask)
             if fuse_on and has_aux_input
             else {}
         )
