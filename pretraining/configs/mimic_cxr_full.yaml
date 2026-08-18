@@ -574,9 +574,27 @@ run:
   init_lr: 1.0e-4
   init_lr_q: 1.0e-4
   init_lr_cls: 1.0e-4
-  # Matches the upstream META-CXR reference. Was 1.0e-6, which decayed the tail
-  # of the run 10x further than the recipe this work derives from.
-  min_lr: 1.0e-5
+  # RAISED 2026-08-18 from 1.0e-5, at the user's request: the late epochs were
+  # improving too slowly. The cosine floor is what the tail of the run actually
+  # trains at, so this knob moves the end without disturbing the start. Measured
+  # over the shipped schedule (10 epochs, ~3,480 optimizer updates per epoch at
+  # effective batch 64, 800 warmup updates), the LR at each epoch boundary
+  # changes by:
+  #   [1] 1.00x  [2] 1.01x  [3] 1.02x  [4] 1.05x  [5] 1.08x
+  #   [6] 1.15x  [7] 1.27x  [8] 1.47x  [9] 1.79x  end 2.00x
+  # i.e. epochs [0]-[4] are untouched for practical purposes and only the last
+  # three move, which is the point. Absolute values at the tail: epoch [8] now
+  # starts at 2.80e-5 instead of 1.90e-5, epoch [9] at 2.21e-5 instead of
+  # 1.23e-5, and the run ends at 2.0e-5 instead of 1.0e-5.
+  #
+  # The scheduler is stateless -- lr is recomputed from (epoch, step) every
+  # update and nothing about it is persisted -- so a resume from checkpoint_last
+  # picks this up immediately, with the optimizer moments intact.
+  #
+  # Was 1.0e-5, which matched the upstream META-CXR reference; before that
+  # 1.0e-6, which decayed the tail 10x further than the recipe this work
+  # derives from. NOT YET RUN ON GPU at this value.
+  min_lr: 2.0e-5
   warmup_lr: 1.0e-6
   # Optimizer updates, NOT microbatches -- this differs from upstream, which
   # steps its scheduler once per microbatch. Converting: upstream's 4000
