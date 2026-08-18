@@ -100,9 +100,24 @@ class TestShippedRecipe:
         assert loss_cfg["lambda_itm"] == 0.0
         assert loss_cfg["lambda_lm"] == 0.0
 
-    def test_teacher_and_distillation_are_off(self, loss_cfg):
-        assert loss_cfg["lambda_teacher_cls"] == 0.0
-        assert loss_cfg["lambda_distill"] == 0.0
+    def test_teacher_and_distillation_are_on(self, loss_cfg):
+        """Back on at 0.5 each as of 2026-08-18, at the user's request.
+
+        They were switched off because the term was degenerate, not because the
+        idea was rejected: loss_distill measured **1.4e-08**, with teacher and
+        student logits agreeing to nine significant figures, so the student was
+        being distilled toward itself. Re-measured on the 2026-08-18 run over
+        the first 800 iterations it sits at **0.0084-0.0115** -- five orders of
+        magnitude larger, i.e. the teacher is now saying something the student
+        does not already know.
+
+        Keep watching it. If it collapses back toward zero the term is free to
+        remove; a value that small is indistinguishable from having no teacher,
+        and the teacher is not free (it forces the text-encoder pass, see
+        test_shipped_recipe_runs_the_text_encoder).
+        """
+        assert loss_cfg["lambda_teacher_cls"] == 0.5
+        assert loss_cfg["lambda_distill"] == 0.5
 
     def test_auxiliary_weights_match_upstream_meta_cxr(self, loss_cfg):
         """DasithEdirisinghe/META-CXR @ e97d709, blip2_qformer.py:477:
@@ -135,12 +150,30 @@ class TestShippedRecipe:
         classification only and is NOT valid for the Stage-2 soft-token modes.
         """
         assert _needs_vision_language(loss_cfg) is False
-        assert _needs_text_encoder(loss_cfg) is False
+
+    def test_shipped_recipe_runs_the_text_encoder(self, loss_cfg):
+        """The teacher's price, stated so it is not rediscovered as a surprise.
+
+        The Q-Former stays skipped -- that is governed by itc/itm/lm alone --
+        but a non-zero teacher weight forces the text-encoder pass back on, so
+        the "classification-only" recipe is no longer text-free. The 1.56x
+        saving measured on 2026-08-13 came from skipping *both*; only part of it
+        survives. Measured cost of the current three-encoder + teacher config:
+        1.0364 s/it, ~4.0 h/epoch, against the 0.2347 s/it two-encoder
+        no-teacher baseline.
+        """
+        assert _needs_text_encoder(loss_cfg) is True
 
     def test_learning_rate_floor_matches_upstream(self):
         yaml = pytest.importorskip("yaml")
         run_cfg = yaml.safe_load(_CONFIG.read_text())["run"]
-        assert run_cfg["min_lr"] == 1.0e-5
+        # Raised 1.0e-5 -> 2.0e-5 on 2026-08-18: the cosine floor is what the
+        # tail of the run trains at, and the late epochs were improving too
+        # slowly. It is the one knob that moves the end of the schedule without
+        # disturbing the start -- 1.00x at epoch [1], 1.05x at [4], 2.00x at the
+        # end. Upstream's floor was 1.0e-5; this is a deliberate departure.
+        assert run_cfg["min_lr"] == 2.0e-5
+        assert run_cfg["min_lr"] < run_cfg["init_lr"], "a floor above the peak inverts the cosine"
         # Upstream warms over 4000 microbatches at accum 4 = 1000 optimizer
         # updates. This scheduler counts updates, so stay at or under that.
         assert run_cfg["warmup_steps"] <= 1000

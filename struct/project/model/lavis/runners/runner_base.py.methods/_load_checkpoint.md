@@ -1,4 +1,4 @@
-> Source: `model/lavis/runners/runner_base.py:1010-1135`
+> Source: `model/lavis/runners/runner_base.py:1127-1250`
 > Status: ✅ ACTIVE
 
 # `RunnerBase._load_checkpoint(url_or_filename)`
@@ -85,3 +85,22 @@ resume từ file bạn muốn giữ.
 ## Modification risk
 Đổi `strict=False` thành `True` sẽ làm mọi checkpoint hiện có không nạp được (thiếu
 key encoder).
+
+## ★ `mid_epoch` quyết định epoch bắt đầu — thêm 2026-08-18
+
+```python
+if checkpoint.get("mid_epoch", False):
+    self.start_epoch = checkpoint["epoch"]        # vào LẠI epoch đó
+else:
+    self.start_epoch = checkpoint["epoch"] + 1    # hành vi cũ
+```
+
+Không có nhánh này thì checkpoint ghi giữa epoch sẽ làm resume **nhảy cóc mất
+nguyên một epoch**. Checkpoint viết trước 2026-08-18 không có khóa `mid_epoch`,
+`.get(..., False)` đưa chúng về đúng hành vi cũ.
+
+⚠ Resume từ checkpoint giữa epoch **không** tua lại vị trí trong dữ liệu: giữ
+trọng số và moment Adam, mất vị trí, nên vài study được thấy hai lần trong epoch
+đó. Bỏ qua các batch đã tiêu thụ đồng nghĩa giải nén lại chúng cho không — chính
+là chi phí mà tính năng này muốn tránh. Ghim bởi
+`tests/test_mid_epoch_checkpoint.py`.

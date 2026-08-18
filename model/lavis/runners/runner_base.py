@@ -116,6 +116,10 @@ class RunnerBase:
         self._lr_sched = None
 
         self.start_epoch = 0
+        # Carried into mid-epoch checkpoints so a resume from one does not
+        # reset best-tracking and overwrite checkpoint_best with a worse score.
+        self._mid_epoch_best_agg_metric = None
+        self._mid_epoch_best_epoch = None
 
         # self.setup_seeds()
         self.setup_output_dir()
@@ -460,6 +464,20 @@ class RunnerBase:
         return int(self.config.run_cfg.get("save_freq", 1))
 
     @property
+    def save_every_iters(self):
+        """Write ``checkpoint_last.pth`` this often *within* an epoch. 0 = off.
+
+        An epoch on the production recipe is ~4 h, and ``checkpoint_last`` was
+        only written when one finished -- so three separate crashes inside
+        epoch 0 each threw away everything. This bounds that loss to the
+        interval instead of the epoch.
+        """
+        value = int(self.config.run_cfg.get("save_every_iters", 0))
+        if value < 0:
+            raise ValueError("run.save_every_iters must be >= 0")
+        return value
+
+    @property
     def max_grad_norm(self):
         return float(self.config.run_cfg.get("max_grad_norm", 1.0))
 
@@ -732,6 +750,8 @@ class RunnerBase:
                 # training phase
                 if not self.evaluate_only:
                     logging.info("Start training")
+                    self._mid_epoch_best_agg_metric = best_agg_metric
+                    self._mid_epoch_best_epoch = best_epoch
                     train_stats = self.train_epoch(cur_epoch)
                     self.log_stats(split_name="train", stats=train_stats)
 
@@ -843,6 +863,19 @@ class RunnerBase:
             self._model.set_epoch(epoch)
         self.model.train()
 
+        every = self.save_every_iters
+        on_sync_step = None
+        if every > 0 and not self.evaluate_only:
+            def on_sync_step(iters_done, _epoch=epoch, _every=every):
+                if iters_done % _every:
+                    return
+                self._save_checkpoint(
+                    _epoch, is_best=False, is_last=True,
+                    best_agg_metric=self._mid_epoch_best_agg_metric,
+                    best_epoch=self._mid_epoch_best_epoch,
+                    mid_epoch=True, iters_done=iters_done,
+                )
+
         return self.task.train_epoch(
             epoch=epoch,
             model=self.model,
@@ -855,6 +888,7 @@ class RunnerBase:
             log_freq=self.log_freq,
             accum_grad_iters=self.accum_grad_iters,
             max_grad_norm=self.max_grad_norm,
+            on_sync_step=on_sync_step,
         )
 
     @torch.no_grad()
@@ -984,9 +1018,17 @@ class RunnerBase:
 
     @main_process
     def _save_checkpoint(self, cur_epoch, is_best=False, is_last=False,
-                         best_agg_metric=None, best_epoch=None):
+                         best_agg_metric=None, best_epoch=None,
+                         mid_epoch=False, iters_done=None):
         """
         Save the checkpoint at the current epoch.
+
+        ``mid_epoch`` marks a checkpoint taken part-way through ``cur_epoch``
+        rather than after it. Resume re-enters that same epoch from its first
+        batch: the weights and optimizer moments are kept, the position in the
+        data is not. Skipping ``iters_done`` batches on resume would cost a
+        full decode pass over them, which is why it is not done -- the point
+        here is to stop losing hours of training, not to be bit-exact.
         """
         model_no_ddp = self.unwrap_dist_model(self.model)
         param_grad_dic = {
@@ -1027,12 +1069,40 @@ class RunnerBase:
             "epoch": cur_epoch,
             "best_agg_metric": best_agg_metric,
             "best_epoch": best_epoch,
+            "mid_epoch": bool(mid_epoch),
         }
+        if iters_done is not None:
+            save_obj["iters_done"] = int(iters_done)
         if include_training_state:
             save_obj["optimizer"] = optimizer_state
             save_obj["scaler"] = self.scaler.state_dict() if self.scaler else None
-        logging.info("Saving checkpoint at epoch {} to {}.".format(cur_epoch, save_to))
-        torch.save(save_obj, save_to)
+        if mid_epoch:
+            logging.info(
+                "Saving mid-epoch checkpoint at epoch {} iter {} to {}.".format(
+                    cur_epoch, iters_done, save_to
+                )
+            )
+        else:
+            logging.info("Saving checkpoint at epoch {} to {}.".format(cur_epoch, save_to))
+
+        # Write to a sibling temp file and rename. torch.save straight onto
+        # save_to is not atomic, and these files are ~4 GB: a crash partway
+        # through the write leaves a truncated checkpoint_last.pth and destroys
+        # the very state it was meant to protect. os.replace is atomic within a
+        # filesystem, and the temp file is deliberately placed next to the
+        # target so it cannot land on a different one.
+        tmp_path = save_to + ".tmp"
+        try:
+            torch.save(save_obj, tmp_path)
+            os.replace(tmp_path, save_to)
+        except BaseException:
+            # Includes KeyboardInterrupt/SystemExit on purpose: leaving a stray
+            # .tmp behind would be mistaken for a usable checkpoint later.
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def _reload_best_model(self, model):
         """
@@ -1170,7 +1240,18 @@ class RunnerBase:
             else:
                 self.scaler.load_state_dict(checkpoint["scaler"])
 
-        self.start_epoch = checkpoint["epoch"] + 1
+        if checkpoint.get("mid_epoch", False):
+            # Saved part-way through this epoch, so re-enter it rather than
+            # skipping to the next one.
+            self.start_epoch = checkpoint["epoch"]
+            logging.info(
+                "Checkpoint is mid-epoch (epoch %s, iters_done=%s); "
+                "restarting that epoch from its first batch.",
+                checkpoint["epoch"],
+                checkpoint.get("iters_done"),
+            )
+        else:
+            self.start_epoch = checkpoint["epoch"] + 1
         # Restore best-tracking so resumed runs don't overwrite checkpoint_best.pth
         # with a worse score (old checkpoints without these keys fall back to None).
         self._resumed_best_metric = checkpoint.get("best_agg_metric", None)

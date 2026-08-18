@@ -637,6 +637,26 @@ run:
   # each would have chosen before quoting either in a write-up.
   selection_metric: loss
   save_freq: 5
+  # Write checkpoint_last this often *within* an epoch. 0 restores the old
+  # behaviour of only writing when an epoch finishes.
+  #
+  # An epoch is ~4 h on this recipe (13,922 iters at 1.0364 s/it, measured
+  # 2026-08-18 with three encoders and the teacher on), and checkpoint_last was
+  # written only at the end of one. Three separate crashes -- an OOM, a
+  # DataLoader deadlock, and a whole-machine hang -- all landed inside epoch 0,
+  # so every one of them threw away everything and restarted from step 0. The
+  # supervisor could restart the run but had nothing to restart it *from*.
+  #
+  # 1000 iters is ~17 min of work at the measured rate. The checkpoint is
+  # ~3.8 GB (319M trainable params plus two Adam moments) and the write is
+  # synchronous, costing a few seconds -- well under 1% overhead.
+  #
+  # Resume from a mid-epoch checkpoint re-enters the SAME epoch from its first
+  # batch: weights and optimizer moments are kept, the position in the data is
+  # not. Some studies are therefore seen twice in that epoch. Skipping the
+  # consumed batches would mean decoding them again for nothing, which is the
+  # cost this is trying to avoid.
+  save_every_iters: 1000
 
   # 16 x accumulation 4 keeps the effective batch at 64.
   #
