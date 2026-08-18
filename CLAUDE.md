@@ -198,6 +198,20 @@ This directory is a **development checkout on a machine with no GPU and no
 dataset**. Nothing that actually runs the project — training, evaluation,
 inference, smoke tests, GPU-dependent scripts — runs here.
 
+⚠ **`/mnt/drive1tb` is not in `/etc/fstab`, so EVERY reboot loses it**, and this
+host reboots more than you would expect — it hung outright on 2026-08-18 22:25
+with **no Xid, no NVRM error, no MCE and no thermal event** in `journalctl -b -1`,
+and nothing logged at all at the moment of death (the signature of an abrupt
+power loss or hard hang, not a GPU fault). Mounting needs the user: there is no
+passwordless sudo.
+
+⚠⚠ **The `nvme0n1` / `nvme1n1` names swapped AGAIN across that reboot**, which is
+now the third observed swap and should settle the question permanently. Within a
+single evening: at 22:00 the dataset was `nvme0n1p2`; at 23:40 `nvme0n1p2` was
+the **root filesystem** and the dataset had become `nvme1n1p2`. Only
+`UUID=A4E6C088E6C05BE4` is stable. A device-named mount command has roughly even
+odds of naming `/`.
+
 ⚠ **The host is behind Tailscale SSH, which needs interactive browser approval.**
 This is why a plain `ssh` appears to hang and why `-o BatchMode=yes` does not
 fail fast: the connection completes the key exchange, then prints
@@ -474,12 +488,48 @@ study (not image) → anchor + ≤1 auxiliary view
   weights are feeding noise into the shared projector, the stream adapters and
   the view fusion — the exact parameters MHCAC reads — and belong back at 0.0.
 
-  ⚠ **It forced batch 16 -> 8** (accum 4 -> 8, effective batch 64 unchanged).
-  ITM triples the batch, and at batch 16 over 246 visual tokens the run OOMed on
-  the **first** iteration (14.90 GiB of 15.45). Swin is now also on, so the
-  Q-Former cross-attends over ~295 tokens and 16 is further out of reach than it
-  was. Batch 8 with three encoders **has not been measured** — supervise.sh
-  halves on OOM, so a wrong guess costs one ~12 min startup, not the run.
+  ⚠ **It forced batch 16 -> 8, and it cost Swin.** Measured on the 5060 Ti,
+  2026-08-18, all with `lambda_itc/itm/lm: 0.1`:
+
+  | encoders | batch | peak VRAM | s/it | outcome |
+  |---|---|---|---|---|
+  | 3 (swin on) | 8 | 11,238 then OOM | — | OOM in the **backward** pass, iteration 1 |
+  | 3 (swin on) | 4 | 11,083 | 0.40 | fits; ~62 h/10ep; ITM negatives fall to 3 |
+  | 2 (swin off) | 8 | **14,460 / 15,850 (93.4%)** | 0.42 | **shipped** — 700 iters + val, no OOM |
+
+  Note *where* batch 8 with three encoders died: iteration 0 completed at 11,238
+  MiB and the **retained gradient buffers** (301–319M trainable params) pushed
+  iteration 1 over. An OOM on iteration 1 rather than 0 is the signature of that,
+  not of a single oversized activation.
+
+  So the real choice was Swin, or a Q-Former with enough negatives to learn
+  anything — ITM draws hard negatives from the live microbatch only, and batch 4
+  leaves it 3 candidates. **Swin went off** (`model.encoders.swin: false`), which
+  also restores `_native_stream_layouts`: at two streams PubMedCLIP keeps its CLS
+  token and each encoder keeps its native scale, the configuration this repo had
+  already measured to be the better one.
+
+  ⚠ **93.4% is tight but it is stable, not variable.** Peak was *identical*
+  (14,460 MiB) at 150 and at 700 iterations, so it is not composition-dependent
+  despite the aux filter making the number of encoded auxiliary rows vary 0–8 per
+  batch. `nvidia-smi` shows ~15,119 MiB in the live run. Leave the batch alone;
+  if it ever OOMs, supervise.sh falls back to 4/16 — which silently reintroduces
+  the ITM starvation this configuration exists to avoid, so **treat an OOM
+  fallback as a result to act on, not a recovery**.
+
+  Loss trajectory over the first 700 iterations at batch 8 / swin off, which is
+  the reason this configuration was preferred to batch 4:
+
+  | | at 150 it | at 700 it | chance |
+  |---|---|---|---|
+  | `loss_itc` | 6.75 | **5.83 avg, 5.28 latest** | 5.58 = ln(264) |
+  | `loss_itm` | 1.19 | **0.724 avg, 0.621 latest** | 0.6365 (1:2 prior entropy) |
+  | `loss_lm` | 7.05 | **5.78 avg, 4.55 latest** | — |
+
+  At batch 4 the same numbers went the *other* way (`loss_itc` rising 6.22 ->
+  6.48, i.e. above chance). This is ~87 optimizer updates and settles nothing on
+  its own — `scripts/check_itc_gate.py` at ~500 updates is still the gate — but
+  it is the first time these objectives have moved in the right direction here.
 - **Padded auxiliary views no longer reach the encoders (2026-08-18).** The
   collater pads ragged studies with `torch.zeros_like(anchor)` and 44.7% of train
   studies have no auxiliary view, so `_encode_aux_streams` was spending roughly
