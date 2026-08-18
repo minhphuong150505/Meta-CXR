@@ -433,24 +433,51 @@ nhưng tên recipe không chứng minh môi trường đang được dùng ở t
 
 Project dùng **một máy train duy nhất**: `phuong@phuong-b760m-pro-rs-d4-wifi`, máy cá nhân.
 
-⚠ **Đổi tên host ngày 2026-08-17.** Trước đó là `phuong@minhphuong`; tên cũ đã
-chết, Tailscale không còn liệt kê. **Host key SSH cũng đổi** — key ed25519 mới
-khác key trong `known_hosts` của tên cũ, mà đổi tên thì không sinh lại host key.
-Cho đến khi user xác nhận chuyện gì đã xảy ra với máy, coi bảng Evidence bên dưới
-là **chưa được xác minh lại**: venv, checkout, checkpoint trong `/home/phuong/<run>/`
-và mount `/mnt/drive1tb` đều phải kiểm tra trước khi trích dẫn.
+⚠ **Đổi tên host + cài lại HĐH, ngày 2026-08-17.** Hai chuyện độc lập, xảy ra
+cùng ngày:
 
-### Evidence (SSH, 2026-08-13 — dưới tên cũ `minhphuong`)
+1. **Tên Tailscale đổi** `phuong@minhphuong` → `phuong@phuong-b760m-pro-rs-d4-wifi`.
+   Hostname của HĐH thì vẫn là `minhphuong`.
+2. **Máy bật Tailscale SSH.** Nó trình **host key của chính nó**, không phải key
+   `sshd` của máy — nên key khác mọi entry `known_hosts` cũ, và đó là chuyện
+   **bình thường**, không phải dấu hiệu máy bị thay. Nó cũng đòi duyệt qua trình
+   duyệt: `ssh` sẽ đứng im (kể cả `-o BatchMode=yes`) sau khi in link
+   `https://login.tailscale.com/a/<token>`. Agent không bấm được link đó — chạy
+   nền, đưa link cho user, chờ duyệt.
+3. **Máy được cài lại HĐH** (chuyện riêng, và là chuyện nghiêm trọng).
+
+### Evidence (SSH, 2026-08-18 — sau khi cài lại)
 
 | Thuộc tính | Giá trị |
 |---|---|
-| GPU | 1× NVIDIA RTX 5060 Ti, 16 GB (`nvidia-smi`) |
+| GPU | 1× NVIDIA RTX 5060 Ti, 16 GB — **không đổi** |
+| OS | Ubuntu 26.04 LTS, root fs tạo **2026-08-17 20:54** |
+| Đĩa hệ thống | `nvme1n1` 465,8 GB — `p2` **139,7 GB ext4 `/`**, `p3` **325 GB ext4 `/home`** (mới dùng 984 MB) |
+| Đĩa dữ liệu | `nvme0n1` 931,5 GB — `p2` **930,7 GB NTFS**, **chưa mount** |
+| `/mnt/drive1tb` | **không tồn tại** |
+| Checkpoint | **0 file `.pth`** |
+| venv / torch | **không có** |
+| Checkout trên máy | **không có** |
+| sudo | có mật khẩu — agent qua SSH không mount được |
+
+⚠ **Device của ổ dữ liệu đổi: `/dev/nvme1n1p2` → `/dev/nvme0n1p2`.** Bản cài mới
+nằm trên ổ 465,8 GB và đánh số lại NVMe, nên mọi lệnh mount trong lịch sử git
+đang trỏ vào **đĩa hệ thống**. Vì installer đi vào ổ khác, MIMIC-CXR **nhiều khả
+năng còn nguyên** trên ổ 1 TB — nhưng chưa xác minh được, vì mount cần sudo.
+
+**Mất hẳn:** toàn bộ checkpoint, các run ablation (`abl_on`/`abl_off`), cache
+explanation mask, checkout, venv. Con số đã đo vẫn còn trong git (D-017,
+`CLAUDE.md`, `README.md`) nhưng **không tái lập được** cho tới khi train lại.
+
+### Evidence cũ (SSH, 2026-08-13 — trước khi cài lại, chỉ để đối chiếu)
+
+| Thuộc tính | Giá trị |
+|---|---|
 | Driver / CUDA | 580.173.02 / 13.0 |
 | Disk `/` | 58 GB, còn ~5 GB |
 | Disk `/home` | 185 GB, còn ~19 GB |
 | Dữ liệu + checkpoint | `/mnt/drive1tb` — `nvme1n1p2`, 930 GB **NTFS**, **không có trong `/etc/fstab`** |
 | Checkout | `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git` |
-| sudo | có mật khẩu — agent qua SSH không mount được |
 
 ### Documentation impact
 

@@ -13,128 +13,148 @@ inside this directory.**
 
 ## The training host — there is only one, and it is local
 
-All training runs on **`phuong@phuong-b760m-pro-rs-d4-wifi`**, the user's own
-machine. It was reachable as `phuong@minhphuong` until 2026-08-17; that name is
-dead — Tailscale no longer lists it. Hardware verified over SSH on 2026-08-13,
-under the old name:
+All training runs on the user's own desktop, reachable over Tailscale as
+**`phuong@phuong-b760m-pro-rs-d4-wifi`**. Its OS hostname is still `minhphuong`,
+which is what `hostname` prints; the old Tailscale name `minhphuong` is dead and
+no longer listed.
+
+⚠ **THE MACHINE WAS WIPED AND REINSTALLED ON 2026-08-17.** Root filesystem
+created 20:54 that day, Ubuntu 26.04 LTS, on a **different physical disk** from
+the previous install. Verified over SSH 2026-08-18. Everything the project had
+put on local storage is gone:
+
+| Gone | Detail |
+|---|---|
+| All checkpoints | `find /home/phuong -name '*.pth'` → **0 files** |
+| The A/B runs | no `abl_on/`, `abl_off/`, `run_gate3_20260815/` |
+| Explanation mask cache | no `explanation_masks/`, no `explanation_masks_v2/` |
+| Repo checkout | `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git` absent |
+| The venv | `~/.venvs/` does not exist; no torch on the box at all |
+
+`/home` is 984 MB used out of 325 GB — a fresh home directory with a
+`setup-dev-environment.sh` in it. Do not quote any pre-2026-08-17 measurement as
+reproducible: the checkpoints that produced it no longer exist. The **numbers**
+survive in git (the explanation-loss A/B is recorded in this file, `README.md`
+and `struct/project/_meta/DECISIONS.md` D-017); the checkpoints and the raw
+`.npz` predictions behind them do not.
+
+### Hardware and disks (verified over SSH, 2026-08-18)
 
 | | |
 |---|---|
-| GPU | 1× NVIDIA **RTX 5060 Ti, 16 GB** (`nvidia-smi`), driver 580.173.02, CUDA 13.0 |
-| `/` | 58 GB, ~5 GB free — tight, do not install into it casually |
-| `/home` | 185 GB, ~23 GB free (2026-08-15) — now holds checkpoints, so watch it |
-| Dataset (read-only) | `/mnt/drive1tb` — partition `nvme1n1p2`, **930 GB NTFS**, **not in `/etc/fstab`**, mounted `ntfs3 -o ro` since 2026-08-15 |
-| Checkpoints | `/home/phuong/<run>/` — ext4. **Not** the 1 TB drive any more; see the mount note below |
-| Repo checkout there | `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git` |
+| GPU | 1× NVIDIA **RTX 5060 Ti, 16 GB** — unchanged by the reinstall |
+| OS | Ubuntu 26.04 LTS, root fs created 2026-08-17 20:54 |
+| System disk | `nvme1n1`, 465.8 GB — `p1` 1 GB EFI, `p2` **139.7 GB ext4 `/`**, `p3` **325 GB ext4 `/home`** |
+| Dataset disk | `nvme0n1`, 931.5 GB — `p2` **930.7 GB NTFS**, `p3` 781 MB NTFS |
+| `/mnt/drive1tb` | **does not exist** — the mount point is gone and the NTFS partition is not mounted |
+| Checkpoints | nowhere yet; `run.output_dir` must point at `/home/phuong/<run>` (ext4, 324 GB free) |
 
-Consequences worth remembering:
+⚠ **The dataset disk changed device name: `/dev/nvme1n1p2` → `/dev/nvme0n1p2`.**
+The reinstall landed on the 465.8 GB drive and renumbered the NVMe devices, so
+every older command in git history mounts the *system* disk. Use:
 
-- `/mnt/drive1tb` does **not** auto-mount — it is not in `/etc/fstab`. After a
-  reboot every path in `configs/env_config.yaml` dangles until it is mounted by
-  hand. If a run fails with missing CSVs or images, check the mount before
-  debugging anything else. Do not reboot mid-run.
-- The host has no passwordless sudo, so an agent on SSH cannot mount it. Ask
-  the user.
+```bash
+# needs the user — no passwordless sudo on this host
+sudo mkdir -p /mnt/drive1tb
+sudo mount -t ntfs3 -o ro /dev/nvme0n1p2 /mnt/drive1tb
+df -T /mnt/drive1tb            # must say ntfs3, not fuseblk
+```
+
+The 930.7 GB NTFS partition is intact as a partition and the installer went to a
+different disk, so MIMIC-CXR is **probably** still on it — but this has **not
+been verified**, because mounting needs sudo. Confirm before planning a run.
+
+### NTFS history — kept, but unverified on this install
+
+Everything below was measured on the *previous* install. The partition has not
+been mounted once since the reinstall, so none of it is currently confirmed —
+including whether the volume is still dirty. Treat it as a failure signature to
+recognise, not as current state.
+
 - **It is a Windows system partition**, not a data disk: `Windows/`,
-  `Program Files/`, `pagefile.sys`, `hiberfil.sys` sit next to the 573 GB
+  `Program Files/`, `pagefile.sys`, `hiberfil.sys` sat next to the 573 GB
   dataset. Treat write access as consequential.
-- **The volume has real NTFS errors.** `dmesg` on 2026-08-13:
-  `ntfs3(nvme1n1p2): Mark volume as dirty due to NTFS errors` /
-  `It is recommended to use chkdsk.` This is not a stale hibernation flag; the
-  kernel driver hit errors and flagged the volume itself. Only `chkdsk` from
-  Windows fixes it — `ntfsfix` clears the dirty bit without repairing anything.
-  The kernel `ntfs3` driver refuses rw while it stands; `ntfs-3g` (FUSE) mounted
-  it anyway, which is how the drive used to be writable. It is **no longer
-  mounted that way** — see the two entries below.
-- **`ntfs-3g` stalled a real run. The old "driver choice does not matter"
-  measurement is superseded — do not act on it.** That measurement (2026-08-13,
-  200 iterations at batch 6: `ntfs3` 0.5251 s/it vs `ntfs-3g` 0.5277 s/it,
-  +0.5%) was taken while the volume was behaving, and it does not generalise.
-  On 2026-08-15, five epochs into a run, `ntfs-3g` degraded until training
-  effectively stopped: `time:` went from 0.23 to 1.0–1.4 s/it with **10–14
-  minute stretches of no log output at all**, GPU at 0% and 25–40 W. Effective
-  throughput fell to ~60 iter/min against ~260 healthy, turning a 55-minute
-  epoch into 3 h 15.
-  The signature is unambiguous and worth recognising fast — check
-  `ps -eo pid,stat,wchan:22` **before** suspecting the model, batch size, RAM or
-  swap: the `ntfs-3g` process sits in state `D`, 10–11 of the 12
-  `pt_data_worker` processes sit in WCHAN `request_wait_answer` (the FUSE kernel
-  wait), and the main process sits in `futex_do_wait` behind them. Reads from
-  twelve workers funnel through one single-threaded userspace daemon, so when it
-  blocks, everything blocks. Swap being full is a red herring: `vmstat` showed
-  `si/so = 0`, i.e. full but static.
-- **The fix, verified 2026-08-15 — no reboot, no `chkdsk`.** Mount read-only
-  with the kernel driver and write checkpoints elsewhere. Training only *reads*
-  the dataset; the only thing it writes is checkpoints, so read-only costs
-  nothing and removes the FUSE daemon entirely.
+- **The volume had real NTFS errors.** `dmesg` on 2026-08-13:
+  `ntfs3(...): Mark volume as dirty due to NTFS errors` /
+  `It is recommended to use chkdsk.` Not a stale hibernation flag; the kernel
+  driver hit errors and flagged the volume. Only `chkdsk` from Windows repairs
+  it — `ntfsfix` clears the dirty bit without fixing anything. The kernel
+  `ntfs3` driver refuses rw while it stands; `ntfs-3g` (FUSE) mounted it anyway.
+- **`ntfs-3g` stalled a real run — mount read-only with `ntfs3` instead.** On
+  2026-08-15, five epochs in, `ntfs-3g` degraded until training effectively
+  stopped: `time:` went from 0.23 to 1.0–1.4 s/it with **10–14 minute stretches
+  of no log output**, GPU at 0% and 25–40 W, ~60 iter/min against ~260 healthy.
+  The signature is unambiguous — check `ps -eo pid,stat,wchan:22` **before**
+  suspecting the model, batch size, RAM or swap: `ntfs-3g` in state `D`, 10–11
+  of 12 `pt_data_worker` in WCHAN `request_wait_answer` (the FUSE kernel wait),
+  main process in `futex_do_wait` behind them. Twelve workers funnel through one
+  single-threaded userspace daemon, so when it blocks, everything blocks. Full
+  swap is a red herring: `vmstat` showed `si/so = 0`, full but static.
+  An earlier measurement said the driver did not matter (2026-08-13, 200
+  iterations at batch 6: `ntfs3` 0.5251 s/it vs `ntfs-3g` 0.5277, +0.5%) — that
+  was taken while the volume was behaving and **does not generalise**.
+- **Read-only `ntfs3` recovered most of the loss, not all.** Training only
+  *reads* the dataset, so read-only costs nothing and removes the FUSE daemon.
+  Over 1,550 iterations: median **0.231 s/it**, matching the 0.2347 healthy
+  baseline, stalls gone — but a slow tail survived (6 of 32 sampled iterations
+  over 0.5 s, p90 0.786, max 4.25) and epoch ETA settled at ~69 min against 55.
+  Roughly 3× better than the crippled FUSE state, ~25% short of baseline. That
+  residue is the volume's own damage, which only `chkdsk` addresses. `-o force`
+  mounts rw but overrides the kernel's damage check on the disk holding the
+  dataset, and only buys keeping checkpoints on the same drive.
 
-  ```bash
-  # needs the user — no passwordless sudo, and nothing may hold the mount
-  sudo umount /mnt/drive1tb
-  sudo mount -t ntfs3 -o ro /dev/nvme1n1p2 /mnt/drive1tb
-  df -T /mnt/drive1tb            # must say ntfs3, not fuseblk
-  ```
+### The venv — there is none right now
 
-  Then pass `run.output_dir=/home/phuong/<run>` so checkpoints land on ext4
-  (~23 GB free; a 10-epoch run needs ~6 GB). Reads off the ro mount clock
-  893 MB/s and GPU utilisation goes back to 97–98%.
+**`~/.venvs/` does not exist and the host has no torch** (2026-08-18). The
+previous environment, `~/.venvs/meta-cxr-stage1-311` (torch 2.9.1+cu129,
+torchvision 0.24.1, transformers 4.53.2), went with the reinstall and must be
+rebuilt before anything runs.
 
-  **It recovers most of the loss, not all of it — do not quote this as "fixed".**
-  Over the first 1,550 iterations of epoch 5: median **0.231 s/it**, exactly the
-  healthy 0.2347 baseline, and the multi-minute stalls are gone. But a slow tail
-  survives — 6 of 32 sampled iterations exceeded 0.5 s, p90 0.786, max 4.25 —
-  and the epoch ETA settled at ~69 min against the 55 min a healthy epoch takes.
-  So roughly 3x better than the crippled FUSE state and ~25% short of baseline.
-  That residue is consistent with the volume's own damage rather than the driver,
-  which is the part only `chkdsk` can address.
-  `-o force` mounts rw instead, but it overrides the kernel's own damage check
-  on the volume holding the 573 GB dataset and only buys the convenience of
-  keeping checkpoints on the same disk. `chkdsk` from Windows is still the only
-  actual repair.
-
-### The venv
-
-`~/.venvs/meta-cxr-stage1-311/bin/python` — torch 2.9.1+cu129, torchvision
-0.24.1, transformers 4.53.2. It is the only environment on the host with torch,
-and the RTX 5060 Ti is **sm_120**, which needs cu12.8+.
-
-`~/.venvs/meta-cxr-rtx4060` (torch 2.5.1+cu124, kernels only to sm_90) was
-**deleted on 2026-08-14** — it was named after earlier hardware and could not
-run this GPU. Do not recreate it. It cost a day: it fails late, after the whole
-model has loaded, with `CUDA error: no kernel image is available for execution
-on the device`, and before that it fails more confusingly still — transformers
-4.53 refuses `torch.load` under torch < 2.6 (CVE-2025-32434), so PubMedCLIP
-raises a vulnerability error and the arch mismatch never surfaces. If either
-symptom ever reappears, check the interpreter before anything else.
-
-`~/myenv` has no torch and is unrelated.
+When rebuilding: the RTX 5060 Ti is **sm_120**, which needs **cu12.8+**. This is
+the single most expensive thing to get wrong here. A cu12.4 build fails late,
+after the whole model has loaded, with `CUDA error: no kernel image is available
+for execution on the device` — and before that it fails more confusingly still,
+because transformers 4.53 refuses `torch.load` under torch < 2.6
+(CVE-2025-32434), so PubMedCLIP raises a vulnerability error and the arch
+mismatch never surfaces. If either symptom appears, check the interpreter before
+anything else. A previous venv named after older hardware cost a full day to
+this exact trap; do not recreate one.
 
 ### Running anything means SSH-ing there
 
 This directory is a **development checkout on a machine with no GPU and no
 dataset**. Nothing that actually runs the project — training, evaluation,
-inference, smoke tests, GPU-dependent scripts — runs here. SSH to the host:
+inference, smoke tests, GPU-dependent scripts — runs here.
+
+⚠ **The host is behind Tailscale SSH, which needs interactive browser approval.**
+This is why a plain `ssh` appears to hang and why `-o BatchMode=yes` does not
+fail fast: the connection completes the key exchange, then prints
+
+```
+# Tailscale SSH requires an additional check.
+# To authenticate, visit: https://login.tailscale.com/a/<token>
+```
+
+and waits. An agent cannot click that link — start the SSH in the background,
+surface the URL to the user, and wait for them to approve. Tailscale SSH also
+presents **its own host key**, not the machine's `sshd` key, so the key differs
+from any `known_hosts` entry predating it. That difference is expected and is
+**not** evidence of a reinstall (the reinstall is a separate, real event — see
+the top of this section).
+
+The repo checkout on the host is **gone** and must be re-cloned before running
+anything:
 
 ```bash
 ssh phuong@phuong-b760m-pro-rs-d4-wifi
-cd ~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git
-git pull origin main        # ALWAYS pull first — this checkout drifts behind
+git clone git@github.com:minhphuong150505/Meta-CXR.git
+cd Meta-CXR
 ```
 
-⚠ **The name changed on 2026-08-17 and so did the SSH host key.** The old
-`minhphuong` entry in `known_hosts` carries a different ed25519 key from the one
-`phuong-b760m-pro-rs-d4-wifi` now presents, so the first connection fails with
-`Host key verification failed`. A rename alone does not regenerate host keys, so
-treat this as an unverified change until the user confirms what happened to the
-machine — and do not assume the venv, the checkout, the checkpoints under
-`/home/phuong/<run>/` or the `/mnt/drive1tb` mount survived it. Re-verify each
-before quoting anything from the table above.
-
-That checkout has the same `origin` (`git@github.com:minhphuong150505/Meta-CXR.git`,
-branch `main`), so the workflow is: commit and push from here, then pull and run
-there. **Always pull before running** — the host has repeatedly been one or more
-commits behind, and running stale code silently produces results attributed to
-the wrong revision.
+Same `origin` as this checkout (branch `main`), so the workflow is unchanged:
+commit and push from here, then pull and run there. **Always pull before
+running** — the host has repeatedly been one or more commits behind, and running
+stale code silently produces results attributed to the wrong revision.
 
 What may still be done locally: reading code, editing, `struct/` updates, and the
 CPU test suite. Everything else goes over SSH.
@@ -191,8 +211,9 @@ python scripts/vm_preflight.py --stage 1
 CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
     --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --options run.output_dir=/home/phuong/<run>
-# output_dir MUST be on /home: /mnt/drive1tb is mounted read-only (ntfs3) since
-# 2026-08-15 and a write there fails. See "The training host" for why.
+# output_dir MUST be on /home (324 GB free, ext4). /mnt/drive1tb does not exist
+# on the reinstalled host, and when it is mounted again it should be read-only
+# ntfs3, where a write fails. See "The training host".
 # Launch it with NO batch overrides. The YAML ships batch 16 / accum 4
 # (effective 64), measured 2026-08-14 as the best of {6, 16, 24, 32}. The old
 # `batch_size_train=6 ... accum_grad_iters=11` command line is superseded.
@@ -241,8 +262,11 @@ python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresho
     --uncertain-policy ignore_uncertain --output-dir <dir>
 CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
     --checkpoint <checkpoint_best.pth> --cfg-path pretraining/configs/mimic_cxr_full.yaml \
-    --split test --mask-cache-dir /mnt/drive1tb/datasets/explanation_masks \
-    --output-dir /mnt/drive1tb/private-results/xai --export-figures 12
+    --split test --mask-cache-dir <mask-cache> --output-dir <private-results>/xai \
+    --export-figures 12
+# The cache these paths used to name was on /mnt/drive1tb and did not survive the
+# 2026-08-17 reinstall — it has to be rebuilt. Keep outputs off the repo tree:
+# PNG/NPZ from this script are patient data.
 python scripts/evaluate_stage2.py --predictions <reports.jsonl> \
     --metrics bleu,rouge,meteor,cider,bertscore --skip-clinical-metrics --output-dir <dir>
 
@@ -664,13 +688,15 @@ again if the manifest or this policy changes. `No Finding` has zero negatives by
 construction and is single-class under this policy; `include_meta_labels: false`
 already keeps it out of macro metrics. Pinned by `tests/test_blank_label_masking.py`.
 
-**The explanation-mask cache is built, and its coverage decides what you can
-claim.** `/mnt/drive1tb/datasets/explanation_masks/` holds `masks_<split>.npy`
-(uint8 `[N,112,112]`, values 0/255) plus `index_<split>.json` keyed by the anchor
-`dicom_id`. Built 2026-08-14 from CheXmask + MS-CXR against `full_allviews_v2`;
-the build takes ~25 minutes and streams the 13 GB CheXmask export, so do not
-rebuild it casually. Verified: rows unique and in range, no empty or all-ones
-mask, lung coverage p50 ≈ 33-35% on every split.
+**The explanation-mask cache was built, and its coverage decides what you can
+claim — but it did NOT survive the 2026-08-17 reinstall.** It lived on
+`/mnt/drive1tb` and is gone; rebuilding takes ~25 minutes and streams the 13 GB
+CheXmask export, and it needs the dataset disk mounted first. The format: a
+cache directory holds `masks_<split>.npy` (uint8 `[N,112,112]`, values 0/255)
+plus `index_<split>.json` keyed by the anchor `dicom_id`. Built 2026-08-14 from
+CheXmask + MS-CXR against `full_allviews_v2`, and verified then: rows unique and
+in range, no empty or all-ones mask, lung coverage p50 ≈ 33-35% on every split.
+The coverage table below describes that build, so re-verify after any rebuild.
 
 `build_explanation_masks.py` reimplements anchor selection instead of calling
 `build_study_index`. The two agree exactly on real data — 0 cache keys that are
