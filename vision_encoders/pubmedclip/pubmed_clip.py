@@ -3,7 +3,7 @@ from torch import nn
 from transformers import CLIPImageProcessorFast, CLIPModel
 
 class Pubmedclip(nn.Module):
-    def __init__(self, aug = None, device='cuda', project=True):
+    def __init__(self, aug = None, device=None, project=True):
         """``project=False`` skips the 768->1408 MLP head.
 
         SharedVisualTokenProjector now owns every encoder's projection to the
@@ -12,6 +12,20 @@ class Pubmedclip(nn.Module):
         costs a projection on every forward.
         """
         super(Pubmedclip, self).__init__()  # Initialize nn.Module
+        # RESOLVE the device, do not hardcode it. `device='cuda'` made this the
+        # one module in the vision stack that could not be built on a CPU box,
+        # and the casualty was `scripts/check_itc_gate.py --device cpu` -- the
+        # script whose entire job is to decide, cheaply, whether the
+        # vision-language objectives are worth a 33 h run. It died in this
+        # constructor with "No CUDA GPUs are available" before reading a single
+        # image. It also broke the repo rule that nothing hardcodes cuda
+        # (see runtime/device.py).
+        #
+        # Both uses of self.device are init-time `.to()` calls and forward()
+        # never reads it, so on a machine with a GPU this resolves to 'cuda' and
+        # the training path is byte-for-byte what it was.
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
         # Load the pre-trained PubMedCLIP model and processor
         self.device = device
         self.aug = aug
