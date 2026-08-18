@@ -141,6 +141,7 @@ class BaseTask:
         log_freq=50,
         accum_grad_iters=1,
         max_grad_norm=1.0,
+        on_sync_step=None,
     ):
         return self._train_inner_loop(
             epoch=epoch,
@@ -155,6 +156,7 @@ class BaseTask:
             cuda_enabled=cuda_enabled,
             accum_grad_iters=accum_grad_iters,
             max_grad_norm=max_grad_norm,
+            on_sync_step=on_sync_step,
         )
 
     def train_iters(
@@ -204,6 +206,7 @@ class BaseTask:
         cuda_enabled=False,
         accum_grad_iters=1,
         max_grad_norm=1.0,
+        on_sync_step=None,
     ):
         """
         An inner training loop compatible with both epoch-based and iter-based training.
@@ -357,6 +360,22 @@ class BaseTask:
                 # inf/NaN from an AMP overflow persist across iters and corrupt
                 # all subsequent updates.
                 optimizer.zero_grad(set_to_none=True)
+
+                # Mid-epoch checkpointing hook. Deliberately only on a sync
+                # step and only after zero_grad: anywhere else the optimizer
+                # would be captured holding a half-accumulated window, whose
+                # gradients are discarded on resume and whose effective batch
+                # is therefore wrong. Failures here must not kill a run that is
+                # otherwise healthy -- a missed checkpoint costs the interval,
+                # an exception costs the epoch.
+                if on_sync_step is not None:
+                    try:
+                        on_sync_step(i + 1)
+                    except Exception:
+                        logging.exception(
+                            "Mid-epoch checkpoint failed at iter %d; training continues.",
+                            i + 1,
+                        )
 
             current_lr = optimizer.param_groups[0]["lr"]
             # print(f"current lr is {current_lr}")
