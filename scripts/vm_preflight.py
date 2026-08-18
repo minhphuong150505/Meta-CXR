@@ -45,7 +45,7 @@ def check_python() -> None:
     record(PASS if (v.major, v.minor) >= (3, 10) else FAIL, "Python >= 3.10", detail)
 
 
-def check_torch_cuda(stage: str) -> None:
+def check_torch_cuda() -> None:
     if not _spec("torch"):
         # Stage 1 and Stage 2 use different envs; torch may be absent in the one
         # you happen to have activated. Report, do not crash.
@@ -59,12 +59,15 @@ def check_torch_cuda(stage: str) -> None:
         return
     n = torch.cuda.device_count()
     record(PASS if n >= 1 else FAIL, "GPU count", str(n))
-    if stage in ("1", "both") and n < 2:
-        record(WARN, "Stage-1 DDP (2 GPUs)", f"{n} GPU visible; DDP wants 2 (single-GPU still works)")
     for i in range(n):
         p = torch.cuda.get_device_properties(i)
         gb = p.total_memory / 1024**3
-        row = FAIL if gb < 20 else PASS
+        # The shipped recipe peaks around 6 GB: memory is 91.5% static (56.2 MiB
+        # per sample on a 3,615 MiB fixed cost), so even batch 32 uses 39% of a
+        # 16 GB card. The old threshold was 20 GB, left over from the deleted
+        # 2xT4/2x3090/L4 recipes, and it hard-failed on the project's only
+        # supported machine -- a 16 GB RTX 5060 Ti, which reports 15.5 GB.
+        row = FAIL if gb < 8 else (WARN if gb < 12 else PASS)
         record(row, f"GPU{i} VRAM", f"{p.name}, {gb:.1f} GB")
 
 
@@ -170,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     check_python()
-    check_torch_cuda(args.stage)
+    check_torch_cuda()
     check_ram()
     check_disk()
     check_shm()
