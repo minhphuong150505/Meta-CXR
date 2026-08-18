@@ -29,7 +29,7 @@ put on local storage is gone:
 | The A/B runs | no `abl_on/`, `abl_off/`, `run_gate3_20260815/` |
 | Explanation mask cache | no `explanation_masks/`, no `explanation_masks_v2/` |
 | Repo checkout | `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git` absent |
-| The venv | `~/.venvs/` does not exist; no torch on the box at all |
+| The venv | destroyed — **rebuilt 2026-08-18**, see "The venv" below |
 
 `/home` is 984 MB used out of 325 GB — a fresh home directory with a
 `setup-dev-environment.sh` in it. Do not quote any pre-2026-08-17 measurement as
@@ -103,22 +103,61 @@ recognise, not as current state.
   mounts rw but overrides the kernel's damage check on the disk holding the
   dataset, and only buys keeping checkpoints on the same drive.
 
-### The venv — there is none right now
+### The venv — rebuilt 2026-08-18, verified on GPU
 
-**`~/.venvs/` does not exist and the host has no torch** (2026-08-18). The
-previous environment, `~/.venvs/meta-cxr-stage1-311` (torch 2.9.1+cu129,
-torchvision 0.24.1, transformers 4.53.2), went with the reinstall and must be
-rebuilt before anything runs.
+`~/.venvs/meta-cxr-stage1-311/bin/python` — **Python 3.11.16, torch 2.9.1+cu129,
+torchvision 0.24.1+cu129, transformers 4.53.2, numpy 1.26.4**. Rebuilt after the
+reinstall wiped the original, and confirmed on the card: `torch.cuda` available,
+`get_device_capability() == (12, 0)`, `sm_120` present in `get_arch_list()`, and
+a real 2048×2048 matmul executed on device. All 24 project imports resolve.
 
-When rebuilding: the RTX 5060 Ti is **sm_120**, which needs **cu12.8+**. This is
-the single most expensive thing to get wrong here. A cu12.4 build fails late,
-after the whole model has loaded, with `CUDA error: no kernel image is available
-for execution on the device` — and before that it fails more confusingly still,
-because transformers 4.53 refuses `torch.load` under torch < 2.6
-(CVE-2025-32434), so PubMedCLIP raises a vulnerability error and the arch
-mismatch never surfaces. If either symptom appears, check the interpreter before
-anything else. A previous venv named after older hardware cost a full day to
-this exact trap; do not recreate one.
+**The system Python is 3.14.4 and cannot be used.** Ubuntu 26.04 ships only
+3.14, and the pinned dependency set is built for 3.10/3.11. The 3.11 interpreter
+comes from `uv`, installed into `$HOME` with no sudo:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+uv python install 3.11
+uv venv --seed ~/.venvs/meta-cxr-stage1-311 --python 3.11   # --seed or there is no pip
+PY=~/.venvs/meta-cxr-stage1-311/bin/python
+$PY -m pip install torch==2.9.1 torchvision==0.24.1 \
+    --index-url https://download.pytorch.org/whl/cu129
+grep -vE '^(torch|torchvision)==' requirements-stage1.txt > /tmp/req.txt
+$PY -m pip install -r /tmp/req.txt
+```
+
+⚠ **Do NOT `pip install -r requirements-stage1.txt` unfiltered.** Its header says
+"CUDA 12.4 wheel channel" and it pins `torch==2.5.1` / `torchvision==0.20.1` —
+kernels stop at **sm_90**, and this GPU is **sm_120**. That combination fails
+late, after the whole model has loaded, with `CUDA error: no kernel image is
+available for execution on the device`; and before that it fails more
+confusingly still, because transformers 4.53 refuses `torch.load` under torch
+< 2.6 (CVE-2025-32434), so PubMedCLIP raises a vulnerability error and the arch
+mismatch never surfaces. That trap has now cost a full day once. Install torch
+from the cu129 channel first, then everything else with those two lines removed.
+
+⚠ **`iterative-stratification==0.1.9` ships a top-level `tests` package** into
+site-packages, and a *regular* package beats the repo's namespace-package
+`tests/` directory regardless of `sys.path` order. The symptom is the whole
+suite aborting at collection:
+
+```
+ERROR tests/test_threshold_calibration.py
+E   ModuleNotFoundError: No module named 'tests.test_classification_metrics'
+```
+
+Confirm with `python -c "import tests; print(tests.__path__)"` — if it points
+into site-packages, that is it. The stray directory holds only that package's
+own test file and nothing imports it, so move it aside:
+
+```bash
+SP=~/.venvs/meta-cxr-stage1-311/lib/python3.11/site-packages
+mv "$SP/tests" "$SP/.tests-from-iterative-stratification.bak"
+```
+
+`iterstrat` itself still imports fine afterwards. **This comes back on every
+reinstall of that package** — re-check it whenever the venv is rebuilt.
 
 ### Running anything means SSH-ing there
 
@@ -142,13 +181,14 @@ from any `known_hosts` entry predating it. That difference is expected and is
 **not** evidence of a reinstall (the reinstall is a separate, real event — see
 the top of this section).
 
-The repo checkout on the host is **gone** and must be re-cloned before running
-anything:
+The checkout is now at **`~/Meta-CXR`** (re-cloned 2026-08-18; the old
+`~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git` path is gone). The
+host has **no SSH key for GitHub**, so it was cloned over HTTPS:
 
 ```bash
 ssh phuong@phuong-b760m-pro-rs-d4-wifi
-git clone git@github.com:minhphuong150505/Meta-CXR.git
-cd Meta-CXR
+git clone https://github.com/minhphuong150505/Meta-CXR.git ~/Meta-CXR
+cd ~/Meta-CXR
 ```
 
 Same `origin` as this checkout (branch `main`), so the workflow is unchanged:
