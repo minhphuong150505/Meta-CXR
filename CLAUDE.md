@@ -13,10 +13,18 @@ inside this directory.**
 
 ## The training host — there is only one, and it is local
 
-All training runs on the user's own desktop, reachable over Tailscale as
-**`phuong@phuong-b760m-pro-rs-d4-wifi`**. Its OS hostname is still `minhphuong`,
-which is what `hostname` prints; the old Tailscale name `minhphuong` is dead and
-no longer listed.
+All training runs on the user's own desktop, reachable over Tailscale. Its OS
+hostname is `minhphuong`, which is what `hostname` prints.
+
+⚠ **The Tailscale name has flipped back — `phuong-b760m-pro-rs-d4-wifi` no
+longer resolves** (`Temporary failure in name resolution`, checked 2026-08-18
+18:49). `tailscale status` lists the node as **`minhphuong`, 100.116.167.90**.
+Do not hardcode either name: run `tailscale status` and use what it prints, or
+SSH the IP directly, which is what actually worked:
+
+```bash
+ssh phuong@100.116.167.90        # or: ssh phuong@minhphuong
+```
 
 ⚠ **THE MACHINE WAS WIPED AND REINSTALLED ON 2026-08-17.** Root filesystem
 created 20:54 that day, Ubuntu 26.04 LTS, on a **different physical disk** from
@@ -59,21 +67,29 @@ wrote there, and only runs after the 2026-08-15 mount change wrote to `/home`.
 |---|---|
 | GPU | 1× NVIDIA **RTX 5060 Ti, 16 GB** — unchanged by the reinstall |
 | OS | Ubuntu 26.04 LTS, root fs created 2026-08-17 20:54 |
-| System disk | `nvme1n1`, 465.8 GB — `p1` 1 GB EFI, `p2` **139.7 GB ext4 `/`**, `p3` **325 GB ext4 `/home`** |
-| Dataset disk | `nvme0n1`, 931.5 GB — `p2` **930.7 GB NTFS**, `p3` 781 MB NTFS |
-| `/mnt/drive1tb` | **mounted 2026-08-18** — `/dev/nvme0n1p2`, `ntfs3`, `ro,relatime`. 931 GB, 612 GB used, 319 GB free |
+| System disk | 465.8 GB — `p1` 1 GB EFI, `p2` **139.7 GB ext4 `/`** (UUID `c2eb4245-…`), `p3` **325 GB ext4 `/home`** (UUID `ba112a5a-…`) |
+| Dataset disk | 931.5 GB — `p2` **930.7 GB NTFS, UUID `A4E6C088E6C05BE4`**, `p3` 781 MB NTFS |
+| `/mnt/drive1tb` | NOT persistent — absent from `/etc/fstab`, so **every reboot loses it**. `ntfs3`, `ro`. 931 GB, 612 GB used, 319 GB free |
 | Checkpoints | old ones survive on the data drive (read-only); **new** runs need `run.output_dir=/home/phuong/<run>` (ext4, 324 GB free) |
 
-⚠ **The dataset disk changed device name: `/dev/nvme1n1p2` → `/dev/nvme0n1p2`.**
-The reinstall landed on the 465.8 GB drive and renumbered the NVMe devices, so
-every older command in git history mounts the *system* disk. Use:
+⚠⚠ **NEVER MOUNT THIS DISK BY `/dev/nvmeXn1p2` — THE NAMES SWAP BETWEEN
+REBOOTS.** Observed both ways on the same machine: on 2026-08-18 morning the
+dataset was `/dev/nvme0n1p2` and root was `nvme1n1p2`; after the reboot that
+afternoon they had traded, root became **`nvme0n1p2`** and the dataset
+**`nvme1n1p2`**. Either older command in git history therefore has a 50% chance
+of naming the *root filesystem*. The UUID is stable and is the only safe
+identifier:
 
 ```bash
 # needs the user — no passwordless sudo on this host
 sudo mkdir -p /mnt/drive1tb
-sudo mount -t ntfs3 -o ro /dev/nvme0n1p2 /mnt/drive1tb
+sudo mount -t ntfs3 -o ro UUID=A4E6C088E6C05BE4 /mnt/drive1tb
 df -T /mnt/drive1tb            # must say ntfs3, not fuseblk
 ```
+
+Confirm the target before mounting with
+`lsblk -o NAME,SIZE,FSTYPE,UUID,MOUNTPOINT` — the dataset partition is the
+930.7 G `ntfs` one with no mountpoint.
 
 **MIMIC-CXR is confirmed intact** (2026-08-18, after the user mounted it):
 `mimic-cxr-jpg-full/files`, the metadata CSVs, and
@@ -203,7 +219,7 @@ The checkout is now at **`~/Meta-CXR`** (re-cloned 2026-08-18; the old
 host has **no SSH key for GitHub**, so it was cloned over HTTPS:
 
 ```bash
-ssh phuong@phuong-b760m-pro-rs-d4-wifi
+ssh phuong@100.116.167.90        # see the Tailscale-name note above
 git clone https://github.com/minhphuong150505/Meta-CXR.git ~/Meta-CXR
 cd ~/Meta-CXR
 ```
