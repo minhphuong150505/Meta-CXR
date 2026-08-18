@@ -42,7 +42,14 @@ model:
     # explanation.streams below still lists swin; that is a filter over the
     # streams actually captured, so a name that is not produced is simply
     # ignored. Re-enabling the encoder therefore needs no second edit.
-    swin: false
+    #
+    # BACK ON as of 2026-08-18, at the user's request. Everything written above
+    # still applies and is the price being paid: MHCAC drops to the legacy
+    # resample-to-49 path, so PubMedCLIP loses its CLS token -- the one measured
+    # to be irreplaceable (cos(CLS, mean patch) = 0.21, against 1.0000 for
+    # BioViL's own global output). No checkpoint from the two-stream era loads
+    # against this config.
+    swin: true
     raddino: false
   # Inert while encoders.swin is false; kept so re-enabling needs one flag.
   swin:
@@ -291,11 +298,20 @@ model:
     lambda_itm: 0.0
     lambda_lm: 0.0
     lambda_cls: 1.0
-    # Privileged-text teacher, off. Measured loss_distill 1.4e-08 with teacher
-    # and student logits agreeing to 9 significant figures -- the teacher was
-    # not teaching anything while costing an extra MHCAC forward per step.
-    lambda_teacher_cls: 0.0
-    lambda_distill: 0.0
+    # Privileged-text teacher, BACK ON as of 2026-08-18 at the user's request,
+    # restored to the 0.5 / 0.5 it carried before it was switched off.
+    #
+    # ⚠ WATCH loss_distill ON THE FIRST SCORED EPOCH. The reason this was turned
+    # off is that it was measured doing nothing: loss_distill 1.4e-08, with
+    # teacher and student logits agreeing to 9 significant figures, while
+    # costing an extra MHCAC forward every step. Nothing has been changed since
+    # to explain why that would now differ, so the honest expectation is that it
+    # reproduces. If loss_distill sits near 1e-8 again, the teacher is not
+    # teaching and the extra forward is pure cost -- the bug to find then is why
+    # the teacher's privileged text is not moving its logits away from the
+    # student's, not the weight on this line.
+    lambda_teacher_cls: 0.5
+    lambda_distill: 0.5
     # Weights for the three MHCAC auxiliary terms now match the upstream
     # META-CXR reference (DasithEdirisinghe/META-CXR @ e97d709,
     # blip2_qformer.py:477):
@@ -689,7 +705,7 @@ run:
   # Not an I/O problem -- a page-cached epoch runs 0.2529 s/it, the same as a
   # cold one, and the mount reads 216 MB/s against the ~50 MB/s this needs.
   # Raising this further has not been measured.
-  num_workers: 12
+  num_workers: 8
 
   max_len: 256
   min_len: 8
