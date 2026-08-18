@@ -20,23 +20,38 @@ no longer listed.
 
 ⚠ **THE MACHINE WAS WIPED AND REINSTALLED ON 2026-08-17.** Root filesystem
 created 20:54 that day, Ubuntu 26.04 LTS, on a **different physical disk** from
-the previous install. Verified over SSH 2026-08-18. Everything the project had
-put on local storage is gone:
+the previous install. Verified over SSH 2026-08-18.
 
-| Gone | Detail |
+**The split is by disk, and it is the whole story: `/home` was destroyed, the
+1 TB data drive was untouched.** The installer went to the other disk. So the
+question for any artifact is simply *which drive was it on*.
+
+| Lost — was on `/home` (ext4) | Survived — on `/mnt/drive1tb` (NTFS) |
 |---|---|
-| All checkpoints | `find /home/phuong -name '*.pth'` → **0 files** |
-| The A/B runs | no `abl_on/`, `abl_off/`, `run_gate3_20260815/` |
-| Explanation mask cache | no `explanation_masks/`, no `explanation_masks_v2/` |
-| Repo checkout | `~/Documents/2026/KLTN/Code_github/META-CXR-full-smoke-git` absent |
-| The venv | destroyed — **rebuilt 2026-08-18**, see "The venv" below |
+| `abl_on/`, `abl_off/` — the explanation-loss A/B checkpoints and `.npz` predictions | `run_b16fast_20260814/` — `checkpoint_best`, `checkpoint_4`, `checkpoint_9`, `checkpoint_last` |
+| `explanation_masks_v2/` — the rebuilt cache carrying `masks_bbox_*` | `run_gate3_20260815/` — `checkpoint_4`, `checkpoint_last` (**no** `checkpoint_best`) |
+| The repo checkout | `datasets/explanation_masks/` — 2.6 GB, train/val/test, but **no `masks_bbox_*`** |
+| The venv (**rebuilt 2026-08-18**, see below) | `mimic-cxr-jpg-full/` — images, metadata CSVs, and `processed/full_allviews_v2` |
+| | `datasets/chexmask/`, `datasets/ms-cxr/` — the annotation sources |
+| | `meta-cxr-ablation/`, `private-results/` — Table 5 evals, `xai_*`, `trainpred` |
+| | `torch-cache/hub/checkpoints/blip2_pretrained.pth` + `resnet50` |
 
-`/home` is 984 MB used out of 325 GB — a fresh home directory with a
-`setup-dev-environment.sh` in it. Do not quote any pre-2026-08-17 measurement as
-reproducible: the checkpoints that produced it no longer exist. The **numbers**
-survive in git (the explanation-loss A/B is recorded in this file, `README.md`
-and `struct/project/_meta/DECISIONS.md` D-017); the checkpoints and the raw
-`.npz` predictions behind them do not.
+9 `.pth` files, 11.5 GB, survive on the data drive. `/home` is 984 MB used of
+325 GB — a fresh home with only a `setup-dev-environment.sh` in it.
+
+**What this costs, precisely:** the explanation-loss A/B (D-017) cannot be
+re-scored or extended, because both arms' checkpoints and predictions were on
+`/home`. Its **numbers** survive in git — this file, `README.md`, D-017 — but
+nothing on disk backs them any more. The **strong** explanation term also lost
+its only supervision: the surviving mask cache is the 2026-08-14 build, which
+predates `masks_bbox_*`, so it must be rebuilt before that term does anything.
+Everything else — Stage-1 checkpoints, the manifests, the dataset, the Table 5
+evaluation — is intact and usable.
+
+⚠ **Correction, recorded so the mistake is not repeated:** an earlier pass
+searched only `/home/phuong` for `*.pth`, found none, and reported that every
+checkpoint was gone. That was wrong. **Search the data drive too** — older runs
+wrote there, and only runs after the 2026-08-15 mount change wrote to `/home`.
 
 ### Hardware and disks (verified over SSH, 2026-08-18)
 
@@ -46,8 +61,8 @@ and `struct/project/_meta/DECISIONS.md` D-017); the checkpoints and the raw
 | OS | Ubuntu 26.04 LTS, root fs created 2026-08-17 20:54 |
 | System disk | `nvme1n1`, 465.8 GB — `p1` 1 GB EFI, `p2` **139.7 GB ext4 `/`**, `p3` **325 GB ext4 `/home`** |
 | Dataset disk | `nvme0n1`, 931.5 GB — `p2` **930.7 GB NTFS**, `p3` 781 MB NTFS |
-| `/mnt/drive1tb` | **does not exist** — the mount point is gone and the NTFS partition is not mounted |
-| Checkpoints | nowhere yet; `run.output_dir` must point at `/home/phuong/<run>` (ext4, 324 GB free) |
+| `/mnt/drive1tb` | **mounted 2026-08-18** — `/dev/nvme0n1p2`, `ntfs3`, `ro,relatime`. 931 GB, 612 GB used, 319 GB free |
+| Checkpoints | old ones survive on the data drive (read-only); **new** runs need `run.output_dir=/home/phuong/<run>` (ext4, 324 GB free) |
 
 ⚠ **The dataset disk changed device name: `/dev/nvme1n1p2` → `/dev/nvme0n1p2`.**
 The reinstall landed on the 465.8 GB drive and renumbered the NVMe devices, so
@@ -60,9 +75,11 @@ sudo mount -t ntfs3 -o ro /dev/nvme0n1p2 /mnt/drive1tb
 df -T /mnt/drive1tb            # must say ntfs3, not fuseblk
 ```
 
-The 930.7 GB NTFS partition is intact as a partition and the installer went to a
-different disk, so MIMIC-CXR is **probably** still on it — but this has **not
-been verified**, because mounting needs sudo. Confirm before planning a run.
+**MIMIC-CXR is confirmed intact** (2026-08-18, after the user mounted it):
+`mimic-cxr-jpg-full/files`, the metadata CSVs, and
+`mimic-cxr-jpg-full/processed/full_allviews_v2` — the manifest export this
+project requires — are all there. The mount is `ntfs3` read-only, which is the
+recommended configuration, so nothing needs changing.
 
 ### NTFS history — kept, but unverified on this install
 

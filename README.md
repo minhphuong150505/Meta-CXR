@@ -18,14 +18,23 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 > recipe GCP/L4/Kaggle/2×3090 đã bị gỡ ngày 2026-08-13 để tối ưu chi phí.
 >
 > ⚠ **MÁY ĐÃ ĐƯỢC CÀI LẠI HĐH NGÀY 2026-08-17** (Ubuntu 26.04 LTS, kiểm tra qua
-> SSH 2026-08-18). Mất sạch: **toàn bộ checkpoint** (`*.pth` = 0 file), các run
-> ablation, cache explanation mask, checkout repo trên máy, và venv
-> `~/.venvs/meta-cxr-stage1-311`. GPU không đổi. Ổ dữ liệu 930 GB NTFS vẫn còn
-> nguyên như một partition nhưng **chưa mount** và **đã đổi device**:
-> `/dev/nvme1n1p2` → **`/dev/nvme0n1p2`**. Mọi đường dẫn `/mnt/drive1tb` trong
-> tài liệu này là mô tả layout cần dựng lại, không phải thứ đang tồn tại. Các
-> con số đã đo vẫn đúng và còn trong git, nhưng **không tái lập được** cho tới
-> khi train lại. Chi tiết: mục "The training host" trong `CLAUDE.md`.
+> SSH 2026-08-18). Ranh giới thiệt hại là **theo ổ đĩa**: `/home` bị xoá sạch,
+> còn **ổ dữ liệu 1 TB không hề bị đụng** — installer đi vào ổ khác.
+>
+> **Còn nguyên** (trên `/mnt/drive1tb`): dataset `mimic-cxr-jpg-full` + manifest
+> `processed/full_allviews_v2`, checkpoint của `run_b16fast_20260814` (có
+> `checkpoint_best`) và `run_gate3_20260815`, cache `datasets/explanation_masks`,
+> nguồn CheXmask/MS-CXR, kết quả Table 5 và `private-results`. Tổng 9 file
+> `.pth`, 11,5 GB.
+>
+> **Mất** (nằm trên `/home`): hai run A/B `abl_on`/`abl_off` của explanation loss
+> — nên **kết quả D-017 không chấm lại hay mở rộng được**, dù con số vẫn còn
+> trong git; và `explanation_masks_v2` (cache có `masks_bbox_*`), nên **term
+> strong mất toàn bộ supervision** cho tới khi build lại cache.
+>
+> ⚠ Ổ dữ liệu **đổi device**: `/dev/nvme1n1p2` → **`/dev/nvme0n1p2`**. Đã mount
+> lại ngày 2026-08-18 bằng `ntfs3 -o ro` (đúng cấu hình khuyến nghị).
+> Chi tiết: mục "The training host" trong `CLAUDE.md`.
 
 ## Trạng thái hiện tại
 
