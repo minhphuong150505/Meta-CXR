@@ -49,7 +49,27 @@ model:
     # to be irreplaceable (cos(CLS, mean patch) = 0.21, against 1.0000 for
     # BioViL's own global output). No checkpoint from the two-stream era loads
     # against this config.
-    swin: true
+    #
+    # OFF AGAIN the same day, at the user's decision, when turning the Q-Former
+    # back on made the two mutually exclusive on this card. MEASURED, not
+    # projected, on the 5060 Ti with lambda_itc/itm/lm at 0.1:
+    #
+    #   3 encoders, batch 8  -> OOM in the BACKWARD pass on iteration 1.
+    #                           Iteration 0 completed at max mem 11,238 MiB;
+    #                           the retained gradient buffers (319M trainable
+    #                           params) pushed iteration 1 over 15.32 GiB.
+    #   3 encoders, batch 4  -> fits, 11,083 MiB, 0.40 s/it, but 55,688 iters
+    #                           per epoch = ~6.2 h, i.e. ~62 h for ten epochs,
+    #                           and ITM's hard negatives fall to 3 per
+    #                           microbatch. ITM is a contrastive objective; 3
+    #                           candidates is not a contrastive problem.
+    #
+    # So the choice was "swin, or a Q-Former with enough negatives to learn
+    # anything". Dropping swin buys all of it back and is not merely a
+    # concession: at two streams _native_stream_layouts describes the batch
+    # again, so PubMedCLIP keeps its CLS token and each encoder keeps its own
+    # scale -- the configuration this repo measured to be the better one.
+    swin: false
     raddino: false
   # Inert while encoders.swin is false; kept so re-enabling needs one flag.
   swin:
