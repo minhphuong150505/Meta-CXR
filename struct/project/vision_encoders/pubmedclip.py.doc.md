@@ -26,7 +26,7 @@ rồi `SharedVisualTokenProjector`.
 
 | Method | Dòng | Ghi chú |
 |---|---|---|
-| `__init__(aug=None, device='cuda', project=True)` | 6 | ⚠ **`device='cuda'` là default cứng** |
+| `__init__(aug=None, device=None, project=True)` | 6 | `device=None` → resolve `cuda` nếu có, ngược lại `cpu` (sửa 2026-08-18) |
 | `train(mode=True)` | 61 | Override để giữ eval mode |
 | `forward(image, apply_aug=True)` | 66 | Trả tuple; `[0]` là `[B, 50, 768]` |
 
@@ -94,8 +94,28 @@ Tải weight PubMedCLIP lần đầu (mạng). Cấp phát GPU.
 
 ## Error / edge cases
 
-⚠ `device='cuda'` mặc định — trên máy không có CUDA cần override. Hành vi cụ thể
-cần runtime verification.
+**`device='cuda'` cứng — ĐÃ SỬA 2026-08-18.** Giữ lại ghi chép vì triệu chứng của
+nó không hề trỏ về file này:
+
+```
+RuntimeError: No CUDA GPUs are available
+  vision_encoders/pubmedclip/pubmed_clip.py:28 in __init__
+```
+
+Đây là module DUY NHẤT trong vision stack không dựng được trên máy không có GPU,
+và nạn nhân là `scripts/check_itc_gate.py --device cpu` — đúng cái script có
+nhiệm vụ quyết định (rẻ) xem các objective vision-language có đáng một run 33 h
+hay không. Nó chết ngay trong constructor, trước khi đọc một tấm ảnh nào, nên
+`--device cpu` **chưa bao giờ chạy được**. Nó cũng vi phạm quy tắc "không hardcode
+cuda" của repo (xem `runtime/device.py`).
+
+Giờ `device=None` → `"cuda" if torch.cuda.is_available() else "cpu"`. Cả hai chỗ
+dùng `self.device` đều là `.to()` lúc init và `forward()` không đọc nó, nên trên
+máy có GPU giá trị resolve ra vẫn là `cuda` và đường training không đổi một byte.
+
+⚠ Điều này khiến chạy gate check trên CPU **song song** với một run GPU trở nên
+khả thi — cần thiết, vì run chiếm ~15.1 GB / 16.3 GB và không còn chỗ cho model
+thứ hai trên card.
 
 ## Related tests
 
