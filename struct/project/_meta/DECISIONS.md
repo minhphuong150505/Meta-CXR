@@ -454,8 +454,8 @@ cùng ngày:
 | OS | Ubuntu 26.04 LTS, root fs tạo **2026-08-17 20:54** |
 | Đĩa hệ thống | `nvme1n1` 465,8 GB — `p2` **139,7 GB ext4 `/`**, `p3` **325 GB ext4 `/home`** (mới dùng 984 MB) |
 | Đĩa dữ liệu | `nvme0n1` 931,5 GB — `p2` **930,7 GB NTFS**, **chưa mount** |
-| `/mnt/drive1tb` | **không tồn tại** |
-| Checkpoint | **0 file `.pth`** |
+| `/mnt/drive1tb` | **đã mount lại 2026-08-18** — `/dev/nvme0n1p2`, `ntfs3 ro`, 931 GB / còn 319 GB |
+| Checkpoint | **0 trên `/home`**, nhưng **9 file `.pth` / 11,5 GB còn nguyên trên ổ dữ liệu** |
 | venv / torch | mất — **đã dựng lại 2026-08-18**: Python 3.11.16 (qua `uv`), torch 2.9.1+cu129, `sm_120` OK trên GPU thật |
 | Checkout trên máy | **không có** |
 | sudo | có mật khẩu — agent qua SSH không mount được |
@@ -465,9 +465,21 @@ nằm trên ổ 465,8 GB và đánh số lại NVMe, nên mọi lệnh mount tro
 đang trỏ vào **đĩa hệ thống**. Vì installer đi vào ổ khác, MIMIC-CXR **nhiều khả
 năng còn nguyên** trên ổ 1 TB — nhưng chưa xác minh được, vì mount cần sudo.
 
-**Mất hẳn:** toàn bộ checkpoint, các run ablation (`abl_on`/`abl_off`), cache
-explanation mask, checkout, venv. Con số đã đo vẫn còn trong git (D-017,
-`CLAUDE.md`, `README.md`) nhưng **không tái lập được** cho tới khi train lại.
+**Ranh giới thiệt hại là theo ổ đĩa.** `/home` bị xoá; ổ dữ liệu 1 TB nguyên vẹn.
+
+- **Mất** (ở `/home`): `abl_on`/`abl_off` — hai nhánh A/B của D-017, cả checkpoint
+  lẫn `.npz` — và `explanation_masks_v2` (cache có `masks_bbox_*`). Hệ quả: **D-017
+  không chấm lại hay mở rộng được**, và **term strong mất supervision** cho tới khi
+  build lại cache. Con số vẫn còn trong git nhưng không còn gì trên đĩa đỡ chúng.
+- **Còn** (ở `/mnt/drive1tb`): dataset + `processed/full_allviews_v2`,
+  `run_b16fast_20260814` (có `checkpoint_best`), `run_gate3_20260815`
+  (`checkpoint_4`/`_last`, **không có** `checkpoint_best`), cache
+  `datasets/explanation_masks` bản 2026-08-14, nguồn CheXmask/MS-CXR, kết quả
+  Table 5, `private-results`, và weight pretrain `blip2_pretrained.pth`.
+
+⚠ **Đính chính:** một lượt kiểm tra trước đó chỉ tìm `*.pth` trong `/home`, thấy
+rỗng, rồi kết luận mất hết checkpoint. Sai. **Phải tìm cả trên ổ dữ liệu** — run
+cũ ghi ở đó, chỉ các run sau lần đổi mount 2026-08-15 mới ghi vào `/home`.
 
 ### Evidence cũ (SSH, 2026-08-13 — trước khi cài lại, chỉ để đối chiếu)
 

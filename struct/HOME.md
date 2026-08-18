@@ -25,14 +25,22 @@ Project dùng **một máy train duy nhất**: `phuong@phuong-b760m-pro-rs-d4-wi
 tác giả ([D-011](project/_meta/DECISIONS.md#d-011--máy-train-hiện-tại)).
 
 ⚠ **Máy đã được cài lại HĐH ngày 2026-08-17** (Ubuntu 26.04 LTS; xác minh qua
-SSH 2026-08-18). GPU **1× RTX 5060 Ti 16 GB** không đổi. Mất sạch: **0 file
-`.pth`**, không còn run ablation, cache explanation mask, checkout, hay venv;
-`/home` mới dùng 984 MB / 325 GB. Ổ dữ liệu 930,7 GB NTFS còn nguyên nhưng
-**chưa mount** và **đổi device** `/dev/nvme1n1p2` → **`/dev/nvme0n1p2`**.
-`/mnt/drive1tb` không tồn tại. Máy cũng đã bật **Tailscale SSH** — host key khác
-là do Tailscale, không phải do cài lại, và mọi kết nối cần user duyệt qua trình
-duyệt. Chi tiết đầy đủ ở
-[D-011](project/_meta/DECISIONS.md#d-011--máy-train-hiện-tại).
+SSH 2026-08-18). GPU **1× RTX 5060 Ti 16 GB** không đổi. Thiệt hại chia **theo
+ổ đĩa**: `/home` bị xoá sạch, **ổ dữ liệu 1 TB nguyên vẹn**.
+
+- **Mất:** `abl_on`/`abl_off` (hai nhánh A/B của D-017) và `explanation_masks_v2`
+  — nên D-017 không chấm lại được và term explanation strong mất supervision.
+- **Còn trên `/mnt/drive1tb`:** dataset + `processed/full_allviews_v2`, 9 file
+  `.pth` / 11,5 GB (gồm `run_b16fast_20260814/checkpoint_best`), cache
+  `datasets/explanation_masks` bản 2026-08-14, nguồn CheXmask/MS-CXR, kết quả
+  Table 5, `private-results`.
+
+Ổ dữ liệu **đổi device** `/dev/nvme1n1p2` → **`/dev/nvme0n1p2`**, đã mount lại
+2026-08-18 bằng `ntfs3 -o ro`. Môi trường đã dựng lại tại
+`~/.venvs/meta-cxr-stage1-311` (Python 3.11.16, torch 2.9.1+cu129), checkout ở
+`~/Meta-CXR`. Máy cũng đã bật **Tailscale SSH** — host key khác là do Tailscale,
+không phải do cài lại, và mọi kết nối cần user duyệt qua trình duyệt. Chi tiết
+đầy đủ ở [D-011](project/_meta/DECISIONS.md#d-011--máy-train-hiện-tại).
 
 Mọi thao tác **chạy** project (train, evaluate, inference, smoke test) phải thực
 hiện qua SSH vào máy này, và **luôn `git pull origin main` trước khi chạy** —
