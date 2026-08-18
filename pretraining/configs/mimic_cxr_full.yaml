@@ -294,9 +294,34 @@ model:
     # scripts/check_itc_gate.py before and after ~500 optimizer updates and
     # require delta >= 0.10 nats AND growth. It is the whole reason that script
     # exists.
-    lambda_itc: 0.0
-    lambda_itm: 0.0
-    lambda_lm: 0.0
+    #
+    # ============================================================ 2026-08-18
+    # BACK ON at 0.1, at the user's request: the goal is now to train the WHOLE
+    # Stage-1 pipeline, Q-Former included, not classification alone. Everything
+    # written above is the price, and none of it has been refuted -- read it as
+    # the list of things to watch, not as history.
+    #
+    # WHAT CHANGED SINCE THE 2026-08-16 ATTEMPT, and what did not:
+    #   changed  encoders.swin is back on, so the Q-Former cross-attends over
+    #            ~295 shared visual tokens instead of 246, and the privileged-
+    #            text teacher adds a second MHCAC forward. Both make the memory
+    #            wall NEARER, not further away.
+    #   changed  batch 16 -> 8, accum 4 -> 16. Effective batch is 128, not the
+    #            64 this recipe used, because 16x4 OOMs with the VL block on and
+    #            8x8 has not been measured with three encoders.
+    #   unchanged  nothing about the collapse itself. loss_itm reached 0.6420
+    #            against the 1:2 prior entropy of 0.6365 within two epochs last
+    #            time. The honest expectation is that it reproduces.
+    #
+    # ⚠ THE GATE CHECK IS NOT OPTIONAL. scripts/check_itc_gate.py exists for
+    # exactly this decision. Run it at initialisation and again after ~500
+    # optimizer updates; require the mean-rank gap over chance to grow by
+    # >= 0.10 nats. If it does not, these three weights are feeding noise into
+    # the shared projector, the stream adapters and the view fusion -- the very
+    # parameters MHCAC's features come from -- and should go back to 0.0.
+    lambda_itc: 0.1
+    lambda_itm: 0.1
+    lambda_lm: 0.1
     lambda_cls: 1.0
     # Privileged-text teacher, BACK ON as of 2026-08-18 at the user's request,
     # restored to the 0.5 / 0.5 it carried before it was switched off.
@@ -343,7 +368,10 @@ model:
     #
     # NOT YET RUN ON GPU beyond a smoke.
     lambda_mpc: 0.02
-    mpc_warmup_steps: 13922
+    # 27,844 microbatches = one epoch at batch 8 (was 13,922 at batch 16). This
+    # counts MICROBATCHES, so it must be rescaled whenever batch_size_train is,
+    # or the ramp silently covers half an epoch instead of one.
+    mpc_warmup_steps: 27844
     lambda_view_consistency: 0.05
     # TWO explanation terms, split 2026-08-16 because they are not the same
     # kind of evidence and must not carry the same weight.
@@ -732,9 +760,35 @@ run:
   # 16 to 8, which matters less than it used to now that it has its own
   # projection head at lambda 0.02. ITM still samples only the current
   # microbatch, so it drops to 7 non-self candidates.
-  batch_size_train: 16
-  batch_size_eval: 16
-  accum_grad_iters: 4
+  # ============================================================ 2026-08-18
+  # 16 -> 8 because lambda_itc/itm/lm went back to 0.1. This is the constraint
+  # the note above says returns "the moment anyone sets lambda_itc/itm/lm above
+  # zero", and it has now returned. ITM triples the batch -- [pos,pos,neg] text
+  # against [pos,neg,pos] image (blip2_qformer.py:1009) -- so batch 8 pushes 24
+  # joint sequences through the Q-Former and text encoder, where 16 pushed 48
+  # and OOMed on the FIRST iteration at 246 visual tokens. With swin back on
+  # there are now ~295, so 16 is further out of reach than it was.
+  #
+  # ⚠ 8 IS A PROJECTION, NOT A MEASUREMENT. The batch-8 figure that worked came
+  # from the two-encoder recipe with the teacher off. Three encoders and the
+  # privileged-text teacher both add memory on top. supervise.sh halves the
+  # batch and doubles the accumulation on OOM, so a wrong guess here costs one
+  # startup (~12 min), not the run.
+  #
+  # accum 4 -> 8 keeps the effective batch at 64, which is what keeps the LR
+  # schedule intact: 222,752 studies / 8 = 27,844 microbatches / 8 = 3,480
+  # optimizer updates per epoch, exactly what batch 16 x accum 4 produced. So
+  # warmup_steps: 800 and the cosine tail still cover the ground they were set
+  # for, and no other run knob needs touching.
+  #
+  # What batch 8 DOES cost, and it cannot be accumulated away: every loss that
+  # draws negatives from the live microbatch sees half as many. MPC drops from
+  # ~8.8 usable multi-view studies to ~4.4 (it has its own projection head at
+  # lambda 0.02 now, so this matters less than when the note above was written),
+  # and ITM drops to 7 non-self candidates.
+  batch_size_train: 8
+  batch_size_eval: 8
+  accum_grad_iters: 8
   # The training host has 20 threads and JPEG decode is the dataloader's cost:
   # at 4 workers they sit at 96-98% CPU in state R while the GPU idles between
   # kernels. Measured at batch 6 over 500 iterations: 0.305 s/it at 4 workers

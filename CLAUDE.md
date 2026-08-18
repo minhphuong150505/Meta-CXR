@@ -455,17 +455,46 @@ study (not image) → anchor + ≤1 auxiliary view
   300` counted in **optimizer updates, not microbatches**. Thresholds are
   calibrated post-hoc from `checkpoint_best` validation logits. The test split is
   held out of checkpoint selection entirely.
-- **The recipe is classification-only as of 2026-08-13.** `lambda_itc/itm/lm`
-  and `lambda_teacher_cls/distill` are all `0.0`; the objective now matches
-  upstream META-CXR (`cls + 0.3*contrastive + 0.7*orthogonality + 0.3*sparsity`)
-  plus the multi-view terms. `forward()` **skips** the Q-Former and text-encoder
-  passes entirely when every weight reading them is zero. Measured on the host,
-  200 iterations at batch 6: **0.5251 s/it against 0.8196 s/it** with the
-  vision-language losses on — 1.56x, ~54 h instead of ~84 h for 10 epochs.
-  **Consequence: the Q-Former gets no gradient**, so the checkpoint serves
-  Stage-1 classification only and is NOT valid for Stage-2 `meta_cxr_qformer`
-  modes. `medgemma_direct` is unaffected. Covered by
-  `tests/test_loss_weight_gating.py`.
+- **The recipe trains the FULL pipeline again as of 2026-08-18 — the Q-Former is
+  back on.** `lambda_itc/itm/lm` are `0.1` each and `lambda_teacher_cls/distill`
+  are `0.5`, so `forward()` no longer skips the Q-Former and text-encoder passes.
+  The checkpoint this produces is therefore a candidate for Stage-2
+  `meta_cxr_qformer` modes, which the classification-only checkpoints were not.
+  The skip logic itself is unchanged and still covered by
+  `tests/test_loss_weight_gating.py`; it is simply not triggered now.
+
+  ⚠ **This is not a settled decision, and the reason it was reverted twice is
+  not addressed.** The vision-language block was switched off on 2026-08-13 for
+  cost and again on 2026-08-16 because it sat at *exactly* chance: `loss_itc`
+  6.9375 = ln(1024) at queue 1024, `loss_itm` 0.6420 against the 1:2 prior
+  entropy of 0.6365 — the optimum for constant logits, i.e. a collapsed head, not
+  a slow one. Nothing since then targets that collapse. **Run
+  `scripts/check_itc_gate.py` at init and again after ~500 optimizer updates and
+  require the true-pair rank gap to grow by >= 0.10 nats.** If it does not, these
+  weights are feeding noise into the shared projector, the stream adapters and
+  the view fusion — the exact parameters MHCAC reads — and belong back at 0.0.
+
+  ⚠ **It forced batch 16 -> 8** (accum 4 -> 8, effective batch 64 unchanged).
+  ITM triples the batch, and at batch 16 over 246 visual tokens the run OOMed on
+  the **first** iteration (14.90 GiB of 15.45). Swin is now also on, so the
+  Q-Former cross-attends over ~295 tokens and 16 is further out of reach than it
+  was. Batch 8 with three encoders **has not been measured** — supervise.sh
+  halves on OOM, so a wrong guess costs one ~12 min startup, not the run.
+- **Padded auxiliary views no longer reach the encoders (2026-08-18).** The
+  collater pads ragged studies with `torch.zeros_like(anchor)` and 44.7% of train
+  studies have no auxiliary view, so `_encode_aux_streams` was spending roughly
+  half of every auxiliary forward — across all three frozen encoders — on
+  all-zero images whose output `ViewFusionModule` then gated to exactly zero.
+  `real_aux_rows`/`scatter_aux_rows` in `mhcac/view_fusion.py` now select the
+  real rows and scatter the results back, padded slots left at literal zero.
+  Output shape and every caller are unchanged; the invariant that padded slots
+  are never *read* is what makes it safe, and it is held by `ViewFusionModule`
+  (masked out of the softmax, residual gated off) and by
+  `MultiPositiveContrastiveLoss` (`cand_valid`). Pinned by four tests in
+  `tests/test_view_fusion.py`, including one that puts random junk in the dense
+  path's padding and requires the fused output to match. **Speedup not yet
+  measured on GPU.** It does change how much dropout RNG is drawn, so a new run
+  will not be bit-identical to an old one at the same seed.
 - **`run.eval_start_epoch: 5` — the first five epochs train without being
   scored.** Validation over the full split is expensive and the early epochs are
   never the ones selected, so skipping them buys wall-clock time. The knob counts
@@ -543,10 +572,24 @@ Sanity signals from the same 800 iterations, all healthy:
 teacher switched off before, and `lr` 2.6e-5 at optimizer update 200 of an
 800-update warmup, which is exactly the linear ramp.
 
-#### Running Stage 1 unattended — `~/supervise.sh` on the host
+#### Running Stage 1 unattended — `scripts/supervise_stage1.sh`
 
-Not in the repo; it lives on `/home` on the training host. Three traps it
-encodes, each found the hard way on 2026-08-18:
+**In the repo as of 2026-08-18**, so it is versioned with the recipe it launches.
+The host's `~/supervise.sh` is a *deployment* of it — after changing either,
+`scp`/`cp` it across, or the two silently diverge:
+
+```bash
+cd ~/Meta-CXR && git pull && cp scripts/supervise_stage1.sh ~/supervise.sh
+```
+
+Launch it detached, or it dies with the SSH session:
+
+```bash
+OUT=$HOME/<run> LOG=$HOME/<run>.log WID=<wandb-id> \
+    setsid nohup bash ~/supervise.sh >>$HOME/<run>.supervise.log 2>&1 &
+```
+
+Three traps it encodes, each found the hard way on 2026-08-18:
 
 - **Startup is not a stall.** The watchdog counts `Train: data epoch` lines, and
   there are none while the run downloads `blip2_pretrained.pth` (1.9 GB) and
@@ -569,6 +612,29 @@ unchanged), resumes from `checkpoint_last`, and aborts after three consecutive
 failures that produce no new checkpoint. `ADOPT_PID=<pid>` attaches it to an
 already-running train process instead of starting a new one — which is how the
 watchdog itself can be fixed without losing a run in progress.
+
+Three fixes landed 2026-08-18 when it was made to supervise *continuously*:
+
+- **Progress is a checkpoint WRITE, not a checkpoint FILE.** It counted files
+  with `ls | wc -l`, which was right only while checkpoints were written once per
+  epoch under distinct names. Since `run.save_every_iters` landed,
+  `checkpoint_last.pth` is rewritten **in place** every 1000 iterations, so the
+  file count sits at 1 for a whole ~4 h epoch: three restarts inside one epoch —
+  precisely the window mid-epoch checkpointing exists to protect — would have
+  tripped the "nothing is being learned" abort on a run that was progressing
+  fine. It now tracks the newest `*.pth` mtime, which moves on every write. That
+  same signal also resets the stall clock, since a checkpoint write is forward
+  progress even while the log sits in a buffer.
+- **`MAX_ATTEMPTS` defaults to 0, meaning unlimited.** The old default of 8 could
+  retire a healthy multi-day run purely on restart count. The give-up rule is
+  now progress-based only, which is the honest test.
+- **An OOM no longer burns the no-progress budget.** It is a capacity finding,
+  and the next attempt is a genuinely different configuration.
+- `train_lines()` returned **two** lines (`"0\n0"`) when the log had no match,
+  because `grep -c` prints `0` *and* exits 1, so the `|| echo 0` fired anyway.
+  Every `[ "$n" -gt … ]` against that raised "integer expression expected" and
+  evaluated false — which happened to look like "no progress" during startup and
+  hid the error in stderr.
 
 `blip2_pretrained.pth` re-downloads on a fresh `/home` even though a copy
 survives at `<data drive>/torch-cache/hub/checkpoints/`. Symlink
