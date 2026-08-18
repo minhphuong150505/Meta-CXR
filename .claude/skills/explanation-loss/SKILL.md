@@ -10,6 +10,14 @@ until 2026-08-18. It moved here because the feature is switched off in
 production, so the 206 lines no longer need to load in every session — but they
 are the whole record of why it was turned off and what re-enabling it requires.
 
+⚠ **Every `/mnt/drive1tb/...` path below is historical.** The training host was
+wiped and reinstalled on 2026-08-17: the mask cache, the CheXmask and MS-CXR
+source CSVs, and the checkpoints the evaluator ran against are all gone, and the
+dataset disk is now `/dev/nvme0n1p2` and unmounted. The paths are kept because
+they document the layout to recreate, not because anything is there. Rebuilding
+the cache is a prerequisite for re-testing any of this — see "The training host"
+in `CLAUDE.md`.
+
 
 **OFF IN PRODUCTION as of 2026-08-17 — `lambda_explanation` and
 `lambda_explanation_strong` are both `0.0` in `mimic_cxr_full.yaml`.** The user

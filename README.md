@@ -13,11 +13,19 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 > trạng thái của Stage 2 vẫn chỉ là tình trạng tích hợp code tại commit hiện tại,
 > không phải xác nhận đã train trên GPU hay đã tái lập metric mô hình.
 >
-> **Máy train:** một host duy nhất, `phuong@phuong-b760m-pro-rs-d4-wifi` (máy cá nhân của tác giả).
-> Xác minh 2026-08-13: **1× RTX 5060 Ti 16 GB**, dữ liệu và checkpoint nằm trên
-> `/mnt/drive1tb` (930 GB NTFS, **không auto-mount** — phải mount tay sau mỗi lần
-> reboot). Không còn đường chạy cloud: các recipe GCP/L4/Kaggle/2×3090 đã bị gỡ
-> ngày 2026-08-13 để tối ưu chi phí.
+> **Máy train:** một host duy nhất, `phuong@phuong-b760m-pro-rs-d4-wifi` (máy cá
+> nhân của tác giả), **1× RTX 5060 Ti 16 GB**. Không còn đường chạy cloud: các
+> recipe GCP/L4/Kaggle/2×3090 đã bị gỡ ngày 2026-08-13 để tối ưu chi phí.
+>
+> ⚠ **MÁY ĐÃ ĐƯỢC CÀI LẠI HĐH NGÀY 2026-08-17** (Ubuntu 26.04 LTS, kiểm tra qua
+> SSH 2026-08-18). Mất sạch: **toàn bộ checkpoint** (`*.pth` = 0 file), các run
+> ablation, cache explanation mask, checkout repo trên máy, và venv
+> `~/.venvs/meta-cxr-stage1-311`. GPU không đổi. Ổ dữ liệu 930 GB NTFS vẫn còn
+> nguyên như một partition nhưng **chưa mount** và **đã đổi device**:
+> `/dev/nvme1n1p2` → **`/dev/nvme0n1p2`**. Mọi đường dẫn `/mnt/drive1tb` trong
+> tài liệu này là mô tả layout cần dựng lại, không phải thứ đang tồn tại. Các
+> con số đã đo vẫn đúng và còn trong git, nhưng **không tái lập được** cho tới
+> khi train lại. Chi tiết: mục "The training host" trong `CLAUDE.md`.
 
 ## Trạng thái hiện tại
 
@@ -320,9 +328,9 @@ pip install -r requirements-stage2.txt
 deactivate
 ```
 
-> **Trên máy train hiện tại, môi trường đã dựng sẵn tại
-> `~/.venvs/meta-cxr-stage1-311` (torch 2.9.1+cu129).** Đây là môi trường duy
-> nhất có torch trên máy đó — dùng đúng nó, đừng tạo mới.
+> ⚠ **Máy train hiện KHÔNG có venv nào và KHÔNG có torch** (kiểm tra 2026-08-18).
+> `~/.venvs/meta-cxr-stage1-311` (torch 2.9.1+cu129) đã mất cùng lần cài lại
+> 2026-08-17 và phải dựng lại từ đầu trước khi chạy bất cứ thứ gì.
 >
 > RTX 5060 Ti là kiến trúc **sm_120**, cần CUDA 12.8 trở lên. Bản torch build
 > cho CUDA 12.4 chỉ có kernel tới sm_90 và sẽ chết bằng
