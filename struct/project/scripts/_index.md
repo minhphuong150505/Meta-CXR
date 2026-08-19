@@ -1,6 +1,6 @@
 > Source: `scripts/` (13 file)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-14
+> Last verified against source: 2026-08-19
 
 # `scripts/`
 
@@ -21,6 +21,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 |---|---|---|---|
 | `vm_preflight.py` (202) | [📄](vm_preflight.py.doc.md) | 🧰 | Kiểm tra CUDA, RAM, disk, shm, path, HF auth. **Không tải weight, không download** |
 | `check_notebook_privacy.py` (363) | [📄](check_notebook_privacy.py.doc.md) | ✅ ★ | Pre-commit hook chặn notebook mang dữ liệu MIMIC vào Git |
+| `check_itc_gate.py` (305) | [📄](check_itc_gate.py.doc.md) | 🔬 | Cổng ITC: ITC đã thoát chance chưa, trước khi đốt ~33 h GPU. Exit 1 khi trượt |
 
 ### Evaluation
 
