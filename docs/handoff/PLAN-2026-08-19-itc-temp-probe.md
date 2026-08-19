@@ -283,3 +283,60 @@ That refusal is the right behaviour and is why the two runs could be told apart
 afterwards. The lesson is about the launcher, not the agent: **two `codex exec`
 invocations sharing one `-o` path and one GPU produce one true report and one
 misleading file, and the misleading one wins the filename.**
+
+---
+
+## Correction — 2026-08-19, after re-measurement
+
+**The verdict stands. The numbers above do not.**
+
+Reviewing the Q-Former against the reference implementation
+(`DasithEdirisinghe/META-CXR`) turned up a measurement bug in the gate itself:
+`check_itc_gate.py` scored all 256 loaded pairs while ignoring
+`generation_mask`. 29.3% of val studies have no usable FINDINGS, so roughly a
+third of every measurement above was an image scored against an **empty string**
+— unanswerable as a query, and as a candidate a block of ~75 identical text
+vectors sitting inside every other row's softmax. That is what put `loss_itc` at
+8.56 against a chance of 5.55, and what produced the claim that training made ITC
+"2.93 nats worse than random initialisation". **That claim is retracted.**
+
+Training was never affected: `_image_text_contrastive` has always taken
+`generation_mask`, dropping invalid rows from the loss and `-inf`-masking them
+out of the candidate set. The bug was in the gate only. Fixed in `44cbdc3`; gate
+JSONs now carry `studies_scanned` and `valid_fraction`, and one without those two
+keys should be distrusted.
+
+Re-measured on valid pairs only — 256 valid out of 392 scanned, `valid_fraction`
+0.6531, chance rank 127.5:
+
+| arm | temperature | rank i2t | rank t2i | `loss_itc` | `delta_nats` |
+|---|---|---|---|---|---|
+| untrained | 0.07 pinned | 130.68 | 130.30 | 5.6285 | −0.0833 |
+| 525 updates, temperature learned | 0.00796 | **127.43** | **127.65** | 6.6620 | −1.1168 |
+| 500 updates, temperature pinned | 0.07 | **128.38** | **127.45** | 5.5476 | **−0.0025** |
+
+Every arm sits on chance. The pinned run returns `delta_nats` −0.0025 against a
+required +0.10. So the result is the same **FAIL**, but for an undramatic reason:
+ITC learns nothing. It does not actively destroy the representation, and the
+untrained model's apparent "worse than chance" (130.7) is init noise, not signal.
+
+### And the reference never trained ITC in the first place
+
+In `DasithEdirisinghe/META-CXR`, the repo this fork descends from and the one
+behind the published paper, the entire vision-language block of
+`blip2_qformer.py` is **commented out**. `loss_itc` and `loss_itm` appear on no
+uncommented line; Stage-1's returned loss is
+`cls_loss + 0.3*contrastive + 0.7*orth + 0.3*sparsity`, the MHCAC terms only.
+Their `blip2_pretrain_stage1.yaml` agrees: `batch_size_train: 2` — ITC over two
+candidates has a chance of ln 2 = 0.69 and teaches nothing — and
+`load_pretrained: False`.
+
+So the published Stage 1 is classification-only. Nothing in this lineage has ever
+shown a working ITC on this architecture or this data, and re-enabling it was not
+restoring anything.
+
+One concrete design difference remains, for whoever tries again: the 256-entry
+negative queue is filled with detached features from the **live** encoder. MoCo
+and ALBEF use a momentum encoder precisely because stale keys from an encoder
+that has since moved are not comparable to current queries. The reference has no
+queue at all. That is a hypothesis, not a measured cause.
