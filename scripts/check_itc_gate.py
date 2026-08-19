@@ -80,6 +80,16 @@ def parse_args(argv=None):
         help="Gate threshold in nats.",
     )
     parser.add_argument(
+        "--oversample",
+        type=float,
+        default=3.0,
+        help=(
+            "Load pairs*oversample studies and keep the first `pairs` whose "
+            "FINDINGS are usable. ~30%% of studies have none, and training masks "
+            "those out of ITC -- scoring them here measures nothing."
+        ),
+    )
+    parser.add_argument(
         "--options",
         nargs="*",
         default=[],
@@ -141,7 +151,7 @@ def _build(args):
         vis_root=VIS_ROOT,
         split=args.split,
         cfg=cfg,
-        truncate=args.pairs,
+        truncate=int(args.pairs * args.oversample),
     )
     loader = DataLoader(
         dataset,
@@ -216,16 +226,45 @@ def main(argv=None):
 
     cfg, model, loader, device = _build(args)
 
+    # Score ONLY the pairs training scores. `generation_mask` is False for a
+    # study whose report has no usable FINDINGS, and `_image_text_contrastive`
+    # both drops those rows from the loss and masks them out of the candidate
+    # set. The gate used to ignore the mask entirely, which on val meant 29.3%
+    # of pairs were an image against an EMPTY string -- unanswerable as queries,
+    # and as candidates a block of identical text vectors sitting in every other
+    # row's softmax. Both arms of a comparison are contaminated equally, but the
+    # signal is diluted by whatever fraction is invalid.
     image_chunks, text_chunks = [], []
+    scanned = kept = 0
     with torch.no_grad():
         for samples in loader:
             img, txt = _features(model, samples, device)
-            image_chunks.append(img.float().cpu())
-            text_chunks.append(txt.float().cpu())
+            scanned += img.shape[0]
+            keep = samples.get("generation_mask")
+            if keep is None:
+                raise KeyError(
+                    "the dataset emitted no generation_mask; refusing to score "
+                    "pairs whose validity is unknown"
+                )
+            keep = keep.to(torch.bool).cpu()
+            img, txt = img.float().cpu()[keep], txt.float().cpu()[keep]
+            if kept + img.shape[0] > args.pairs:
+                room = args.pairs - kept
+                img, txt = img[:room], txt[:room]
+            image_chunks.append(img)
+            text_chunks.append(txt)
+            kept += img.shape[0]
+            if kept >= args.pairs:
+                break
 
     image_features = torch.cat(image_chunks)      # [N, Q, D]
     text_features = torch.cat(text_chunks)        # [N, D]
     n = image_features.shape[0]
+    if n < args.pairs:
+        raise ValueError(
+            f"only {n} of {scanned} scanned studies have usable FINDINGS, "
+            f"needed {args.pairs}; raise --oversample"
+        )
     if n < 2:
         raise ValueError(f"need at least 2 pairs to contrast, got {n}")
 
@@ -265,6 +304,8 @@ def main(argv=None):
         # delta_nats scales with 1/temperature, so two measurements are only
         # comparable when this pair matches. The rank fields are scale-free.
         "temp_learnable": temp_learnable,
+        "studies_scanned": scanned,
+        "valid_fraction": round(n / scanned, 4) if scanned else None,
         "loss_itc": round(float(loss_itc), 4),
         "chance_ln_n": round(chance, 4),
         "delta_nats": round(delta, 4),
