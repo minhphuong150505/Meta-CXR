@@ -566,32 +566,50 @@ Bài báo META-CXR gốc có báo cáo classification và report-generation metr
 - [Final merge plan](docs/final_merge_plan.md)
 - [Feature cache](docs/FEATURE_CACHE.md)
 - [Notebook privacy](docs/notebook_privacy.md)
-- [Bàn giao Claude → Codex](docs/handoff/README.md)
+- [Bàn giao plan → thực thi](docs/handoff/README.md)
 
-## Quy trình làm việc với agent (Claude lập kế hoạch, Codex thực thi)
+## Quy trình làm việc với agent (một Claude lập kế hoạch, một Claude thực thi)
 
-Từ 2026-08-19, công việc được chia vai:
+Từ 2026-08-19, **Codex không còn được dùng** (hết hạn gia hạn). Vai trò không đổi,
+chỉ đổi người thực thi — Claude Code đã được cài và xác thực sẵn trên máy train
+(`~/.local/bin/claude`).
 
-- **Claude** đọc code, thiết kế thay đổi, sửa source và cập nhật
-  `CLAUDE.md` / `README.md` / `struct/`. Claude **không** trực tiếp trông các run
-  GPU dài.
-- **Codex** chạy: `git pull`, venv/pytest, preflight, smoke, Stage-1/Stage-2
-  training, `scripts/supervise_stage1.sh`, và đọc log trên máy train. Codex
+- **Phiên lập kế hoạch** (checkout này, không GPU) đọc code, thiết kế thay đổi, sửa
+  source và cập nhật `CLAUDE.md` / `README.md` / `struct/`.
+- **Phiên thực thi** (trên máy train) chạy: `git pull`, venv/pytest, preflight,
+  smoke, Stage-1/Stage-2 training, `scripts/supervise_stage1.sh`, đọc log. Nó
   **không** tự đổi loss, YAML hay recipe ngoài kế hoạch.
-- Bàn giao bằng file, không bằng chat: `docs/handoff/PLAN-<ngày>-<chủ-đề>.md`.
-  Claude viết phần kế hoạch, Codex nối `## Execution report` vào **cùng file**.
-  Xem [docs/handoff/README.md](docs/handoff/README.md).
-- **Log lỗi phải được tóm tắt, không dán nguyên file.** Codex gửi lại: lệnh +
-  exit status, lỗi đầu tiên kèm ~20 dòng ngữ cảnh và frame traceback cuối, các
-  số quan trọng (`s/it`, `max mem`, từng loss term, `epoch`/`iter`, VRAM nếu
-  OOM), và đường dẫn log gốc trên host để hỏi `grep` cụ thể sau.
-- Khi **Claude Opus hết usage**, chuyển việc cho agent **Claude Sonnet 5** thay
-  vì chờ — Sonnet đủ để thực thi kế hoạch đã viết và triage log, rẻ hơn nhiều.
-  Giữ Opus cho quyết định kiến trúc/recipe.
+- Chạy phiên thực thi bằng một trong hai cách: SSH trực tiếp (dùng
+  `setsid nohup … &` cho việc dài), hoặc Claude Code headless trên máy train:
 
-Luật không đổi: mọi thay đổi hành vi phải kèm cập nhật tài liệu trong cùng
-commit, và tuyệt đối không đưa dữ liệu bệnh nhân vào commit/handoff/tóm tắt.
-Chi tiết cho agent nằm ở [AGENTS.md](AGENTS.md) và `CLAUDE.md`.
+  ```bash
+  ssh phuong@100.116.167.90 'bash -lc "cd ~/Meta-CXR && \
+      claude -p \"<yêu cầu>\" --allowedTools \"Bash Read Write Edit Grep Glob\" \
+      --model opus"' < /dev/null
+  ```
+
+  Ưu tiên `--allowedTools` hơn `--dangerously-skip-permissions`: nó đủ dùng cho mọi
+  bước của một plan.
+
+- ⚠ **Chỉ bấm launch MỘT lần.** Ngày 2026-08-19 lệnh bị chạy hai lần cách nhau 50
+  giây: phiên thứ hai OOM vì phiên đầu đang giữ GPU, và vì dùng chung đường ghi
+  output, báo cáo "abort" của nó đè lên báo cáo thật.
+- Bàn giao bằng file, không bằng chat: `docs/handoff/PLAN-<ngày>-<chủ-đề>.md`.
+  Bên lập kế hoạch viết plan, bên thực thi nối `## Execution report` vào **cùng
+  file**. Xem [docs/handoff/README.md](docs/handoff/README.md).
+- **Log lỗi phải được tóm tắt, không dán nguyên file:** lệnh + exit status, lỗi đầu
+  tiên kèm ~20 dòng ngữ cảnh và frame traceback cuối, các số quan trọng (`s/it`,
+  `max mem`, từng loss term, `epoch`/`iter`, VRAM nếu OOM), và đường dẫn log gốc
+  trên host để hỏi `grep` cụ thể sau.
+- Khi **Opus hết usage**, chuyển việc cho agent **Sonnet 5** thay vì chờ — Sonnet đủ
+  để thực thi kế hoạch đã viết và triage log, rẻ hơn nhiều. Giữ Opus cho quyết định
+  kiến trúc/recipe.
+- ⚠ **Báo cáo của agent là bằng chứng, không phải sự thật** — đối chiếu với file
+  thật trên đĩa (kể cả mtime) trước khi hành động theo nó.
+
+Luật không đổi: mọi thay đổi hành vi phải kèm cập nhật tài liệu trong cùng commit,
+và tuyệt đối không đưa dữ liệu bệnh nhân vào commit/handoff/tóm tắt. Chi tiết cho
+agent nằm ở [AGENTS.md](AGENTS.md) và `CLAUDE.md`.
 
 ## Hạn chế hiện tại
 

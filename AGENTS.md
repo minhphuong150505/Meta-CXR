@@ -1,13 +1,19 @@
-# AGENTS.md — for Codex (and any non-Claude agent) working in `Meta-CXR-source/`
+# AGENTS.md — the executor's card
 
 **`CLAUDE.md` in this directory is the authoritative technical document.** Read it
 before running anything: it carries the training host's quirks, the mount UUID, the
-venv trap, the config invariants and the loss/label policy. This file only states
-*your role* and the rules that are unsafe to learn by trial.
+venv trap, the config invariants and the loss/label policy. This file is the short
+version for whoever is *executing* a plan — it states the role and the rules that
+are unsafe to learn by trial.
+
+Historical note: until 2026-08-19 the executor was Codex. That subscription lapsed;
+the executor is now Claude Code, installed and authenticated on the training host.
+Nothing about the role changed. This file stays agent-agnostic so it still works
+if the executor changes again.
 
 ## Your role: execute the plan, report back compactly
 
-Claude plans and edits; you run. Concretely:
+One session plans and edits; you run. Concretely:
 
 - Do run: `git pull`, venv commands, `pytest`, preflight, smoke runs, Stage-1/Stage-2
   launches, `scripts/supervise_stage1.sh`, log/`nvidia-smi` triage on the training host.
@@ -16,6 +22,12 @@ Claude plans and edits; you run. Concretely:
   silently improvise a different run.
 - The plan for a piece of work is `docs/handoff/PLAN-<YYYY-MM-DD>-<topic>.md`. Append
   your `## Execution report` to that same file (see `docs/handoff/README.md`).
+
+⚠ **One GPU, one run.** Before launching anything that uses the card, check
+`nvidia-smi` and `pgrep -af pretraining.train`. On 2026-08-19 a launch command was
+issued twice 50 seconds apart; the second OOMed against the first and, sharing an
+output path, overwrote the real report with its abort. If you find the GPU busy,
+stop and report — do not queue behind it and do not retry.
 
 ## Reporting errors — summarize, never paste the log
 
@@ -29,8 +41,12 @@ Training logs are hundreds of megabytes of MetricLogger lines. Send back:
    `grep` instead of the whole file.
 
 An OOM is a *capacity finding*, not a crash to retry blindly: report the batch/accum
-and peak VRAM, and note that `supervise_stage1.sh`'s halve-batch fallback silently
-reintroduces the ITM negative starvation the current config exists to avoid.
+and peak VRAM. Note that `supervise_stage1.sh`'s halve-batch fallback changes the
+number of negatives every microbatch-local loss sees, so treat a fallback as a
+result to report, not a recovery.
+
+Report what ran and what it printed. "Not run", "failed" and "skipped" are all
+acceptable answers; a claim that something passed when it was never executed is not.
 
 ## Hard rules — violating any of these is worse than failing the task
 
@@ -38,24 +54,23 @@ reintroduces the ITM negative starvation the current config exists to avoid.
   paste report text, `subject_id` / `study_id` / `dicom_id`, real image paths, split
   CSVs, `*.npz`, `*.jsonl`, checkpoints or credentials — not in a commit, a handoff
   file, or a summary. Do not disable the notebook privacy pre-commit hook.
-- **Nothing here runs locally.** This checkout has no GPU and no dataset. Everything
-  that executes goes over SSH to the one training host — `ssh phuong@100.116.167.90`
-  (Tailscale name `minhphuong`). Tailscale SSH needs an interactive browser approval:
-  start it in the background, surface the URL to the user, wait. Always `git pull` on
-  the host before running, or the results belong to the wrong revision.
+- **Nothing runs in the dev checkout.** It has no GPU and no dataset. Everything that
+  executes goes to the one training host — `ssh phuong@100.116.167.90` (Tailscale name
+  `minhphuong`). Always `git pull` on the host before running, or the results belong to
+  the wrong revision. Launch anything long with `setsid nohup ... &`.
 - **Mount the dataset disk by UUID only:** `UUID=A4E6C088E6C05BE4`, `-t ntfs3 -o ro`.
   The `nvme0n1` / `nvme1n1` names have swapped across reboots three times; a
-  device-named command has even odds of naming `/`. `sudo` needs the user.
+  device-named command has even odds of naming `/`. `sudo` needs the user. Note the
+  desktop may auto-mount it `rw` at `/run/media/phuong/A4E6C088E6C05BE4` instead, which
+  is *not* where the configs look.
 - **Use `~/.venvs/meta-cxr-stage1-311/bin/python`.** Do not
   `pip install -r requirements-stage1.txt` unfiltered — it pins torch 2.5.1 (sm_90)
-  onto an sm_120 card and fails hours later. The working procedure is in `CLAUDE.md`,
-  "The venv".
+  onto an sm_120 card and fails hours later. Procedure in `CLAUDE.md`, "The venv".
 - **`run.output_dir` must be on `/home`** (ext4). The data drive is mounted read-only.
 - **There is no cloud path.** Do not reintroduce `cloud/`, GCS uploads, Kaggle flows or
   hardware-named configs; anything in git history describing them is dead.
 - **A behavioral change is not finished until `CLAUDE.md`, `README.md` (Vietnamese) and
-  `struct/` are updated in the same commit.** If you made the change, you own that
-  update; if Claude made it, check that it happened before you commit.
+  `struct/` are updated in the same commit.**
 
 ## Verification you can run without a GPU
 
@@ -66,13 +81,6 @@ ruff check .
 python -m training.dataio.validate_manifest --section-mode findings_and_impression
 ```
 
-Baseline as of 2026-08-17: 590 passed, 5 failed, 3 skipped. The 5 failures
-(`test_native_independence` ×4, `test_stage1_eval_hook` ×1) are pre-existing and
-environmental — do not "fix" them. Report a *change* from that baseline, not the
-absolute number.
-
-## Report honestly
-
-State what ran and what it printed. "Not run", "failed", and "skipped" are all
-acceptable answers; a claim that something passed when it was never executed is not.
-Nothing in the current Stage-2 path has been validated on GPU — do not imply otherwise.
+Baseline as of 2026-08-19: 5 failed (`test_native_independence` ×4,
+`test_stage1_eval_hook` ×1), both environmental. Do not "fix" them. Report a *change*
+from that baseline, not the absolute number.
