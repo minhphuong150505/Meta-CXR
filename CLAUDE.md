@@ -581,76 +581,85 @@ study (not image) → anchor + ≤1 auxiliary view
   its own — `scripts/check_itc_gate.py` at ~500 updates is still the gate — but
   it is the first time these objectives have moved in the right direction here.
 
-  ⚠⚠ **THE GATE HAS NOW BEEN RUN, AND ITC FAILED IT (2026-08-19).** On the
-  iter-4200 snapshot of `run_20260818_qformer` (≈525 optimizer updates), val,
-  256 pairs: `delta_nats` **−24.52** against the required ≥ +0.10, true-pair
-  rank **116.64 / 126.81** against chance 127.5 — barely moved from the
-  untrained model's 120.21 / 129.56. The 3.6-place i2t improvement after 525
-  updates is the whole result. `~/itc_gate_baseline.json` and
-  `~/itc_gate_500.json` on the host hold the two measurements.
+  ⚠⚠ **THE GATE HAS RUN, TWICE, AND ITC IS AT CHANCE (2026-08-19).** Measured on
+  val, on the pairs training actually scores (65.3% of studies — the rest have no
+  usable FINDINGS), 256 valid pairs, chance rank 127.5:
 
-  The train-side trajectory says the same thing with a twist worth keeping:
-  `loss_itc` ran 0.9–1.3 nats **below** chance (ln 264 = 5.576) from iter 1,000
-  to 5,000, then returned to *exactly* chance from iter 6,000 and stayed there
-  for 7,000 more iterations. So it separated training pairs for a while without
-  ever generalising to val, then lost even that. Note the queue is 256, not
-  1024, so it fills in ~32 iterations — the early low values are **not** a
-  queue-filling artefact.
+  | arm | temperature | rank i2t | rank t2i | `delta_nats` |
+  |---|---|---|---|---|
+  | untrained | 0.07 pinned | 130.68 | 130.30 | -0.0833 |
+  | 525 updates, temperature learned | 0.00796 | **127.43** | **127.65** | -1.1168 |
+  | 500 updates, temperature pinned | 0.07 | **128.38** | **127.45** | **-0.0025** |
 
-  Meanwhile the learned temperature fell **0.024888 → 0.00796** (clamp floor
-  1e-3) over the same 525 updates, and `delta_nats` scales with 1/temperature,
-  which is most of why the loss number reads 30.07. Hence the probe below.
+  Every arm lands on chance. The gate needs `delta_nats >= +0.10`; the pinned run
+  returns **-0.0025**. Pinning the temperature removes the exploding loss and
+  changes nothing else, so **the collapsing temperature was a symptom.**
+  `~/gate_v2_*.json` on the host hold these three.
 
-  `loss_itm` (0.575 vs chance 0.6365) and `loss_lm` (3.11 → 2.6) are learning
-  normally throughout. **The failure is specific to ITC** — but remember ITM
-  mines its hard negatives from the ITC similarity matrix, so an ITC at chance
-  means ITM is being fed random negatives, i.e. an easier task than intended.
+  ⚠ **Earlier numbers for this gate — `delta_nats` -24.52, and a claim that
+  training made ITC "2.93 nats worse than random initialisation" — were a
+  MEASUREMENT BUG and are retracted.** `check_itc_gate.py` scored all 256 loaded
+  pairs while ignoring `generation_mask`, so ~29% of them were an image against an
+  EMPTY string: unanswerable as queries, and as candidates a block of ~75
+  identical text vectors inside every other row's softmax. That is what put
+  `loss_itc` at 8.56 against a chance of 5.55. Fixed 2026-08-19 — the script now
+  loads `pairs * oversample` studies, keeps the first `pairs` valid ones, and
+  records `studies_scanned` / `valid_fraction` in its JSON. **Distrust any gate
+  JSON without those two keys.** Training was never affected:
+  `_image_text_contrastive` has always taken `generation_mask`, dropping invalid
+  rows from the loss and `-inf`-masking them out of the candidate set.
+
+  Train-side, the story was the same all along and less dramatic than the broken
+  gate suggested: `loss_itc` ran 0.9-1.3 nats below chance (ln 264 = 5.576) from
+  iter 1,000 to 5,000 of `run_20260818_qformer`, then returned to exactly chance
+  from iter 6,000 and stayed there for 7,000 iterations. The pinned-temperature
+  probe oscillated either side of chance (5.40 / 5.04 / 5.75 at iters 350 / 1650 /
+  2950) rather than pinning to it — a difference that does not survive contact
+  with the val measurement. Do not read the training curve as evidence about
+  retrieval. Note the queue is 256, not 1024, so it fills in ~32 iterations; the
+  early low values are not a queue-filling artefact.
+
+  **THE REFERENCE IMPLEMENTATION DOES NOT TRAIN ITC AT ALL.** In
+  `DasithEdirisinghe/META-CXR` — the repo this fork descends from, and the one
+  behind the published paper — the entire vision-language block of
+  `blip2_qformer.py` is commented out. `loss_itc` and `loss_itm` appear on no
+  uncommented line, and Stage-1's returned loss is
+  `cls_loss + 0.3*contrastive + 0.7*orth + 0.3*sparsity` — the MHCAC terms only.
+  Their `blip2_pretrain_stage1.yaml` is consistent with that: `batch_size_train: 2`
+  (ITC over 2 candidates has a chance of ln 2 = 0.69 and teaches nothing) and
+  `load_pretrained: False`. **So the published Stage 1 is classification-only, and
+  nothing in this lineage has ever demonstrated a working ITC on this architecture
+  or this data.** Re-enabling it was never "restoring" anything.
+
+  One concrete design flaw remains, if anyone wants to try again: the 256-entry
+  negative queue is filled with detached features from the **live** encoder. MoCo
+  and ALBEF use a momentum encoder for exactly this reason — stale keys produced
+  by an encoder that has since moved are not comparable to current queries. The
+  reference has no queue at all. This is a hypothesis, not a measured cause.
+
+  **So `lambda_itc: 0.0` is the supported setting.** With ITC at chance the ITM
+  number is not readable either: ITM mines its hard negatives from the ITC
+  similarity matrix, so it has been solving an easier problem than the config
+  intends. Full record, including the two concurrent Codex launches that made the
+  first report look like a total abort, in
+  `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`.
 - **`model.loss.itc_temp` / `model.loss.itc_temp_learnable` pin the ITC
   temperature (added 2026-08-19).** Default `0.07` / `true`, which reproduces the
   historical behaviour: BLIP-2 learns it, and `blip2_pretrained.pth` supplies a
   trained ~0.0249. Setting `itc_temp_learnable: false` does two things, and it
   needs both — `self.temp` stops receiving gradient **and** the loss reads the
-  non-persistent `itc_temp_fixed` buffer instead, because `load_state_dict`
-  would otherwise restore a pretrained or resumed checkpoint's temperature over
-  the config value. `scripts/check_itc_gate.py` mirrors the same rule and now
-  records `temp_learnable` in its JSON: **`delta_nats` is only comparable
-  between two measurements taken at the same temperature**; the rank fields are
+  non-persistent `itc_temp_fixed` buffer instead, because `load_state_dict` would
+  otherwise restore a pretrained or resumed checkpoint's temperature over the
+  config value. `scripts/check_itc_gate.py` mirrors the same rule and records
+  `temp_learnable` in its JSON: **`delta_nats` scales with 1/temperature, so two
+  measurements are only comparable at the same temperature**; the rank fields are
   scale-free and are the honest cross-regime signal. The script also takes
-  `--options KEY=VALUE` now, so a variant can be measured without editing the
-  tracked YAML. **Neither knob has been run on GPU yet** — the probe that will
-  do it is `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`.
-
-  ⚠⚠ **THE PROBE HAS RUN, ON GPU, AND IT FAILED TOO (2026-08-19).** 500 optimizer
-  updates with the temperature pinned at 0.07, batch 8 / accum 8, 29:01 wall,
-  0.4354 s/it, no OOM. Measured on val, 256 pairs, at that same pinned
-  temperature so the two are comparable:
-
-  | | untrained | after 500 updates | rule |
-  |---|---|---|---|
-  | rank i2t | 113.34 | **117.44** — *worse by 4.1* | needs >= 15 better |
-  | rank t2i | 124.97 | **112.93** — better by 12.0 | — |
-  | `delta_nats` | -0.0844 | **-3.0119** | needs >= +0.10 |
-
-  At an identical temperature, training the contrastive objective for 500 updates
-  made it **2.93 nats worse on held-out data than random initialisation**, and
-  i2t retrieval moved backwards. The t2i gain of 12 places is not safe on its own:
-  two untrained builds of the same model differ by ~7 places on this metric
-  (113.34 here vs 120.21 on the earlier build), because the stream adapters and
-  projections are randomly initialised. **The temperature was a symptom, not the
-  cause** — pinning it removes the exploding loss and changes nothing else.
-
-  Train-side `loss_itc` did behave differently from `run_20260818_qformer`: it
-  oscillated on both sides of chance (5.40 / 5.04 / 5.75 at iters 350 / 1650 /
-  2950, chance 5.576) instead of pinning to it. That difference does not survive
-  contact with the val measurement, and is a reminder not to read the training
-  curve as evidence about retrieval.
-
-  **So `lambda_itc: 0.0` is the supported setting**, and with ITC at chance the
-  ITM number is not readable either — ITM mines its hard negatives from the ITC
-  similarity matrix, so it has been solving an easier problem than the config
-  intends. Full record, including the two concurrent Codex launches that made the
-  first report look like a total abort, in
-  `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`.
+  `--options KEY=VALUE`, so a variant can be measured without editing the tracked
+  YAML.
+  Measured on GPU 2026-08-19: a 500-update probe at pinned 0.07 (batch 8 / accum
+  8, `truncate_train=32000`, `max_epoch=1`, `eval_start_epoch=99`) took **29:01 at
+  0.4354 s/it** with no OOM. The knobs work; what they buy is nothing, per the
+  table above.
 - **Padded auxiliary views no longer reach the encoders (2026-08-18).** The
   collater pads ragged studies with `torch.zeros_like(anchor)` and 44.7% of train
   studies have no auxiliary view, so `_encode_aux_streams` was spending roughly
