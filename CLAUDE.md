@@ -299,6 +299,33 @@ reset, abort or `blk_update_request` I/O error); **not the GPU** (no Xid, no
 NVRM error, no MCE); **not OOM** (23-29 GB of 30 free throughout); **not the
 recipe** (Python cannot fault the kernel).
 
+⚠⚠ **THE MEMORY CONFIGURATION IS FOUR DIMMs FROM TWO DIFFERENT BRANDS**, stated
+by the user 2026-08-19. On a consumer DDR4 platform this is the highest-risk
+arrangement there is for exactly these symptoms, for three compounding reasons:
+populating all four slots roughly doubles the electrical load per channel and
+Intel derates the supported speed accordingly (often to 2133-2400 for four
+dual-rank modules on Alder Lake); one kit's XMP profile is applied to sticks that
+were never validated at those timings or voltage; and mixed ICs and rank
+organisations need different training parameters that the controller can only
+satisfy for one of them. The result is bit flips under heavy memory traffic —
+which is precisely when training does its work — with nothing logged, because
+the RAM is non-ECC.
+
+It also reconciles the timeline that otherwise argued against hardware: a
+10-epoch run completed on 2026-08-14 (`run_b16fast_20260814/checkpoint_9`), and
+nothing has completed one epoch since the 2026-08-17 reinstall. A marginal memory
+configuration does not need to change to start failing — a new kernel with
+different allocation and page-cache behaviour is enough to tip it over.
+
+**Fix order: (1) disable XMP/EXPO in BIOS and run at JEDEC — free, two minutes,
+highest value. (2) If it still faults, run two matched sticks only, from one kit,
+in the slots the ASRock manual names for dual channel. (3) Command Rate 2T and
+the higher of the two kits' DRAM voltages are the usual stabilisers for a
+four-DIMM mixed set.** ⚠ A clean memtest86+ does NOT exonerate this
+configuration: marginal four-DIMM setups routinely pass memtest and still corrupt
+memory under real multi-threaded load. Treat memtest failure as proof and memtest
+success as weak evidence.
+
 ⚠ **The RAM is non-ECC** — `EDAC ie31200: No ECC support`. A clean MCE/EDAC log
 is therefore *not* evidence of healthy memory; the hardware cannot report it.
 
