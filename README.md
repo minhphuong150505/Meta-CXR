@@ -566,6 +566,7 @@ Bài báo META-CXR gốc có báo cáo classification và report-generation metr
 - [Final merge plan](docs/final_merge_plan.md)
 - [Feature cache](docs/FEATURE_CACHE.md)
 - [Notebook privacy](docs/notebook_privacy.md)
+- [So sánh với repo gốc của bài báo](docs/so_sanh_voi_repo_goc.md)
 - [Bàn giao plan → thực thi](docs/handoff/README.md)
 
 ## Quy trình làm việc với agent (một Claude lập kế hoạch, một Claude thực thi)

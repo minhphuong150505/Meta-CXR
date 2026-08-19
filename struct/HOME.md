@@ -296,6 +296,7 @@ Meta-CXR-source/
 │   ├── STAGE2_PIPELINE_MODES.md    ✅ nên theo
 │   ├── FEATURE_CACHE.md            ✅   notebook_privacy.md ✅
 │   ├── handoff/                    ✅ bàn giao planner → executor (cả hai là Claude)
+│   ├── so_sanh_voi_repo_goc.md     ✅ đối chiếu source với DasithEdirisinghe/META-CXR
 │   └── *_audit.md  *_baseline.md  final_*.md   🕰 chỉ đọc như lịch sử
 │
 ├── checkpoints/                    (generated — chỉ .gitkeep; LoRA Vicuna ở đây)
