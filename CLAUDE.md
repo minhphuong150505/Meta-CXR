@@ -317,7 +317,28 @@ nothing has completed one epoch since the 2026-08-17 reinstall. A marginal memor
 configuration does not need to change to start failing — a new kernel with
 different allocation and page-cache behaviour is enough to tip it over.
 
-**Fix order: (1) disable XMP/EXPO in BIOS and run at JEDEC — free, two minutes,
+**The exact configuration, from `dmidecode -t memory` on 2026-08-19:** 4 x 8 GB,
+all single-rank, `Configured Memory Speed: 3200 MT/s` on every stick, at a
+reported `Configured Voltage: 1.2 V`.
+
+| module | SPD `Speed` (JEDEC) | configured |
+|---|---|---|
+| A-DATA `AX4U32008G16A-BW50` x2 | 2667 MT/s | **3200** |
+| Kingston `KF3200C16D4/8GX` x2 | **2400 MT/s** | **3200** |
+
+So XMP is on and the Kingston pair is running **33% above** the JEDEC speed its
+own SPD declares. Worse, four single-rank DIMMs means **2 ranks per channel**,
+and Intel's validated ceiling for 12th-gen DDR4 at 2 DIMMs per channel is
+**2666 MT/s** — which is exactly the 2667 the A-DATA SPD reports. The board is
+running 3200 in a configuration Intel guarantees only to 2666.
+
+The reported 1.2 V matters too: both kits are XMP-3200 CL16 parts rated at
+**1.35 V**, so 3200 at 1.2 V is undervolted, which produces intermittent flips
+under load and perfect stability at idle. ⚠ `dmidecode` frequently reports the
+SPD nominal 1.2 V even when the BIOS has applied 1.35 V, so confirm in the BIOS
+rather than trusting that field.
+
+**Fix order: (1) disable XMP/EXPO in BIOS and run at 2666 or 2400 — free, two minutes,
 highest value. (2) If it still faults, run two matched sticks only, from one kit,
 in the slots the ASRock manual names for dual channel. (3) Command Rate 2T and
 the higher of the two kits' DRAM voltages are the usual stabilisers for a
