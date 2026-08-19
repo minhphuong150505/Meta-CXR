@@ -11,6 +11,51 @@ branch `main`). It is a sibling of the older `../META-CXR/` checkout. The parent
 `medgemma_inference/`; Stage-2 test counts), **this file wins for work done
 inside this directory.**
 
+## Who does what — Claude plans, Codex executes
+
+Set by the user on 2026-08-19. It is a division of *roles*, not of judgement:
+both agents are expected to push back when the other is wrong.
+
+| | Claude Code (this session) | Codex |
+|---|---|---|
+| Owns | the plan, the source edits, `CLAUDE.md` / `README.md` / `struct/` | running things |
+| Does | read code, design the change, write/apply the diff, decide what "done" means | `git pull`, venv/pytest, smoke runs, Stage-1/Stage-2 launches, `supervise_stage1.sh`, log triage on the host |
+| Does not | drive long GPU runs or babysit SSH sessions | redesign the recipe, change losses/configs, or rewrite docs on its own initiative |
+
+The handoff artifact is a file, not a chat message, so a later session can pick
+it up cold: Claude writes `docs/handoff/PLAN-<YYYY-MM-DD>-<topic>.md` (exact
+commands, expected output, abort conditions), Codex appends an
+`## Execution report` section to the *same* file. See
+`docs/handoff/README.md`.
+
+**Error logs come back summarized, never pasted whole.** A Stage-1 log is
+hundreds of MB of MetricLogger lines and pasting it burns the budget that is
+supposed to pay for the fix. What Codex sends back:
+
+1. the exact command and its exit status;
+2. the first error, with ~20 lines of context and the final traceback frame —
+   not the whole traceback chain;
+3. the numbers that decide anything: `s/it`, `max mem`, the loss terms by name,
+   `epoch`/`iter` at failure, `nvidia-smi` VRAM if it is an OOM;
+4. where the raw log still lives on the host (`~/<run>.log`), so Claude can ask
+   for one specific `grep` instead of the file.
+
+If the summary is not enough, Claude asks for a named `grep`/`sed -n` range.
+That is the only way raw log text should travel.
+
+**When Claude Opus is out of usage or otherwise unavailable, escalate to a
+Claude Sonnet 5 agent rather than stalling** — Sonnet executes an already-written
+plan and triages logs at a fraction of the cost. Keep Opus for what actually
+needs it: architecture, loss/recipe decisions, and reading an unexplained result.
+
+Two things this arrangement does **not** relax:
+
+- Whoever makes the behavioral change, the `CLAUDE.md` / `README.md` / `struct/`
+  update ships in the same commit (see the two sections at the end of this file).
+- Codex is bound by "Data handling — non-negotiable" exactly as Claude is. No
+  report text, `subject_id`/`study_id`/`dicom_id`, split CSVs, `.npz`, `.jsonl`
+  or checkpoints in a commit, in a handoff file, or in a summary sent back.
+
 ## The training host — there is only one, and it is local
 
 All training runs on the user's own desktop, reachable over Tailscale. Its OS

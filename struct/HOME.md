@@ -295,6 +295,7 @@ Meta-CXR-source/
 ├── docs/                           ⚠ đa số là BIÊN BẢN, không phải spec
 │   ├── STAGE2_PIPELINE_MODES.md    ✅ nên theo
 │   ├── FEATURE_CACHE.md            ✅   notebook_privacy.md ✅
+│   ├── handoff/                    ✅ bàn giao Claude(plan) → Codex(execute)
 │   └── *_audit.md  *_baseline.md  final_*.md   🕰 chỉ đọc như lịch sử
 │
 ├── checkpoints/                    (generated — chỉ .gitkeep; LoRA Vicuna ở đây)
@@ -309,7 +310,8 @@ Meta-CXR-source/
 ├── requirements.txt                ✅ alias mặc định → requirements-stage1.txt
 ├── .pre-commit-config.yaml         ✅ notebook privacy guard
 ├── .gitignore                      ✅ chặn dữ liệu/artifact nhạy cảm; không chặn struct/
-└── README.md                       ✅ tiếng Việt, chi tiết, authoritative
+├── README.md                       ✅ tiếng Việt, chi tiết, authoritative
+└── AGENTS.md                       ✅ luật cho Codex/agent non-Claude → trỏ về CLAUDE.md
 ```
 
 ---
