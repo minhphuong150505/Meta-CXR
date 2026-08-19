@@ -177,3 +177,109 @@ only has to separate "moving" from "the 3.6 places we already measured".
 the shipped YAML has carried 0.1 since the Q-Former was re-enabled on
 2026-08-18. Pre-existing, unrelated to this probe — the CPU suite is 7 failed,
 not the 5 that `CLAUDE.md` records. Do not "fix" it as part of this work.
+
+---
+
+## Execution report — 2026-08-19, minhphuong
+
+**The launch command was issued twice, 50 seconds apart, so two Codex sessions
+ran against one GPU.** Session A (09:50:18) executed the plan in full. Session B
+(09:51:08) started while A held the card, OOMed in Step 1 and correctly aborted;
+its report is kept below because it is accurate about itself. Both sessions were
+given the same `-o` output path, so the file that survived was B's — which is why
+the first thing this run looked like was a total abort. It was not.
+
+- **commit run:** `a4897ddd9f992f68f6ce6c5dad4ded554b121246`
+- **host:** minhphuong (RTX 5060 Ti 16 GB), `/mnt/drive1tb` mounted ntfs3 read-only
+
+### Step 1 — baseline, untrained, temperature pinned at 0.07
+
+`itc_gate_fixedtemp_baseline.json`, 09:52:17. `temp_learnable: false`,
+`temperature: 0.07`.
+
+| | |
+|---|---|
+| `loss_itc` | 5.6296 (chance ln 256 = 5.5452) |
+| `delta_nats` | **−0.0844** |
+| rank i2t / t2i | **113.34 / 124.97** (chance 127.5) |
+
+### Step 2 — probe run, 500 optimizer updates
+
+`~/probe_itc_temp.log`. 4,000 microbatches, **0.4354 s/it, 29:01 total**, no OOM,
+no fallback, exit clean. `truncate_train=32000`, `max_epoch=1`,
+`eval_start_epoch=99`, `itc_temp_learnable=False`, `itc_temp=0.07` — no other
+override, batch and accum left at the shipped 8/8.
+
+Train-side `loss_itc` (window value, running mean in parentheses), chance = ln 264 = 5.576:
+
+| iter | `loss_itc` | `loss_itm` | `loss_lm` |
+|---|---|---|---|
+| 0 | 2.0503 (2.0503) | 2.0657 | 7.2815 |
+| 350 | 5.3984 (5.4761) | 0.6247 (0.7862) | 5.4670 (6.3881) |
+| 1650 | 5.0449 (5.3787) | 0.5684 (0.6469) | 3.3546 (4.5027) |
+| 2950 | 5.7469 (5.2504) | 0.5291 (0.5934) | 2.9697 (3.9104) |
+
+`loss_itc` oscillates on both sides of chance instead of pinning to it, which is
+different from `run_20260818_qformer` — and turns out not to matter, see below.
+
+### Step 3 — gate on the probe checkpoint, temperature pinned
+
+Run twice. Session A's (`itc_gate_fixedtemp_500.json`, 10:22:33) landed 41
+seconds after training exited, close enough to the final `checkpoint_last.pth`
+write (10:21:51) to be worth distrusting, so it was **re-run cleanly on the idle
+GPU** (`itc_gate_verify_500.json`). The two agree, so the original stands.
+
+| | session A | verification re-run |
+|---|---|---|
+| `loss_itc` | 8.5654 | **8.5571** |
+| `delta_nats` | −3.0203 | **−3.0119** |
+| rank i2t / t2i | 116.02 / 110.91 | **117.44 / 112.93** |
+
+### Verdict: **FAIL**
+
+| | baseline | after 500 updates | rule |
+|---|---|---|---|
+| rank i2t | 113.34 | **117.44** — *worse by 4.1* | needs ≥ 15 better |
+| rank t2i | 124.97 | **112.93** — better by 12.0 | — |
+| `delta_nats` | −0.0844 | **−3.0119** | needs ≥ +0.10 |
+
+At an identical, pinned temperature, 500 updates of training the contrastive
+objective made it **2.93 nats worse on held-out data than random initialisation**.
+i2t retrieval moved backwards. t2i improved 12 places, but the run-to-run spread
+between two untrained builds is ~7 places (113.34 here against 120.21 measured on
+the earlier build of the same untrained model), so 12 is not a safe signal on its
+own — and it is contradicted by both other numbers.
+
+**The temperature was a symptom, not the cause.** Pinning it removes the exploding
+loss but does not make the representation separate pairs. `lambda_itc` should go
+to 0.0.
+
+### What I did NOT do
+
+- Did not resume `run_20260818_qformer`; did not touch `~/ckpt_at_500_updates.pth`.
+- Did not change `lambda_*`, batch, accum, encoders or `warmup_steps`.
+- Did not remount anything or patch any config file — the mount was already
+  correct, so the plan's sed/trap fallback was never used. `git status` clean.
+- Did not evaluate ITM or LM. They are not what this probe was about, and the
+  ITM number in particular is not readable while ITC is at chance, because ITM
+  mines its hard negatives from the ITC similarity matrix.
+
+### Session B's report, kept verbatim (duplicate launch, aborted)
+
+- commit run: `a4897ddd9f992f68f6ce6c5dad4ded554b121246`
+- command / status: Step-1 gate → exit 1
+- result: ABORT in Step 1 on `torch.OutOfMemoryError` while moving PubMedCLIP to
+  CUDA. The failed allocation was 2.00 MiB with 13.50 MiB free of 15.48 GiB.
+  `nvidia-smi` then reported 15,485 MiB used / 363 MiB free, 79% utilisation;
+  PID 20439 held 15,308 MiB. **That PID was a concurrently launched process
+  running the plan's exact Step-2 command, not a process launched by this
+  execution.** No gate metrics or PASS/FAIL decision were produced by it.
+- what it did NOT do: skipped Steps 2 and 3 per the plan's OOM abort rule; did
+  not retry, change batch/accumulation, edit either config, remount, alter any
+  loss/encoder/warmup setting, or interfere with the concurrent process. It
+  explicitly refused to claim the pre-existing baseline JSON as its own output.
+
+That refusal is the right behaviour and is why the two runs could be told apart
+afterwards. The lesson is about the launcher, not the agent: **two `codex exec`
+invocations sharing one `-o` path and one GPU produce one true report and one
+misleading file, and the misleading one wins the filename.**
