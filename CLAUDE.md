@@ -618,8 +618,39 @@ study (not image) → anchor + ≤1 auxiliary view
   scale-free and are the honest cross-regime signal. The script also takes
   `--options KEY=VALUE` now, so a variant can be measured without editing the
   tracked YAML. **Neither knob has been run on GPU yet** — the probe that will
-  do it is `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`, and its result
-  decides whether `lambda_itc` goes back to 0.0.
+  do it is `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`.
+
+  ⚠⚠ **THE PROBE HAS RUN, ON GPU, AND IT FAILED TOO (2026-08-19).** 500 optimizer
+  updates with the temperature pinned at 0.07, batch 8 / accum 8, 29:01 wall,
+  0.4354 s/it, no OOM. Measured on val, 256 pairs, at that same pinned
+  temperature so the two are comparable:
+
+  | | untrained | after 500 updates | rule |
+  |---|---|---|---|
+  | rank i2t | 113.34 | **117.44** — *worse by 4.1* | needs >= 15 better |
+  | rank t2i | 124.97 | **112.93** — better by 12.0 | — |
+  | `delta_nats` | -0.0844 | **-3.0119** | needs >= +0.10 |
+
+  At an identical temperature, training the contrastive objective for 500 updates
+  made it **2.93 nats worse on held-out data than random initialisation**, and
+  i2t retrieval moved backwards. The t2i gain of 12 places is not safe on its own:
+  two untrained builds of the same model differ by ~7 places on this metric
+  (113.34 here vs 120.21 on the earlier build), because the stream adapters and
+  projections are randomly initialised. **The temperature was a symptom, not the
+  cause** — pinning it removes the exploding loss and changes nothing else.
+
+  Train-side `loss_itc` did behave differently from `run_20260818_qformer`: it
+  oscillated on both sides of chance (5.40 / 5.04 / 5.75 at iters 350 / 1650 /
+  2950, chance 5.576) instead of pinning to it. That difference does not survive
+  contact with the val measurement, and is a reminder not to read the training
+  curve as evidence about retrieval.
+
+  **So `lambda_itc: 0.0` is the supported setting**, and with ITC at chance the
+  ITM number is not readable either — ITM mines its hard negatives from the ITC
+  similarity matrix, so it has been solving an easier problem than the config
+  intends. Full record, including the two concurrent Codex launches that made the
+  first report look like a total abort, in
+  `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`.
 - **Padded auxiliary views no longer reach the encoders (2026-08-18).** The
   collater pads ragged studies with `torch.zeros_like(anchor)` and 44.7% of train
   studies have no auxiliary view, so `_encode_aux_streams` was spending roughly
