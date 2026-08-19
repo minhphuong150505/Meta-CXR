@@ -11,50 +11,81 @@ branch `main`). It is a sibling of the older `../META-CXR/` checkout. The parent
 `medgemma_inference/`; Stage-2 test counts), **this file wins for work done
 inside this directory.**
 
-## Who does what — Claude plans, Codex executes
+## Who does what — one Claude plans, another Claude executes
 
-Set by the user on 2026-08-19. It is a division of *roles*, not of judgement:
-both agents are expected to push back when the other is wrong.
+Set by the user on 2026-08-19. **Codex is gone** — the subscription lapsed on
+2026-08-19 and the executor is now Claude Code, which is installed and
+authenticated on the training host (`~/.local/bin/claude`, 2.1.233). The split of
+*roles* is unchanged; only the executor's identity is.
 
-| | Claude Code (this session) | Codex |
+| | Planner — this checkout, no GPU | Executor — on the training host |
 |---|---|---|
 | Owns | the plan, the source edits, `CLAUDE.md` / `README.md` / `struct/` | running things |
-| Does | read code, design the change, write/apply the diff, decide what "done" means | `git pull`, venv/pytest, smoke runs, Stage-1/Stage-2 launches, `supervise_stage1.sh`, log triage on the host |
+| Does | read code, design the change, write/apply the diff, decide what "done" means | `git pull`, venv/pytest, smoke runs, Stage-1/Stage-2 launches, `supervise_stage1.sh`, log triage |
 | Does not | drive long GPU runs or babysit SSH sessions | redesign the recipe, change losses/configs, or rewrite docs on its own initiative |
 
+Two ways to run the executor, both fine:
+
+- **Directly over SSH from the planning session.** Simplest for a few commands;
+  launch anything long with `setsid nohup ... &` so it survives the connection.
+- **Headless Claude Code on the host**, which is what to use for a multi-step
+  plan. Verified working 2026-08-19:
+
+  ```bash
+  ssh phuong@100.116.167.90 'bash -lc "cd ~/Meta-CXR && \
+      claude -p \"<the instruction>\" --allowedTools \"Bash Read Write Edit Grep Glob\" \
+      --model opus"' < /dev/null
+  ```
+
+  Prefer `--allowedTools` over `--dangerously-skip-permissions`: it is enough for
+  everything a plan needs, and the safety classifier will refuse to launch the
+  dangerous form on your behalf. Put the instruction in a file on the host and
+  pipe it in when it is long. **Launch exactly once** — see the warning below.
+
+⚠ **Never launch two executors against this GPU.** On 2026-08-19 the launch
+command was issued twice 50 seconds apart: the first ran the plan correctly, the
+second OOMed against it and, sharing the same output path, left *its* abort
+report behind as the file everyone read. One card, one run, one output path.
+
 The handoff artifact is a file, not a chat message, so a later session can pick
-it up cold: Claude writes `docs/handoff/PLAN-<YYYY-MM-DD>-<topic>.md` (exact
-commands, expected output, abort conditions), Codex appends an
-`## Execution report` section to the *same* file. See
-`docs/handoff/README.md`.
+it up cold: the planner writes `docs/handoff/PLAN-<YYYY-MM-DD>-<topic>.md` (exact
+commands, expected output, abort conditions), the executor appends an
+`## Execution report` section to the *same* file. See `docs/handoff/README.md`.
 
 **Error logs come back summarized, never pasted whole.** A Stage-1 log is
 hundreds of MB of MetricLogger lines and pasting it burns the budget that is
-supposed to pay for the fix. What Codex sends back:
+supposed to pay for the fix. What comes back:
 
 1. the exact command and its exit status;
 2. the first error, with ~20 lines of context and the final traceback frame —
    not the whole traceback chain;
 3. the numbers that decide anything: `s/it`, `max mem`, the loss terms by name,
    `epoch`/`iter` at failure, `nvidia-smi` VRAM if it is an OOM;
-4. where the raw log still lives on the host (`~/<run>.log`), so Claude can ask
-   for one specific `grep` instead of the file.
+4. where the raw log still lives on the host (`~/<run>.log`), so the planner can
+   ask for one specific `grep` instead of the file.
 
-If the summary is not enough, Claude asks for a named `grep`/`sed -n` range.
-That is the only way raw log text should travel.
+If the summary is not enough, ask for a named `grep`/`sed -n` range. That is the
+only way raw log text should travel.
 
-**When Claude Opus is out of usage or otherwise unavailable, escalate to a
-Claude Sonnet 5 agent rather than stalling** — Sonnet executes an already-written
-plan and triages logs at a fraction of the cost. Keep Opus for what actually
-needs it: architecture, loss/recipe decisions, and reading an unexplained result.
+**When Opus is out of usage or otherwise unavailable, escalate to a Sonnet 5
+agent rather than stalling** — Sonnet executes an already-written plan and
+triages logs at a fraction of the cost. Keep Opus for what actually needs it:
+architecture, loss/recipe decisions, and reading an unexplained result.
+
+⚠ **An executing agent's report is evidence, not truth — check the artifacts.**
+Both agents that ran on 2026-08-19 reported honestly, and the record was still
+misleading, because two of them wrote to one path. Verify the numbers against the
+files on disk (mtimes included) before acting on them, and re-run a measurement
+that landed suspiciously close to another process finishing.
 
 Two things this arrangement does **not** relax:
 
 - Whoever makes the behavioral change, the `CLAUDE.md` / `README.md` / `struct/`
   update ships in the same commit (see the two sections at the end of this file).
-- Codex is bound by "Data handling — non-negotiable" exactly as Claude is. No
-  report text, `subject_id`/`study_id`/`dicom_id`, split CSVs, `.npz`, `.jsonl`
-  or checkpoints in a commit, in a handoff file, or in a summary sent back.
+- The executor is bound by "Data handling — non-negotiable" exactly as the
+  planner is. No report text, `subject_id`/`study_id`/`dicom_id`, split CSVs,
+  `.npz`, `.jsonl` or checkpoints in a commit, in a handoff file, or in a summary
+  sent back.
 
 ## The training host — there is only one, and it is local
 
