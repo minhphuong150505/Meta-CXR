@@ -191,7 +191,14 @@ Mặc định `0.07` / `true`, đúng hành vi lịch sử: BLIP-2 học tham s�
 phép đo chỉ so sánh được khi cùng nhiệt độ. Trường rank trong JSON không phụ
 thuộc nhiệt độ và là tín hiệu so sánh chéo chế độ duy nhất đáng tin.
 
-**Chưa chạy trên GPU.** Kế hoạch đo: `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`.
+**Đã đo trên GPU 2026-08-19 và ITC TRƯỢT gate.** Cả ba nhánh (chưa train / 525
+update nhiệt độ học được / 500 update nhiệt độ pin) đều cho rank cặp đúng nằm
+đúng mức ngẫu nhiên 127.5; `delta_nats` của nhánh pin là −0.0025 so với ngưỡng
++0.10. Pin nhiệt độ không cứu được ITC — nhiệt độ chỉ là triệu chứng.
+`lambda_itc/itm/lm` đã về `0.0`, khớp repo gốc (ở đó cả khối này bị comment out).
+Hai knob vẫn giữ trong code, mặc định `0.07` / `true`.
+
+Chi tiết: `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`.
 
 ## Error / edge cases
 
