@@ -274,7 +274,51 @@ This directory is a **development checkout on a machine with no GPU and no
 dataset**. Nothing that actually runs the project — training, evaluation,
 inference, smoke tests, GPU-dependent scripts — runs here.
 
-⚠⚠ **THE STORAGE STACK FAULTS IN THE KERNEL UNDER TRAINING I/O (2026-08-19).**
+⚠⚠⚠ **THE MACHINE HAS A MEMORY-CORRUPTION PROBLEM. STOP TRAINING ON IT UNTIL
+MEMTEST PASSES (2026-08-19).** Five kernel faults have now been collected across
+two boots, in five **unrelated** core subsystems:
+
+```
+filemap_get_read_batch          page cache          Comm: mount.ntfs-3g
+__rmqueue_pcplist               page allocator      (LIST_POISON2)
+__list_del_entry_valid_or_report  the kernel's own list-corruption detector
+do_exit                         process exit path
+nvme_setup_rw [nvme_core]       NVMe driver         (from ntfs3 read)
+```
+
+A driver bug faults in its own code, in the same place, repeatedly. This does
+not. Non-canonical addresses, `LIST_POISON2` (`0xdead000000000122`) and the list
+checker firing are bit-flip signatures. **Switching the NTFS driver moved the
+fault and did not stop it**: `ntfs3` faulted in `ntfs_file_read_iter` -> nvme;
+`ntfs-3g` then faulted in `filemap_get_read_batch` and its daemon died, which
+training saw as `OSError: [Errno 107] Transport endpoint is not connected`. Two
+entirely different code paths, same outcome.
+
+What is ruled out: **not the SSD** (zero NVMe controller errors — no timeout,
+reset, abort or `blk_update_request` I/O error); **not the GPU** (no Xid, no
+NVRM error, no MCE); **not OOM** (23-29 GB of 30 free throughout); **not the
+recipe** (Python cannot fault the kernel).
+
+⚠ **The RAM is non-ECC** — `EDAC ie31200: No ECC support`. A clean MCE/EDAC log
+is therefore *not* evidence of healthy memory; the hardware cannot report it.
+
+Why it always looks like a storage problem: training streams hundreds of GB
+through the page cache, so nearly all kernel memory traffic is in the I/O path,
+and a random flip lands there. That is why every fault has an I/O flavour without
+being an I/O bug.
+
+**What to do, in order.** (1) `sudo apt install memtest86+`, reboot, run at least
+one full pass on 32 GB — hours, ideally overnight. That settles it. (2) If
+memtest is clean, disable XMP/EXPO in the BIOS (ASRock B760M Pro RS/D4, i7-12700F,
+DDR4) and retest; an unstable memory profile produces exactly this. (3) Only then
+suspect kernel 7.0.0-29, which is new — but a kernel bug rarely scatters across
+five subsystems like this.
+
+Until then, treat any checkpoint this machine writes as suspect: a flip during a
+3 GB checkpoint write is silent.
+
+⚠⚠ **Historical, kept because the diagnosis was refined in stages: the storage
+stack faults under training I/O.**
 Stage-1 died three times in 24 minutes and `journalctl -k` shows **two kernel
 Oopses**, both in a `pt_data_worker` — a DataLoader worker reading the dataset:
 
