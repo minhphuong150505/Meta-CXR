@@ -279,11 +279,23 @@ Stage-1 died three times in 24 minutes and `journalctl -k` shows **two kernel
 Oopses**, both in a `pt_data_worker` — a DataLoader worker reading the dataset:
 
 ```
-RIP: nvme_setup_rw+0x9c/0x2c0 [nvme_core]     <- the NVMe driver
+RIP: nvme_setup_rw+0x9c/0x2c0 [nvme_core]     <- faulting instruction
+     nvme_setup_cmd+0xad/0x230 [nvme_core]
+     nvme_queue_rqs+0xff/0x220 [nvme]
+     ...
+     ntfs_file_read_iter+0x182/0x260 [ntfs3]  <- WHERE IT CAME FROM
 RIP: __rmqueue_pcplist+0x54/0x2e0             <- page allocator, LIST_POISON2
 ```
 
-The second is fallout from the first. This is **not** an OOM (23 of 30 GB free,
+**Read the call trace, not just the RIP: the request originates in `ntfs3`**, on a
+read of a file from the dataset volume, and is malformed by the time `nvme_core`
+tries to set it up. There is **not one NVMe controller error anywhere in the log**
+— no timeout, no reset, no abort, no `blk_update_request: I/O error` — which is
+what a failing SSD would produce. So this is the kernel NTFS driver on a volume
+already recorded as dirty, not dying hardware, and `nvme-cli`/SMART is not the
+thing to chase (it is not installed on the host either).
+
+The second Oops is fallout from the first. This is **not** an OOM (23 of 30 GB free,
 `/dev/shm` at 131 MB of 16 GB) and **not** something a batch size or a recipe
 change can fix. A process that hits it holds its VRAM and ignores `kill -9`;
 only a reboot clears it.
@@ -293,13 +305,30 @@ only a reboot clears it.
 `journalctl -b -1` — a block-layer Oops can take the box down before anything is
 written. Do not attribute those to power loss any more.
 
-Before running Stage 1 again: reboot; read `sudo nvme smart-log /dev/nvme1`
-(dataset, BIWIN NV7200 1TB) and `/dev/nvme0` (system, Patriot P400L 500GB) for
-`critical_warning` / `media_errors` / `percentage_used`; and run **`chkdsk` from
-Windows** on the NTFS volume, which was already recorded as dirty with real NTFS
-errors — `ntfs3` building malformed requests on a damaged volume is a coherent
-path into `nvme_setup_rw`. `ntfsfix` is not a substitute. Only one kernel is
-installed (`7.0.0-29-generic`), so there is no older kernel to A/B against yet.
+**The fix is to stop reading training data through `ntfs3`, not to tune the
+recipe.** A reboot is required first regardless: the dead process's CUDA context
+leaks 8,832 MiB that `kill -9` cannot reclaim, and the kernel is `Tainted: G D W O`.
+After that, three options, in the order they are worth trying:
+
+1. **Copy the dataset onto ext4, pre-resized.** The pipeline does
+   `Resize(512)` (shorter side, aspect preserved) then `CenterCrop(448)`, so a
+   copy already at shorter-side 512 makes the resize a no-op. At ~377k images
+   that is roughly 25 GB as JPEG q95 or ~113 GB as PNG, against 262 GB free on
+   `/home` — where the 571 GB original could never fit. This removes `ntfs3` from
+   the training path entirely **and** cuts the dataloader's dominant cost, since
+   JPEG decode of the full 7 MP original is 66% of item time. ⚠ JPEG re-encode is
+   a lossy, systematic pixel change; PNG avoids it at 4.5x the size. Do the copy
+   itself over **ntfs-3g**, not `ntfs3` — reading 377k files through the driver
+   that just Oopsed is how you crash the machine again.
+2. **`chkdsk` from Windows**, then keep using `ntfs3`. Repairs the volume the
+   driver is choking on. `ntfsfix` clears the dirty bit without repairing and is
+   not a substitute.
+3. **Mount with `ntfs-3g` (FUSE) and train from it.** No kernel NTFS code in the
+   path, so no Oops — but it was measured to degrade training badly on this host
+   (0.23 -> 1.0-1.4 s/it with 10-14 minute stalls). A fallback, not a plan.
+
+Only one kernel is installed (`7.0.0-29-generic`), so there is no older kernel to
+A/B against yet.
 Full record: `docs/handoff/PLAN-2026-08-19-stage1-run.md`.
 
 ⚠ **`/mnt/drive1tb` is not in `/etc/fstab`, so EVERY reboot loses it**, and this
