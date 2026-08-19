@@ -41,7 +41,7 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 | Thành phần | Trạng thái |
 |---|---|
 | Branch integration | Các nhánh tính năng đã được tích hợp tuyến tính vào `main`; xem [integration audit](docs/final_branch_integration_audit.md) |
-| Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC có trong code và đã chạy full trên GPU. Explanation loss vẫn có trong code nhưng **tắt** (lambda 0/0) sau A/B 2026-08-17 |
+| Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC có trong code và đã chạy full trên GPU. Explanation loss **tắt** (lambda 0/0) sau A/B 2026-08-17; khối vision-language ITC/ITM/LM **tắt** (lambda 0/0/0) từ 2026-08-19 sau gate check — giống repo gốc |
 | Stage 2 implementation | MedGemma QLoRA, native-image và Q-Former routes có trong code; chưa GPU-validated |
 | Explanation masks | Full cache đã build và kiểm chứng (`explanation_masks_v2`, có `masks_bbox_*`). Không còn được training tiêu thụ; giữ cho evaluator |
 | XAI evaluation | Đã chạy trên GPU với 2 checkpoint (test split). **Cảnh báo: saliency precision ở mức ngẫu nhiên** — luôn kèm baseline diện tích mask |
@@ -107,6 +107,37 @@ Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/
 - Checkpoint selection: **`loss`** (tổng val loss) trên validation; test được giữ ngoài quá trình chọn checkpoint.
   `macro_auprc` vẫn được log mỗi epoch được chấm để đối chiếu — val loss bị các nhãn phổ biến chi phối,
   nên một model bỏ hẳn nhãn hiếm có thể ăn điểm hơn model đôi khi tìm ra nó.
+
+#### Khối vision-language (ITC/ITM/LM) ĐÃ TẮT từ 2026-08-19
+
+`lambda_itc`, `lambda_itm`, `lambda_lm` đều là `0.0`, giống hệt repo gốc
+(`DasithEdirisinghe/META-CXR`) — ở đó toàn bộ khối này bị comment out và loss
+Stage-1 chỉ là `cls + 0.3*contrastive + 0.7*orth + 0.3*sparsity`.
+
+Quyết định này dựa trên đo đạc, không phải chi phí. `scripts/check_itc_gate.py`
+trên val, 256 cặp **hợp lệ**, chance rank 127.5:
+
+| nhánh | nhiệt độ | rank i2t | rank t2i | `delta_nats` |
+|---|---|---|---|---|
+| chưa train | 0.07 (pin) | 130.68 | 130.30 | −0.0833 |
+| 525 update, nhiệt độ học được | 0.00796 | 127.43 | 127.65 | −1.1168 |
+| 500 update, nhiệt độ pin | 0.07 | 128.38 | 127.45 | **−0.0025** |
+
+Mọi nhánh nằm đúng mức ngẫu nhiên; gate yêu cầu `delta ≥ +0.10`. Nhiệt độ học
+được đã sụp từ 0.0249 xuống 0.00796, nhưng pin nó lại không thay đổi gì — nhiệt
+độ chỉ là triệu chứng.
+
+⚠ **Hệ quả: checkpoint Stage-1 hiện tại KHÔNG dùng được cho các mode Stage-2
+`meta_cxr_qformer*`**, vì cross-attention sinh soft token không hề thấy ảnh y
+khoa nào trong Stage 1. Repo gốc cũng ở đúng tình trạng này. Text tower của
+Q-Former thì vẫn được train, qua `lambda_teacher_cls`/`lambda_distill`.
+`medgemma_direct` không bị ảnh hưởng.
+
+Batch trở lại **16 × accum 4** (effective 64 không đổi) vì batch 8 chỉ tồn tại để
+nhét vừa khối VL. Swin vẫn tắt — tắt Swin khôi phục `_native_stream_layouts`,
+cấu hình đã đo là tốt hơn.
+
+Chi tiết đầy đủ: [docs/handoff/PLAN-2026-08-19-itc-temp-probe.md](docs/handoff/PLAN-2026-08-19-itc-temp-probe.md).
 
 ### Explanation-aware learning (ĐÃ TẮT trong production từ 2026-08-17)
 

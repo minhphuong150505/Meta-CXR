@@ -307,20 +307,17 @@ that either training pipeline is GPU-validated.
 
 ```bash
 # CPU test suite. On a box without torchvision/transformers (verified 2026-08-14):
-#   7 failed (re-measured 2026-08-19), and 2 modules excluded before collection
+#   5 failed (re-measured 2026-08-19), and 2 modules excluded before collection
 #   — test_blip2_negative_sampling.py and test_encoder_ablation.py, both of which
 #   import model.lavis and therefore torchvision. Collection errors abort the run,
 #   so ignore them explicitly to see the real result:
 CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
     --ignore=tests/test_blip2_negative_sampling.py --ignore=tests/test_encoder_ablation.py
-# The 7 failures are baseline, none of them a real defect:
+# The 5 failures are baseline, neither of them a real defect:
 #   test_native_independence   4 -- missing private env config
 #   test_stage1_eval_hook      1 -- missing torchvision
-#   test_loss_weight_gating    2 -- STALE: they assert lambda_itc == 0.0, which
-#       stopped being true when the Q-Former was re-enabled on 2026-08-18. The
-#       test encodes an intent that changed; leave it until the itc probe
-#       settles whether lambda_itc goes back to 0.0, then fix it in that
-#       direction rather than editing it twice.
+# test_loss_weight_gating went green again on 2026-08-19 when lambda_itc/itm/lm
+# returned to 0.0; it had failed only while the Q-Former was briefly re-enabled.
 CUDA_VISIBLE_DEVICES="" python -m pytest tests/test_explanation_metrics.py -q  # 7 passed
 python -m pytest tests/test_stage2_prompts.py -q          # one file
 python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # one test
@@ -519,26 +516,40 @@ study (not image) → anchor + ≤1 auxiliary view
   300` counted in **optimizer updates, not microbatches**. Thresholds are
   calibrated post-hoc from `checkpoint_best` validation logits. The test split is
   held out of checkpoint selection entirely.
-- **The recipe trains the FULL pipeline again as of 2026-08-18 — the Q-Former is
-  back on.** `lambda_itc/itm/lm` are `0.1` each and `lambda_teacher_cls/distill`
-  are `0.5`, so `forward()` no longer skips the Q-Former and text-encoder passes.
-  The checkpoint this produces is therefore a candidate for Stage-2
-  `meta_cxr_qformer` modes, which the classification-only checkpoints were not.
-  The skip logic itself is unchanged and still covered by
-  `tests/test_loss_weight_gating.py`; it is simply not triggered now.
+- **The vision-language block is OFF, and this time the decision is settled by
+  measurement (2026-08-19).** `lambda_itc/itm/lm` are all `0.0`;
+  `lambda_teacher_cls/distill` stay at `0.5`. `forward()` therefore skips the
+  Q-Former's **image** path — query tokens and cross-attention keep their BLIP-2
+  initialisation — while the Q-Former's **text** tower still runs and still
+  trains, because MHCAC's teacher reads it. The skip logic is unchanged and
+  covered by `tests/test_loss_weight_gating.py`.
 
-  ⚠ **This is not a settled decision, and the reason it was reverted twice is
-  not addressed.** The vision-language block was switched off on 2026-08-13 for
-  cost and again on 2026-08-16 because it sat at *exactly* chance: `loss_itc`
-  6.9375 = ln(1024) at queue 1024, `loss_itm` 0.6420 against the 1:2 prior
-  entropy of 0.6365 — the optimum for constant logits, i.e. a collapsed head, not
-  a slow one. Nothing since then targets that collapse. **Run
-  `scripts/check_itc_gate.py` at init and again after ~500 optimizer updates and
-  require the true-pair rank gap to grow by >= 0.10 nats.** If it does not, these
-  weights are feeding noise into the shared projector, the stream adapters and
-  the view fusion — the exact parameters MHCAC reads — and belong back at 0.0.
+  **This matches the reference implementation exactly.** In
+  `DasithEdirisinghe/META-CXR` the whole vision-language block of
+  `blip2_qformer.py` is commented out; Stage-1's loss is
+  `cls + 0.3*contrastive + 0.7*orth + 0.3*sparsity` (weights this repo already
+  matches), and MHCAC there is called with `text_embeddings` from
+  `Qformer.bert(...)` and with raw `image_embeds` — never with a query-token
+  output. So the published Stage 1 trains the text tower and not the image path,
+  which is what this configuration now does.
 
-  ⚠ **It forced batch 16 -> 8, and it cost Swin.** Measured on the 5060 Ti,
+  ⚠ **The cost, stated plainly: this checkpoint is NOT valid for the Stage-2
+  `meta_cxr_qformer` soft-token modes**, because the cross-attention that would
+  produce those soft tokens never sees a medical image during Stage 1. The
+  reference is in the same position. `medgemma_direct` is unaffected.
+
+  The history, so nobody re-enables it a fourth time: switched off 2026-08-13 for
+  cost; on again, off again 2026-08-16 at exactly chance; on again 2026-08-18;
+  off 2026-08-19 after `scripts/check_itc_gate.py` and a controlled
+  pinned-temperature probe both returned chance. The gate table is below.
+
+  ⚠ **It forced batch 16 -> 8, and it cost Swin — batch is back to 16 x 4 as of
+  2026-08-19, Swin stays off.** Swin was not restored with the batch: turning it
+  off also restores `_native_stream_layouts`, where PubMedCLIP keeps its CLS
+  token and each encoder keeps its native scale, which this repo had already
+  measured to be the better configuration. The VRAM table below is the evidence
+  for the batch, and it was measured with the VL block ON; with it off this
+  configuration is strictly smaller. Measured on the 5060 Ti,
   2026-08-18, all with `lambda_itc/itm/lm: 0.1`:
 
   | encoders | batch | peak VRAM | s/it | outcome |
