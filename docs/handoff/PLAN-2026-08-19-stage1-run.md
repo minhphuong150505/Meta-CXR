@@ -1,0 +1,126 @@
+# Stage 1 — full run on the reference-matched recipe
+
+Planner: this session. Executor: the same session over SSH (the run is launched
+detached and supervised; there is no multi-step agent work to delegate).
+Host: `ssh phuong@100.116.167.90`.
+
+## Goal
+
+One complete Stage-1 run, 10 epochs, on the recipe that now matches the reference
+implementation: `lambda_itc/itm/lm = 0.0`, teacher + distillation on, two
+encoders, batch 16 x accum 4. Produce `checkpoint_best.pth` selected on
+validation `loss`, and the first throughput measurement for this exact
+configuration.
+
+## What this run is and is not
+
+- It **is** the classification pipeline: MHCAC student/teacher, mention gate,
+  multi-view fusion, MPC, view consistency. Loss weights match
+  `DasithEdirisinghe/META-CXR` (`cls 1.0`, `contrastive 0.3`, `orth 0.7`,
+  `sparsity 0.3`), plus this fork's teacher distillation and blank-label masking.
+- It is **not** a Stage-2 `meta_cxr_qformer` candidate. With the VL block at 0.0
+  the Q-Former's image path never runs, so its cross-attention keeps its BLIP-2
+  initialisation. The reference is in the same position. `medgemma_direct` is
+  unaffected. This is a known, accepted cost — see `CLAUDE.md`.
+- Explanation loss stays off (`lambda_explanation*: 0.0`); its mask cache did not
+  survive the 2026-08-17 reinstall anyway.
+
+## Preconditions — verified 2026-08-19 before launch
+
+| | |
+|---|---|
+| host repo | `7701fed`, branch `refactor/disease-specific-explanation`, clean |
+| `/mnt/drive1tb` | mounted `ntfs3 (ro)` — the configs' path, not the udisks one |
+| `/home` | 262 GB free, ext4 — `output_dir` must live here |
+| GPU | idle, 166 MiB, no `pretraining.train` or supervisor running |
+| venv | `~/.venvs/meta-cxr-stage1-311/bin/python` |
+
+⚠ `scripts/supervise_stage1.sh` passes `run.batch_size_train` /
+`run.accum_grad_iters` as overrides, so **its defaults beat the YAML**. They were
+still 8 x 8 from the Q-Former era and were corrected to 16 x 4 in the same commit
+as this plan. The launch below also sets them explicitly. If you ever change the
+YAML's batch, change the script too.
+
+## Commands
+
+```bash
+# 1. sync the host and deploy the supervisor (it is versioned with the recipe)
+cd ~/Meta-CXR && git pull --ff-only && cp scripts/supervise_stage1.sh ~/supervise.sh
+
+# 2. launch, detached, ONE invocation
+OUT=$HOME/run_20260819_refmatch \
+LOG=$HOME/run_20260819_refmatch.log \
+WID=stage1-refmatch-20260819 \
+BATCH=16 ACCUM=4 \
+    setsid nohup bash ~/supervise.sh \
+    >>$HOME/run_20260819_refmatch.supervise.log 2>&1 &
+```
+
+⚠ **One card, one run, one output path.** Check `nvidia-smi` and
+`pgrep -af pretraining.train` first. On 2026-08-19 a launch was issued twice 50
+seconds apart and the second process OOMed against the first, then overwrote the
+first's report.
+
+## Expected
+
+- **Startup ~7 minutes** before the first `Train: data epoch` line: weights load
+  and the encoders build. `blip2_pretrained.pth` is already cached. stdout is
+  block-buffered (~8 KB bursts), so the log looks frozen while `[INFO]` lines
+  keep arriving on stderr — the supervisor knows this and gives startup its own
+  45-minute budget.
+- **Epoch length 13,922 iterations** (222,752 studies / 16).
+- **`s/it` is unmeasured for this configuration** and is the first number to
+  read back. Bounds from measurements that do exist on this card: 0.2347 s/it
+  (two encoders, no teacher, VL off) and 1.0364 s/it (three encoders, teacher on,
+  VL off); the pinned-temperature probe ran 0.4354 s/it at batch 8 with the VL
+  block **on**. Read the real number at ~200 iterations and record it.
+- **`max mem` around 9.4 GB or below.** 16 x 4 peaked at 9,433 MiB with three
+  encoders and the VL block on; this configuration is strictly smaller.
+- `loss_itc`, `loss_itm`, `loss_lm` must print **exactly 0.0000** — that is the
+  gating working and the Q-Former being skipped. Anything else means the YAML did
+  not take.
+- `loss_mpc` should fall within the first epoch (it went 3.35 → 2.66 previously);
+  `loss_distill` in the 1e-2 range, not 1e-8, which was the degenerate value that
+  got the teacher switched off once before.
+- Validation starts at epoch **[5]** (`eval_start_epoch`), so epochs [0]–[4]
+  train unscored and `checkpoint_best.pth` cannot exist before then. This is
+  expected, not a failure. `checkpoint_last.pth` is rewritten every 1,000
+  iterations.
+- Total: 10 epochs plus five validation passes.
+
+## Abort if
+
+- `loss_itc/itm/lm` are non-zero → the config did not take. Kill and fix.
+- OOM. It is a capacity finding: record batch/accum and peak VRAM. The supervisor
+  will halve the batch and double accumulation, which keeps the effective batch
+  at 64 but halves the candidates every microbatch-local loss sees (MPC in
+  particular). **Treat a fallback as a result to report, not a recovery.**
+- The machine hard-hangs. It did at 22:25 on 08-18 and 01:20 on 08-19, both with
+  nothing at all in `journalctl -b -1`. The supervisor dies with the box —
+  relaunch by hand, from `checkpoint_last`, and say so.
+- `checkpoint_best.pth` still absent after epoch [5] finishes scoring.
+
+## After the run
+
+1. Calibrate thresholds on **validation only**, then score the test split once:
+
+   ```bash
+   python scripts/calibrate_thresholds.py --predictions <val.npz> --objective f1 \
+       --uncertain-policy ignore_uncertain --min-positive 20 --output <thresholds.json>
+   python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresholds.json> \
+       --uncertain-policy ignore_uncertain --output-dir <dir>
+   ```
+
+   `--uncertain-policy` is not optional: it defaults to `three_class` in both
+   scripts while training uses `ignore_uncertain`, and omitting it silently scores
+   a different label binarisation (measured on one npz: macro AUROC 0.6537 vs
+   0.7850).
+
+2. Quote `macro_auroc` and per-label AUROC **with prevalence beside it**, not
+   `positive_macro_f1`. On this label distribution six labels reach recall 1.0000
+   with precision equal to prevalence, and `Fracture` reaches F1 0.983 on an AUROC
+   of 0.442.
+
+## Execution report
+
+_(appended after the run)_
