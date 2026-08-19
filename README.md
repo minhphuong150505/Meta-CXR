@@ -535,6 +535,32 @@ Bài báo META-CXR gốc có báo cáo classification và report-generation metr
 - [Final merge plan](docs/final_merge_plan.md)
 - [Feature cache](docs/FEATURE_CACHE.md)
 - [Notebook privacy](docs/notebook_privacy.md)
+- [Bàn giao Claude → Codex](docs/handoff/README.md)
+
+## Quy trình làm việc với agent (Claude lập kế hoạch, Codex thực thi)
+
+Từ 2026-08-19, công việc được chia vai:
+
+- **Claude** đọc code, thiết kế thay đổi, sửa source và cập nhật
+  `CLAUDE.md` / `README.md` / `struct/`. Claude **không** trực tiếp trông các run
+  GPU dài.
+- **Codex** chạy: `git pull`, venv/pytest, preflight, smoke, Stage-1/Stage-2
+  training, `scripts/supervise_stage1.sh`, và đọc log trên máy train. Codex
+  **không** tự đổi loss, YAML hay recipe ngoài kế hoạch.
+- Bàn giao bằng file, không bằng chat: `docs/handoff/PLAN-<ngày>-<chủ-đề>.md`.
+  Claude viết phần kế hoạch, Codex nối `## Execution report` vào **cùng file**.
+  Xem [docs/handoff/README.md](docs/handoff/README.md).
+- **Log lỗi phải được tóm tắt, không dán nguyên file.** Codex gửi lại: lệnh +
+  exit status, lỗi đầu tiên kèm ~20 dòng ngữ cảnh và frame traceback cuối, các
+  số quan trọng (`s/it`, `max mem`, từng loss term, `epoch`/`iter`, VRAM nếu
+  OOM), và đường dẫn log gốc trên host để hỏi `grep` cụ thể sau.
+- Khi **Claude Opus hết usage**, chuyển việc cho agent **Claude Sonnet 5** thay
+  vì chờ — Sonnet đủ để thực thi kế hoạch đã viết và triage log, rẻ hơn nhiều.
+  Giữ Opus cho quyết định kiến trúc/recipe.
+
+Luật không đổi: mọi thay đổi hành vi phải kèm cập nhật tài liệu trong cùng
+commit, và tuyệt đối không đưa dữ liệu bệnh nhân vào commit/handoff/tóm tắt.
+Chi tiết cho agent nằm ở [AGENTS.md](AGENTS.md) và `CLAUDE.md`.
 
 ## Hạn chế hiện tại
 
