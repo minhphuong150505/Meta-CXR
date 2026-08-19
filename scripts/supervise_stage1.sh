@@ -21,9 +21,9 @@ set -u
 REPO="${REPO:-$HOME/Meta-CXR}"
 PY="${PY:-$HOME/.venvs/meta-cxr-stage1-311/bin/python}"
 CFG="${CFG:-pretraining/configs/mimic_cxr_full.yaml}"
-OUT="${OUT:-$HOME/run_20260818_lr2e5}"
+OUT="${OUT:-$HOME/run_stage1}"          # always set this explicitly at launch
 LOG="${LOG:-$OUT.log}"
-WID="${WID:-stage1-lr2e5-20260818}"
+WID="${WID:-stage1}"                    # wandb run id; set it per run
 
 # stdout is BLOCK-BUFFERED here: the run writes to a file, not a tty, so
 # MetricLogger print() lines land in ~8 KB bursts -- measured 2026-08-18 at one
@@ -43,8 +43,14 @@ GPU_IDLE_MINUTES="${GPU_IDLE_MINUTES:-6}"
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-0}"
 # Consecutive failures that produced NO new checkpoint WRITE before giving up.
 MAX_FAILS_WITHOUT_PROGRESS="${MAX_FAILS_WITHOUT_PROGRESS:-3}"
-BATCH="${BATCH:-8}"
-ACCUM="${ACCUM:-8}"
+# ⚠ THESE ARE PASSED AS run.* OVERRIDES AND THEREFORE BEAT THE YAML. Keep them
+# equal to mimic_cxr_full.yaml's batch_size_train / accum_grad_iters, or this
+# script silently trains a recipe nobody chose. They were left at 8 x 8 after the
+# YAML went back to 16 x 4 on 2026-08-19; caught before launch, but only just.
+# They exist as variables at all because the OOM fallback has to halve one and
+# double the other, which it cannot do without knowing where it started.
+BATCH="${BATCH:-16}"
+ACCUM="${ACCUM:-4}"
 MIN_BATCH="${MIN_BATCH:-2}"
 RESTART_SLEEP="${RESTART_SLEEP:-30}"
 ADOPT_PID="${ADOPT_PID:-}"                # attach to an already-running train pid
