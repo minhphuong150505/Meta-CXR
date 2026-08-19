@@ -124,3 +124,70 @@ first's report.
 ## Execution report
 
 _(appended after the run)_
+
+## Execution report — 2026-08-19
+
+**The run did not survive. The cause is below the application: two kernel Oopses
+in the NVMe block driver.**
+
+- commit run: `dbd2dd5`
+- launched 11:28:57, aborted by the supervisor 11:52:58 after three attempts
+
+| attempt | outcome |
+|---|---|
+| 1 | **Segmentation fault, rc=139**, ~60 s in, before any training line |
+| 2 | first training line 11:35:27, then **GPU ≤5% for 6 min while alive** → killed |
+| 3 | same — GPU idle 6 min → killed; supervisor aborted on 3 failures with no checkpoint write |
+
+`journalctl -k`:
+
+```
+11:29:05  traps: python[25114] general protection fault ... in python3.11
+11:38:49  Oops: general protection fault ... non-canonical address 0xefff8a0f99170338 [#1]
+          RIP: nvme_setup_rw+0x9c/0x2c0 [nvme_core]     Comm: pt_data_worker
+11:47:24  Oops: general protection fault ... non-canonical address 0xdead000000000122 [#2]
+          RIP: __rmqueue_pcplist+0x54/0x2e0             Comm: pt_data_worker
+```
+
+The first Oops is in the **NVMe driver**, faulting inside a DataLoader worker —
+i.e. while reading the dataset. `0xdead000000000122` in the second is Linux's
+`LIST_POISON2`: the page allocator's free list was already corrupt by then, which
+is fallout from the first, not an independent bug. The kernel is
+`Tainted: G D W O` — `D` = DIE, it has already died once.
+
+**This is not something the recipe can fix, and it is not an OOM.** RAM was 23 GB
+available of 30, `/dev/shm` 131 MB used of 16 GB, GPU peak well under the card.
+No `oom-kill` anywhere in the log.
+
+**It very likely also explains the two "unexplained" hard hangs** — 2026-08-18
+22:25 and 2026-08-19 01:20, both of which left *nothing* in `journalctl -b -1`. A
+kernel Oops in the block layer can take the machine down before anything reaches
+the disk, which is exactly the signature that was recorded as "abrupt power loss
+or hard hang".
+
+### State left behind
+
+- PID 25788 still holds **8,832 MiB of VRAM** and does not respond to `kill -9`
+  — it is stuck in uninterruptible kernel state. **Only a reboot clears it.**
+- A `[pt_data_worker] <defunct>` zombie is reparented to init.
+- No checkpoint was written, so nothing is resumable. `~/run_20260819_refmatch/`
+  can be deleted.
+
+### What has to happen before Stage 1 is attempted again
+
+1. **Reboot.** Anything measured on a kernel that has Oopsed twice is untrustworthy.
+2. **SMART on both drives** (needs the user's sudo — there is no passwordless sudo):
+   `sudo nvme smart-log /dev/nvme1` and `/dev/nvme0` — read `critical_warning`,
+   `media_errors`, `percentage_used`. The dataset disk is a **BIWIN NV7200 1TB**;
+   the system disk is a **Patriot P400L 500GB**.
+3. **`chkdsk` from Windows on the NTFS volume.** It was already recorded as dirty
+   with real NTFS errors, and `ntfs3` building malformed requests on a damaged
+   volume is a coherent path to a fault inside `nvme_setup_rw`. `ntfsfix` clears
+   the dirty bit without repairing anything and must not be used as a substitute.
+4. Only one kernel is installed (`7.0.0-29-generic`), so there is no older kernel
+   to A/B against. If SMART is clean and chkdsk finds nothing, installing an
+   older kernel series is the next test.
+
+Until then, do not start a 20-hour run on this storage: the failure is silent
+from the application's point of view, and the previous two occurrences took the
+whole machine with them.

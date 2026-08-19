@@ -274,6 +274,34 @@ This directory is a **development checkout on a machine with no GPU and no
 dataset**. Nothing that actually runs the project — training, evaluation,
 inference, smoke tests, GPU-dependent scripts — runs here.
 
+⚠⚠ **THE STORAGE STACK FAULTS IN THE KERNEL UNDER TRAINING I/O (2026-08-19).**
+Stage-1 died three times in 24 minutes and `journalctl -k` shows **two kernel
+Oopses**, both in a `pt_data_worker` — a DataLoader worker reading the dataset:
+
+```
+RIP: nvme_setup_rw+0x9c/0x2c0 [nvme_core]     <- the NVMe driver
+RIP: __rmqueue_pcplist+0x54/0x2e0             <- page allocator, LIST_POISON2
+```
+
+The second is fallout from the first. This is **not** an OOM (23 of 30 GB free,
+`/dev/shm` at 131 MB of 16 GB) and **not** something a batch size or a recipe
+change can fix. A process that hits it holds its VRAM and ignores `kill -9`;
+only a reboot clears it.
+
+**It is the best explanation on record for the two "unexplained" hard hangs**
+(2026-08-18 22:25 and 2026-08-19 01:20), which left nothing at all in
+`journalctl -b -1` — a block-layer Oops can take the box down before anything is
+written. Do not attribute those to power loss any more.
+
+Before running Stage 1 again: reboot; read `sudo nvme smart-log /dev/nvme1`
+(dataset, BIWIN NV7200 1TB) and `/dev/nvme0` (system, Patriot P400L 500GB) for
+`critical_warning` / `media_errors` / `percentage_used`; and run **`chkdsk` from
+Windows** on the NTFS volume, which was already recorded as dirty with real NTFS
+errors — `ntfs3` building malformed requests on a damaged volume is a coherent
+path into `nvme_setup_rw`. `ntfsfix` is not a substitute. Only one kernel is
+installed (`7.0.0-29-generic`), so there is no older kernel to A/B against yet.
+Full record: `docs/handoff/PLAN-2026-08-19-stage1-run.md`.
+
 ⚠ **`/mnt/drive1tb` is not in `/etc/fstab`, so EVERY reboot loses it**, and this
 host reboots more than you would expect — it hung outright on 2026-08-18 22:25
 with **no Xid, no NVRM error, no MCE and no thermal event** in `journalctl -b -1`,
