@@ -195,6 +195,8 @@ class Blip2Qformer(Blip2Base):
         cls_label_smoothing=0.05,
         uncertain_policy="three_class",
         itc_queue_size=1024,
+        itc_temp=0.07,
+        itc_temp_learnable=True,
     ):
         super().__init__()
 
@@ -245,7 +247,23 @@ class Blip2Qformer(Blip2Base):
 
         self.itm_head = nn.Linear(self.Qformer.config.hidden_size, 2)
 
-        self.temp = nn.Parameter(0.07 * torch.ones([]))
+        # ITC temperature. Learnable by default, which is what BLIP-2 does and
+        # what `blip2_pretrained.pth` carries a trained value for (~0.0249).
+        # `itc_temp_learnable: false` pins it instead: the parameter stops
+        # receiving gradient AND the loss reads `itc_temp_fixed`, so a value
+        # arriving from a pretrained or resumed checkpoint cannot override the
+        # config. Pinning exists because a learned temperature that collapses
+        # toward its 1e-3 floor while the retrieval ranks stay at chance makes
+        # `loss_itc` unreadable — the loss explodes on the temperature rather
+        # than on the representation. Note the buffer is non-persistent: the
+        # config is always the source of truth for it.
+        self.itc_temp_learnable = bool(itc_temp_learnable)
+        self.temp = nn.Parameter(
+            float(itc_temp) * torch.ones([]), requires_grad=self.itc_temp_learnable
+        )
+        self.register_buffer(
+            "itc_temp_fixed", torch.tensor(float(itc_temp)), persistent=False
+        )
 
         self.max_txt_len = max_txt_len
         self.lambda_itc = float(lambda_itc)
@@ -940,7 +958,11 @@ class Blip2Qformer(Blip2Base):
         else:
             candidate_valid = valid_all
 
-        temperature = self.temp.clamp(min=1e-3, max=0.5)
+        temperature = (
+            self.temp.clamp(min=1e-3, max=0.5)
+            if self.itc_temp_learnable
+            else self.itc_temp_fixed
+        )
         sim_i2t = torch.einsum(
             "bqd,nd->bnq", image_features, text_features_all
         ).amax(dim=-1) / temperature
@@ -1897,6 +1919,8 @@ class Blip2Qformer(Blip2Base):
             loss_cfg.get("lambda_mention_conditioned_cls", 0.0)
         )
         itc_queue_size = int(loss_cfg.get("itc_queue_size", 1024))
+        itc_temp = float(loss_cfg.get("itc_temp", 0.07))
+        itc_temp_learnable = bool(loss_cfg.get("itc_temp_learnable", True))
 
         explanation_cfg_raw = cfg.get("explanation", {}) or {}
         explanation_streams = explanation_cfg_raw.get("streams", None)
@@ -1978,6 +2002,8 @@ class Blip2Qformer(Blip2Base):
             cls_label_smoothing=cls_label_smoothing,
             uncertain_policy=uncertain_policy,
             itc_queue_size=itc_queue_size,
+            itc_temp=itc_temp,
+            itc_temp_learnable=itc_temp_learnable,
         )
 
         # Optional inference-only ablation. ``active_encoders`` names streams

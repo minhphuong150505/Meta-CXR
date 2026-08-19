@@ -307,15 +307,20 @@ that either training pipeline is GPU-validated.
 
 ```bash
 # CPU test suite. On a box without torchvision/transformers (verified 2026-08-14):
-#   590 passed, 5 failed, 3 skipped (re-measured 2026-08-17), and 2 modules
-#   excluded before collection
+#   7 failed (re-measured 2026-08-19), and 2 modules excluded before collection
 #   — test_blip2_negative_sampling.py and test_encoder_ablation.py, both of which
 #   import model.lavis and therefore torchvision. Collection errors abort the run,
 #   so ignore them explicitly to see the real result:
 CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
     --ignore=tests/test_blip2_negative_sampling.py --ignore=tests/test_encoder_ablation.py
-# The 5 failures are test_native_independence (4: missing private env config)
-# and test_stage1_eval_hook (1: missing torchvision). They are unchanged baseline.
+# The 7 failures are baseline, none of them a real defect:
+#   test_native_independence   4 -- missing private env config
+#   test_stage1_eval_hook      1 -- missing torchvision
+#   test_loss_weight_gating    2 -- STALE: they assert lambda_itc == 0.0, which
+#       stopped being true when the Q-Former was re-enabled on 2026-08-18. The
+#       test encodes an intent that changed; leave it until the itc probe
+#       settles whether lambda_itc goes back to 0.0, then fix it in that
+#       direction rather than editing it twice.
 CUDA_VISIBLE_DEVICES="" python -m pytest tests/test_explanation_metrics.py -q  # 7 passed
 python -m pytest tests/test_stage2_prompts.py -q          # one file
 python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # one test
@@ -575,6 +580,46 @@ study (not image) → anchor + ≤1 auxiliary view
   6.48, i.e. above chance). This is ~87 optimizer updates and settles nothing on
   its own — `scripts/check_itc_gate.py` at ~500 updates is still the gate — but
   it is the first time these objectives have moved in the right direction here.
+
+  ⚠⚠ **THE GATE HAS NOW BEEN RUN, AND ITC FAILED IT (2026-08-19).** On the
+  iter-4200 snapshot of `run_20260818_qformer` (≈525 optimizer updates), val,
+  256 pairs: `delta_nats` **−24.52** against the required ≥ +0.10, true-pair
+  rank **116.64 / 126.81** against chance 127.5 — barely moved from the
+  untrained model's 120.21 / 129.56. The 3.6-place i2t improvement after 525
+  updates is the whole result. `~/itc_gate_baseline.json` and
+  `~/itc_gate_500.json` on the host hold the two measurements.
+
+  The train-side trajectory says the same thing with a twist worth keeping:
+  `loss_itc` ran 0.9–1.3 nats **below** chance (ln 264 = 5.576) from iter 1,000
+  to 5,000, then returned to *exactly* chance from iter 6,000 and stayed there
+  for 7,000 more iterations. So it separated training pairs for a while without
+  ever generalising to val, then lost even that. Note the queue is 256, not
+  1024, so it fills in ~32 iterations — the early low values are **not** a
+  queue-filling artefact.
+
+  Meanwhile the learned temperature fell **0.024888 → 0.00796** (clamp floor
+  1e-3) over the same 525 updates, and `delta_nats` scales with 1/temperature,
+  which is most of why the loss number reads 30.07. Hence the probe below.
+
+  `loss_itm` (0.575 vs chance 0.6365) and `loss_lm` (3.11 → 2.6) are learning
+  normally throughout. **The failure is specific to ITC** — but remember ITM
+  mines its hard negatives from the ITC similarity matrix, so an ITC at chance
+  means ITM is being fed random negatives, i.e. an easier task than intended.
+- **`model.loss.itc_temp` / `model.loss.itc_temp_learnable` pin the ITC
+  temperature (added 2026-08-19).** Default `0.07` / `true`, which reproduces the
+  historical behaviour: BLIP-2 learns it, and `blip2_pretrained.pth` supplies a
+  trained ~0.0249. Setting `itc_temp_learnable: false` does two things, and it
+  needs both — `self.temp` stops receiving gradient **and** the loss reads the
+  non-persistent `itc_temp_fixed` buffer instead, because `load_state_dict`
+  would otherwise restore a pretrained or resumed checkpoint's temperature over
+  the config value. `scripts/check_itc_gate.py` mirrors the same rule and now
+  records `temp_learnable` in its JSON: **`delta_nats` is only comparable
+  between two measurements taken at the same temperature**; the rank fields are
+  scale-free and are the honest cross-regime signal. The script also takes
+  `--options KEY=VALUE` now, so a variant can be measured without editing the
+  tracked YAML. **Neither knob has been run on GPU yet** — the probe that will
+  do it is `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`, and its result
+  decides whether `lambda_itc` goes back to 0.0.
 - **Padded auxiliary views no longer reach the encoders (2026-08-18).** The
   collater pads ragged studies with `torch.zeros_like(anchor)` and 44.7% of train
   studies have no auxiliary view, so `_encode_aux_streams` was spending roughly

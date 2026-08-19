@@ -85,7 +85,8 @@ from mhcac.view_fusion import ViewFusionModule                # :42
 
 Toàn bộ đọc trong [`from_config`](blip2_qformer.py.methods/from_config.md).
 Khối `model:` của run YAML: `encoders.*`, `swin.*`, `raddino.*`, `multi_view`,
-`view_fusion.*`, `loss.lambda_*`, `loss.itc_queue_size`, `mhcac.*`, `explanation.*`,
+`view_fusion.*`, `loss.lambda_*`, `loss.itc_queue_size`, `loss.itc_temp`,
+`loss.itc_temp_learnable`, `mhcac.*`, `explanation.*`,
 `num_query_token`, `cross_attention_freq`, `max_txt_len`, `freeze_vit`.
 
 ⚠ `from_config` **âm thầm bỏ qua block config lạ**. Comment `:1515` ghi rõ: các key
@@ -170,6 +171,27 @@ Xem [DATA_FLOW.md §2.4](../../../../_meta/DATA_FLOW.md#24-trong-model).
 
 ⚠ Buffer ITC đăng ký `persistent=False` → **không** vào `state_dict`, nên checkpoint
 không mang queue. Resume bắt đầu với queue rỗng.
+
+### Nhiệt độ ITC — `loss.itc_temp` / `loss.itc_temp_learnable` (2026-08-19)
+
+Mặc định `0.07` / `true`, đúng hành vi lịch sử: BLIP-2 học tham số này, và
+`blip2_pretrained.pth` mang sẵn giá trị đã train (~0.0249) đè lên lúc load.
+
+Đặt `itc_temp_learnable: false` làm **hai** việc, và cần cả hai:
+
+1. `self.temp` khởi tạo với `requires_grad=False` → optimizer bỏ qua
+   (`runner_base.py:189` lọc theo `requires_grad`).
+2. Hàm loss đọc buffer `itc_temp_fixed` thay vì `self.temp`. Nếu chỉ làm bước 1,
+   `load_state_dict` của checkpoint pretrained/resume vẫn ghi đè `self.temp` và
+   model sẽ chạy ở nhiệt độ của checkpoint chứ không phải của config.
+
+`itc_temp_fixed` đăng ký `persistent=False` → config luôn là nguồn sự thật.
+
+⚠ `delta_nats` của `scripts/check_itc_gate.py` tỉ lệ với `1/temperature`, nên hai
+phép đo chỉ so sánh được khi cùng nhiệt độ. Trường rank trong JSON không phụ
+thuộc nhiệt độ và là tín hiệu so sánh chéo chế độ duy nhất đáng tin.
+
+**Chưa chạy trên GPU.** Kế hoạch đo: `docs/handoff/PLAN-2026-08-19-itc-temp-probe.md`.
 
 ## Error / edge cases
 

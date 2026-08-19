@@ -79,6 +79,18 @@ def parse_args(argv=None):
         default=MIN_DELTA_NATS,
         help="Gate threshold in nats.",
     )
+    parser.add_argument(
+        "--options",
+        nargs="*",
+        default=[],
+        metavar="KEY=VALUE",
+        help=(
+            "Config overrides, same syntax as pretraining/train.py. Needed to "
+            "measure a variant without editing the tracked YAML, e.g. "
+            "model.loss.itc_temp_learnable=False. Applied on top of the "
+            "single-process overrides this script always sets."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -98,7 +110,12 @@ def _build(args):
     cfg = Config(
         SimpleNamespace(
             cfg_path=str(args.cfg_path),
-            options=["run.distributed=false", "run.world_size=1", "run.gpu=0"],
+            options=[
+                "run.distributed=false",
+                "run.world_size=1",
+                "run.gpu=0",
+                *args.options,
+            ],
         )
     )
     if args.checkpoint is not None:
@@ -215,7 +232,15 @@ def main(argv=None):
     # Same reduction as training: max over the 32 query tokens, learned
     # temperature. No queue -- this is a clean all-to-all over the subset, so
     # chance is exactly ln(n) and needs no correction for queue occupancy.
-    temperature = float(model.temp.detach().clamp(min=1e-3, max=0.5).cpu())
+    # Mirror the model's effective temperature. When it is pinned
+    # (model.loss.itc_temp_learnable=False) the loss reads the config value, and
+    # model.temp still carries whatever the loaded checkpoint stored -- reading
+    # the parameter here would report a temperature the model never used.
+    temp_learnable = bool(getattr(model, "itc_temp_learnable", True))
+    if temp_learnable:
+        temperature = float(model.temp.detach().clamp(min=1e-3, max=0.5).cpu())
+    else:
+        temperature = float(model.itc_temp_fixed.detach().cpu())
     sim_i2t = torch.einsum("bqd,nd->bnq", image_features, text_features).amax(-1)
     sim_t2i = torch.einsum("bd,nqd->bnq", text_features, image_features).amax(-1)
     targets = torch.arange(n)
@@ -237,6 +262,9 @@ def main(argv=None):
         "split": args.split,
         "checkpoint": str(args.checkpoint) if args.checkpoint else "(untrained)",
         "temperature": round(temperature, 6),
+        # delta_nats scales with 1/temperature, so two measurements are only
+        # comparable when this pair matches. The rank fields are scale-free.
+        "temp_learnable": temp_learnable,
         "loss_itc": round(float(loss_itc), 4),
         "chance_ln_n": round(chance, 4),
         "delta_nats": round(delta, 4),
