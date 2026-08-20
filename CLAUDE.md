@@ -274,8 +274,18 @@ This directory is a **development checkout on a machine with no GPU and no
 dataset**. Nothing that actually runs the project — training, evaluation,
 inference, smoke tests, GPU-dependent scripts — runs here.
 
-⚠⚠⚠ **THE MACHINE HAS A MEMORY-CORRUPTION PROBLEM. STOP TRAINING ON IT UNTIL
-MEMTEST PASSES (2026-08-19).** Five kernel faults have now been collected across
+✅ **RESOLVED 2026-08-19 BY DISABLING XMP — the diagnosis below was correct and
+the fix was free.** With XMP off the first full Stage-1 run since the reinstall
+completed: `run_20260819_xmpoff`, 10/10 epochs, `rc=0`, 18:15:29 -> 06:50:54
+(**12h35m**), **0.3505 s/it**, `max mem` 8,526 MiB, and **zero kernel faults** in
+`journalctl -b -k`. Cost of running at JEDEC instead of XMP, measured on a 500-
+iteration smoke: **+1.3%** (0.2988 -> 0.3028 s/it). Best epoch 6; `checkpoint_best`
+selected on `val_loss` and `f1_positive_macro` agree on it.
+
+**Do not re-enable XMP on this host.** Keep the four-DIMM analysis below: it is
+what identified the cause, and it is the thing to re-read if faults return.
+
+⚠⚠⚠ **HISTORICAL — THE MACHINE HAD A MEMORY-CORRUPTION PROBLEM (2026-08-19).** Five kernel faults have now been collected across
 two boots, in five **unrelated** core subsystems:
 
 ```
@@ -574,6 +584,9 @@ python scripts/calibrate_thresholds.py --predictions <val.npz> --objective f1 \
 # warn; the report just prints "Uncertain policy: three_class" in its metadata.
 python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresholds.json> \
     --uncertain-policy ignore_uncertain --output-dir <dir>
+# To get an F1 that MEANS anything, add --label-framing study_presence to BOTH
+# lines (see "Which question the metrics answer" below). Mismatched framings are
+# refused rather than silently scored, unlike --uncertain-policy.
 CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
     --checkpoint <checkpoint_best.pth> --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --split test --mask-cache-dir <mask-cache> --output-dir <private-results>/xai \
@@ -1242,6 +1255,46 @@ labels the model scores recall exactly 1.0000 with precision equal to the
 prevalence, i.e. it predicts positive for everything, and `Fracture` reaches
 F1 0.983 on an AUROC of **0.442**. Quote `macro_auroc` (0.7776) and per-label
 AUROC with prevalence beside it.
+
+**Which question the metrics answer — `--label-framing`, added 2026-08-20.**
+The paragraph above diagnoses the symptom; this is the cause and the fix.
+`training/evaluation/label_framing.py` names the two readings of the label matrix
+and records the choice in every output file, exactly as `uncertain_policy` does
+for the uncertain class:
+
+| | `masked_polarity` (default, historical) | `study_presence` |
+|---|---|---|
+| A blank cell means | masked — score polarity *given* the finding was mentioned | not present |
+| Per-label prevalence, test | 0.13–1.00, twelve labels above 0.55 | **0.019–0.344** |
+| `all_positive` scores | **0.8397** | **0.2280** |
+| `all_negative` scores | 0.0000 | 0.0000 |
+| `threshold_half` scores | 0.8713 | 0.2797 |
+| Model (run_20260819_xmpoff) | 0.8717 | 0.3074 |
+| Degenerate labels | 3 (`No Finding`, `Pleural Other`, `Fracture`) | **none** — every label has both classes |
+
+`masked_polarity` is the right denominator for the **loss** and a broken one for
+**F1**: a constant beats the model by 0.03 there, and calibrating thresholds buys
++0.0004 over a flat 0.5. `study_presence` asks the clinical question — *does this
+study have finding X* — so blank/negative/uncertain all mean "not present",
+prevalence returns to normal, and F1 can no longer be won by over-calling.
+**Quote F1 only under `study_presence`.** `macro_auroc` is framing-dependent too
+(0.7857 vs 0.6767) because the populations differ; report which one it came from.
+
+⚠ Under `study_presence` the framing has already folded uncertain into "not
+present", so `--uncertain-policy` no longer decides anything. Say so; do not
+report both flags as if they were independent.
+
+⚠ `--score marginal_presence` multiplies the mention gate into the score —
+`P(present) = sigmoid(mention) x q_pos` — which is what `study_presence` actually
+asks about, since `classification_logits` is `q`, conditional on mention.
+It needs `mention_probabilities` in the `.npz`, written only by runs whose eval
+hook collected the gate (added to `image_text_pretrain.py` on 2026-08-20). Older
+files raise `ScoreUnavailableError` rather than falling back. Scoring
+`study_presence` with the default `conditional_positive` is legitimate but is a
+**floor**, not an estimate: it discards the gate the model was trained to
+provide (`lambda_gate: 0.5`).
+
+Pinned by `tests/test_label_framing.py` (9 tests).
 
 **A blank CheXpert cell is masked, not negative.** The export leaves a cell blank
 when the labeler found no mention of the finding, which is not the radiologist

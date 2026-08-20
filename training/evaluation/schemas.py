@@ -78,6 +78,13 @@ class ClassificationPredictions:
     sample_keys:
         ``[N]`` array of opaque per-study keys. Never a raw MIMIC identifier
         unless the caller explicitly opted in.
+    mention_probabilities:
+        Optional ``[N, P]`` float array: the mention gate's ``P(the report
+        mentions this finding at all)``. Present only for runs whose eval hook
+        collected the gate. It is what
+        :func:`training.evaluation.label_framing.presence_scores` multiplies
+        ``q_positive`` by to get ``P(present)``; without it the
+        ``marginal_presence`` score is unavailable.
     """
 
     labels: np.ndarray
@@ -87,6 +94,7 @@ class ClassificationPredictions:
     logits: np.ndarray | None = None
     view_positions: np.ndarray | None = None
     num_views: np.ndarray | None = None
+    mention_probabilities: np.ndarray | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -125,6 +133,16 @@ class ClassificationPredictions:
                 raise SchemaError(
                     f"logits shape {self.logits.shape} != probabilities shape "
                     f"{self.probabilities.shape}"
+                )
+
+        if self.mention_probabilities is not None:
+            self.mention_probabilities = np.asarray(
+                self.mention_probabilities, dtype=np.float64
+            )
+            if self.mention_probabilities.shape != self.labels.shape:
+                raise SchemaError(
+                    f"mention_probabilities shape {self.mention_probabilities.shape} "
+                    f"!= labels shape {self.labels.shape}"
                 )
 
         bad = np.unique(self.labels[(self.labels < MISSING) | (self.labels >= self.num_classes)])
@@ -182,6 +200,8 @@ class ClassificationPredictions:
             arrays["view_positions"] = np.asarray(self.view_positions, dtype="U")
         if self.num_views is not None:
             arrays["num_views"] = np.asarray(self.num_views)
+        if self.mention_probabilities is not None:
+            arrays["mention_probabilities"] = self.mention_probabilities
         arrays["metadata_json"] = np.asarray(json.dumps(self.metadata, default=str))
         np.savez_compressed(path, **arrays)
         logger.info(
@@ -211,6 +231,11 @@ class ClassificationPredictions:
                     handle["view_positions"] if "view_positions" in handle else None
                 ),
                 num_views=handle["num_views"] if "num_views" in handle else None,
+                mention_probabilities=(
+                    handle["mention_probabilities"]
+                    if "mention_probabilities" in handle
+                    else None
+                ),
                 metadata=metadata,
             )
 

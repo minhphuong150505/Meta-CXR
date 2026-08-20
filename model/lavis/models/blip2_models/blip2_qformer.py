@@ -1512,6 +1512,7 @@ class Blip2Qformer(Blip2Base):
             loss_mpc=loss_mpc,
             loss_view_consistency=loss_view_consistency,
             classification_logits=student_logits,
+            mention_logits=mention_logits,
             mention_marginal_log_probs=marginal_log_probs,
             classification_mask=classification_mask,
         )

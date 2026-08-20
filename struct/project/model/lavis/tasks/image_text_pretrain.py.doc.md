@@ -1,6 +1,6 @@
-> Source: `model/lavis/tasks/image_text_pretrain.py` (320 dòng)
+> Source: `model/lavis/tasks/image_text_pretrain.py` (356 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-20
 
 # `image_text_pretrain.py`
 

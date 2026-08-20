@@ -1,6 +1,6 @@
-> Source: `training/evaluation/` (17 file Python)
+> Source: `training/evaluation/` (18 file Python)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-14
+> Last verified against source: 2026-08-20
 
 # `training/evaluation/`
 
@@ -39,6 +39,7 @@ Stage 1 checkpoint + split ───────────────► eval
 | `schemas.py` | 334 | [📄](schemas.py.doc.md) | `ClassificationPredictions`, `load_generation_records`, `CLASS_NAMES` |
 | `classification_metrics.py` | 662 | [📄](classification_metrics.py.doc.md) | P/R/F1 macro, per-pathology, AUROC, AUPRC |
 | `uncertain_policy.py` | — | [📄](uncertain_policy.py.doc.md) | `POLICIES`, `binarize_labels`, `DEFAULT_POLICY` |
+| `label_framing.py` | 178 | [📄](label_framing.py.doc.md) | ★ `FRAMINGS`, `apply_framing` — quyết định F1 có nghĩa hay không |
 | `threshold_calibration.py` | 345 | [📄](threshold_calibration.py.doc.md) | Calibrate — **chỉ validation** |
 | `baselines.py` | 204 | [📄](baselines.py.doc.md) | All-negative và các baseline |
 | `bootstrap.py` | 221 | [📄](bootstrap.py.doc.md) | Khoảng tin cậy |

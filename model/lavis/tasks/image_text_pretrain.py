@@ -69,6 +69,12 @@ class ImageTextPretrainTask(BaseTask):
         collected_logits = []
         collected_labels = []
         collected_keys = []
+        # Mention-gate logits, kept alongside the polarity logits so the offline
+        # evaluator can form P(present) = sigmoid(mention) * q_positive. A run
+        # whose model predates this field simply writes no gate array, and
+        # label_framing.presence_scores then refuses 'marginal_presence' rather
+        # than silently substituting the conditional score.
+        collected_mention = []
 
         for batch in data_loader:
             if cuda_enabled:
@@ -134,6 +140,22 @@ class ImageTextPretrainTask(BaseTask):
                 collected_logits.append(logits.detach().float().cpu())
                 collected_labels.append(masked_labels.detach().cpu())
                 collected_keys.extend(_sample_keys(batch, labels.shape[0]))
+                mention_logits = output.get("mention_logits")
+                if mention_logits is None:
+                    if not collected_mention and example_count <= batch_size:
+                        logger.info(
+                            "model emits no mention_logits; the prediction file "
+                            "will carry no gate and 'marginal_presence' scoring "
+                            "will be unavailable offline"
+                        )
+                elif mention_logits.shape != labels.shape:
+                    raise ValueError(
+                        "mention logits must be [B, abnormalities] to line up "
+                        f"with the labels, got {tuple(mention_logits.shape)} vs "
+                        f"{tuple(labels.shape)}"
+                    )
+                else:
+                    collected_mention.append(mention_logits.detach().float().cpu())
 
         device = next(model.parameters()).device
         loss_names = sorted(loss_sums)
@@ -212,7 +234,7 @@ class ImageTextPretrainTask(BaseTask):
 
         if collected_logits:
             predictions = self._build_predictions(
-                collected_logits, collected_labels, collected_keys
+                collected_logits, collected_labels, collected_keys, collected_mention
             )
             if selection_metric in probability_metrics:
                 if is_dist_avail_and_initialized() and dist.get_world_size() > 1:
@@ -254,7 +276,7 @@ class ImageTextPretrainTask(BaseTask):
         return stats
 
     @staticmethod
-    def _build_predictions(logits_chunks, label_chunks, keys):
+    def _build_predictions(logits_chunks, label_chunks, keys, mention_chunks=None):
         from model.lavis.models.blip2_models.blip2_qformer import chexpert_cols
         from training.evaluation.schemas import (
             ClassificationPredictions,
@@ -275,12 +297,26 @@ class ImageTextPretrainTask(BaseTask):
                 labels.shape[1],
             )
 
+        mention_probabilities = None
+        if mention_chunks:
+            mention = torch.cat(mention_chunks, dim=0)
+            if mention.shape == labels.shape:
+                mention_probabilities = torch.sigmoid(mention).numpy()
+            else:
+                logger.warning(
+                    "mention logits have shape %s but labels have %s; "
+                    "not writing mention_probabilities",
+                    tuple(mention.shape),
+                    labels.shape,
+                )
+
         return ClassificationPredictions(
             labels=labels,
             probabilities=probabilities,
             logits=logits,
             pathology_names=names,
             sample_keys=build_sample_keys(list(keys[: labels.shape[0]])),
+            mention_probabilities=mention_probabilities,
         )
 
     def _save_predictions(self, predictions):
