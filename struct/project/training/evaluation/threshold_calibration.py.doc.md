@@ -1,6 +1,6 @@
-> Source: `training/evaluation/threshold_calibration.py` (345 dòng)
+> Source: `training/evaluation/threshold_calibration.py` (401 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-20
 
 # `threshold_calibration.py`
 
@@ -38,6 +38,31 @@ lạc quan giả.
 ### `--min-positive 20`
 Bệnh lý dưới 20 mẫu positive **giữ nguyên threshold 0.5**. Tối ưu trên 3 mẫu
 positive chỉ là overfit vào nhiễu.
+
+## `--selection plateau` (2026-08-20)
+
+Chọn *đứng ở đâu* trên đường cong mục tiêu — câu hỏi tách biệt với *tối ưu mục tiêu nào*.
+
+| | |
+|---|---|
+| `argmax` | đỉnh chính xác. Mặc định, giữ nguyên hành vi cũ |
+| `plateau` | trung vị của mọi ngưỡng đạt ≥ `plateau_fraction` × đỉnh |
+
+Trên val 1,808 study, đỉnh đường cong F1 là một điểm may mắn phụ thuộc study nào rơi
+vào val; tâm vùng gần tối ưu chuyển giao sang test tốt hơn.
+
+**Đo bằng CV 5-fold × 10 lần *bên trong* val** (`study_presence` + `marginal_presence`):
+plateau@0.95 đạt **0.3246** macro F1 so với argmax **0.3202**. Trên test held-out, cùng
+lựa chọn đó cho **0.3397 so với 0.3224** — bootstrap ghép cặp 2,000 lần:
+ΔF1 **+0.0174** [+0.0102, +0.0243], Δrecall **+0.0747**, Δprecision **−0.0211**.
+Cả ba đều có ý nghĩa; đây là **đánh đổi thật** nghiêng 3.5:1 về recall.
+
+⚠ Kết hợp với `--min-positive 5`. Ở mặc định cũ (20), `Pleural Other` (15 dương trên val)
+và `Fracture` (18) rơi về ngưỡng 0.5 — `Fracture` **không bao giờ được dự đoán dương**,
+F1 = 0.0000. Hai nhãn đó chiếm **59%** toàn bộ khoảng cách tới trần oracle. Khi được
+calibrate thật, chúng ra 0.231 / 0.244, sát ngưỡng oracle trên test (0.250 / 0.247).
+
+`selection` và `plateau_fraction` được ghi vào `metadata` của file ngưỡng.
 
 ## Calls / Called by
 

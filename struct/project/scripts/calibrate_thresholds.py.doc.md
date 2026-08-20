@@ -29,6 +29,17 @@ vào `metadata.source_metadata` của file JSON kết quả — đó chính là 
 
 ⚠ Calibrate và evaluate **phải dùng cùng một cặp** `--label-framing` / `--score`.
 
+## `--selection` / `--plateau-fraction` (2026-08-20)
+
+Chuyển tiếp vào `calibrate_one`. Xem
+[`threshold_calibration.py`](../training/evaluation/threshold_calibration.py.doc.md).
+
+Cấu hình được đo là tốt nhất (chọn bằng CV trong val, không nhìn test):
+
+```
+--selection plateau --plateau-fraction 0.95 --min-positive 5
+```
+
 ## Calls / Called by
 Gọi: `training.evaluation.schemas` (`:30`), `.threshold_calibration` (`:31`),
 `.uncertain_policy` (`:37`).

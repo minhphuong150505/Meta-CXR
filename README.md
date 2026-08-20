@@ -310,6 +310,20 @@ thì raise, **không** âm thầm rơi về `conditional_positive`.
 ⚠ Calibrate và evaluate phải dùng **cùng một cặp** `--label-framing` / `--score`;
 `evaluate_stage1.py` từ chối chạy nếu lệch.
 
+#### `--selection plateau` — chọn ngưỡng bền hơn (từ 2026-08-20)
+
+Đứng ở **trung vị vùng đạt ≥ 95% đỉnh** thay vì đúng đỉnh đường cong mục tiêu. Trên val
+1,808 study, đỉnh phụ thuộc study nào tình cờ rơi vào val. Kết hợp `--min-positive 5`
+để hai nhãn hiếm (`Pleural Other` 15 dương, `Fracture` 18) được calibrate thật thay vì
+rơi về ngưỡng mặc định 0.5 — ở mặc định cũ **`Fracture` không bao giờ được dự đoán dương,
+F1 = 0.0000**, và riêng hai nhãn đó chiếm **59%** khoảng cách tới trần.
+
+```bash
+--selection plateau --plateau-fraction 0.95 --min-positive 5
+```
+
+Chọn bằng CV 5-fold × 10 lần **bên trong val** (0.3246 vs 0.3202) trước khi chạm test.
+
 ### XAI / Grad-CAM
 
 Ba metric theo mục III.C của bài báo explanation-aware:
@@ -581,13 +595,24 @@ Số chính, dưới framing `study_presence` + `marginal_presence` (xem mục E
 | Metric | Giá trị | 95% CI |
 |---|---:|:---:|
 | `macro_auroc` | **0.7441** | [0.7341, 0.7540] |
-| `positive_macro_f1` | **0.3224** | [0.3109, 0.3326] |
+| `positive_macro_f1` | **0.3397** | [0.3275, 0.3515] |
 | `macro_auprc` | 0.3004 | [0.2919, 0.3139] |
-| `macro_specificity` | 0.8214 | – |
+| `positive_macro_recall` | 0.5006 | [0.4811, 0.5206] |
+| `positive_macro_precision` | 0.2776 | [0.2657, 0.2888] |
 | `micro_auroc` | 0.8183 | – |
 
 So với baseline tầm thường trên **cùng** framing: `all_positive` 0.2280,
-`all_negative` 0.0000, `majority_class` 0.0000, `threshold_half` 0.3173.
+`all_negative` 0.0000, `majority_class` 0.0000.
+
+Ngưỡng calibrate trên val bằng `--selection plateau --plateau-fraction 0.95
+--min-positive 5` (chọn bằng CV trong val, xem mục Evaluation). So với `argmax` +
+`min-positive 20`, bootstrap **ghép cặp** 2,000 lần cho ΔF1 **+0.0174**
+[+0.0102, +0.0243], Δrecall **+0.0747**, Δprecision **−0.0211** — cả ba có ý nghĩa.
+Đây là **đánh đổi 3.5:1 nghiêng về recall**, không phải quà miễn phí.
+
+⚠ **Precision không mua được bằng ngưỡng.** Ép sàn precision 0.70 trên val chỉ giao
+0.4074 trên test và vứt 84% recall; precision bão hòa quanh 0.40. Trần đó thuộc về
+**mô hình**. Năm nhãn có precision dưới 0.25 — chưa dùng lâm sàng được.
 
 Bốn nhãn khỏe nhất (AUROC): Support Devices 0.8783, Pleural Effusion 0.8682,
 Pneumothorax 0.8283, Edema 0.8245. Yếu nhất: Enlarged Cardiomediastinum 0.6126.
