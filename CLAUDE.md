@@ -1319,6 +1319,72 @@ provide (`lambda_gate: 0.5`).
 
 Pinned by `tests/test_label_framing.py` (9 tests).
 
+**Fitting the threshold: `--selection plateau --plateau-fraction 0.95
+--min-positive 5`.** Once F1 means something it is worth maximising, and on this
+validation split the way you pick the point matters as much as the objective.
+Two changes, both chosen by 5-fold x 10-repeat cross-validation *inside*
+validation before test was touched:
+
+- `--selection plateau` stands at the **median of every threshold scoring >= 95%
+  of the peak** instead of at the peak itself. The peak on 1,808 val studies is
+  fitted to which studies happened to land there; the middle of the near-optimal
+  region transfers. CV 0.3246 vs argmax 0.3202.
+- `--min-positive 5` instead of 20. At 20, `Pleural Other` (15 val positives) and
+  `Fracture` (18) fell back to a flat 0.5 — and **`Fracture` was then never
+  predicted positive at all, F1 0.0000**. Those two labels alone were **59% of
+  the entire gap to the achievable ceiling**. Calibrated properly they land at
+  0.231 / 0.244, against test-oracle thresholds of 0.250 / 0.247.
+
+Test result, `run_20260819_xmpoff`, `study_presence` + `marginal_presence`:
+**positive_macro_f1 0.3224 -> 0.3397**. Paired bootstrap over 2,000 study
+resamples: ΔF1 **+0.0174 [+0.0102, +0.0243]**, Δrecall **+0.0747 [+0.0619,
++0.0880]**, Δprecision **-0.0211 [-0.0303, -0.0137]** — all three significant.
+Be honest that it is a **trade**, 3.5:1 in recall's favour, not a free gain.
+The ceiling for thresholding alone is 0.3532 (test-oracle thresholds, diagnostic
+only, never a reportable number), so 0.3397 captures 97% of it.
+
+**Three things that did NOT help — measured, so do not retry them blind.**
+
+| tried | val-CV macro F1 | verdict |
+|---|---|---|
+| `m x q` (shipped) | **0.3247** | best |
+| `m^a x q^(1-a)`, a fitted per label | 0.3228 | no gain |
+| logistic stack on `[logit m, logit q]` | 0.3225 | no gain (AUROC +0.004, F1 flat) |
+| `q` alone | 0.3155 | worse, as expected |
+| ensemble mean(ep4, ep6, ep9) | 0.3266 | below ep9 alone |
+| ensemble mean(ep6, ep9) | 0.3280 | below ep9 alone |
+| `checkpoint_9` instead of `checkpoint_best` (ep6) | 0.3291 | **+0.0041, CI crosses zero** (wins 66% of 100 folds) — not enough to switch |
+
+The plain product is already the right way to combine the two heads, and the
+epochs are interchangeable, which is consistent with the flat val curve (train
+loss 1.856 -> 1.834 over epochs 5-9 while val loss moved 1.8916 -> 1.8902).
+
+⚠⚠ **Precision cannot be bought with a threshold on this model.** Fitting a
+precision floor on validation and applying it to test, macro precision saturates
+around 0.40 while recall collapses:
+
+| val precision floor | test F1 | test precision | test recall |
+|---|---|---|---|
+| none (F1-optimal plateau) | **0.3409** | 0.2778 | **0.5044** |
+| 0.40 | 0.2646 | 0.3330 | 0.3506 |
+| 0.50 | 0.2321 | 0.3975 | 0.2329 |
+| 0.70 | 0.1045 | **0.4074** | 0.0815 |
+
+A floor of 0.70 on val delivers 0.41 on test and throws away 84% of the recall.
+That ceiling belongs to the **model**, not the decision rule, so anyone asking
+for higher precision needs a training change, not a calibration flag.
+
+**The matched training-side lever, not yet run:
+`model.loss.lambda_mention_conditioned_cls`.** It trains the joint
+`-log(1-m)` / `-log(m) - log(q[y])`, which is *exactly* the quantity
+`study_presence` + `marginal_presence` scores; the shipped
+`lambda_cls` + `lambda_gate` pair trains the two factors separately and nothing
+reconciles them. The 2026-08-16 verdict that it "did not work" was reached under
+`masked_polarity`, whose metric masks blank cells and therefore cannot see the
+joint at all — that judgment does not carry over and should be re-tested. It
+requires `lambda_cls: 0.0` and `lambda_gate: 0.0` (the constructor raises
+otherwise) and a full ~12.5 h run.
+
 **A blank CheXpert cell is masked, not negative.** The export leaves a cell blank
 when the labeler found no mention of the finding, which is not the radiologist
 ruling it out. 79.4% of the label matrix is blank, so the old `.fillna(0)` made

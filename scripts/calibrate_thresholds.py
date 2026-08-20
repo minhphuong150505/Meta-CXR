@@ -38,7 +38,10 @@ from training.evaluation.label_framing import (  # noqa: E402
 from training.evaluation.schemas import ClassificationPredictions  # noqa: E402
 from training.evaluation.threshold_calibration import (  # noqa: E402
     DEFAULT_OBJECTIVE,
+    DEFAULT_PLATEAU_FRACTION,
+    DEFAULT_SELECTION,
     OBJECTIVES,
+    SELECTIONS,
     CalibrationError,
     calibrate_thresholds,
 )
@@ -71,6 +74,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=1,
         help="Pathologies with fewer positives keep the 0.5 default.",
+    )
+    parser.add_argument(
+        "--selection",
+        default=DEFAULT_SELECTION,
+        choices=sorted(SELECTIONS),
+        help="Where to stand on the objective curve. 'argmax' takes its exact "
+        "peak (historical default); 'plateau' takes the middle of the "
+        "near-optimal region, which transfers better from a validation split "
+        "this size.",
+    )
+    parser.add_argument(
+        "--plateau-fraction",
+        type=float,
+        default=DEFAULT_PLATEAU_FRACTION,
+        help="With --selection plateau, candidates scoring at least this "
+        "fraction of the peak count as near-optimal.",
     )
     parser.add_argument(
         "--label-framing",
@@ -140,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
             uncertain_policy=args.uncertain_policy,
             constraint=args.constraint,
             min_positive=args.min_positive,
+            selection=args.selection,
+            plateau_fraction=args.plateau_fraction,
         )
     except CalibrationError as exc:
         logger.error("%s", exc)
