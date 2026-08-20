@@ -1262,23 +1262,46 @@ The paragraph above diagnoses the symptom; this is the cause and the fix.
 and records the choice in every output file, exactly as `uncertain_policy` does
 for the uncertain class:
 
-| | `masked_polarity` (default, historical) | `study_presence` |
-|---|---|---|
-| A blank cell means | masked — score polarity *given* the finding was mentioned | not present |
-| Per-label prevalence, test | 0.13–1.00, twelve labels above 0.55 | **0.019–0.344** |
-| `all_positive` scores | **0.8397** | **0.2280** |
-| `all_negative` scores | 0.0000 | 0.0000 |
-| `threshold_half` scores | 0.8713 | 0.2797 |
-| Model (run_20260819_xmpoff) | 0.8717 | 0.3074 |
-| Degenerate labels | 3 (`No Finding`, `Pleural Other`, `Fracture`) | **none** — every label has both classes |
+All numbers below are `positive_macro_f1` on the `run_20260819_xmpoff` test
+split (3,269 studies), thresholds calibrated on validation with the matching
+flags:
+
+| | `masked_polarity` (default, historical) | `study_presence` + `q_pos` | `study_presence` + `m x q_pos` |
+|---|---|---|---|
+| A blank cell means | masked — polarity *given* the finding was mentioned | not present | not present |
+| Per-label prevalence | 0.13–1.00, twelve labels above 0.55 | **0.019–0.344** | same |
+| `all_positive` | **0.8397** | 0.2280 | 0.2280 |
+| `all_negative` / `majority_class` | 0.0000 / 0.8200 | 0.0000 / 0.0000 | 0.0000 / 0.0000 |
+| `threshold_half` | 0.8713 | 0.2797 | 0.3173 |
+| **Model** | 0.8717 | 0.3074 | **0.3224** |
+| Model over `all_positive` | **+0.032** | +0.079 | **+0.094** |
+| `macro_auroc` | 0.7857 | 0.6767 | **0.7441** |
+| `macro_specificity` | 0.4197 | 0.6359 | **0.8214** |
+| Degenerate labels | 3 (`No Finding`, `Pleural Other`, `Fracture`) | **none** | **none** |
 
 `masked_polarity` is the right denominator for the **loss** and a broken one for
-**F1**: a constant beats the model by 0.03 there, and calibrating thresholds buys
-+0.0004 over a flat 0.5. `study_presence` asks the clinical question — *does this
-study have finding X* — so blank/negative/uncertain all mean "not present",
-prevalence returns to normal, and F1 can no longer be won by over-calling.
+**F1**: a constant beats the model by 0.032 there, calibrating thresholds buys
++0.0004 over a flat 0.5, and `majority_class` alone scores 0.8200.
+`study_presence` asks the clinical question — *does this study have finding X* —
+so blank/negative/uncertain all mean "not present", prevalence returns to normal,
+and both trivial constants collapse to 0.0000.
 **Quote F1 only under `study_presence`.** `macro_auroc` is framing-dependent too
-(0.7857 vs 0.6767) because the populations differ; report which one it came from.
+because the populations differ; always report which framing it came from.
+
+**The mention gate is worth using and the measurement is unambiguous:
+`m x q_pos` beats `q_pos` on AUROC for 14 of 14 labels, mean +0.0831.** Biggest
+gains are exactly where "was it mentioned" carries the signal — `No Finding`
++0.2603, `Pleural Other` +0.2501, `Fracture` +0.1798, `Support Devices` +0.0948
+— and those first three are precisely the labels that are degenerate under
+`masked_polarity`. `micro_auroc` goes 0.6384 -> 0.8183, `macro_specificity`
+0.6359 -> 0.8214. Per-label table: `Test/stage1_test/mention_gate_contribution.csv`
+(git-ignored, on the dev box).
+
+⚠ `m` is **not** a calibrated mention probability — the gate trains with
+inverse-frequency weights (`n_not_mentioned / n_mentioned x kappa_gate`, kappa 2,
+capped at 10), so its odds are inflated. Harmless when thresholds are calibrated
+on validation, which absorbs it; do not read `m = 0.5` as "50% chance it was
+mentioned".
 
 ⚠ Under `study_presence` the framing has already folded uncertain into "not
 present", so `--uncertain-policy` no longer decides anything. Say so; do not

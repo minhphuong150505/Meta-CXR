@@ -48,8 +48,9 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 | CPU tests | Xem mục [Testing](#testing) cho output chạy thật của Phase 3 |
 | GPU evidence | Stage-1 full run xong; A/B explanation loss bật/tắt 5 epoch xong (2026-08-16/17) kèm calibration + eval test + XAI cả hai nhánh |
 | Checkpoint cũ | **Đã xoá toàn bộ 2026-08-14** (15 file, 39 GB) — các run đó đi sai hướng và không nạp được vào recipe hiện tại (Swin tắt → 98 token thay vì 147). Số liệu Table 5 còn trong `results/` nhưng không tái lập được |
-| Full MIMIC-CXR training | Chưa được xác nhận với pipeline final |
-| Reproduced metrics | Chưa có metric mô hình mới được tái lập từ pipeline final |
+| Full MIMIC-CXR training | ✅ **Đã chạy xong 2026-08-20** — `run_20260819_xmpoff`, 10/10 epoch, `rc=0`, 12h35m, 0.3505 s/it, 0 kernel fault. Best epoch 6 |
+| Reproduced metrics | ✅ Stage 1 đã có kết quả test split (3,269 study), chấm một lần từ `checkpoint_best`, ngưỡng calibrate chỉ trên val — xem [Kết quả và cảnh báo metric](#kết-quả-và-cảnh-báo-metric). Stage 2 vẫn chưa có |
+| Máy train | Lỗi kernel fault liên tục từ 17/08 đã **hết** sau khi **tắt XMP** trong BIOS (4 thanh RAM 2 hãng chạy 3200 MT/s ngoài mức Intel validate). Chi phí: **+1.3%** tốc độ |
 
 ## Những thay đổi so với META-CXR gốc
 
@@ -283,6 +284,31 @@ Evaluator nằm trong [`training/evaluation/`](training/evaluation/) và đượ
 - bootstrap confidence intervals;
 - three-class confusion matrices, ROC/PR và các plot tùy chọn;
 - all-negative và các baseline comparisons.
+
+#### `--label-framing` — câu hỏi mà metric đang trả lời (từ 2026-08-20)
+
+Ma trận nhãn CheXpert có hai cách đọc, và **F1 chỉ có nghĩa ở một trong hai**.
+`training/evaluation/label_framing.py` đặt tên cho cả hai và ghi lựa chọn vào mọi
+file kết quả, giống cách `uncertain_policy.py` xử lý lớp Uncertain.
+
+| | `masked_polarity` (mặc định, lịch sử) | `study_presence` |
+|---|---|---|
+| Ô trống nghĩa là | **bị mask** — chấm polarity *với điều kiện* đã được nhắc | **không có** |
+| Prevalence mỗi nhãn (test) | 0.13–1.00, 12/14 nhãn > 0.55 | **0.019–0.344** |
+| `all_positive` ăn được macro F1 | **0.8397** | **0.2280** |
+| `all_negative` / `majority_class` | 0.0000 / 0.8200 | 0.0000 / 0.0000 |
+| Nhãn suy biến trên test | 3 | **0** |
+
+`masked_polarity` đúng cho **hàm loss** nhưng hỏng cho **F1**: một hằng số hơn model
+0.032, và calibrate ngưỡng chỉ mua thêm 0.0004 so với ngưỡng 0.5. **Chỉ trích dẫn F1
+dưới `study_presence`.**
+
+`--score marginal_presence` nhân thêm mention gate: `P(có) = sigmoid(mention) × q_pos`.
+Cần `mention_probabilities` trong `.npz` (chỉ có ở run mà eval hook thu gate). Không có
+thì raise, **không** âm thầm rơi về `conditional_positive`.
+
+⚠ Calibrate và evaluate phải dùng **cùng một cặp** `--label-framing` / `--score`;
+`evaluate_stage1.py` từ chối chạy nếu lệch.
 
 ### XAI / Grad-CAM
 
@@ -544,9 +570,44 @@ phát sinh từ Phase 3. Test CPU không thay thế smoke Stage-1/Stage-2/XAI tr
 
 ## Kết quả và cảnh báo metric
 
-### Pipeline hiện tại
+### Stage 1 — test split, `run_20260819_xmpoff` (2026-08-20)
 
-Repository chưa công bố metric mới được tái lập từ pipeline final. Chưa có full-data model result hoặc Prompt v2 GPU result được xác nhận cho commit hiện tại; không có bằng chứng pipeline final vượt META-CXR gốc.
+Run 10 epoch trên toàn bộ MIMIC-CXR, `checkpoint_best` chọn ở epoch 6 theo `val_loss`.
+Test split (3,269 study) được giữ kín và chấm **đúng một lần**; ngưỡng calibrate **chỉ
+trên validation**.
+
+Số chính, dưới framing `study_presence` + `marginal_presence` (xem mục Evaluation):
+
+| Metric | Giá trị | 95% CI |
+|---|---:|:---:|
+| `macro_auroc` | **0.7441** | [0.7341, 0.7540] |
+| `positive_macro_f1` | **0.3224** | [0.3109, 0.3326] |
+| `macro_auprc` | 0.3004 | [0.2919, 0.3139] |
+| `macro_specificity` | 0.8214 | – |
+| `micro_auroc` | 0.8183 | – |
+
+So với baseline tầm thường trên **cùng** framing: `all_positive` 0.2280,
+`all_negative` 0.0000, `majority_class` 0.0000, `threshold_half` 0.3173.
+
+Bốn nhãn khỏe nhất (AUROC): Support Devices 0.8783, Pleural Effusion 0.8682,
+Pneumothorax 0.8283, Edema 0.8245. Yếu nhất: Enlarged Cardiomediastinum 0.6126.
+
+**Mention gate đóng góp thật:** `m × q_pos` hơn `q_pos` trần về AUROC ở **14/14 nhãn**,
+trung bình **+0.0831** (`macro_auroc` 0.6767 → 0.7441, `macro_specificity`
+0.6359 → 0.8214). Lớn nhất ở đúng những nhãn mà "có được nhắc tới không" mang phần lớn
+tín hiệu: No Finding +0.2603, Pleural Other +0.2501, Fracture +0.1798.
+
+⚠ **Chưa có kết quả Stage 2** cho checkpoint này, nên không có metric NLG
+(BLEU/ROUGE/METEOR/CIDEr/BERTScore). RadGraph/RadCliQ/CheXbert/RadFact **không cài
+được** trong repo — báo là *unavailable*, không bao giờ báo là 0.
+
+⚠ **Checkpoint này không dùng được cho Stage-2 chế độ `meta_cxr_qformer`** (soft token):
+`lambda_itc/itm/lm` = 0 nên đường ảnh của Q-Former bị skip toàn bộ trong Stage 1.
+`medgemma_direct` không ảnh hưởng.
+
+Chi tiết đầy đủ (bảng từng nhãn, so sánh 5 arm, đóng góp của gate, lệnh tái tạo) nằm ở
+`Test/stage1_test/README.md` — thư mục đó **git-ignored** vì file `.npz` chứa định danh
+study của MIMIC-CXR.
 
 ### Original paper reference results
 
