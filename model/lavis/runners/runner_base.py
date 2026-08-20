@@ -184,33 +184,73 @@ class RunnerBase:
                 "classifier_no_decay": [],
                 "qformer_decay": [],
                 "qformer_no_decay": [],
+                "encoder_decay": [],
+                "encoder_no_decay": [],
             }
+            # Slices of the pretrained vision encoders unfrozen by
+            # model.encoder_finetune. They need their own, much lower LR:
+            # leaving them in the general group at init_lr destroys pretrained
+            # features within a few hundred steps, and the whole reason those
+            # encoders are worth fine-tuning is the features they already have.
+            encoder_names = frozenset(
+                getattr(
+                    self.unwrap_dist_model(self.model),
+                    "encoder_finetune_param_names",
+                    frozenset(),
+                )
+            )
             for n, p in self.model.named_parameters():
                 if not p.requires_grad:
                     continue  # frozen weights
-                is_classifier = any(
+                bare = n[len("module.") :] if n.startswith("module.") else n
+                is_encoder = bare in encoder_names
+                is_classifier = not is_encoder and any(
                     token in n
                     for token in ("mhcac", "aggregator", "cls_loss_fn")
                 )
                 no_decay = p.ndim < 2 or n.endswith(".bias") or any(
                     token in n.lower() for token in ("layernorm", "layer_norm", ".ln", ".bn")
                 )
-                prefix = "classifier" if is_classifier else "qformer"
+                prefix = (
+                    "encoder" if is_encoder else "classifier" if is_classifier else "qformer"
+                )
                 suffix = "no_decay" if no_decay else "decay"
                 grouped_params[f"{prefix}_{suffix}"].append(p)
                 num_parameters += p.data.nelement()
+            if encoder_names and not (
+                grouped_params["encoder_decay"] or grouped_params["encoder_no_decay"]
+            ):
+                raise ValueError(
+                    "model.encoder_finetune named parameters but none of them "
+                    "reached the optimizer; the name mapping is broken and the "
+                    "encoder would train at the wrong learning rate"
+                )
             logging.info("number of trainable parameters: %d" % num_parameters)
+            for _name, _params in grouped_params.items():
+                if _params:
+                    logging.info(
+                        "  param group %-20s %3d tensors, %.2fM",
+                        _name,
+                        len(_params),
+                        sum(q.numel() for q in _params) / 1e6,
+                    )
             base_lr = float(self.config.run_cfg.init_lr)
             if base_lr <= 0:
                 raise ValueError("run.init_lr must be positive")
             cls_lr = float(self.config.run_cfg.get("init_lr_cls", base_lr))
             qformer_lr = float(self.config.run_cfg.get("init_lr_q", base_lr))
+            encoder_lr = float(self.config.run_cfg.get("init_lr_enc", base_lr))
             weight_decay = float(self.config.run_cfg.weight_decay)
             optim_params = []
             for name, params in grouped_params.items():
                 if not params:
                     continue
-                group_lr = cls_lr if name.startswith("classifier") else qformer_lr
+                if name.startswith("classifier"):
+                    group_lr = cls_lr
+                elif name.startswith("encoder"):
+                    group_lr = encoder_lr
+                else:
+                    group_lr = qformer_lr
                 optim_params.append(
                     {
                         "name": name,

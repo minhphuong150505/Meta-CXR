@@ -2015,8 +2015,112 @@ class Blip2Qformer(Blip2Base):
             cfg.get("active_encoders", None),
         )
         model.load_checkpoint_from_config(cfg)
+        model.apply_encoder_finetune(cfg.get("encoder_finetune", None))
 
         return model
+
+    # ---- partial encoder fine-tuning --------------------------------------
+
+    #: Populated by :meth:`apply_encoder_finetune`. The runner reads it to give
+    #: these parameters their own, much lower learning rate -- dropping them into
+    #: the general group at ``init_lr`` would wreck a pretrained encoder in the
+    #: first few hundred steps.
+    encoder_finetune_param_names: frozenset = frozenset()
+
+    def apply_encoder_finetune(self, cfg):
+        """Unfreeze the named slices of the frozen vision encoders.
+
+        ``cfg`` is the ``model.encoder_finetune`` block::
+
+            encoder_finetune:
+              enabled: true
+              patterns: [visual_encoder.encoder.encoder.layer4, ...]
+              keep_batchnorm_eval: true
+
+        Each pattern matches a parameter whose name equals it or begins with
+        ``pattern + "."``. **A pattern that matches nothing raises**: the whole
+        point of this block is that some parameters become trainable, and a typo
+        that silently unfroze nothing would look exactly like a completed run
+        that simply did not improve -- 12 GPU-hours to discover a spelling
+        mistake.
+
+        ``keep_batchnorm_eval`` (default True) holds the touched encoders in
+        eval mode for the whole run. That is the standard frozen-BatchNorm
+        fine-tuning recipe and it matters here for two reasons: ResNet50's
+        BatchNorm would otherwise recompute statistics from batches of 16 mixed
+        anchor/auxiliary views, and ``model.train()`` currently puts these
+        encoders in train mode even while frozen, so their running statistics
+        already drift. Only the fine-tuned encoders are affected; with
+        ``enabled: false`` nothing changes.
+        """
+        if not cfg:
+            return
+        try:
+            enabled = bool(cfg.get("enabled", False))
+            patterns = list(cfg.get("patterns", []) or [])
+            keep_bn_eval = bool(cfg.get("keep_batchnorm_eval", True))
+        except AttributeError:  # a bare bool or list, not a mapping
+            raise ValueError(
+                "model.encoder_finetune must be a mapping with keys "
+                "enabled / patterns / keep_batchnorm_eval"
+            )
+        if not enabled:
+            return
+        if not patterns:
+            raise ValueError(
+                "model.encoder_finetune.enabled is true but patterns is empty; "
+                "nothing would be unfrozen"
+            )
+
+        named = dict(self.named_parameters())
+        selected: dict[str, int] = {}
+        unmatched = []
+        for pattern in patterns:
+            hits = [n for n in named if n == pattern or n.startswith(pattern + ".")]
+            if not hits:
+                unmatched.append(pattern)
+                continue
+            selected[pattern] = sum(named[n].numel() for n in hits)
+            for n in hits:
+                named[n].requires_grad = True
+        if unmatched:
+            raise ValueError(
+                "model.encoder_finetune.patterns matched no parameter: "
+                f"{unmatched}. Parameter names come from model.named_parameters(); "
+                "check them against the built model rather than guessing."
+            )
+
+        names = {
+            n
+            for pattern in patterns
+            for n in named
+            if n == pattern or n.startswith(pattern + ".")
+        }
+        self.encoder_finetune_param_names = frozenset(names)
+        self._encoder_finetune_keep_bn_eval = keep_bn_eval
+        self._encoder_finetune_roots = sorted({n.split(".")[0] for n in names})
+
+        total = sum(selected.values())
+        logging.info(
+            "encoder fine-tuning: unfroze %d parameters (%.2fM) across %d patterns; "
+            "batchnorm_eval=%s",
+            len(names),
+            total / 1e6,
+            len(patterns),
+            keep_bn_eval,
+        )
+        for pattern, count in selected.items():
+            logging.info("  %-52s %8.3fM", pattern, count / 1e6)
+
+    def train(self, mode: bool = True):
+        """Keep fine-tuned encoders in eval mode even while the model trains."""
+        super().train(mode)
+        if mode and getattr(self, "_encoder_finetune_keep_bn_eval", False):
+            for root in getattr(self, "_encoder_finetune_roots", ()):
+                module = getattr(self, root, None)
+                if module is not None:
+                    module.eval()
+        return self
 
     def compute_sim_matrix(self, data_loader, task_cfg):
         """
