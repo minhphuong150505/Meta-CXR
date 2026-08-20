@@ -15,6 +15,39 @@ model:
   pretrained: "https://storage.googleapis.com/sfr-vision-language-research/LAVIS/models/BLIP2/blip2_pretrained.pth"
 
   freeze_vit: true
+  # ⚠ freeze_vit stays TRUE. It is a blunt all-or-nothing switch over BioViL's
+  # 29.98M parameters; encoder_finetune below is the selective mechanism and
+  # runs AFTER it, so it decides what actually trains.
+  #
+  # PARTIAL ENCODER FINE-TUNING, ON as of 2026-08-20. Both vision encoders were
+  # fully frozen, which is the most likely explanation for the run plateauing:
+  # over epochs 5-9 train loss moved 1.856 -> 1.834 while val loss moved
+  # 1.8916 -> 1.8902, one twentieth as far. The trainable part had saturated and
+  # the part that carries image information could not move at all.
+  #
+  # Only the top of each encoder is released -- 31.85M of 181.3M frozen
+  # parameters (+10.5% on the 301.9M already trainable). Backprop then stops at
+  # ResNet50's layer4 and CLIP's block 10, so the retained activations are the
+  # small late feature maps, not the whole network.
+  #
+  # ⚠ These names are exact, taken from model.named_parameters() on the built
+  # model; a pattern matching nothing RAISES rather than silently unfreezing
+  # nothing. Do not include pubmedclip.model.text_model (63.17M) -- this project
+  # never runs CLIP's text tower.
+  encoder_finetune:
+    enabled: true
+    patterns:
+      - visual_encoder.encoder.encoder.layer4              # ResNet50 stage 4, 14.965M
+      - visual_encoder.projector                           #                    2.708M
+      - pubmedclip.model.vision_model.encoder.layers.10    # CLIP ViT block 10,  7.088M
+      - pubmedclip.model.vision_model.encoder.layers.11    # CLIP ViT block 11,  7.088M
+      - pubmedclip.model.vision_model.post_layernorm       #                    0.002M
+    # Frozen-BatchNorm fine-tuning: hold the touched encoders in eval mode for
+    # the whole run. ResNet50's BatchNorm would otherwise recompute statistics
+    # from batches of 16 mixed anchor/auxiliary views. It also fixes a quieter
+    # pre-existing problem -- model.train() puts these encoders in train mode
+    # even when frozen, so their running statistics were already drifting.
+    keep_batchnorm_eval: true
   vit_model: biovil
   vit_model_cls: [pubmedclip]
   # Must match datasets.mimic_cxr.vis_processor.*.image_size below. It is stated
@@ -138,21 +171,29 @@ model:
     # up needlessly. The cap is not cosmetic: five labels have raw ratios of
     # 17-157 and applying those unclipped just relocates "always answer the
     # majority class" into the gate. Measured on train, 2026-08-15.
+    #
+    # ⚠ kappa_gate LOWERED 2 -> 1 on 2026-08-20. Under the study_presence
+    # framing the gate carries most of the presence decision, and measured
+    # macro precision was 0.2776 with five labels below 0.25. kappa 2 charged a
+    # silent gate twice a talkative one on top of inverse-frequency weights
+    # that already correct the imbalance; at kappa 1 the two errors cost the
+    # same once frequency is accounted for. Three labels stay at the cap
+    # because their raw ratio alone exceeds 10.
     gate_class_weights:
-      -  3.996   # No Finding                 mentioned  74,305 / not 148,453
-      - 10.000   # Enlarged Cardiomediastinum     21,219 / 201,539  raw 19.00 CAPPED
-      -  4.845   # Cardiomegaly                   65,084 / 157,674
-      -  5.841   # Lung Opacity                   56,818 / 165,940
-      - 10.000   # Lung Lesion                     8,046 / 214,712  raw 53.37 CAPPED
-      -  4.961   # Edema                          64,003 / 158,755
-      - 10.000   # Consolidation                  22,479 / 200,279  raw 17.82 CAPPED
-      -  5.709   # Pneumonia                      57,794 / 164,964
-      -  5.919   # Atelectasis                    56,261 / 166,497
-      -  6.478   # Pneumothorax                   52,548 / 170,210
-      -  3.241   # Pleural Effusion               85,013 / 137,745
-      - 10.000   # Pleural Other                   2,802 / 219,956  raw 157.0 CAPPED
-      - 10.000   # Fracture                        5,708 / 217,050  raw 76.05 CAPPED
-      -  4.502   # Support Devices                68,520 / 154,238
+      -  1.998   # No Finding                 mentioned  74,305 / not 148,453
+      -  9.498   # Enlarged Cardiomediastinum     21,219 / 201,539
+      -  2.423   # Cardiomegaly                   65,084 / 157,674
+      -  2.921   # Lung Opacity                   56,818 / 165,940
+      - 10.000   # Lung Lesion                     8,046 / 214,712  raw 26.69 CAPPED
+      -  2.480   # Edema                          64,003 / 158,755
+      -  8.910   # Consolidation                  22,479 / 200,279
+      -  2.854   # Pneumonia                      57,794 / 164,964
+      -  2.959   # Atelectasis                    56,261 / 166,497
+      -  3.239   # Pneumothorax                   52,548 / 170,210
+      -  1.620   # Pleural Effusion               85,013 / 137,745
+      - 10.000   # Pleural Other                   2,802 / 219,956  raw 78.50 CAPPED
+      - 10.000   # Fracture                        5,708 / 217,050  raw 38.03 CAPPED
+      -  2.251   # Support Devices                68,520 / 154,238
     # WRONG-SILENCE WEIGHTS for the hierarchical mention-conditioned loss.
     # Only read when loss.lambda_mention_conditioned_cls > 0.
     #
@@ -209,21 +250,30 @@ model:
     # an operating point on that curve, trading specificity for sensitivity.
     # What may actually improve the model here is the gate, which puts the 79.5%
     # blank share of the label matrix to work for the first time.
+    #
+    # ⚠ EVERY kappa LOWERED TO 1 on 2026-08-20, i.e. pure inverse frequency
+    # with no clinical preference on top. Reason: measured macro precision of
+    # 0.2776 under study_presence, and the repo's own note above that kappa
+    # only picks an operating point rather than creating skill -- while
+    # thresholds are calibrated on validation afterwards anyway, which already
+    # picks that operating point and does it better. Nothing here is a
+    # clinical judgement any more, which also retires the un-signed-off kappa
+    # table. Pneumothorax leaves the cap entirely: 4.060 is its raw ratio.
     class_weights:
       - [1.0,  1.000, 1.000]  # No Finding -- excluded from this head entirely
-      - [1.0,  0.742, 0.569]  # Enlarged Cardiomediastinum  k=1
-      - [1.0,  0.716, 2.660]  # Cardiomegaly                k=2
-      - [1.0,  0.060, 0.803]  # Lung Opacity                k=1
-      - [1.0,  0.276, 0.755]  # Lung Lesion                 k=2
-      - [1.0,  2.890, 1.967]  # Edema                       k=3
-      - [1.0,  2.239, 1.867]  # Consolidation               k=3
-      - [1.0,  4.456, 1.343]  # Pneumonia                   k=3
-      - [1.0,  0.067, 0.150]  # Atelectasis                 k=2
-      - [1.0, 10.000, 10.000] # Pneumothorax  k=4, raw 16.23 CAPPED -> eff k 2.46
-      - [1.0,  1.009, 4.720]  # Pleural Effusion            k=2
-      - [1.0,  0.130, 0.170]  # Pleural Other               k=2
-      - [1.0,  0.410, 1.600]  # Fracture                    k=2
-      - [1.0,  0.053, 10.000] # Support Devices             k=1
+      - [1.0,  0.742, 0.569]  # Enlarged Cardiomediastinum  k=1  (was k=1 0.742)
+      - [1.0,  0.358, 2.660]  # Cardiomegaly                k=1  (was k=2 0.716)
+      - [1.0,  0.060, 0.803]  # Lung Opacity                k=1  (was k=1 0.060)
+      - [1.0,  0.138, 0.755]  # Lung Lesion                 k=1  (was k=2 0.276)
+      - [1.0,  0.963, 1.967]  # Edema                       k=1  (was k=3 2.890)
+      - [1.0,  0.746, 1.867]  # Consolidation               k=1  (was k=3 2.239)
+      - [1.0,  1.485, 1.343]  # Pneumonia                   k=1  (was k=3 4.456)
+      - [1.0,  0.034, 0.150]  # Atelectasis                 k=1  (was k=2 0.067)
+      - [1.0,  4.060, 10.000] # Pneumothorax                k=1  (was k=4 10.000 CAPPED)
+      - [1.0,  0.504, 4.720]  # Pleural Effusion            k=1  (was k=2 1.009)
+      - [1.0,  0.065, 0.170]  # Pleural Other               k=1  (was k=2 0.130)
+      - [1.0,  0.205, 1.600]  # Fracture                    k=1  (was k=2 0.410)
+      - [1.0,  0.053, 10.000] # Support Devices             k=1  (was k=1 0.053)
     distill_temperature: 2.0
     text_dropout: 0.2
     # Ambiguous pairs are not reliable positive/negative targets.
@@ -649,6 +699,12 @@ run:
   init_lr: 1.0e-4
   init_lr_q: 1.0e-4
   init_lr_cls: 1.0e-4
+  # Pretrained encoder slices released by model.encoder_finetune, 10x below the
+  # heads. They are the only parameters in this run that already encode
+  # something worth keeping; at 1.0e-4 they would be overwritten in the first
+  # few hundred steps and fine-tuning would be strictly worse than freezing.
+  # Without this key they fall back to init_lr, which is exactly that failure.
+  init_lr_enc: 1.0e-5
   # RAISED 2026-08-18 from 1.0e-5, at the user's request: the late epochs were
   # improving too slowly. The cosine floor is what the tail of the run actually
   # trains at, so this knob moves the end without disturbing the start. Measured
