@@ -1,6 +1,6 @@
-> Source: `training/evaluation/schemas.py` (334 dòng)
+> Source: `training/evaluation/schemas.py` (359 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-20
 
 # `schemas.py`
 
@@ -44,6 +44,19 @@ trúc sẽ tạo ra metric sai mà không ai biết. `SchemaError` fail sớm v�
 
 Không phải `study_id`. Nhờ vậy file kết quả **không mang định danh bệnh nhân** mà
 vẫn ghép được các bản ghi với nhau.
+
+## `mention_probabilities` (thêm 2026-08-20)
+
+Field optional `[N, P]`: xác suất của **mention gate** — *"báo cáo có nhắc tới
+finding này không?"*. Chỉ có ở run mà eval hook thu thập gate
+(`model/lavis/tasks/image_text_pretrain.py`).
+
+Đây là thừa số mà [`label_framing.presence_scores`](label_framing.py.doc.md) nhân
+vào `q_positive` để ra `P(present)`. Không có nó thì score `marginal_presence`
+**raise**, không rơi ngầm về `conditional_positive`.
+
+Được validate shape trong `__post_init__`, ghi/đọc qua `save()`/`load()`. File
+`.npz` cũ không có key này → `load()` trả `None`, không lỗi.
 
 ## Calls / Called by
 

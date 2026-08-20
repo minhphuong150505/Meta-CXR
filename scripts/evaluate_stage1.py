@@ -19,6 +19,7 @@ Exit codes: 0 success, 1 evaluation failed, 2 bad arguments or input.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -42,6 +43,14 @@ from training.evaluation.report_writer import (  # noqa: E402
     build_markdown_report,
     write_csv,
     write_json,
+)
+from training.evaluation.label_framing import (  # noqa: E402
+    DEFAULT_FRAMING,
+    DEFAULT_SCORE,
+    FRAMINGS,
+    SCORES,
+    ScoreUnavailableError,
+    apply_framing,
 )
 from training.evaluation.schemas import CLASS_NAMES, ClassificationPredictions  # noqa: E402
 from training.evaluation.subgroup_analysis import (  # noqa: E402
@@ -85,6 +94,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Include 'No Finding' and 'Support Devices' in macro averages "
         "(they are excluded by default; both are always reported per-pathology).",
     )
+    parser.add_argument(
+        "--label-framing",
+        default=DEFAULT_FRAMING,
+        choices=sorted(FRAMINGS),
+        help="Which question the labels answer; see "
+        "training/evaluation/label_framing.py. 'masked_polarity' is the "
+        "historical default and makes positive_macro_f1 uninterpretable on "
+        "this label distribution; 'study_presence' is the framing under which "
+        "F1 is worth quoting.",
+    )
+    parser.add_argument(
+        "--score",
+        default=DEFAULT_SCORE,
+        choices=sorted(SCORES),
+        help="'conditional_positive' uses the polarity head alone; "
+        "'marginal_presence' multiplies it by the mention gate.",
+    )
     parser.add_argument("--bootstrap-samples", type=int, default=DEFAULT_SAMPLES)
     parser.add_argument("--bootstrap-confidence", type=float, default=DEFAULT_CONFIDENCE)
     parser.add_argument("--evaluation-seed", type=int, default=DEFAULT_SEED)
@@ -97,6 +123,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", default="unknown")
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args(argv)
+
+
+def _threshold_framing_mismatch(path: Path, framing: str, score: str) -> str | None:
+    """Refuse thresholds calibrated under a different framing.
+
+    Calibrating one way and scoring another does not fail loudly on its own --
+    the report simply prints different numbers -- which is the same trap the
+    uncertain-policy flag already carries. Here it is worse: the two framings
+    have different label sets, so a threshold fitted on one is meaningless on
+    the other. Old threshold files predate the field and are allowed through
+    only when the request is for the historical default.
+    """
+    try:
+        with path.open(encoding="utf-8") as handle:
+            source = json.load(handle).get("metadata", {}).get("source_metadata", {})
+    except (OSError, ValueError):
+        return None
+    recorded_framing = source.get("label_framing", DEFAULT_FRAMING)
+    recorded_score = source.get("score", DEFAULT_SCORE)
+    if recorded_framing == framing and recorded_score == score:
+        return None
+    return (
+        f"{path} was calibrated with label_framing={recorded_framing!r}, "
+        f"score={recorded_score!r} but this run asks for {framing!r}/{score!r}. "
+        "Thresholds do not transfer between framings -- re-run "
+        "scripts/calibrate_thresholds.py on the validation split with the same "
+        "flags."
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -127,6 +181,13 @@ def main(argv: list[str] | None = None) -> int:
         args.predictions,
     )
 
+    try:
+        predictions = apply_framing(predictions, args.label_framing, args.score)
+    except ScoreUnavailableError as exc:
+        logger.error("%s", exc)
+        return 2
+    logger.info("label framing %r, score %r", args.label_framing, args.score)
+
     thresholds = None
     threshold_source = "default 0.5 for every pathology"
     if args.thresholds:
@@ -137,6 +198,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         threshold_source = str(args.thresholds)
         logger.info("loaded %d calibrated thresholds", len(thresholds))
+        mismatch = _threshold_framing_mismatch(
+            args.thresholds, args.label_framing, args.score
+        )
+        if mismatch:
+            logger.error("%s", mismatch)
+            return 2
 
     report = evaluate_classification(
         predictions,

@@ -1,6 +1,6 @@
 > Source: `scripts/evaluate_stage1.py` (328 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-20
 
 # `scripts/evaluate_stage1.py`
 
@@ -20,6 +20,23 @@ python scripts/evaluate_stage1.py --predictions <test.npz> \
 
 ## Main functions
 `parse_args(argv)` (`:66`) · `main(argv) -> int` (`:102`) · `_write_plots(...)` (`:293`)
+
+## `--label-framing` / `--score` (2026-08-20)
+
+Hai flag mới, chuyển tiếp thẳng vào
+[`label_framing.apply_framing`](../training/evaluation/label_framing.py.doc.md)
+ngay sau khi load, **trước khi** đọc file ngưỡng.
+
+| flag | mặc định | ý nghĩa |
+|---|---|---|
+| `--label-framing` | `masked_polarity` | `study_presence` mới là framing để trích dẫn F1 |
+| `--score` | `conditional_positive` | `marginal_presence` = `mention × q_pos`, cần gate trong `.npz` |
+
+⚠ **`_threshold_framing_mismatch()` từ chối chạy** khi file ngưỡng được calibrate
+dưới framing/score khác. Hai framing có tập nhãn khác nhau, nên một ngưỡng fit ở
+bên này **vô nghĩa** ở bên kia — và nếu không chặn thì script chỉ in ra số khác,
+không báo lỗi, đúng cái bẫy mà `--uncertain-policy` đã có. File ngưỡng cũ (không
+có field này) chỉ được cho qua khi request đúng mặc định lịch sử.
 
 ## Calls / Called by
 Gọi: `evaluation.baselines` (`:32`), `.bootstrap` (`:33`),

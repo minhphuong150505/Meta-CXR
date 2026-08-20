@@ -27,6 +27,14 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from training.evaluation.label_framing import (  # noqa: E402
+    DEFAULT_FRAMING,
+    DEFAULT_SCORE,
+    FRAMINGS,
+    SCORES,
+    ScoreUnavailableError,
+    apply_framing,
+)
 from training.evaluation.schemas import ClassificationPredictions  # noqa: E402
 from training.evaluation.threshold_calibration import (  # noqa: E402
     DEFAULT_OBJECTIVE,
@@ -64,6 +72,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=1,
         help="Pathologies with fewer positives keep the 0.5 default.",
     )
+    parser.add_argument(
+        "--label-framing",
+        default=DEFAULT_FRAMING,
+        choices=sorted(FRAMINGS),
+        help="Which question the labels answer. 'masked_polarity' scores "
+        "polarity given the finding was mentioned (blank cells masked); "
+        "'study_presence' scores whether the study has the finding at all "
+        "(blank/uncertain = not present). Must match the value used at "
+        "evaluation time.",
+    )
+    parser.add_argument(
+        "--score",
+        default=DEFAULT_SCORE,
+        choices=sorted(SCORES),
+        help="'conditional_positive' uses the polarity head alone; "
+        "'marginal_presence' multiplies it by the mention gate and requires "
+        "mention_probabilities in the prediction file.",
+    )
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args(argv)
@@ -90,6 +116,15 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("%s contains no samples", args.predictions)
         return 2
 
+    try:
+        predictions = apply_framing(predictions, args.label_framing, args.score)
+    except ScoreUnavailableError as exc:
+        logger.error("%s", exc)
+        return 2
+
+    logger.info(
+        "label framing %r, score %r", args.label_framing, args.score
+    )
     logger.info(
         "calibrating %d pathologies on %d studies from split %r",
         predictions.num_pathologies,

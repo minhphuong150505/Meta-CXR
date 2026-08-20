@@ -1,6 +1,6 @@
 > Source: `scripts/calibrate_thresholds.py` (141 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-20
 
 # `scripts/calibrate_thresholds.py`
 
@@ -20,6 +20,14 @@ python scripts/calibrate_thresholds.py \
 
 ## Inputs / Outputs
 Vào: `.npz` validation. Ra: `thresholds.json`.
+
+## `--label-framing` / `--score` (2026-08-20)
+
+Giống `evaluate_stage1.py`. Framing được áp **trước** khi calibrate, và được ghi
+vào `metadata.source_metadata` của file JSON kết quả — đó chính là thứ
+`evaluate_stage1.py` đọc lại để từ chối cặp không khớp.
+
+⚠ Calibrate và evaluate **phải dùng cùng một cặp** `--label-framing` / `--score`.
 
 ## Calls / Called by
 Gọi: `training.evaluation.schemas` (`:30`), `.threshold_calibration` (`:31`),

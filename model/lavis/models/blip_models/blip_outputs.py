@@ -111,6 +111,15 @@ class BlipOutput(ModelOutput):
 
     classification_logits: Optional[torch.FloatTensor] = None
 
+    # [B, num_abnormalities] raw logits of the mention gate: "will the report
+    # mention this finding at all?". Always populated (MHCAC computes it
+    # unconditionally); whether it was TRAINED depends on lambda_gate or
+    # lambda_mention_conditioned_cls being > 0. Exposed so evaluation can score
+    # P(present) = sigmoid(mention) * q_positive, which is the quantity the
+    # study_presence label framing asks about -- classification_logits alone is
+    # conditional on mention and cannot answer it.
+    mention_logits: Optional[torch.FloatTensor] = None
+
     classification_mask: Optional[torch.BoolTensor] = None
 
     average_precision: Optional[torch.FloatTensor] = None 
