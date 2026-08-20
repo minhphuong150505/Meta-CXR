@@ -1,6 +1,6 @@
-> Source: `model/lavis/runners/runner_base.py` (1.229 dòng)
+> Source: `model/lavis/runners/runner_base.py` (1383 dòng)
 > Status: ✅ ACTIVE — ★
-> Last verified against source: 2026-08-15
+> Last verified against source: 2026-08-20
 
 # `runner_base.py`
 

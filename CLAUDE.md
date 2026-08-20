@@ -1368,6 +1368,35 @@ Both are logged every scored epoch — check which epoch each would pick before
 quoting either. `selection_mode` is deliberately absent from the YAML so
 RunnerBase infers `min`; an explicit `max` left behind would keep the worst epoch.
 
+⚠⚠ **An evaluate-only run used to score RANDOM WEIGHTS, silently. Fixed
+2026-08-20 — `run.resume_ckpt_path` is now mandatory for `run.evaluate=True`.**
+`eval_epoch` reloads `checkpoint_best.pth` only when `cur_epoch == "best"`, and
+the evaluate-only path passes `"provided"`, while `train()` guarded its
+checkpoint load with `if not self.evaluate_only`. So `run.evaluate=True` built
+the model, skipped every weight load, and produced a complete val+test metrics
+report from random initialisation in 108 s with no error and nothing in the log.
+The only tell was that the mention gate came out near-constant (0.334–0.668,
+per-label means identical on val and test to three decimals).
+
+`RunnerBase._load_eval_weights()` now loads `run.resume_ckpt_path` — weights
+only, no optimizer/scaler/epoch — and **raises** when neither it nor
+`load_finetuned`/`load_pretrained` is set. The correct invocation:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled python -m pretraining.train \
+    --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+    --options run.evaluate=True run.test_splits=[val,test] \
+      run.resume_ckpt_path=<run>/mimic_cxr_full_blip2/checkpoint_best.pth
+```
+
+Note `run.test_splits` is what an evaluate-only run reads (`valid_splits` is
+ignored — `runner_base.py:593`), so listing both splits gets val and test in one
+pass; files land as `{split}_predictions_epoch_provided.npz`. Setting
+`resume_ckpt_path` also makes `setup_output_dir` resolve **in place**, next to
+the checkpoint. Confirm it worked by grepping the log for
+`Loading evaluation weights from` — **zero matches means the run is worthless.**
+Pinned by `tests/test_evaluate_only_weights.py`.
+
 **Changing `selection_metric` on a resume silently disables `checkpoint_best`
 unless you also neutralise `best_agg_metric` in the checkpoint.** `train()`
 initialises it to `+inf` under mode `min` and `-inf` under `max`

@@ -717,6 +717,15 @@ class RunnerBase:
         self.log_config()
 
         if self.evaluate_only:
+            # eval_epoch() only reloads checkpoint_best when cur_epoch == "best",
+            # and an evaluate-only run passes "provided" -- so without this the
+            # run scores whatever weights the model was BUILT with, and emits a
+            # complete, plausible metrics report from random initialisation.
+            # Observed 2026-08-20: a full val+test pass finished in 108 s with
+            # no error, and the giveaway was only that the mention gate came out
+            # near-constant (0.334-0.668, per-label means identical on val and
+            # test to three decimals).
+            self._load_eval_weights()
             self.validate(
                 cur_epoch="provided",
                 best_agg_metric=best_agg_metric,
@@ -1123,6 +1132,70 @@ class RunnerBase:
             )
             model.load_state_dict(checkpoint["model"], strict=False)
         return model
+
+    def _load_eval_weights(self):
+        """Put trained weights into the model for an evaluate-only run.
+
+        Loads ``run.resume_ckpt_path`` -- weights only, no optimizer, scaler or
+        epoch state, since nothing is going to be trained.
+
+        Fails closed when there is no weight source at all: scoring a randomly
+        initialised model produces numbers that look like results, and the only
+        signal is that they are bad, which is indistinguishable from a model
+        that trained badly. ``load_finetuned`` / ``load_pretrained`` in the model
+        config are accepted as sources because the LAVIS builder has already
+        applied them by this point.
+        """
+        path = self.resume_ckpt_path
+        if path is None:
+            model_cfg = self.config.model_cfg if hasattr(self.config, "model_cfg") else {}
+            declared = bool(model_cfg.get("load_finetuned", False)) or bool(
+                model_cfg.get("load_pretrained", False)
+            )
+            if declared:
+                logging.warning(
+                    "evaluate-only run with no run.resume_ckpt_path; scoring the "
+                    "weights the model builder loaded (load_finetuned/"
+                    "load_pretrained). This is NOT a Stage-1 checkpoint."
+                )
+                return
+            raise ValueError(
+                "evaluate-only run has no weights to evaluate: run.resume_ckpt_path "
+                "is unset and the model config declares neither load_finetuned nor "
+                "load_pretrained. Pass "
+                "--options run.resume_ckpt_path=<...>/checkpoint_best.pth"
+            )
+
+        if is_url(path):
+            path = download_cached_file(path, check_hash=False, progress=True)
+        elif not os.path.isfile(path):
+            raise RuntimeError(f"checkpoint path is invalid: {path}")
+
+        logging.info("Loading evaluation weights from %s", path)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        model = self.unwrap_dist_model(self.model)
+        model_state = model.state_dict()
+        filtered, mismatched = {}, []
+        for key, value in checkpoint["model"].items():
+            if key in model_state and hasattr(value, "shape"):
+                if tuple(value.shape) != tuple(model_state[key].shape):
+                    mismatched.append((key, tuple(value.shape), tuple(model_state[key].shape)))
+                    continue
+            filtered[key] = value
+        if mismatched:
+            logging.warning(
+                "Skipping %d checkpoint tensor(s) with shape mismatch. First: %s",
+                len(mismatched),
+                mismatched[:8],
+            )
+        missing, unexpected = model.load_state_dict(filtered, strict=False)
+        logging.info(
+            "Loaded %d tensors for evaluation (epoch %s); %d missing, %d unexpected",
+            len(filtered),
+            checkpoint.get("epoch", "?"),
+            len(missing),
+            len(unexpected),
+        )
 
     def _load_checkpoint(self, url_or_filename):
         """
