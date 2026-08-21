@@ -1374,6 +1374,49 @@ A floor of 0.70 on val delivers 0.41 on test and throws away 84% of the recall.
 That ceiling belongs to the **model**, not the decision rule, so anyone asking
 for higher precision needs a training change, not a calibration flag.
 
+**Encoder fine-tuning WORKS — run_20260820_ft, 2026-08-21.** The 2026-08-20
+conclusion that "precision cannot be bought with a threshold; that ceiling
+belongs to the model" was right, and unfreezing the top of both vision encoders
+moved it. `model.encoder_finetune` released 31.85M of 181.3M frozen encoder
+parameters (ResNet50 `layer4` + projector, CLIP vision blocks 10-11 +
+`post_layernorm`) at `init_lr_enc` 1e-5 with `keep_batchnorm_eval`, and every
+kappa went to 1 in the same run. 10 epochs, `rc=0`, **15h33m**, 0 restarts,
+0 kernel faults, `max mem` 8,976 MiB.
+
+Paired bootstrap over the same 3,269 test studies, `study_presence` +
+`marginal_presence`, thresholds calibrated on val with the plateau rule:
+
+| | run_20260819_xmpoff (frozen) | run_20260820_ft | Δ, 95% CI |
+|---|---:|---:|:---:|
+| `macro_auroc` | 0.7441 | **0.7643** | **+0.0201 [+0.0136, +0.0263]** |
+| `positive_macro_f1` | 0.3397 | **0.3542** | **+0.0144 [+0.0053, +0.0236]** |
+| `positive_macro_precision` | 0.2776 | **0.2931** | **+0.0154 [+0.0073, +0.0238]** |
+| `positive_macro_recall` | 0.5006 | **0.5373** | **+0.0368 [+0.0205, +0.0535]** |
+
+**All four significant and all four in the same direction** — this is a better
+model, not a moved operating point, and it is qualitatively different from the
+plateau threshold change above, which traded 0.021 precision for 0.075 recall.
+AUROC improved on **14 of 14 labels**, biggest at `Pleural Other` +0.0800,
+`Lung Lesion` +0.0394, `Pneumothorax` +0.0302. The precision ceiling moved with
+it: a 0.70 val floor now delivers **0.5240** on test against 0.4074 before.
+
+⚠ **kappa and the unfreeze went in together, so their contributions are not
+separated.** The indirect argument is that kappa only moves the operating point
+and validation-fitted thresholds absorb that, whereas AUROC — which kappa cannot
+change in principle — is what moved. Attribute it to the unfreeze, but say that
+it is an inference, and run an ablation before publishing either as a cause.
+
+Cost: **+37% per epoch** (1.55 h vs 1.13 h), 15h33m vs 12h35m. VRAM +5.3%, so
+44% of the card is still free.
+
+⚠ **`checkpoint_best` is epoch 9, the LAST epoch, and val loss was still falling
+there** (1.8939 -> 1.8925 -> 1.8939 -> 1.8913 -> **1.8843**). Run 01 was flat and
+peaked mid-run at epoch 6. This model has not converged; more epochs is the
+cheapest remaining lever. The two loss values are not comparable across the runs
+because kappa changed the loss scale — the comparable thing is the shape.
+
+Full record: `Test/stage1_test_02/README.md` (git-ignored, on the dev box).
+
 **The matched training-side lever, not yet run:
 `model.loss.lambda_mention_conditioned_cls`.** It trains the joint
 `-log(1-m)` / `-log(m) - log(q[y])`, which is *exactly* the quantity
