@@ -611,6 +611,32 @@ tách được đóng góp của từng cái**; lập luận gián tiếp là ka
 
 Chi tiết đầy đủ: `Test/stage1_test_02/README.md` (git-ignored).
 
+#### ⚠ Train thêm epoch KHÔNG giúp — đã đo, `run_20260821_ext` (2026-08-21)
+
+Val loss vẫn đang giảm ở epoch 9 nên đã thử resume với `run.max_epoch=15`. Epoch
+10–14 chạy **7h32m**, `rc=0`, 0 restart, 0 kernel fault, và **không thu được gì**.
+
+- Không epoch nào vượt epoch 9 theo `val_loss`; `checkpoint_best` không bị ghi đè
+  lần nào. Train loss vẫn giảm (1.848 → 1.836) trong khi khoảng cách train–val nới
+  từ +0.0363 lên +0.0517.
+- Trên **val**, epoch 14 hơn epoch 9 macro AUROC **+0.0082** [+0.0015, +0.0148],
+  P = 0.995 — CI không cắt 0. Nhưng trên **test** thì thành **−0.0005**
+  [−0.0043, +0.0031]. **Không lặp lại được.**
+- Test, bootstrap ghép cặp cùng 3,269 study: ΔAUROC −0.0005 · ΔF1 −0.0067 ·
+  Δprecision +0.0015 — **cả ba CI đều cắt 0**. Chỉ có Δrecall **−0.0826** và
+  Δspecificity **+0.0244** là có ý nghĩa, và đó chỉ là ngưỡng calibrate lại dịch
+  điểm vận hành. AUROC cải thiện trên **6/14 nhãn** (tung đồng xu); lần mở băng
+  encoder cải thiện 14/14.
+
+**Kết luận: phiên bản 02 / epoch 9 là mô hình Stage-1 cuối cùng.** Ba bài học
+đáng mang đi: (1) CI val sát 0 trên ~1,800 mẫu thì coi như chưa có kết luận;
+(2) kiểm tra macro với micro trước khi tin một mức tăng macro — ở đây val macro
+AUROC tăng còn micro AUROC *giảm*, tức "lợi ích" nằm ở vài nhãn hiếm nhiễu nhất;
+(3) tách nhỏ điểm số — bỏ mention gate ra thì epoch 14 **thua** epoch 9 trên `q`
+(0.7304 vs 0.7354), nên chênh lệch chỉ là may mắn ở tích `m × q`.
+
+Chi tiết đầy đủ: `Test/stage1_test_03/README.md` (git-ignored).
+
 ### Stage 1 — test split, `run_20260819_xmpoff` (2026-08-20) — phiên bản 01
 
 Run 10 epoch trên toàn bộ MIMIC-CXR, `checkpoint_best` chọn ở epoch 6 theo `val_loss`.
