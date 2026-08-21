@@ -584,7 +584,34 @@ phát sinh từ Phase 3. Test CPU không thay thế smoke Stage-1/Stage-2/XAI tr
 
 ## Kết quả và cảnh báo metric
 
-### Stage 1 — test split, `run_20260819_xmpoff` (2026-08-20)
+### Stage 1 — test split, `run_20260820_ft` (2026-08-21) — PHIÊN BẢN HIỆN TẠI
+
+Mở băng phần đỉnh của cả hai vision encoder (31.85M / 181.3M tham số đóng băng, ở
+`init_lr_enc` 1e-5) và hạ mọi kappa về 1. 10 epoch, `rc=0`, 15h33m, 0 restart,
+0 kernel fault. Best epoch **9 — epoch cuối**, và val loss **vẫn đang giảm** ở đó.
+
+`study_presence` + `marginal_presence`, ngưỡng calibrate trên val (plateau, minpos 5):
+
+| Metric | Giá trị | 95% CI |
+|---|---:|:---:|
+| `macro_auroc` | **0.7643** | [0.7545, 0.7740] |
+| `positive_macro_f1` | **0.3542** | [0.3418, 0.3647] |
+| `macro_auprc` | 0.3203 | [0.3108, 0.3362] |
+| `positive_macro_recall` | 0.5373 | [0.5184, 0.5555] |
+| `positive_macro_precision` | 0.2931 | [0.2816, 0.3038] |
+
+**So với phiên bản trước, bootstrap ghép cặp trên cùng 3,269 study:**
+ΔAUROC **+0.0201** [+0.0136, +0.0263] · ΔF1 **+0.0144** [+0.0053, +0.0236] ·
+Δprecision **+0.0154** [+0.0073, +0.0238] · Δrecall **+0.0368** [+0.0205, +0.0535].
+**Cả bốn đều có ý nghĩa và cùng chiều** — mô hình tốt hơn thật, không phải dịch điểm
+vận hành. AUROC tăng trên **14/14 nhãn**. Trần precision nhấc từ ~0.40 lên **~0.52**.
+
+Chi phí: **+37%** thời gian mỗi epoch. ⚠ kappa và mở băng đi chung một run nên **chưa
+tách được đóng góp của từng cái**; lập luận gián tiếp là kappa không đổi được AUROC.
+
+Chi tiết đầy đủ: `Test/stage1_test_02/README.md` (git-ignored).
+
+### Stage 1 — test split, `run_20260819_xmpoff` (2026-08-20) — phiên bản 01
 
 Run 10 epoch trên toàn bộ MIMIC-CXR, `checkpoint_best` chọn ở epoch 6 theo `val_loss`.
 Test split (3,269 study) được giữ kín và chấm **đúng một lần**; ngưỡng calibrate **chỉ
