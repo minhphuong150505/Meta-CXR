@@ -991,6 +991,26 @@ Three traps it encodes, each found the hard way on 2026-08-18:
   process stayed alive. It is unbuffered and immediate. The script trips on
   6 minutes of <=5% utilisation independently of the log.
 
+`EXTRA_OPTS` appends one-off `--options KEY=VALUE` pairs, last, so they beat
+what the supervisor sets itself. It exists because varying a single knob
+otherwise meant editing the tracked YAML, which then misdescribes every other
+run made from it. Extending a finished run is the motivating case:
+
+```bash
+OUT=$HOME/<run> LOG=$HOME/<run>.log WID=<id> EXTRA_OPTS="run.max_epoch=15" \
+    setsid nohup bash ~/supervise.sh >>$HOME/<run>.supervise.log 2>&1 &
+```
+
+⚠ **`LinearWarmupCosineLRScheduler` is stateless** — it computes the LR from
+`cur_epoch`, `max_epoch` and `steps_per_epoch` with no counter to restore. So
+raising `max_epoch` on a resume reshapes the whole curve, including the part
+already trained, and the join is a **warm restart, not a continuation**.
+Measured for the 10 -> 15 case at 3,480 updates/epoch: the finished run ended at
+`min_lr` 2.00e-5 and the resume re-enters at **4.06e-5, a 2.03x jump**, then
+decays back. That is a legitimate SGDR-style restart and it is *not* the same
+as a clean 15-epoch cosine (which would have run epoch 9 at 4.84e-5 rather than
+2.21e-5). Describe it by its real name.
+
 It also falls back on OOM (halve batch, double accum, effective batch
 unchanged), resumes from `checkpoint_last`, and aborts after three consecutive
 failures that produce no new checkpoint. `ADOPT_PID=<pid>` attaches it to an

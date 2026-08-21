@@ -24,6 +24,13 @@ CFG="${CFG:-pretraining/configs/mimic_cxr_full.yaml}"
 OUT="${OUT:-$HOME/run_stage1}"          # always set this explicitly at launch
 LOG="${LOG:-$OUT.log}"
 WID="${WID:-stage1}"                    # wandb run id; set it per run
+# Space-separated extra `--options KEY=VALUE` pairs for a one-off variation of
+# the shipped recipe, e.g. EXTRA_OPTS="run.max_epoch=15" to extend a finished
+# run. Appended LAST, so they beat the ones the supervisor sets itself. Without
+# this the only way to vary a single knob was to edit the tracked YAML, which
+# then misdescribes every other run made from it. Word splitting here is
+# deliberate: the value is a list of options, not one option.
+EXTRA_OPTS="${EXTRA_OPTS:-}"
 
 # stdout is BLOCK-BUFFERED here: the run writes to a file, not a tty, so
 # MetricLogger print() lines land in ~8 KB bursts -- measured 2026-08-18 at one
@@ -114,6 +121,11 @@ while [ "$MAX_ATTEMPTS" -eq 0 ] || [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
             say "attempt $attempt: RESUMING from checkpoint_last (batch $BATCH x accum $ACCUM)"
         else
             say "attempt $attempt: FRESH start (batch $BATCH x accum $ACCUM)"
+        fi
+        if [ -n "$EXTRA_OPTS" ]; then
+            # shellcheck disable=SC2206  # splitting is the point
+            opts+=($EXTRA_OPTS)
+            say "  extra options: $EXTRA_OPTS"
         fi
         setsid env CUDA_VISIBLE_DEVICES=0 \
             PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
