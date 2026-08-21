@@ -1429,6 +1429,58 @@ it is an inference, and run an ablation before publishing either as a cause.
 Cost: **+37% per epoch** (1.55 h vs 1.13 h), 15h33m vs 12h35m. VRAM +5.3%, so
 44% of the card is still free.
 
+**DEEPENED 2026-08-21 — `run_20260821_deep`, RUNNING, no result yet.** The
+shallow release is the only lever that ever moved this model rather than its
+operating point, and every cheaper one is now exhausted by measurement (more
+epochs: nothing; thresholds: at 97% of their ceiling; abstention: nothing at a
+per-label operating point). So the config now also releases ResNet50 `layer3`
+and CLIP vision blocks 8-9: **53.12M of 181.3M**, 158 parameters, 8 patterns.
+
+**Nothing else changed** — kappa, batch 16 x 4, `init_lr_enc` 1e-5, 10 epochs and
+every loss weight are identical to `run_20260820_ft`. This is therefore a clean
+ablation of unfreeze *depth*, unlike that run where kappa moved with it.
+
+Smoke measured on GPU before launch: `max mem` **9,847 MiB** against 8,976 for
+the shallow release — **+871 MiB, 61% of the card**, no OOM. Step time 0.32-0.34
+s/it on both the smoke and the first 800 iterations of the real run, with epoch
+ETA ~2:00. ⚠ Do not read that as "deeper is faster" than the 0.40 s/it implied by
+`run_20260820_ft`'s 15h33m — the two were measured under different dataloader
+conditions and the honest comparison is this run's own finished wall clock.
+
+⚠ **`init_lr_enc` 1e-5 applies to the shallow and the deep slices alike.** The
+standard practice is layer-wise LR decay — lower LR the deeper you go, because
+early features are more general and more easily destroyed — and this repo cannot
+express it: `runner_base.py` builds a single `encoder_decay`/`encoder_no_decay`
+pair, routed by membership in `encoder_finetune_param_names`. If this run comes
+out *worse* than the shallow one, that is the first hypothesis to test, and it
+needs a per-pattern LR group, not a config change.
+
+⚠ **`setup_output_dir` nests the run directory when `$OUT` already exists**
+(`runner_base.py:588` appends a timestamp), and `scripts/supervise_stage1.sh`
+does `mkdir -p "$OUT"` at line 65. So pointing `OUT` at the inner
+`mimic_cxr_full_blip2` directory for a **fresh** run makes LAVIS create
+`mimic_cxr_full_blip2/mimic_cxr_full_blip2_<timestamp>/` inside it, and the
+supervisor's resume detection then never finds `$OUT/checkpoint_last.pth`.
+Pointing `OUT` at the *outer* directory avoids the nesting but breaks resume the
+same way, one level up. The working launch for a fresh run is therefore two
+steps — start attempt 1 directly with `run.output_dir=<outer>`, then attach the
+supervisor to it with `OUT=<outer>/mimic_cxr_full_blip2 ADOPT_PID=<main pid>`:
+
+```bash
+setsid nohup env CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled <venv>/bin/python \
+    -m pretraining.train --cfg-path pretraining/configs/mimic_cxr_full.yaml \
+    --options run.output_dir=$HOME/<run> > $HOME/<run>.log 2>&1 < /dev/null &
+# the MAIN pid is the one with ppid 1 -- pgrep returns DataLoader workers too:
+ps -eo pid,ppid,cmd | grep "[p]retraining.train" | awk '$2==1 {print $1}'
+OUT=$HOME/<run>/mimic_cxr_full_blip2 LOG=$HOME/<run>.log WID=<id> \
+    BATCH=16 ACCUM=4 ADOPT_PID=<main pid> \
+    setsid nohup bash ~/supervise.sh >>$HOME/<run>.supervise.log 2>&1 &
+```
+
+Every supervisor restart after that resumes correctly, because
+`run.resume_ckpt_path` then exists and `setup_output_dir` takes its resume-in-
+place branch (`runner_base.py:580`) instead of the timestamping one.
+
 ⚠ **`checkpoint_best` is epoch 9, the LAST epoch, and val loss was still falling
 there** (1.8939 -> 1.8925 -> 1.8939 -> 1.8913 -> **1.8843**). Run 01 was flat and
 peaked mid-run at epoch 6. The two loss values are not comparable across the runs
