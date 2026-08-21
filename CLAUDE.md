@@ -1431,11 +1431,45 @@ Cost: **+37% per epoch** (1.55 h vs 1.13 h), 15h33m vs 12h35m. VRAM +5.3%, so
 
 ⚠ **`checkpoint_best` is epoch 9, the LAST epoch, and val loss was still falling
 there** (1.8939 -> 1.8925 -> 1.8939 -> 1.8913 -> **1.8843**). Run 01 was flat and
-peaked mid-run at epoch 6. This model has not converged; more epochs is the
-cheapest remaining lever. The two loss values are not comparable across the runs
+peaked mid-run at epoch 6. The two loss values are not comparable across the runs
 because kappa changed the loss scale — the comparable thing is the shape.
 
 Full record: `Test/stage1_test_02/README.md` (git-ignored, on the dev box).
+
+**MORE EPOCHS DO NOT HELP — measured 2026-08-21, `run_20260821_ext`.** The
+sentence that used to stand here ("this model has not converged; more epochs is
+the cheapest remaining lever") was an inference from a falling val loss and it is
+now falsified. Resuming `run_20260820_ft` with `run.max_epoch=15` ran epochs
+10-14 in **7h32m**, `rc=0`, 0 restarts, 0 kernel faults — and produced nothing.
+
+- **No epoch beat epoch 9 on val loss.** `checkpoint_best.pth` was never
+  rewritten (mtime unchanged for the whole 7.5 h). Train loss kept falling
+  1.848 -> 1.836 while the train/val gap widened +0.0363 -> +0.0517.
+- **Validation macro AUROC said otherwise, and it was wrong.** Scored under
+  `study_presence` + `marginal_presence`, epoch 14 beat epoch 9 by
+  **+0.0082, 95% CI [+0.0015, +0.0148]**, P = 0.995 on 1,808 val studies. That
+  is a genuine signal by the usual test, and it **did not replicate**: on test
+  the same comparison is **-0.0005 [-0.0043, +0.0031]**.
+- Test, paired bootstrap over the same 3,269 studies: `macro_auroc` -0.0005,
+  `positive_macro_f1` -0.0067, `positive_macro_precision` +0.0015 — **all three
+  CIs cross zero**. The only significant moves are `recall` **-0.0826** and
+  `specificity` **+0.0244**, which is the recalibrated threshold shifting the
+  operating point, not a better model. AUROC improved on **6 of 14** labels,
+  i.e. a coin flip; the encoder unfreeze improved 14 of 14.
+
+Three transferable lessons, all cheap to reuse:
+
+1. **A val result whose CI barely excludes zero on ~1,800 studies is "not
+   established", not "improved".** Treat [+0.0015, +0.0148] as a null.
+2. **Check macro against micro before believing a macro gain.** Here val macro
+   AUROC rose while val micro AUROC *fell* (0.8461 -> 0.8406): the apparent gain
+   lived in a few rare labels, which are exactly the noisiest estimates.
+3. **Decompose the score.** Removing the mention gate showed epoch 14 was
+   *worse* than epoch 9 on `q` alone (0.7304 vs 0.7354) — the whole difference
+   was luck in the product `m x q`, which is not a mechanism.
+
+**Run 02 / epoch 9 stands as the final Stage-1 model.** Full record:
+`Test/stage1_test_03/README.md` (git-ignored, on the dev box).
 
 **The matched training-side lever, not yet run:
 `model.loss.lambda_mention_conditioned_cls`.** It trains the joint
