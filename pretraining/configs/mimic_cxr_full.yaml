@@ -25,10 +25,27 @@ model:
   # 1.8916 -> 1.8902, one twentieth as far. The trainable part had saturated and
   # the part that carries image information could not move at all.
   #
-  # Only the top of each encoder is released -- 31.85M of 181.3M frozen
-  # parameters (+10.5% on the 301.9M already trainable). Backprop then stops at
-  # ResNet50's layer4 and CLIP's block 10, so the retained activations are the
-  # small late feature maps, not the whole network.
+  # DEEPENED 2026-08-21. The shallow release (layer4 + CLIP blocks 10-11,
+  # 31.85M) is the only intervention so far that moved the model rather than the
+  # operating point: paired bootstrap on test gave AUROC +0.0201
+  # [+0.0136, +0.0263] with all four headline metrics significant and AUROC up on
+  # 14 of 14 labels, and it lifted the precision ceiling from ~0.40 to ~0.52.
+  # Every cheaper lever has since been exhausted and measured: more epochs buy
+  # nothing (run_20260821_ext, 7h32m, all CIs cross zero), thresholding is at 97%
+  # of its own ceiling, and abstention adds nothing at a per-label operating
+  # point because the model's confidence does not identify its own errors
+  # (per-label AUROC of a trained error predictor 0.6078 vs 0.6149 for the raw
+  # score). So the lever that worked is being pushed further.
+  #
+  # ~53.1M of 181.3M frozen parameters (+17.6% on the 301.9M already trainable).
+  # Backprop now reaches ResNet50's layer3 and CLIP's block 8, so more
+  # activations are retained -- VRAM headroom was 44% of the 16 GB card at 8,976
+  # MiB, which is what this is spending.
+  #
+  # ⚠ ONE CHANGE ONLY vs run_20260820_ft. kappa, batch, LR, epochs and every loss
+  # weight are untouched, so this run is a clean ablation of unfreeze depth --
+  # unlike run_20260820_ft, where kappa and the unfreeze moved together and their
+  # contributions could not be separated.
   #
   # ⚠ These names are exact, taken from model.named_parameters() on the built
   # model; a pattern matching nothing RAISES rather than silently unfreezing
@@ -37,8 +54,11 @@ model:
   encoder_finetune:
     enabled: true
     patterns:
+      - visual_encoder.encoder.encoder.layer3              # ResNet50 stage 3, ~7.1M   NEW
       - visual_encoder.encoder.encoder.layer4              # ResNet50 stage 4, 14.965M
       - visual_encoder.projector                           #                    2.708M
+      - pubmedclip.model.vision_model.encoder.layers.8     # CLIP ViT block 8,   7.088M NEW
+      - pubmedclip.model.vision_model.encoder.layers.9     # CLIP ViT block 9,   7.088M NEW
       - pubmedclip.model.vision_model.encoder.layers.10    # CLIP ViT block 10,  7.088M
       - pubmedclip.model.vision_model.encoder.layers.11    # CLIP ViT block 11,  7.088M
       - pubmedclip.model.vision_model.post_layernorm       #                    0.002M
