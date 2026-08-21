@@ -637,6 +637,27 @@ AUROC tăng còn micro AUROC *giảm*, tức "lợi ích" nằm ở vài nhãn h
 
 Chi tiết đầy đủ: `Test/stage1_test_03/README.md` (git-ignored).
 
+#### 🔄 `run_20260821_deep` — mở băng sâu hơn, ĐANG CHẠY, chưa có kết quả
+
+Mở băng thêm ResNet50 `layer3` và CLIP block 8–9: **31.85M → 53.12M** trên tổng
+181.3M tham số encoder (158 tham số, 8 pattern). Khởi động 2026-08-21 22:55.
+
+Lý do: mở băng nông là **đòn bẩy duy nhất từng dịch chuyển chính mô hình** chứ
+không phải điểm vận hành (AUROC +0.0201, 14/14 nhãn, trần precision 0.40 → 0.52).
+Mọi đòn bẩy rẻ hơn đã bị đo và loại: train thêm epoch không được gì, ngưỡng đã đạt
+97% trần của nó, abstention không thêm gì ở điểm vận hành theo nhãn.
+
+⚠ **Đây là thay đổi DUY NHẤT so với `run_20260820_ft`** — kappa, batch 16×4,
+`init_lr_enc` 1e-5, 10 epoch và mọi trọng số loss đều giữ nguyên. Nên đây là
+**ablation sạch về độ sâu mở băng**, khác với run trước khi kappa đi cùng.
+
+Đo trước khi phóng: `max mem` **9,847 MiB** (so với 8,976 của bản nông) — **+871
+MiB, 61% card**, không OOM. 0.32–0.34 s/it, ETA mỗi epoch ~2 giờ.
+
+⚠ `init_lr_enc` 1e-5 áp chung cho cả tầng nông lẫn tầng sâu. Chuẩn mực là
+layer-wise LR decay và repo hiện chưa biểu diễn được (chỉ có một nhóm optimizer
+cho encoder). Nếu run này **tệ hơn** bản nông, đây là nghi phạm đầu tiên.
+
 ### Stage 1 — test split, `run_20260819_xmpoff` (2026-08-20) — phiên bản 01
 
 Run 10 epoch trên toàn bộ MIMIC-CXR, `checkpoint_best` chọn ở epoch 6 theo `val_loss`.
