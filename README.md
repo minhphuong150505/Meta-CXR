@@ -637,26 +637,58 @@ AUROC tăng còn micro AUROC *giảm*, tức "lợi ích" nằm ở vài nhãn h
 
 Chi tiết đầy đủ: `Test/stage1_test_03/README.md` (git-ignored).
 
-#### 🔄 `run_20260821_deep` — mở băng sâu hơn, ĐANG CHẠY, chưa có kết quả
+#### ❌ `run_20260821_deep` — mở băng sâu hơn KHÔNG giúp gì (đo 2026-08-22)
 
 Mở băng thêm ResNet50 `layer3` và CLIP block 8–9: **31.85M → 53.12M** trên tổng
-181.3M tham số encoder (158 tham số, 8 pattern). Khởi động 2026-08-21 22:55.
+181.3M tham số encoder (158 tham số, 8 pattern). Đây là thay đổi **duy nhất** so
+với `run_20260820_ft` — kappa, batch 16×4, `init_lr_enc` 1e-5, 10 epoch và mọi
+trọng số loss giữ nguyên — nên là **ablation sạch về độ sâu mở băng**.
 
-Lý do: mở băng nông là **đòn bẩy duy nhất từng dịch chuyển chính mô hình** chứ
-không phải điểm vận hành (AUROC +0.0201, 14/14 nhãn, trần precision 0.40 → 0.52).
-Mọi đòn bẩy rẻ hơn đã bị đo và loại: train thêm epoch không được gì, ngưỡng đã đạt
-97% trần của nó, abstention không thêm gì ở điểm vận hành theo nhãn.
+Run chạy hết sạch: 10/10 epoch, `rc=0`, **14h03m**, 0 lần restart, 0 kernel
+fault, `max mem` **9,839 MiB** (đúng con số 9,847 đo trước khi phóng).
 
-⚠ **Đây là thay đổi DUY NHẤT so với `run_20260820_ft`** — kappa, batch 16×4,
-`init_lr_enc` 1e-5, 10 epoch và mọi trọng số loss đều giữ nguyên. Nên đây là
-**ablation sạch về độ sâu mở băng**, khác với run trước khi kappa đi cùng.
+Bootstrap **ghép cặp** trên cùng 3,269 study test, 2,000 lần lấy mẫu, framing
+`study_presence` + `marginal_presence`, mỗi run dùng ngưỡng calibrate trên val
+của chính nó:
 
-Đo trước khi phóng: `max mem` **9,847 MiB** (so với 8,976 của bản nông) — **+871
-MiB, 61% card**, không OOM. 0.32–0.34 s/it, ETA mỗi epoch ~2 giờ.
+| | `run_20260820_ft` (nông) | `run_20260821_deep` | Δ, 95% CI |
+|---|---:|---:|:---:|
+| `macro_auroc` | 0.7643 | 0.7692 | +0.0049 [−0.0003, +0.0100] |
+| `micro_auroc` | 0.8166 | 0.8187 | **+0.0021 [+0.0001, +0.0040]** |
+| `positive_macro_f1` | 0.3542 | 0.3518 | −0.0023 [−0.0128, +0.0088] |
+| `positive_macro_precision` | 0.2931 | 0.3008 | +0.0077 [−0.0031, +0.0204] |
+| `positive_macro_recall` | 0.5373 | 0.4436 | **−0.0937 [−0.1106, −0.0769]** |
+| `macro_specificity` | 0.8020 | 0.8395 | **+0.0375 [+0.0343, +0.0407]** |
 
-⚠ `init_lr_enc` 1e-5 áp chung cho cả tầng nông lẫn tầng sâu. Chuẩn mực là
-layer-wise LR decay và repo hiện chưa biểu diễn được (chỉ có một nhóm optimizer
-cho encoder). Nếu run này **tệ hơn** bản nông, đây là nghi phạm đầu tiên.
+**`macro_auroc` không vượt qua 0.** Hai thay đổi lớn duy nhất có ý nghĩa là
+recall giảm và specificity tăng — đó là **điểm vận hành dịch chuyển**, không phải
+mô hình tốt hơn; cùng chữ ký với `run_20260821_ext`, và ngược hẳn với lần mở băng
+nông nơi cả bốn chỉ số cùng đi lên. `micro_auroc` vượt 0 nhưng chỉ +0.0021, quá
+nhỏ để hành động. Per-label AUROC: deep thắng **10/14** nhãn, mean +0.0049
+(binomial P ≈ 0.09) — so với **14/14** của lần mở băng nông. `macro_auprc`
+0.3203 → 0.3269.
+
+⚠ **`run_20260820_ft` / epoch 9 vẫn là mô hình Stage-1 cuối cùng.** `val_loss`
+của run deep thấp hơn ở **mọi** epoch được chấm (best 1.8739 so với 1.8843) mà
+vẫn không cho mô hình test tốt hơn — thêm một lý do đừng chọn checkpoint chỉ
+bằng val loss ở đây.
+
+⚠ F1 tụt chủ yếu do calibration chứ không phải mô hình: ngưỡng `Fracture` ra
+**0.407** trên deep so với 0.235 trên nông (chỉ 18 positive trên val), sang test
+thành precision 0.043 / recall 0.011, trong khi AUROC gần như y hệt (0.6670 vs
+0.6657). Với nhãn hiếm, hãy coi F1 dao động là nhiễu ngưỡng cho tới khi AUROC
+đồng ý.
+
+⚠ `init_lr_enc` 1e-5 áp chung cho cả tầng nông lẫn tầng sâu, và đây là thứ phải
+sửa đầu tiên nếu ai muốn thử lại. Chuẩn mực là layer-wise LR decay và repo hiện
+chưa biểu diễn được (chỉ có một nhóm optimizer cho encoder). Nên kết quả trên là
+bằng chứng chống lại **cấu hình sâu này**, không phải chống lại độ sâu nói chung
+— muốn thử lại cần thêm nhóm LR theo pattern, tức sửa code chứ không phải sửa
+config.
+
+Thời gian: 14h03m so với 15h33m của bản nông. ⚠ Đừng đọc thành "sâu hơn thì
+nhanh hơn" — hai run gặp điều kiện dataloader khác nhau và không run nào là phép
+đo throughput có kiểm soát.
 
 ### Stage 1 — test split, `run_20260819_xmpoff` (2026-08-20) — phiên bản 01
 

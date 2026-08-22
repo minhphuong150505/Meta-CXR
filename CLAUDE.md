@@ -1429,31 +1429,70 @@ it is an inference, and run an ablation before publishing either as a cause.
 Cost: **+37% per epoch** (1.55 h vs 1.13 h), 15h33m vs 12h35m. VRAM +5.3%, so
 44% of the card is still free.
 
-**DEEPENED 2026-08-21 — `run_20260821_deep`, RUNNING, no result yet.** The
-shallow release is the only lever that ever moved this model rather than its
-operating point, and every cheaper one is now exhausted by measurement (more
-epochs: nothing; thresholds: at 97% of their ceiling; abstention: nothing at a
-per-label operating point). So the config now also releases ResNet50 `layer3`
-and CLIP vision blocks 8-9: **53.12M of 181.3M**, 158 parameters, 8 patterns.
+**DEEPENING THE UNFREEZE DOES NOT HELP — measured 2026-08-22,
+`run_20260821_deep`.** The shallow release was the only lever that ever moved
+this model rather than its operating point, so the config also released ResNet50
+`layer3` and CLIP vision blocks 8-9: **53.12M of 181.3M**, 158 parameters, 8
+patterns. **Nothing else changed** — kappa, batch 16 x 4, `init_lr_enc` 1e-5, 10
+epochs and every loss weight identical to `run_20260820_ft` — so this is a clean
+ablation of unfreeze *depth*, unlike that run where kappa moved with it. The run
+completed cleanly: 10/10 epochs, `rc=0`, **14h03m**, 0 restarts, 0 kernel faults,
+`max mem` **9,839 MiB** (the 9,847 the smoke predicted).
 
-**Nothing else changed** — kappa, batch 16 x 4, `init_lr_enc` 1e-5, 10 epochs and
-every loss weight are identical to `run_20260820_ft`. This is therefore a clean
-ablation of unfreeze *depth*, unlike that run where kappa moved with it.
+Paired bootstrap over the same 3,269 test studies, 2,000 resamples,
+`study_presence` + `marginal_presence`, each run using thresholds calibrated on
+its own validation split with the plateau rule:
 
-Smoke measured on GPU before launch: `max mem` **9,847 MiB** against 8,976 for
-the shallow release — **+871 MiB, 61% of the card**, no OOM. Step time 0.32-0.34
-s/it on both the smoke and the first 800 iterations of the real run, with epoch
-ETA ~2:00. ⚠ Do not read that as "deeper is faster" than the 0.40 s/it implied by
-`run_20260820_ft`'s 15h33m — the two were measured under different dataloader
-conditions and the honest comparison is this run's own finished wall clock.
+| | run_20260820_ft (shallow) | run_20260821_deep | Δ, 95% CI |
+|---|---:|---:|:---:|
+| `macro_auroc` | 0.7643 | 0.7692 | +0.0049 [-0.0003, +0.0100] |
+| `micro_auroc` | 0.8166 | 0.8187 | **+0.0021 [+0.0001, +0.0040]** |
+| `positive_macro_f1` | 0.3542 | 0.3518 | -0.0023 [-0.0128, +0.0088] |
+| `positive_macro_precision` | 0.2931 | 0.3008 | +0.0077 [-0.0031, +0.0204] |
+| `positive_macro_recall` | 0.5373 | 0.4436 | **-0.0937 [-0.1106, -0.0769]** |
+| `macro_specificity` | 0.8020 | 0.8395 | **+0.0375 [+0.0343, +0.0407]** |
 
-⚠ **`init_lr_enc` 1e-5 applies to the shallow and the deep slices alike.** The
-standard practice is layer-wise LR decay — lower LR the deeper you go, because
-early features are more general and more easily destroyed — and this repo cannot
-express it: `runner_base.py` builds a single `encoder_decay`/`encoder_no_decay`
-pair, routed by membership in `encoder_finetune_param_names`. If this run comes
-out *worse* than the shallow one, that is the first hypothesis to test, and it
-needs a per-pattern LR group, not a config change.
+`macro_auroc` does not clear zero. The only large significant moves are recall
+down and specificity up, which is the **operating point shifting**, not a better
+model — the same signature as `run_20260821_ext` below, and the opposite of the
+shallow unfreeze, where all four moved together. `micro_auroc` clears zero at
++0.0021, which is too small to act on. Per-label AUROC: deep wins **10 of 14**,
+mean +0.0049 (binomial P ≈ 0.09) — against **14 of 14** for the shallow
+unfreeze. `macro_auprc` 0.3203 -> 0.3269.
+
+⚠ **`run_20260820_ft` / epoch 9 remains the Stage-1 model.** Nothing about the
+deep run justifies switching, and its own `checkpoint_best` is again epoch 9,
+the last epoch, at val loss **1.8739** (5-9: 1.8837, 1.8794, 1.8836, 1.8824,
+1.8739). Val loss is lower than the shallow run's at every scored epoch, and
+that did **not** translate into a better test model — one more reason not to
+select on val loss alone here.
+
+⚠ The F1 drop is mostly a calibration artefact, not a model difference:
+`Fracture`'s threshold calibrated to **0.407** on deep against 0.235 on shallow
+(18 val positives), which on test gives precision 0.043 / recall 0.011, while
+its AUROC is unchanged (0.6670 vs 0.6657). Read a per-label F1 swing on the rare
+labels as threshold noise until the AUROC agrees with it.
+
+Reproduce with `scripts/calibrate_thresholds.py` then `scripts/evaluate_stage1.py`
+using `--label-framing study_presence --score marginal_presence --selection
+plateau --plateau-fraction 0.95 --min-positive 5`; the shallow run reproduces its
+recorded 0.3542 / 0.7643 exactly under that invocation, which is what makes the
+comparison valid. Artifacts live in `~/eval_deep/` on the training host
+(git-ignored — they are patient-data derivatives).
+
+Cost: the deep run finished in **14h03m** against the shallow run's 15h33m, and
+its `max mem` was 9,839 MiB against 8,976 (+9.6%, 61% of the card). ⚠ Do not
+read that wall clock as "deeper is faster" — the two runs met different
+dataloader conditions and neither was a controlled throughput measurement.
+
+⚠ **`init_lr_enc` 1e-5 applied to the shallow and the deep slices alike, and
+that is the first thing to fix if anyone retries this.** Standard practice is
+layer-wise LR decay — lower LR the deeper you go, because early features are more
+general and more easily destroyed — and this repo cannot express it:
+`runner_base.py` builds a single `encoder_decay`/`encoder_no_decay` pair, routed
+by membership in `encoder_finetune_param_names`. The result above is therefore
+evidence against *this* deep configuration, not against depth in general; a
+retry needs a per-pattern LR group, which is a code change, not a config one.
 
 ⚠ **`setup_output_dir` nests the run directory when `$OUT` already exists**
 (`runner_base.py:588` appends a timestamp), and `scripts/supervise_stage1.sh`
@@ -1481,10 +1520,12 @@ Every supervisor restart after that resumes correctly, because
 `run.resume_ckpt_path` then exists and `setup_output_dir` takes its resume-in-
 place branch (`runner_base.py:580`) instead of the timestamping one.
 
-⚠ **`checkpoint_best` is epoch 9, the LAST epoch, and val loss was still falling
-there** (1.8939 -> 1.8925 -> 1.8939 -> 1.8913 -> **1.8843**). Run 01 was flat and
-peaked mid-run at epoch 6. The two loss values are not comparable across the runs
-because kappa changed the loss scale — the comparable thing is the shape.
+⚠ **`run_20260820_ft`'s `checkpoint_best` is epoch 9, the LAST epoch, and val
+loss was still falling there** (1.8939 -> 1.8925 -> 1.8939 -> 1.8913 ->
+**1.8843**). Run 01 was flat and peaked mid-run at epoch 6. The two loss values
+are not comparable across the runs because kappa changed the loss scale — the
+comparable thing is the shape. `run_20260821_ext` below settles what that
+falling curve was worth: nothing.
 
 Full record: `Test/stage1_test_02/README.md` (git-ignored, on the dev box).
 
