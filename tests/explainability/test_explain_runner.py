@@ -213,3 +213,32 @@ def test_a_sentence_with_no_tokens_still_gets_a_map_slot():
         body = source[source.index(f"def {block}("):]
         body = body[: body.index("\ndef ", 1)]
         assert "torch.zeros(span.length)" in body, block
+
+
+# --------------------------------------------------------------------------
+# The manifest's split column does not use the CLI's names
+# --------------------------------------------------------------------------
+
+
+def test_val_accepts_the_manifests_validate_spelling(runner):
+    """MIMIC-CXR's official split column says 'validate'; the CLI says 'val'.
+
+    Filtering on the CLI name alone matched nothing, so every val run died at
+    the selection step. A guard turned it into a clear exit rather than an
+    empty run, but the mapping is what makes it work.
+    """
+    assert "validate" in runner.MANIFEST_SPLIT_ALIASES["val"]
+    assert "val" in runner.MANIFEST_SPLIT_ALIASES["val"]
+    assert runner.MANIFEST_SPLIT_ALIASES["test"] == ("test",)
+
+
+def test_every_allowed_cli_split_has_an_alias_entry(runner):
+    from training.explainability.attention_capture import ALLOWED_SPLITS
+
+    for split in ALLOWED_SPLITS:
+        assert split in runner.MANIFEST_SPLIT_ALIASES, split
+
+
+def test_an_empty_selection_names_what_the_column_actually_held():
+    source = RUNNER.read_text(encoding="utf-8")
+    assert "its split column contains {present}" in source

@@ -51,6 +51,12 @@ LOGGER = logging.getLogger("explain_stage2")
 PROMPT = "Describe the chest radiograph."
 SCHEMA_VERSION = 1
 
+#: The CLI says ``val``; MIMIC-CXR's official split column says ``validate``.
+#: Filtering on the CLI name alone silently matched nothing, which surfaced as
+#: "no study matches the selection" and would have been an empty run had the
+#: guard not been there. Accept both, and never guess.
+MANIFEST_SPLIT_ALIASES = {"val": ("val", "validate"), "test": ("test",)}
+
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -93,7 +99,14 @@ def select_studies(manifest: Path, split: str, args) -> list:
 
     frame = pd.read_csv(manifest)
     if "split" in frame.columns:
-        frame = frame[frame["split"] == split]
+        present = sorted(frame["split"].dropna().unique().tolist())
+        aliases = MANIFEST_SPLIT_ALIASES.get(split, (split,))
+        frame = frame[frame["split"].isin(aliases)]
+        if frame.empty:
+            raise SystemExit(
+                f"the manifest holds no rows for split {split!r} (accepted "
+                f"{aliases}); its split column contains {present}"
+            )
     frame = frame[
         frame["target_valid"]
         & frame["ViewPosition"].isin(["PA", "AP"])
@@ -102,7 +115,11 @@ def select_studies(manifest: Path, split: str, args) -> list:
         )
     ]
     if frame.empty:
-        raise SystemExit("no study matches the selection; widen the token bounds")
+        raise SystemExit(
+            f"no study in split {split!r} matches ViewPosition in (PA, AP) with "
+            f"{args.min_findings_tokens}-{args.max_findings_tokens} findings "
+            "tokens; widen the bounds"
+        )
     # +1 so the last study still has a partner for the mismatch control.
     wanted = min(len(frame), max(args.limit, args.ablation_studies) + 1)
     return frame.sample(n=wanted, random_state=args.seed).reset_index(drop=True)
