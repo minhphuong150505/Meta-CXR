@@ -41,8 +41,8 @@ from scripts.evaluate_explanation import _assert_private_output_location  # noqa
 from training.explainability import attention_capture as capture  # noqa: E402
 from training.explainability import projection, rollout  # noqa: E402
 from training.explainability.sentence_attribution import (  # noqa: E402
+    DEFAULT_LABELER_NAME,
     LABELERS,
-    LEXICON_LABELER_NAME,
     attribute_sentences,
     dataset_parse_coverage,
 )
@@ -80,7 +80,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     # v1 stays the default so the n=1513 val run remains reproducible. v2 adds
     # findings outside the CheXpert 14, which raises coverage without adding
     # anything to verify them against.
-    parser.add_argument("--labeler", choices=sorted(LABELERS), default=LEXICON_LABELER_NAME)
+    parser.add_argument("--labeler", choices=sorted(LABELERS),
+                        default=DEFAULT_LABELER_NAME,
+                        help="lexicon_v2 is the default; pass lexicon_v1 to reproduce "
+                             "runs recorded before 2026-08-30")
     parser.add_argument("--model-id", default=capture.MEDGEMMA_MODEL_ID)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=16)

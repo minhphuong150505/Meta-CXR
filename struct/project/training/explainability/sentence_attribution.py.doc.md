@@ -12,7 +12,29 @@ và **parse coverage**.
 Thư viện chuẩn cộng `safety.claims`. Không torch, không model, không tokenizer —
 token đến dưới dạng chuỗi đã decode, NLL đến dưới dạng dãy float.
 
-## ⚠ Nguồn nhãn: `lexicon_v1`, và nó KHÔNG phải labeler đã huấn luyện
+## Hai labeler — `lexicon_v2` là mặc định từ 2026-08-30
+
+| | `lexicon_v1` | `lexicon_v2` (mặc định) |
+|---|---|---|
+| Nhãn | 14 CheXpert | 14 + synonym bổ sung + 9 nhãn ngoài |
+| `parse_coverage` toàn val | 0.4827 | **0.6477** |
+| Tầng | luôn `chexpert_14` | `chexpert_14` **hoặc** `extended` |
+
+⚠ **Chỉ 61% mức tăng là kiểm chứng được.** Trong 1.285 câu v2 gắn thêm: 782
+thuộc 14 nhãn (Stage 1 dự đoán được, +0.100 coverage) và 473 nằm ngoài
+(không gì dự đoán, +0.065). Đọc trường `tier` trước khi coi một nhãn là claim
+đã kiểm.
+
+⚠ **`safety/claims.py` KHÔNG bị sửa** — 14 nhãn ở đó khớp 1-1 với đầu phân loại
+Stage 1 và `safety/pipeline.py` đối chiếu claim với chính nó. Thêm nhãn ở đó sẽ
+sinh claim không có gì để kiểm. Synonym gốc lấy **theo tham chiếu**, không copy.
+
+⚠ 9 nhãn mở rộng là **đề xuất**, cần bác sĩ duyệt trước khi công bố.
+
+`--labeler lexicon_v1` tái lập mọi kết quả ghi trước 2026-08-30; mọi artifact
+đều ghi labeler đã dùng.
+
+## ⚠ Nguồn nhãn: KHÔNG phải labeler đã huấn luyện
 
 Repository này **không** implement labeler lâm sàng đã huấn luyện nào.
 `training/evaluation/clinical.py` cố ý ném lỗi thay vì trả về điểm bịa, và chính

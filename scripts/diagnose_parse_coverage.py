@@ -41,8 +41,8 @@ if str(_REPO_ROOT) not in sys.path:
 from safety.claims import ABNORMALITY_SYNONYMS  # noqa: E402
 from scripts.evaluate_explanation import _assert_private_output_location  # noqa: E402
 from training.explainability.sentence_attribution import (  # noqa: E402
+    DEFAULT_LABELER_NAME,
     LABELERS,
-    LEXICON_LABELER_NAME,
     locate_sentences,
 )
 
@@ -100,7 +100,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--studies", type=int, default=300)
     parser.add_argument("--sample", type=int, default=30,
                         help="unparsed sentences to write out for a human to read")
-    parser.add_argument("--labeler", choices=sorted(LABELERS), default=LEXICON_LABELER_NAME)
+    parser.add_argument("--labeler", choices=sorted(LABELERS),
+                        default=DEFAULT_LABELER_NAME,
+                        help="lexicon_v2 is the default; pass lexicon_v1 to reproduce "
+                             "runs recorded before 2026-08-30")
     parser.add_argument("--seed", type=int, default=16)
     return parser.parse_args(argv)
 

@@ -131,10 +131,22 @@ def test_align_rejects_a_bare_string():
 # --------------------------------------------------------------------------
 
 
-def test_the_labeler_reports_itself_as_lexicon_v1():
+def test_each_labeler_reports_its_own_name():
     assert LexiconSentenceLabeler().name == LEXICON_LABELER_NAME == "lexicon_v1"
-    assert attribute_sentences(REPORT).labeler == "lexicon_v1"
-    assert attribute_sentences(REPORT).to_dict()["labeler"] == "lexicon_v1"
+    assert (
+        attribute_sentences(REPORT, labeler=LexiconSentenceLabeler()).labeler
+        == "lexicon_v1"
+    )
+
+
+def test_the_default_labeler_is_v2_and_says_so_in_the_record():
+    """Changed 2026-08-30. Every artifact records which labeler produced it, so
+    an older output never becomes ambiguous -- it says lexicon_v1."""
+    from training.explainability.sentence_attribution import DEFAULT_LABELER_NAME
+
+    assert DEFAULT_LABELER_NAME == "lexicon_v2"
+    assert attribute_sentences(REPORT).labeler == "lexicon_v2"
+    assert attribute_sentences(REPORT).to_dict()["labeler"] == "lexicon_v2"
 
 
 def test_the_labeler_detects_negated_and_positive_findings():
@@ -265,7 +277,7 @@ def test_to_dict_is_json_serialisable_and_carries_coverage():
     study = attribute_sentences(text, token_texts=tokens, token_nll=[1.0, 2.0, 3.0, 4.0])
     payload = study.to_dict()
     encoded = json.dumps(payload, allow_nan=False)
-    assert '"labeler": "lexicon_v1"' in encoded
+    assert '"labeler": "lexicon_v2"' in encoded
     assert payload["parse_coverage"] == pytest.approx(0.5)
     assert payload["sentences"][1]["labels"] == [
         {"finding": "Cardiomegaly", "polarity": "positive", "tier": "chexpert_14"}
@@ -281,9 +293,14 @@ def test_the_only_labeler_name_ever_emitted_is_on_the_allowlist():
     appears in the source either. Any new labeler must be added here
     deliberately, which is the point.
     """
-    allowed = {LEXICON_LABELER_NAME}
+    allowed = {LEXICON_LABELER_NAME, EXTENDED_LABELER_NAME}
     for text in (REPORT, "", "Mild cardiomegaly is present."):
         assert attribute_sentences(text).to_dict()["labeler"] in allowed
+        assert (
+            attribute_sentences(text, labeler=LexiconSentenceLabeler())
+            .to_dict()["labeler"]
+            in allowed
+        )
 
 
 # --------------------------------------------------------------------------
@@ -413,6 +430,13 @@ def test_both_labelers_are_registered_and_named():
     assert ExtendedLexiconSentenceLabeler().name == "lexicon_v2"
 
 
-def test_v1_remains_available_so_earlier_runs_stay_comparable():
-    assert LexiconSentenceLabeler().name == "lexicon_v1"
-    assert attribute_sentences(REPORT).labeler == "lexicon_v1"
+def test_v1_remains_available_so_earlier_runs_stay_reproducible():
+    """v2 is the default; v1 must still be reachable, or the recorded n=1,513
+    val run could never be reproduced."""
+    from training.explainability.sentence_attribution import LABELERS
+
+    assert LABELERS["lexicon_v1"] is LexiconSentenceLabeler
+    study = attribute_sentences(REPORT, labeler=LexiconSentenceLabeler())
+    assert study.labeler == "lexicon_v1"
+    # and v1 must still behave as v1: it does NOT know the extended findings
+    assert not LexiconSentenceLabeler().label("Degenerative changes of the spine.")
