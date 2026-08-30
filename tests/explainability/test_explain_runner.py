@@ -242,3 +242,73 @@ def test_every_allowed_cli_split_has_an_alias_entry(runner):
 def test_an_empty_selection_names_what_the_column_actually_held():
     source = RUNNER.read_text(encoding="utf-8")
     assert "its split column contains {present}" in source
+
+
+# --------------------------------------------------------------------------
+# The parse-coverage diagnostic
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def diagnose():
+    sys.path.insert(0, str(REPO))
+    pytest.importorskip("pandas")
+    return pytest.importorskip("scripts.diagnose_parse_coverage")
+
+
+def test_technical_sentences_are_classified_as_technical(diagnose):
+    for text in (
+        "Compared with the prior radiograph there is no change.",
+        "The lateral view is limited by patient rotation.",
+        "Portable AP upright study.",
+    ):
+        assert diagnose.classify(text) == "technical"
+
+
+def test_normality_statements_are_classified_as_normal(diagnose):
+    for text in (
+        "The lungs are clear.",
+        "Osseous structures are unremarkable.",
+        "No acute cardiopulmonary process.",
+    ):
+        assert diagnose.classify(text) == "normal"
+
+
+def test_wording_the_lexicon_should_have_caught_is_missed_14(diagnose):
+    """Real phrasings for the 14 labels that lexicon_v1 does not match."""
+    for text in (
+        "The heart size is enlarged.",
+        "There is blunting of the left costophrenic angle.",
+        "Patchy infiltrate at the right base.",
+    ):
+        assert diagnose.classify(text) == "missed_14"
+
+
+def test_findings_outside_the_taxonomy_are_kept_separate(diagnose):
+    """The distinction that decides whether a better labeler would help."""
+    for text in (
+        "Degenerative changes of the thoracic spine.",
+        "A hiatal hernia is again seen.",
+        "Surgical clips project over the right hemithorax.",
+    ):
+        assert diagnose.classify(text) == "outside_14"
+
+
+def test_technical_wins_over_a_named_finding(diagnose):
+    """A comparison sentence is not a missing synonym, so it is not missed_14."""
+    assert diagnose.classify(
+        "Compared with the prior study the heart size is unchanged."
+    ) == "technical"
+
+
+def test_the_diagnostic_writes_through_the_privacy_guard():
+    source = (REPO / "scripts" / "diagnose_parse_coverage.py").read_text(encoding="utf-8")
+    assert "_assert_private_output_location" in source
+    # The sample file is report text; it must never be echoed.
+    assert "print" not in source.split("unparsed_sample.md")[1].split("\n")[0]
+
+
+def test_the_taxonomy_it_reports_against_is_the_repository_lexicon(diagnose):
+    from safety.claims import ABNORMALITY_SYNONYMS
+
+    assert len(ABNORMALITY_SYNONYMS) == 14
