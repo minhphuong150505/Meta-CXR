@@ -27,8 +27,12 @@ python -m pytest tests/test_stage2_prompts.py -q            # một file
 python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # một test
 ```
 
-Kết quả Phase 3 ngày 2026-08-14, với hai file cần full LAVIS stack được ignore:
-**546 passed, 5 failed, 1 skipped**. Riêng `test_explanation_metrics.py`: 7 passed; `test_blank_label_masking.py`: 5 passed.
+Đo lại ngày 2026-08-30 (đã có `tests/explainability/`), với hai file cần full
+LAVIS stack được ignore: **740 test — 732 passed, 5 failed, 3 skipped**.
+Riêng `tests/explainability/`: 91 passed; `test_explanation_metrics.py`: 7 passed;
+`test_blank_label_masking.py`: 5 passed.
+
+⚠ Con số cũ ngày 2026-08-14 là 546 passed / 5 failed / 1 skipped.
 Năm failure đúng baseline bên dưới.
 
 ⚠ **Trên máy CPU không có torchvision/transformers, 5 test fail và 2 file phải

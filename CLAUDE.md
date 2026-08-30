@@ -508,13 +508,14 @@ CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
 #   test_stage1_eval_hook      1 -- missing torchvision
 # test_loss_weight_gating went green again on 2026-08-19 when lambda_itc/itm/lm
 # returned to 0.0; it had failed only while the Q-Former was briefly re-enabled.
-# ⚠ On branch feat/stage2-explainability the baseline is SIX, not five:
-#   test_encoder_finetune.py::TestShippedConfig::test_encoder_finetune_is_on_with_patterns
-#   asserts 5 unfreeze patterns while mimic_cxr_full.yaml now ships 8 (the deep
-#   unfreeze of run_20260821_deep). The CONFIG is right and the test is stale --
-#   it was not updated by commit 814b778. Verified 2026-08-30 by moving the new
-#   explainability directories aside and re-running: it still fails, so it is
-#   pre-existing. Fix the test, not the config.
+# Re-measured 2026-08-30 with tests/explainability/ added: 740 tests,
+# 732 passed, 5 failed, 3 skipped. Still the same five.
+# ⚠ It was SIX for a while: test_encoder_finetune.py::TestShippedConfig::
+#   test_encoder_finetune_is_on_with_patterns asserted `len(patterns) == 5`,
+#   the SHALLOW unfreeze of run_20260820_ft, and 814b778 deepened the config to
+#   8 without updating it. The config was right and the test was stale. Fixed
+#   2026-08-30 by pinning the pattern SET instead of its count -- a count tells
+#   you only that the number moved, and is what let this rot unnoticed.
 CUDA_VISIBLE_DEVICES="" python -m pytest tests/test_explanation_metrics.py -q  # 7 passed
 python -m pytest tests/test_stage2_prompts.py -q          # one file
 python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # one test

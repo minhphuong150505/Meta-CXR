@@ -80,10 +80,35 @@ class TestShippedConfig:
     def cfg(self):
         return yaml.safe_load(_CONFIG.read_text(encoding="utf-8"))
 
+    # The DEEP unfreeze shipped by run_20260821_deep: ResNet50 layer3 + layer4 +
+    # projector, and CLIP vision blocks 8-11 + post_layernorm. 53.12M of 181.3M
+    # encoder parameters.
+    #
+    # Pinned as a SET, not a count. This assertion used to read
+    # ``len(...) == 5`` -- the shallow unfreeze of run_20260820_ft -- and went
+    # stale in silence when 814b778 deepened the config to 8 patterns. A count
+    # tells you only that the number moved; the set names which slice moved,
+    # which is the thing a reviewer actually has to agree to.
+    DEEP_UNFREEZE_PATTERNS = frozenset(
+        {
+            "visual_encoder.encoder.encoder.layer3",
+            "visual_encoder.encoder.encoder.layer4",
+            "visual_encoder.projector",
+            "pubmedclip.model.vision_model.encoder.layers.8",
+            "pubmedclip.model.vision_model.encoder.layers.9",
+            "pubmedclip.model.vision_model.encoder.layers.10",
+            "pubmedclip.model.vision_model.encoder.layers.11",
+            "pubmedclip.model.vision_model.post_layernorm",
+        }
+    )
+
     def test_encoder_finetune_is_on_with_patterns(self, cfg):
         block = cfg["model"]["encoder_finetune"]
         assert block["enabled"] is True
-        assert len(block["patterns"]) == 5
+        assert set(block["patterns"]) == self.DEEP_UNFREEZE_PATTERNS
+        # A duplicated pattern would survive the set comparison and then make
+        # apply_encoder_finetune do the same work twice.
+        assert len(block["patterns"]) == len(self.DEEP_UNFREEZE_PATTERNS)
         assert block["keep_batchnorm_eval"] is True
 
     def test_clip_text_tower_is_never_unfrozen(self, cfg):
