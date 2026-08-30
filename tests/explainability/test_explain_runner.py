@@ -312,3 +312,36 @@ def test_the_taxonomy_it_reports_against_is_the_repository_lexicon(diagnose):
     from safety.claims import ABNORMALITY_SYNONYMS
 
     assert len(ABNORMALITY_SYNONYMS) == 14
+
+
+# --------------------------------------------------------------------------
+# The second gate is wired in and can abort the run
+# --------------------------------------------------------------------------
+
+
+def test_the_randomization_gate_runs_by_default(runner):
+    args = runner.parse_args(
+        ["--manifest", "m.csv", "--image-root", ".", "--output-dir", "o"]
+    )
+    assert args.skip_randomization_gate is False
+
+
+def test_the_randomization_gate_result_is_asserted():
+    source = RUNNER.read_text(encoding="utf-8")
+    assert "capture.assert_randomization_degrades(randomization)" in source
+    assert '"randomization_gate_skipped"' in source
+
+
+def test_both_gates_are_recorded_in_the_summary():
+    source = RUNNER.read_text(encoding="utf-8")
+    for key in ('"ablation_gate"', '"randomization_gate"'):
+        assert key in source, key
+
+
+def test_randomization_restores_the_weights_even_on_failure():
+    """A gate that leaves the model randomised would poison every later study."""
+    source = RUNNER.read_text(encoding="utf-8")
+    block = source[source.index("def run_randomization_gate("):
+                   source.index("def explain_study(")]
+    assert "finally:" in block
+    assert "restore()" in block
