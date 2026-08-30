@@ -1342,8 +1342,10 @@ depends on the labeler. Label instances under v2: **6,384 `chexpert_14`, 611
 `extended`**.
 
 **`lexicon_v2` extends the taxonomy, and it works — coverage 0.483 -> 0.648.**
-Full val, n=1,513 studies / 7,786 sentences. `--labeler lexicon_v2` on both
-commands; **v1 remains the default** so the n=1,513 run stays reproducible.
+Full val, n=1,513 studies / 7,786 sentences. **v2 is the default on both
+commands and in `attribute_sentences` as of 2026-08-30.** Pass
+`--labeler lexicon_v1` to reproduce anything recorded before that date — every
+artifact writes the labeler it used, so no existing output became ambiguous.
 
 | bucket, share of unparsed | v1 (4,028 unparsed) | v2 (2,743 unparsed) |
 |---|---:|---:|

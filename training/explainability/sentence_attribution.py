@@ -230,6 +230,21 @@ LABELERS = {
     EXTENDED_LABELER_NAME: ExtendedLexiconSentenceLabeler,
 }
 
+#: The default since 2026-08-30. Measured on the full val split, v2 raises
+#: coverage 0.483 -> 0.648, cutting `missed_14` from 217 sentences to 68 and
+#: `outside_14` from 437 to 105.
+#:
+#: ⚠ Only 61% of that gain is verifiable: of the 1,285 newly labelled
+#: sentences, 782 are CheXpert-14 wording that Stage 1 predicts and 473 are
+#: findings nothing predicts. Read the `tier` field before treating a label as
+#: a checked claim.
+#:
+#: ⚠ Changing this changed what a default invocation produces. The n=1,513 val
+#: run recorded before this date used v1 and is reproduced with
+#: ``--labeler lexicon_v1``; every artifact records the labeler it used, so no
+#: existing output becomes ambiguous.
+DEFAULT_LABELER_NAME = EXTENDED_LABELER_NAME
+
 
 @dataclass(frozen=True)
 class SentenceRecord:
@@ -398,7 +413,7 @@ def attribute_sentences(
     and coverage are still produced, and ``token_indices`` is empty with
     ``mean_token_nll`` ``None``.
     """
-    active = labeler if labeler is not None else LexiconSentenceLabeler()
+    active = labeler if labeler is not None else LABELERS[DEFAULT_LABELER_NAME]()
     if not isinstance(active, SentenceLabeler):
         raise TypeError("labeler must implement the SentenceLabeler protocol")
 

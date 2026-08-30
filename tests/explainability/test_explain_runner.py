@@ -416,11 +416,24 @@ def test_the_phrase_forms_still_catch_real_headers(diagnose):
     assert diagnose.classify("Single view chest radiograph.") == "technical"
 
 
-def test_the_runner_defaults_to_v1_so_the_n1513_run_reproduces(runner):
-    args = runner.parse_args(
+def test_both_commands_default_to_v2(runner, diagnose):
+    from training.explainability.sentence_attribution import DEFAULT_LABELER_NAME
+
+    assert DEFAULT_LABELER_NAME == "lexicon_v2"
+    assert runner.parse_args(
         ["--manifest", "m.csv", "--image-root", ".", "--output-dir", "o"]
-    )
-    assert args.labeler == "lexicon_v1"
+    ).labeler == "lexicon_v2"
+    assert diagnose.parse_args(
+        ["--manifest", "m.csv", "--output-dir", "o"]
+    ).labeler == "lexicon_v2"
+
+
+def test_v1_is_still_selectable_for_reproducing_the_recorded_run(runner):
+    """The n=1,513 val run on record used v1; --labeler lexicon_v1 reproduces it."""
+    assert runner.parse_args(
+        ["--manifest", "m.csv", "--image-root", ".", "--output-dir", "o",
+         "--labeler", "lexicon_v1"]
+    ).labeler == "lexicon_v1"
 
 
 def test_both_labelers_are_selectable_from_the_runner(runner):
