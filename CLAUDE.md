@@ -1323,6 +1323,49 @@ the composition below was measured on a 300-study subsample (1,556 sentences,
 coverage 0.493). But most of the miss is not a labeler
 failure**, which is what decides whether a better labeler is worth building:
 
+**`lexicon_v2` extends the taxonomy, and it works — coverage 0.483 -> 0.648.**
+Full val, n=1,513 studies / 7,786 sentences. `--labeler lexicon_v2` on both
+commands; **v1 remains the default** so the n=1,513 run stays reproducible.
+
+| bucket, share of unparsed | v1 (4,028 unparsed) | v2 (2,743 unparsed) |
+|---|---:|---:|
+| `normal` | 41.0% | **45.6%** |
+| `technical` | 26.9% | **32.6%** |
+| `unclassified` | 15.8% | 15.5% |
+| `outside_14` | 10.8% | **3.8%** |
+| `missed_14` | 5.4% | **2.5%** |
+
+`missed_14` fell 217 -> 68 sentences and `outside_14` 437 -> 105. What is left
+unparsed is 78.2% `normal` + `technical`, i.e. sentences with nothing to label.
+
+⚠⚠ **Only 61% of the gain is verifiable, and the split must be reported.**
+Of the 1,285 sentences v2 newly labels:
+
+| | sentences | share of gain | coverage |
+|---|---:|---:|---:|
+| CheXpert-14 only — Stage 1 predicts these | **782** | 60.9% | +0.100 |
+| extended only — **nothing predicts these** | **473** | 36.8% | +0.065 |
+| both tiers | 30 | 2.3% | — |
+
+So `lexicon_v2` buys +0.100 of verifiable coverage and +0.065 of description.
+Every label carries a `tier` into the JSONL for exactly this reason: a sentence
+labelled `Aortic Abnormality` has gained coverage, not verification, and must
+never be counted as a checked claim.
+
+Extended findings actually hit, full val: `Aortic Abnormality` 124,
+`Postsurgical Change` 124, `Scarring` 93, `Degenerative Change` 82,
+`Hyperinflation` 80, `Upper Abdomen` 63, `Hernia` 25, `Spinal Deformity` 15,
+`Chest Wall Deformity` 5.
+
+⚠ **`safety/claims.py` is deliberately untouched.** Its 14 labels correspond
+one-to-one with Stage 1's classification head, and `safety/pipeline.py`
+reconciles each claim against that classifier; adding labels there would create
+claims with nothing to check them against. The extension lives in
+`training/explainability/`, where nothing is being verified.
+
+⚠ The nine extra labels are a **proposal** and need a clinician's sign-off
+before any published claim, exactly like the kappa table.
+
 Measured over the **whole val split**: n=1,513 studies, 7,786 sentences,
 4,028 of them unparsed. The diagnostic reaches the same cohort and the same
 0.4827 coverage as the GPU run by an independent path, which is a useful check
