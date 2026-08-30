@@ -771,11 +771,27 @@ study (not image) → anchor + ≤1 auxiliary view
   configuration is strictly smaller. Measured on the 5060 Ti,
   2026-08-18, all with `lambda_itc/itm/lm: 0.1`:
 
-  | encoders | batch | peak VRAM | s/it | outcome |
-  |---|---|---|---|---|
-  | 3 (swin on) | 8 | 11,238 then OOM | — | OOM in the **backward** pass, iteration 1 |
-  | 3 (swin on) | 4 | 11,083 | 0.40 | fits; ~62 h/10ep; ITM negatives fall to 3 |
-  | 2 (swin off) | 8 | **14,460 / 15,850 (93.4%)** | 0.42 | **shipped** — 700 iters + val, no OOM |
+  | encoders | batch | encoder FT | peak VRAM | s/it | outcome |
+  |---|---|---|---|---|---|
+  | 3 (swin on) | 8 | off | 11,238 then OOM | — | OOM in the **backward** pass, iteration 1 |
+  | 3 (swin on) | 4 | off | 11,083 | 0.40 | fits; ITM negatives fall to 3 |
+  | 2 (swin off) | 8 | off | **14,460 / 15,850 (93.4%)** | 0.42 | measured 2026-08-18 |
+  | 2 (swin off) | 8 | **ON (deep)** | **OOM** | — | ⚠ measured 2026-08-31 |
+  | 2 (swin off) | 8 | off | **14,763** | **0.43** | ⚠ re-measured 2026-08-31, 750 iters |
+
+  ⚠⚠ **The 2026-08-18 rows predate encoder fine-tuning and no longer describe
+  the shipped config.** `model.encoder_finetune` releases 53.12M encoder
+  parameters, and with the Q-Former also on, batch 8 now **OOMs** — iteration 0
+  completes at 9,885 MiB and iteration 1 dies, which is the retained-gradient
+  signature, not an oversized activation. The two features cannot both be on at
+  batch 8 on this card.
+
+  Which one to drop is a modelling decision, not a memory one: ITC and ITM draw
+  their negatives from the live microbatch, so halving the batch to keep the
+  unfreeze leaves ITM three candidates and makes the Q-Former probe answer
+  nothing. **Drop the unfreeze, keep batch 8** — that restores the exact
+  configuration the 14,460 measurement was taken on, and it re-measures at
+  14,763 MiB / 0.43 s/it.
 
   Note *where* batch 8 with three encoders died: iteration 0 completed at 11,238
   MiB and the **retained gradient buffers** (301–319M trainable params) pushed
