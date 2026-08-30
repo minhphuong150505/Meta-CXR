@@ -1237,7 +1237,29 @@ on a synthetic non-radiograph zeroing actually made the target EASIER to
 predict (-0.84). Substituting another patient's image asks the question that
 matters — is THIS image being used — and stays in distribution.
 
-149 CPU tests in `tests/explainability/` (namespace package -- no
+**The deliverable is `scripts/explain_stage2.py`.** One JSONL line per study
+(sentence text, `lexicon_v1` labels, map path, `mean_token_nll`,
+`spatially_meaningful`), one NPZ of maps per study at the native 16x16 grid,
+and a `summary.json`. Run end-to-end on GPU 2026-08-30: gate established at
++0.1429 [+0.0284, +0.2668] over 8 studies, 6 studies explained, peak 10.7 GiB.
+
+The gate runs FIRST and aborts the run, because a directory of
+plausible-looking maps produced by a model that is not using the image is worse
+than no output. `--skip-ablation-gate` and `--no-gradient-weight` exist, warn,
+and are recorded in the summary; both default to strict.
+
+⚠ **`parse_coverage` was 0.606 pooled over 33 sentences on the first real run**,
+with one study at 0.125 — one labelled sentence in eight. Four sentences in ten
+carry no label at all, so every sentence-level conclusion is bounded by that
+number. The command prints it on exit for exactly this reason. Pooled by
+sentence is the figure to quote; the mean of per-study fractions (0.674 on the
+same run) flatters it.
+
+Output paths go through `evaluate_explanation.py`'s `_assert_private_output_location`;
+map filenames are sequential and identifier-free; the JSONL carries a blake2
+`sample_key`, and the join to real ids is written only under `--write-key-map`.
+
+163 CPU tests in `tests/explainability/` (namespace package -- no
 `__init__.py`), plus the GPU checks above, which are not automated.
 
 ### Evaluation — `training/evaluation/`, driven by `scripts/evaluate_stage*.py`
