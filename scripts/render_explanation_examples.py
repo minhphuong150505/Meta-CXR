@@ -102,7 +102,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         fig, axes = plt.subplots(1, len(sentences) + 1,
                                  figsize=(3.1 * (len(sentences) + 1), 3.8))
         axes = np.atleast_1d(axes)
-        axes[0].imshow(base, cmap="gray"); axes[0].set_title("radiograph", fontsize=9)
+        axes[0].imshow(base, cmap="gray")
+        axes[0].set_title("radiograph", fontsize=9)
         axes[0].axis("off")
         for panel, sentence in enumerate(sentences, start=1):
             cells = torch.tensor(maps[sentence["attribution_index"]]).reshape(-1)
