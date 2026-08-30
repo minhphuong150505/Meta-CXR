@@ -1259,7 +1259,65 @@ Output paths go through `evaluate_explanation.py`'s `_assert_private_output_loca
 map filenames are sequential and identifier-free; the JSONL carries a blake2
 `sample_key`, and the join to real ids is written only under `--write-key-map`.
 
-163 CPU tests in `tests/explainability/` (namespace package -- no
+**Second gate: weight randomization (Adebayo et al. 2018), and it passes.**
+`cascading_randomization` re-initialises the language layers from the last
+backwards and rank-correlates each map with the original. Measured on GPU
+2026-08-30, one real val study:
+
+| layers randomized | 1 | 2 | 4 | 8 | 16 | 34 |
+|---|---:|---:|---:|---:|---:|---:|
+| Spearman vs original | 0.825 | 0.824 | 0.842 | 0.609 | 0.376 | **0.130** |
+
+That is the shape a valid method should have -- stable while only the last few
+layers are broken, then progressive collapse to near zero. A map that stayed
+flat here would be a function of the input and the architecture, not an
+explanation. The gate aborts the run, like the ablation one, and both are
+recorded in `summary.json`. On the same run the ablation was **+0.2376
+[+0.1087, +0.3807], 100% of studies worse**.
+
+**MedGemma's grid has its own import-time assert.**
+`assert_shared_coordinate_frame(STAGE1_GRIDS)` checks 14*32 == 7*64 == 448 and
+says nothing about `medgemma_direct`, which lives in a different square. From
+the checkpoint config: SigLIP `image_size` 896 / `patch_size` 14 -> 64x64 =
+4096 patches, `mm_tokens_per_image` 256 -> the projector pools **4x** to 16x16,
+so one LM image token covers 896/16 = **56 px**. The attributed patch size is
+that pooled 56, not SigLIP's 14. A 16x16 grid at 28 px tiles 448 exactly, so
+the Stage-1 assert would have passed it while it was wrong by 2x for MedGemma
+-- hence a second assert.
+
+**Memory: the shared graph scales.** val tops out at 14 sentences per study.
+Through the runner, eight of the longest val reports (7-13 sentences,
+121+ findings tokens) peaked at **11.31 GiB of 15.48**, 4.17 GiB spare, with no
+fallback triggered. `--graph-mode per-sentence` exists and does NOT reduce the
+peak (11.23 vs 11.27 on a matched set) because the peak tracks sequence length,
+not sentence count -- it costs +47% wall time and is worth having only as the
+`auto` OOM fallback. ⚠ The runner's default 30-90 findings-token filter was
+selecting the worst case away; the longest val studies carry 121-138 tokens.
+
+⚠⚠ **`parse_coverage` is 0.493 over 300 val studies (1,556 sentences), not the
+0.606 the six-study smoke suggested. But most of the miss is not a labeler
+failure**, which is what decides whether a better labeler is worth building:
+
+| bucket | share of the 789 unparsed |
+|---|---:|
+| `normal` — normality/negation naming no finding | **39.5%** |
+| `technical` — comparison with priors, projection, positioning | **23.1%** |
+| `unclassified` | 19.3% |
+| `outside_14` — real finding outside the 14-label taxonomy | 12.8% |
+| `missed_14` — wording for one of the 14 the lexicon should have caught | **5.3%** |
+
+So better synonyms *within* the 14 labels address about 5% of the misses.
+⚠ Treat that 5.3% as a **lower bound**: word frequencies over the
+`unclassified` bucket show `volumes`(19), `device`(7), `line`(7), `tube`(6),
+`heart`(7), `enlarged`(6), i.e. Support-Devices, Cardiomegaly and low-lung-volume
+phrasings the classifier did not bucket. A realistic figure is ~10%.
+`scripts/diagnose_parse_coverage.py` writes the sentences it sorted, grouped,
+so the classifier can be checked; that file is report text and stays on the host.
+
+⚠ Every ablation and coverage number in this file states its **n**. The n=6
+smoke figures are not results.
+
+207 CPU tests in `tests/explainability/` (namespace package -- no
 `__init__.py`), plus the GPU checks above, which are not automated.
 
 ### Evaluation — `training/evaluation/`, driven by `scripts/evaluate_stage*.py`
