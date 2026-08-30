@@ -1188,7 +1188,57 @@ Output is `.jsonl` (already git-ignored), one line per study, written through
 `scripts/evaluate_explanation.py`'s `_assert_private_output_location`; maps are
 `.npz` at native grid resolution (14x14 / 7x7), never upsampled PNG.
 
-91 CPU tests in `tests/explainability/` (namespace package -- no `__init__.py`).
+**Measured on GPU 2026-08-30, `google/medgemma-1.5-4b-it`, RTX 5060 Ti.**
+Loading is bf16 with `attn_implementation={"text_config": "eager",
+"vision_config": "sdpa"}`, every parameter frozen, the vision tower run under
+`no_grad` and its features scattered into the input embeddings, and gradients
+taken with `torch.autograd.grad` rather than `.backward()`. Peak 9.9 GiB of
+15.5; attention comes back `[34, 8, S, S]` with the gradient reaching all 34
+layers. **NF4 is not needed and should not be used here** — the Mucs-7 worry
+about differentiating through it does not arise on this hardware.
+
+Each of those four choices cost an OOM to find, so none is decorative:
+`output_attentions=True` propagates into SigLIP (27 layers x 16 heads x 4096^2
+fp32 ≈ 27 GiB retained); eager SigLIP retains its softmax for backward even
+without it; `.backward()` allocates gradients for ~4B parameters; and the
+logits are `[1, S, 262208]`.
+
+**MedGemma's frame is not Stage-1's frame.** `Gemma3ImageProcessor` resizes to
+896x896 with NO aspect preservation (measured: a 2544x3056 study, aspect
+0.8325, comes out 1.0) and does not crop, while Stage 1 resizes the shorter
+side to 512 preserving aspect and then centre-crops 448 — which **discards
+36.3%** of a portrait radiograph that MedGemma sees in full. Its grid is 16x16
+at 56 px (SigLIP tiles 896/14 = 64x64, the projector pools 4x to
+`mm_tokens_per_image` = 256). Carry both maps back to the ORIGINAL image before
+comparing them; `projection.Stage1CropGeometry` mirrors torchvision's exact
+arithmetic and is pinned against five real outputs.
+
+**Geometry check: 4/4.** With a neutral target naming no location, a synthetic
+bright square in each of the four quadrants put the hottest quadrant of the
+projected map in that same quadrant every time (chance 1/4). An earlier run
+scored 4/4 too but was worthless — its target said "left upper zone" while the
+square sat top-left, so a map following the WORDS would have looked identical.
+Keep the target neutral.
+
+⚠⚠ **The ablation gate requires a bootstrap CI that excludes zero, not a
+threshold on a point estimate — and that is not hypothetical.** On 12 real test
+studies (frontal, 30–90 findings tokens, seed 16):
+
+| control | mean ΔNLL | 95% CI | studies worse | established |
+|---|---:|---|---:|---|
+| zeroed visual embeddings | +0.0535 | [-0.0283, +0.1314] | 7/12 | **no** |
+| another study's image | **+0.1868** | **[+0.0761, +0.3045]** | 10/12 | **yes** |
+
+The zero-ablation clears the 0.05 threshold and is still indistinguishable from
+no effect. A threshold-only gate called it a pass; `score_ablation` now does
+not. **The mismatched-image control is the sharper test and the one to quote**:
+a zero vector is not "no information", it is an out-of-distribution point, and
+on a synthetic non-radiograph zeroing actually made the target EASIER to
+predict (-0.84). Substituting another patient's image asks the question that
+matters — is THIS image being used — and stays in distribution.
+
+149 CPU tests in `tests/explainability/` (namespace package -- no
+`__init__.py`), plus the GPU checks above, which are not automated.
 
 ### Evaluation — `training/evaluation/`, driven by `scripts/evaluate_stage*.py`
 

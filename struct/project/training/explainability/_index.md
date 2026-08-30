@@ -1,5 +1,5 @@
-> Source: `training/explainability/` (4 file Python, 982 dòng)
-> Status: 🟡 PARTIAL — Chặng 1 (CPU) xong; `attention_capture.py` CHƯA tồn tại
+> Source: `training/explainability/` (5 file Python, ~1.700 dòng)
+> Status: ✅ ACTIVE — Chặng 1 xong và đã chạy trên GPU thật 2026-08-30
 > Last verified against source: 2026-08-30
 
 # `training/explainability/`
@@ -54,7 +54,7 @@ không có nghĩa.
 | `projection.py` | 297 | [📄](projection.py.doc.md) | ✅ lưới đặc trưng → không gian ảnh, **chỉ import `torch`** |
 | `sentence_attribution.py` | 326 | [📄](sentence_attribution.py.doc.md) | ✅ tách câu, nhãn `lexicon_v1`, parse coverage |
 | `__init__.py` | 34 | — | ✅ chỉ docstring, không import eager |
-| `attention_capture.py` | — | — | ⛔ **CHƯA TỒN TẠI** — cần GPU host |
+| `attention_capture.py` | ~560 | [📄](attention_capture.py.doc.md) | ✅ module DUY NHẤT chạm model sống |
 
 ## Vì sao chia module đúng theo lằn ranh này
 
@@ -82,7 +82,9 @@ Kế thừa nguyên quy tắc của `scripts/evaluate_explanation.py`:
 ## Tests
 
 [`tests/explainability/`](../../tests/_index.md#nhóm-8--explainability-stage-2)
-— 91 test, toàn bộ chạy CPU, `rc=0`.
+— **149 test**, toàn bộ chạy CPU, `rc=0`. Phần GPU (4 góc hình học, triệt tiêu
+trên study thật) chưa tự động hoá — số liệu trong
+[`attention_capture.py.doc.md`](attention_capture.py.doc.md).
 
 ## Related documentation
 

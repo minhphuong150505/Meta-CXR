@@ -413,37 +413,105 @@ def attribute_visual_tokens(
     return values, trace
 
 
-def assert_visual_tokens_matter(
-    baseline_nll: Sequence[float],
-    ablated_nll: Sequence[float],
+@dataclass(frozen=True)
+class AblationResult:
+    """A paired ablation, with enough statistics to say whether it means anything."""
+
+    condition: str
+    num_studies: int
+    mean_delta: float
+    ci_low: float
+    ci_high: float
+    fraction_worse: float
+    established: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "condition": self.condition,
+            "num_studies": self.num_studies,
+            "mean_delta": self.mean_delta,
+            "ci_low": self.ci_low,
+            "ci_high": self.ci_high,
+            "fraction_worse": self.fraction_worse,
+            "established": self.established,
+        }
+
+
+def score_ablation(
+    baseline_per_study: Sequence[float],
+    ablated_per_study: Sequence[float],
     *,
+    condition: str,
     min_mean_increase: float = 0.05,
-) -> float:
-    """STOP unless zeroing the visual tokens actually degrades the output.
+    resamples: int = 20000,
+    seed: int = 16,
+) -> AblationResult:
+    """Paired per-study NLL deltas, with a bootstrap CI over STUDIES.
 
-    Zeroing the visual embeddings must make the reference report harder to
-    predict. If it does not, one of two things is true and both need a human:
-    the span is in the wrong place, or the model is ignoring its visual input.
-    Either way every map downstream would be meaningless, so this raises rather
-    than warns.
+    ``established`` requires BOTH that the mean increase clears
+    ``min_mean_increase`` AND that the 95% CI excludes zero. A threshold on a
+    point estimate alone is not enough, and this is not a hypothetical: on 12
+    real studies the zero-ablation returned +0.0535, which clears 0.05 and has
+    a CI of [-0.0283, +0.1314]. It would have "passed" a threshold-only gate on
+    evidence indistinguishable from no effect at all.
 
-    Returns the mean NLL increase when the check passes.
+    Resampling is over studies, not tokens: tokens within one report are not
+    independent, so a token-level interval would be far too narrow.
     """
-    base = [float(v) for v in baseline_nll if v == v]  # drop nan
-    abl = [float(v) for v in ablated_nll if v == v]
-    if not base or len(base) != len(abl):
+    import random
+    import statistics
+
+    base = [float(v) for v in baseline_per_study]
+    ablated = [float(v) for v in ablated_per_study]
+    if len(base) != len(ablated) or len(base) < 2:
         raise ValueError(
-            f"need matching non-empty NLL sequences, got {len(base)} and {len(abl)}"
+            f"need at least 2 paired studies, got {len(base)} and {len(ablated)}"
         )
-    delta = sum(a - b for a, b in zip(abl, base, strict=True)) / len(base)
-    if delta < min_mean_increase:
-        raise SoftTokenAblationFailed(
-            f"zeroing the visual tokens changed mean token NLL by only {delta:+.4f} "
-            f"(need >= {min_mean_increase}). Either the visual span is located "
-            "wrongly, or the model is not using the image. Both invalidate every "
-            "attribution map from this configuration -- stop and investigate"
-        )
-    return delta
+    deltas = [a - b for a, b in zip(ablated, base, strict=True)]
+    mean_delta = statistics.mean(deltas)
+
+    rng = random.Random(seed)
+    count = len(deltas)
+    means = sorted(
+        statistics.mean(rng.choices(deltas, k=count)) for _ in range(int(resamples))
+    )
+    low = means[int(0.025 * len(means))]
+    high = means[int(0.975 * len(means))]
+
+    return AblationResult(
+        condition=condition,
+        num_studies=count,
+        mean_delta=mean_delta,
+        ci_low=low,
+        ci_high=high,
+        fraction_worse=sum(1 for d in deltas if d > 0) / count,
+        established=bool(mean_delta >= min_mean_increase and low > 0.0),
+    )
+
+
+def assert_visual_tokens_matter(result: AblationResult) -> AblationResult:
+    """STOP unless removing the image measurably and reliably hurts.
+
+    If it does not, one of two things is true and both need a human: the visual
+    span is in the wrong place, or the model is not using the image. Either way
+    every map downstream would be meaningless, so this raises rather than warns.
+
+    Note what "measurably" now means. A mean increase that clears the threshold
+    while its CI crosses zero is NOT a pass -- see :func:`score_ablation`.
+    """
+    if not isinstance(result, AblationResult):
+        raise TypeError("result must come from score_ablation")
+    if result.established:
+        return result
+    raise SoftTokenAblationFailed(
+        f"ablation {result.condition!r} is not established over "
+        f"{result.num_studies} studies: mean NLL change {result.mean_delta:+.4f}, "
+        f"95% CI [{result.ci_low:+.4f}, {result.ci_high:+.4f}], "
+        f"{result.fraction_worse:.0%} of studies worse. Either the visual span "
+        "is located wrongly, or the model is not using the image. Both "
+        "invalidate every attribution map from this configuration -- stop and "
+        "investigate"
+    )
 
 
 # ---------------------------------------------------------------------------
