@@ -836,6 +836,25 @@ study (not image) → anchor + ≤1 auxiliary view
   | untrained | 0.07 pinned | 130.68 | 130.30 | -0.0833 |
   | 525 updates, temperature learned | 0.00796 | **127.43** | **127.65** | -1.1168 |
   | 500 updates, temperature pinned | 0.07 | **128.38** | **127.45** | **-0.0025** |
+  | ~525 updates, 2026-08-31, learned | 0.00944 | **127.49** | **127.76** | **-0.0118** |
+
+  ⚠⚠ **A FOURTH measurement, 2026-08-31, and it is chance again.** Run
+  `run_20260831_qformer` was launched specifically to retest this with
+  `lambda_itc/itm/lm: 0.1`, batch 8, encoder fine-tuning off — the exact
+  configuration that produced the only encouraging training curve on record.
+  At iteration 4,200 (~525 optimizer updates) the val gate returned
+  `loss_itc` 5.5570 against a chance of ln(256) = 5.5452, ranks 127.49 / 127.76
+  against a chance rank of 127.5, `delta_nats` **-0.0118**. The JSON carries
+  `studies_scanned` 392 and `valid_fraction` 0.6531, so it is the fixed
+  measurement, not the retracted one.
+
+  The training curve did exactly what it did last time and must not be read as
+  evidence: `loss_itc` sat ~1.4 nats below chance around iteration 1,650, then
+  returned to 5.5625 — chance — by iteration 7,600. The temperature collapsed
+  again (0.00944), which this file already records as a symptom rather than a
+  cause.
+
+  **Four independent measurements, four times chance. Stop proposing this.**
 
   Every arm lands on chance. The gate needs `delta_nats >= +0.10`; the pinned run
   returns **-0.0025**. Pinning the temperature removes the exploding loss and
