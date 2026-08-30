@@ -515,6 +515,197 @@ def assert_visual_tokens_matter(result: AblationResult) -> AblationResult:
 
 
 # ---------------------------------------------------------------------------
+# The second gate: weight randomization (Adebayo et al. 2018)
+# ---------------------------------------------------------------------------
+#
+# The ablation gate asks whether the model uses the image. This one asks a
+# different and equally necessary question: whether the MAP depends on the
+# model's learned weights at all. Adebayo et al., "Sanity Checks for Saliency
+# Maps", showed that several popular methods produce nearly the same picture
+# after the network is randomised -- which means they are reading the input and
+# the architecture, not what the model learned.
+#
+# Cascading randomisation re-initialises the language layers from the last
+# backwards, recomputing the attribution at each step. A method that reflects
+# the model must lose its correlation with the original map. One that does not
+# is an edge detector with extra steps.
+
+
+class RandomizationSanityFailed(RuntimeError):
+    """The attribution survived randomising the model. A STOP condition.
+
+    Its own type, like :class:`SoftTokenAblationFailed`, because it invalidates
+    every map from this configuration rather than degrading them.
+    """
+
+
+@dataclass(frozen=True)
+class RandomizationResult:
+    """Rank correlation between the original map and progressively broken ones."""
+
+    steps: tuple[int, ...]
+    correlations: tuple[float, ...]
+    final_correlation: float
+    max_correlation: float
+    degrades: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "steps": list(self.steps),
+            "correlations": list(self.correlations),
+            "final_correlation": self.final_correlation,
+            "max_correlation_threshold": self.max_correlation,
+            "degrades": self.degrades,
+        }
+
+
+def spearman_correlation(first: torch.Tensor, second: torch.Tensor) -> float:
+    """Rank correlation of two flat maps, ties averaged.
+
+    Rank rather than Pearson because the question is whether the map still
+    RANKS regions the same way; a monotone rescale of an unchanged map is not a
+    degradation. Ties are averaged so a map with large flat regions -- common
+    after randomisation -- does not get an arbitrary ordering imposed on it.
+    """
+    a = first.detach().reshape(-1).to(torch.float64)
+    b = second.detach().reshape(-1).to(torch.float64)
+    if a.numel() != b.numel():
+        raise ValueError(f"maps differ in size: {a.numel()} vs {b.numel()}")
+    if a.numel() < 2:
+        raise ValueError("need at least two values to correlate")
+
+    def ranks(values: torch.Tensor) -> torch.Tensor:
+        order = torch.argsort(values)
+        result = torch.empty_like(values)
+        result[order] = torch.arange(values.numel(), dtype=values.dtype)
+        # average ties, or a constant map gets a spurious ordering
+        unique, inverse, counts = torch.unique(
+            values, return_inverse=True, return_counts=True
+        )
+        if int(counts.max()) > 1:
+            sums = torch.zeros(unique.numel(), dtype=values.dtype)
+            sums.index_add_(0, inverse, result)
+            result = (sums / counts.to(values.dtype))[inverse]
+        return result
+
+    ra, rb = ranks(a), ranks(b)
+    ra = ra - ra.mean()
+    rb = rb - rb.mean()
+    denominator = torch.sqrt((ra * ra).sum() * (rb * rb).sum())
+    if float(denominator) == 0.0:
+        # One side is constant: there is no ordering to agree with. Report 0,
+        # which is the honest "no relationship", not 1.
+        return 0.0
+    return float((ra * rb).sum() / denominator)
+
+
+def randomize_layers(model, layer_indices: Sequence[int], *, seed: int = 16):
+    """Re-initialise the named language layers; returns a restore callable.
+
+    Parameters are copied to CPU before being overwritten and copied back by
+    the returned callable, so a caller that runs this inside ``try/finally``
+    always gets the trained model back. Re-initialisation uses the model's own
+    ``initializer_range`` rather than an arbitrary scale, so the randomised
+    network stays in the regime the architecture expects.
+    """
+    modules = language_attention_modules(model)
+    layers = sorted({int(i) for i in layer_indices})
+    if not layers:
+        raise ValueError("layer_indices must not be empty")
+    if min(layers) < 0 or max(layers) >= len(modules):
+        raise IndexError(
+            f"layer index outside [0, {len(modules)}): {layers[0]}..{layers[-1]}"
+        )
+
+    text_config = getattr(getattr(model, "config", None), "text_config", None)
+    std = float(getattr(text_config, "initializer_range", 0.02) or 0.02)
+    generator = torch.Generator(device="cpu").manual_seed(seed)
+
+    saved: list[tuple[torch.nn.Parameter, torch.Tensor]] = []
+    for index in layers:
+        _name, module = modules[index]
+        for parameter in module.parameters():
+            saved.append((parameter, parameter.detach().to("cpu", copy=True)))
+            # Built on CPU with an explicit generator, so a rerun randomises
+            # identically and a correlation can be compared across runs.
+            replacement = torch.empty(
+                parameter.shape, dtype=torch.float32, device="cpu"
+            ).normal_(0.0, std, generator=generator)
+            with torch.no_grad():
+                parameter.copy_(replacement.to(parameter.dtype))
+
+    def restore() -> None:
+        with torch.no_grad():
+            for parameter, original in saved:
+                parameter.copy_(original.to(parameter.device, parameter.dtype))
+
+    return restore
+
+
+def cascading_randomization(
+    attribute,
+    num_layers: int,
+    *,
+    steps: Sequence[int] | None = None,
+    max_correlation: float = 0.5,
+) -> RandomizationResult:
+    """Randomise the last k layers for increasing k, correlating each map.
+
+    ``attribute(layer_indices)`` must return the attribution map produced with
+    those layer indices randomised; ``attribute(())`` returns the original. The
+    caller owns loading and restoring, which keeps this function free of any
+    model type and therefore testable on CPU.
+
+    Layers are taken from the LAST backwards, which is Adebayo's cascading
+    order: the last layers are closest to the output and the first to matter.
+    """
+    if num_layers < 1:
+        raise ValueError("num_layers must be positive")
+    if steps is None:
+        candidates = [1, 2, 4, 8, 16, num_layers]
+        steps = sorted({min(int(k), num_layers) for k in candidates})
+    steps = tuple(int(k) for k in steps)
+    if any(k < 1 or k > num_layers for k in steps):
+        raise ValueError(f"every step must be in [1, {num_layers}]")
+
+    original = attribute(())
+    correlations = []
+    for k in steps:
+        indices = tuple(range(num_layers - k, num_layers))
+        correlations.append(spearman_correlation(original, attribute(indices)))
+
+    final = correlations[-1]
+    return RandomizationResult(
+        steps=steps,
+        correlations=tuple(correlations),
+        final_correlation=final,
+        max_correlation=float(max_correlation),
+        degrades=bool(abs(final) < float(max_correlation)),
+    )
+
+
+def assert_randomization_degrades(result: RandomizationResult) -> RandomizationResult:
+    """STOP unless randomising the model actually changes the map.
+
+    A map that survives randomisation is not explaining this model. It may
+    still be a picture of the input, which is exactly the failure Adebayo et
+    al. found in methods that looked convincing.
+    """
+    if not isinstance(result, RandomizationResult):
+        raise TypeError("result must come from cascading_randomization")
+    if result.degrades:
+        return result
+    raise RandomizationSanityFailed(
+        f"the attribution survived randomising every language layer: rank "
+        f"correlation with the original is {result.final_correlation:+.4f} "
+        f"(need |rho| < {result.max_correlation}). The map does not depend on "
+        f"what the model learned, so it does not explain this model -- stop "
+        f"and investigate. Correlations by step "
+        f"{dict(zip(result.steps, [round(c, 4) for c in result.correlations], strict=True))}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Stage 2 of the pipeline: Q-Former cross-attention. INTERFACE ONLY.
 # ---------------------------------------------------------------------------
 
