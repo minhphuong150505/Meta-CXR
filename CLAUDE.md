@@ -1323,19 +1323,24 @@ the composition below was measured on a 300-study subsample (1,556 sentences,
 coverage 0.493). But most of the miss is not a labeler
 failure**, which is what decides whether a better labeler is worth building:
 
-| bucket | share of the 789 unparsed |
-|---|---:|
-| `normal` — normality/negation naming no finding | **39.5%** |
-| `technical` — comparison with priors, projection, positioning | **23.1%** |
-| `unclassified` | 19.3% |
-| `outside_14` — real finding outside the 14-label taxonomy | 12.8% |
-| `missed_14` — wording for one of the 14 the lexicon should have caught | **5.3%** |
+| bucket | share of the 789 unparsed | before header keywords |
+|---|---:|---:|
+| `normal` — normality/negation naming no finding | **39.5%** | 39.5% |
+| `technical` — priors, projection, positioning, headers | **26.0%** | 23.1% |
+| `unclassified` | **16.5%** | 19.3% |
+| `outside_14` — real finding outside the 14-label taxonomy | 12.7% | 12.8% |
+| `missed_14` — wording for one of the 14 the lexicon should have caught | **5.3%** | 5.3% |
+
+Adding header and request phrases moved mass from `unclassified` into
+`technical` and left `missed_14` at exactly 42 sentences — the change did not
+steal from the bucket that decides anything, which is what makes it safe.
 
 So better synonyms *within* the 14 labels address about 5% of the misses.
-⚠ Treat that 5.3% as a **lower bound**: word frequencies over the
-`unclassified` bucket show `volumes`(19), `device`(7), `line`(7), `tube`(6),
-`heart`(7), `enlarged`(6), i.e. Support-Devices, Cardiomegaly and low-lung-volume
-phrasings the classifier did not bucket. A realistic figure is ~10%.
+⚠ Treat that 5.3% as a **lower bound**: word frequencies over the remaining
+`unclassified` bucket show `volumes`, `device`, `line`, `tube`, `heart`,
+`enlarged` — Support-Devices, Cardiomegaly and low-lung-volume phrasings the
+classifier does not bucket. A realistic figure is ~10%, still far below
+`normal` + `technical` at 65.5%.
 `scripts/diagnose_parse_coverage.py` writes the sentences it sorted, grouped,
 so the classifier can be checked; that file is report text and stays on the host.
 
@@ -1871,9 +1876,10 @@ Found from the other end: 154 of those 1,513 studies produce ZERO labelled
 sentences in the Stage-2 explanation run, and they turn out to be one-line
 reports -- median **1 sentence** and **59 characters**, against 5 and 318 for
 the rest, with 55% carrying exactly one sentence. Their content is
-overwhelmingly technique and header fragments (35% technical, 34% unclassified
-whose commonest word is "chest"), and they contain LESS missed pathology than
-the general population (1.8% vs 5.7%).
+overwhelmingly technique and header fragments — **61.3% technical, 7.7%
+unclassified** once header phrases are matched, from 35.1% and 33.6% before —
+and they contain LESS missed pathology than the general population, **1.8%
+against 5.7%**, unchanged by that reclassification.
 
 Harmless for the explanation layer -- they simply score zero coverage. Not
 harmless for Stage 2, which trains and is scored on the same cohort, so
