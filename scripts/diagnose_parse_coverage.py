@@ -51,6 +51,18 @@ TECHNICAL = (
     "portable", "upright", "supine", "semi-erect", "exam", "study", "obtained",
     "lordotic", "expiratory", "inspiration", "well expanded", "low volume",
     "limited", "obscur", "overlying", "artifact",
+    # Header, request and administrative fragments. Added after the
+    # zero-coverage studies turned out to be one-line reports (median 59
+    # characters) whose sentences fell through to `unclassified`.
+    #
+    # ⚠ Note what is NOT here: a bare "chest". It is the single commonest word
+    # in that bucket (61 of 91 sentences), but TECHNICAL is checked FIRST, so
+    # a bare "chest" would swallow real content -- "opacity in the left chest"
+    # would be filed as technique. Only unambiguous phrases are matched.
+    "submitted", "purpose", "addendum", "indication", "history",
+    "chest radiograph", "chest x-ray", "chest xray", "chest film",
+    "lateral chest", "frontal chest", "ap chest", "pa chest", "portable chest",
+    "single view", "two view", "frontal and lateral", "pa and lateral",
 )
 NORMAL = (
     "unremarkable", "within normal limits", "normal", "clear", "no acute",
