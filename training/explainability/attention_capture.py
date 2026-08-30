@@ -66,8 +66,16 @@ class TrainSplitRefused(RuntimeError):
     """Raised when an explanation is requested on the training split."""
 
 
-class SoftTokenAblationFailed(RuntimeError):
+class VisualAblationFailed(RuntimeError):
     """The visual tokens did not measurably affect the output.
+
+    Named for the VISUAL tokens, not for soft tokens. On the medgemma_direct
+    path -- the only path this branch runs -- those are MedGemma's 256 image
+    tokens, located by ``model.config.image_token_index``. The 32 Q-Former soft
+    tokens belong to a path that is not implemented here and is never entered.
+    The class was briefly called ``SoftTokenAblationFailed``, carried over from
+    the design document's wording, and that name implied the gate was guarding
+    a path the runner does not use.
 
     Its own type because it is a STOP condition, not a degraded result: either
     the token positions are wrong, or the model is ignoring its visual input.
@@ -503,7 +511,7 @@ def assert_visual_tokens_matter(result: AblationResult) -> AblationResult:
         raise TypeError("result must come from score_ablation")
     if result.established:
         return result
-    raise SoftTokenAblationFailed(
+    raise VisualAblationFailed(
         f"ablation {result.condition!r} is not established over "
         f"{result.num_studies} studies: mean NLL change {result.mean_delta:+.4f}, "
         f"95% CI [{result.ci_low:+.4f}, {result.ci_high:+.4f}], "
@@ -534,7 +542,7 @@ def assert_visual_tokens_matter(result: AblationResult) -> AblationResult:
 class RandomizationSanityFailed(RuntimeError):
     """The attribution survived randomising the model. A STOP condition.
 
-    Its own type, like :class:`SoftTokenAblationFailed`, because it invalidates
+    Its own type, like :class:`VisualAblationFailed`, because it invalidates
     every map from this configuration rather than degrading them.
     """
 
