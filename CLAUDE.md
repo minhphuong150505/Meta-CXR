@@ -1259,6 +1259,29 @@ Output paths go through `evaluate_explanation.py`'s `_assert_private_output_loca
 map filenames are sequential and identifier-free; the JSONL carries a blake2
 `sample_key`, and the join to real ids is written only under `--write-key-map`.
 
+**FULL VAL RUN, n=1513 — these are the numbers to quote.** 2026-08-30,
+23.1 min wall, 0 errors, 1,513 of 1,513 frontal val studies with valid
+findings, 7,786 sentences, 15 MB of output. Peak 11.31 GiB of 15.48; every
+study used the shared graph and the per-sentence fallback never fired.
+
+| | n | result |
+|---|---:|---|
+| ablation, mismatched image | **100** | **+0.1788 [+0.1400, +0.2185]**, 83% worse, established |
+| randomization, final rho | 1 | **-0.0030**, degrades |
+| `parse_coverage` (pooled by sentence) | **7,786** | **0.483** |
+| `spatially_meaningful` sentences | 7,786 | 3,758 = 48.3% |
+| sentences/study | 1,513 | min 1, median 5, max 14 |
+| `mean_token_nll` | 7,777 | median 2.451, p5 0.547, p95 8.624 |
+
+⚠ **154 of 1,513 studies came out at zero coverage** — every sentence
+unlabelled. Median per-study coverage is 0.500 while the pooled figure is
+0.483; quote the pooled one.
+
+⚠ Earlier smoke figures (n=6: coverage 0.606, ablation +0.1868/+0.1429) are
+**not results** and must not appear in a report. Every log line and summary key
+now carries its n for exactly this reason (`n_studies`,
+`n_ablation_studies`, `n_randomization_studies`).
+
 **Second gate: weight randomization (Adebayo et al. 2018), and it passes.**
 `cascading_randomization` re-initialises the language layers from the last
 backwards and rank-correlates each map with the original. Measured on GPU
@@ -1266,7 +1289,8 @@ backwards and rank-correlates each map with the original. Measured on GPU
 
 | layers randomized | 1 | 2 | 4 | 8 | 16 | 34 |
 |---|---:|---:|---:|---:|---:|---:|
-| Spearman vs original | 0.825 | 0.824 | 0.842 | 0.609 | 0.376 | **0.130** |
+| Spearman vs original (full val run) | 0.981 | 0.963 | 0.886 | 0.560 | 0.510 | **-0.003** |
+| Spearman vs original (earlier, n=1) | 0.825 | 0.824 | 0.842 | 0.609 | 0.376 | 0.130 |
 
 That is the shape a valid method should have -- stable while only the last few
 layers are broken, then progressive collapse to near zero. A map that stayed
@@ -1294,8 +1318,9 @@ not sentence count -- it costs +47% wall time and is worth having only as the
 `auto` OOM fallback. ⚠ The runner's default 30-90 findings-token filter was
 selecting the worst case away; the longest val studies carry 121-138 tokens.
 
-⚠⚠ **`parse_coverage` is 0.493 over 300 val studies (1,556 sentences), not the
-0.606 the six-study smoke suggested. But most of the miss is not a labeler
+⚠⚠ **`parse_coverage` is 0.483 over the full val split (n=7,786 sentences);
+the composition below was measured on a 300-study subsample (1,556 sentences,
+coverage 0.493). But most of the miss is not a labeler
 failure**, which is what decides whether a better labeler is worth building:
 
 | bucket | share of the 789 unparsed |

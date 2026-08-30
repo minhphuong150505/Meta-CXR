@@ -48,6 +48,25 @@ sentence: index, text, char_start, char_end, token_indices, labels,
 npz     : maps [n_sentences, 16, 16] float32 (mỗi bản đồ tổng = 1.0), grid [2]
 ```
 
+## Lần chạy đầy đủ trên val — n=1513
+
+2026-08-30, **23.1 phút**, 0 lỗi, 1.513/1.513 study frontal val có findings hợp
+lệ, **7.786 câu**, 15 MB đầu ra. Peak **11.31 GiB / 15.48**; mọi study dùng
+`shared`, fallback per-sentence không lần nào phải kích hoạt.
+
+| | n | kết quả |
+|---|---:|---|
+| ablation, ảnh study khác | **100** | **+0.1788 [+0.1400, +0.2185]**, 83% tệ đi, established |
+| randomization, rho cuối | 1 | **-0.0030**, degrades |
+| `parse_coverage` (gộp theo câu) | **7.786** | **0.483** |
+| `spatially_meaningful` | 7.786 | 3.758 = 48.3% |
+| câu/study | 1.513 | min 1, median 5, max 14 |
+| `mean_token_nll` | 7.777 | median 2.451, p5 0.547, p95 8.624 |
+
+⚠ **154/1.513 study có coverage bằng 0** — không câu nào được gắn nhãn.
+
+⚠ Các số smoke n=6 (coverage 0.606, ablation +0.1868) **không phải kết quả**.
+
 ## ⚠ `parse_coverage` phải đi kèm mọi kết luận mức câu
 
 Ghi ở **cả hai cấp** và in ra khi kết thúc. Đo thật trên 6 study / 33 câu:
