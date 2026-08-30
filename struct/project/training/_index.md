@@ -1,6 +1,6 @@
-> Source: `training/` (32 file Python)
+> Source: `training/` (38 file Python)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-08-30
 
 # `training/`
 
@@ -15,6 +15,7 @@ Mọi import LAVIS/Stage-1 **chỉ được nằm trong `training/stage1/lavis_l
 
 ```text
 run_medgemma_qlora.py, pipeline_modes.py, dataio/, medgemma/, stage2_utils.py
+explainability/rollout.py, projection.py, sentence_attribution.py
         │  KHÔNG import LAVIS ở module scope
         ▼
 training/stage1/lavis_loader.py     ★ CỬA DUY NHẤT
@@ -58,6 +59,7 @@ split CSV ───────────────────────�
 | `medgemma/` | [📁](medgemma/_index.md) | ✅ | `soft_tokens.py`, `capabilities.py` |
 | `trainer/` | [📁](trainer/_index.md) | ❓ | `checkpointing.py`, `state.py` — [D-001](../_meta/DECISIONS.md#d-001--hạ-tầng-đã-viết-nhưng-chưa-nối-vào-pipeline) |
 | `evaluation/` | [📁](evaluation/_index.md) | ✅ | 17 module evaluator |
+| `explainability/` | [📁](explainability/_index.md) | 🟡 | XAI hậu nghiệm Stage 2 — **người quan sát**, không pipeline nào import |
 
 ## Main responsibilities
 
