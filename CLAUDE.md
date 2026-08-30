@@ -1292,6 +1292,18 @@ backwards and rank-correlates each map with the original. Measured on GPU
 | Spearman vs original (full val run) | 0.981 | 0.963 | 0.886 | 0.560 | 0.510 | **-0.003** |
 | Spearman vs original (earlier, n=1) | 0.825 | 0.824 | 0.842 | 0.609 | 0.376 | 0.130 |
 
+All six points are written to `summary.json` under `randomization_gate`
+(`steps` + `correlations`), not just the pass/fail, and the runner prints the
+whole curve on exit.
+
+⚠ **Report the first point.** rho is **0.981** after randomising the last
+layer — re-initialising it changes the map almost not at all. Two readings, and
+this repo cannot currently separate them: the last layer genuinely carries
+little of the attribution (Chefer's recurrence multiplies over all 34, so one
+broken factor is diluted), or the method is insensitive to the top of the stack.
+The collapse from layer 8 onward is what makes the gate pass; the flat start is
+a property to disclose, not to omit.
+
 That is the shape a valid method should have -- stable while only the last few
 layers are broken, then progressive collapse to near zero. A map that stayed
 flat here would be a function of the input and the architecture, not an
@@ -1322,6 +1334,25 @@ selecting the worst case away; the longest val studies carry 121-138 tokens.
 the composition below was measured on a 300-study subsample (1,556 sentences,
 coverage 0.493). But most of the miss is not a labeler
 failure**, which is what decides whether a better labeler is worth building:
+
+⚠⚠ **`lexicon_v2` WAS FITTED TO VAL, so 0.6477 is in-sample.** The process was
+literally: run v1 on val (0.4827) -> bucket the sentences it failed to label ->
+read the word frequencies of the `unclassified` bucket ON VAL -> add exactly
+those terms (`heart size`, `low lung volumes`, `tube`/`line`/`device`) -> pick
+the nine extended findings from the `outside_14` bucket measured ON VAL -> re-run
+on val (0.6477). Both numbers are real and both must be reported together with
+that description; **quoting 0.6477 alone would be a held-out claim the work does
+not support.**
+
+The lexicon is now FROZEN. Both lexicons carry a content hash written into every
+JSONL record and both summaries — v1 `f809b80b33579b43` (14 labels), v2
+`3fcf80ad1c9b6c78` (23 labels) — and `tests/explainability/
+test_sentence_attribution.py::test_the_lexicons_are_frozen` pins them, so any
+further edit is a red test rather than a quietly better number. Changing a
+lexicon is only legitimate for a reason INDEPENDENT of val results (a
+clinician's correction, a wrong term); never because coverage looked low. The
+honest estimate for v2 is a single measurement on the **test** split, which has
+not been run.
 
 **Both full val runs exist and are directly comparable**, `~/xai_val` (v1) and
 `~/xai_val_v2` (v2) on the training host, 1,513 studies each, 15 MB each,
@@ -2079,6 +2110,13 @@ This remote is public.
 - `model/lavis/` is a modified fork of Salesforce LAVIS and is excluded from ruff:
   reformatting it would make every future upstream diff unreadable. Same for
   `mhcac/mhcac_8..11.py` (legacy variants; only `mhcac_12.py` is wired).
+- **Never run `ruff check --fix` on a directory. Only on the files you edited.**
+  On this branch it twice reformatted `scripts/evaluate_stage1.py` and
+  `scripts/export_stage2_prompt_samples.py` — files the change had nothing to do
+  with — and both times they were committed before anyone noticed. The second
+  time was after a commit message explicitly warning about the first. Scope it:
+  `ruff check --fix path/to/file.py`, then `git diff --stat <branch-point>` and
+  read the file list before committing.
 - `preporcessing/` is misspelled in the tree. Leave it.
 - Modules under `training/` carry a dual import shim
   (`try: from stage2_utils ... except ImportError: from training.stage2_utils ...`)

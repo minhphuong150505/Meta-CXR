@@ -43,6 +43,7 @@ from scripts.evaluate_explanation import _assert_private_output_location  # noqa
 from training.explainability.sentence_attribution import (  # noqa: E402
     DEFAULT_LABELER_NAME,
     LABELERS,
+    lexicon_metadata,
     locate_sentences,
 )
 
@@ -159,7 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     unparsed = total - labelled
     counts = {name: len(values) for name, values in sorted(buckets.items())}
     summary = {
-        "labeler": args.labeler,
+        **lexicon_metadata(args.labeler),
         "studies": int(len(frame)),
         "sentences": total,
         "labelled": labelled,

@@ -45,6 +45,7 @@ from training.explainability.sentence_attribution import (  # noqa: E402
     LABELERS,
     attribute_sentences,
     dataset_parse_coverage,
+    lexicon_metadata,
 )
 
 LOGGER = logging.getLogger("explain_stage2")
@@ -556,7 +557,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "graph_mode_requested": args.graph_mode,
         "rollout_method": rollout.METHOD_CHEFER,
         "attention_implementation": dict(capture.ATTN_IMPLEMENTATION),
-        "labeler": args.labeler,
+        **lexicon_metadata(args.labeler),
         "coverage": coverage,
         "ablation_gate": gate.to_dict() if gate is not None else None,
         "ablation_gate_skipped": bool(args.skip_ablation_gate),
@@ -575,6 +576,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"ablation n={gate.num_studies}: {gate.mean_delta:+.4f} "
             f"[{gate.ci_low:+.4f}, {gate.ci_high:+.4f}], established={gate.established}"
         )
+    if randomization is not None:
+        curve = ", ".join(
+            f"{k}:{c:+.4f}"
+            for k, c in zip(randomization.steps, randomization.correlations, strict=True)
+        )
+        print(f"randomization n=1, rho by layers randomized -> {curve}")
     print(
         f"parse_coverage {coverage['parse_coverage']:.3f} over "
         f"n={coverage['num_sentences']} sentences in n={coverage['num_studies']} "
