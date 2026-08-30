@@ -1323,6 +1323,24 @@ the composition below was measured on a 300-study subsample (1,556 sentences,
 coverage 0.493). But most of the miss is not a labeler
 failure**, which is what decides whether a better labeler is worth building:
 
+**Both full val runs exist and are directly comparable**, `~/xai_val` (v1) and
+`~/xai_val_v2` (v2) on the training host, 1,513 studies each, 15 MB each,
+0 errors:
+
+| | `lexicon_v1` | `lexicon_v2` |
+|---|---:|---:|
+| `parse_coverage` | 0.4827 | **0.6477** |
+| labelled sentences of 7,786 | 3,758 | **5,043** |
+| `spatially_meaningful` | 48.3% | **64.8%** |
+| zero-coverage studies | 154 | **128** |
+| peak VRAM | 11.31 GiB | 11.31 GiB |
+| ablation, n=100 | +0.1788 | +0.1788 |
+| randomization, final rho | -0.0030 | -0.0030 |
+
+The two gates reproduce to the digit across runs, which they must: neither
+depends on the labeler. Label instances under v2: **6,384 `chexpert_14`, 611
+`extended`**.
+
 **`lexicon_v2` extends the taxonomy, and it works — coverage 0.483 -> 0.648.**
 Full val, n=1,513 studies / 7,786 sentences. `--labeler lexicon_v2` on both
 commands; **v1 remains the default** so the n=1,513 run stays reproducible.
