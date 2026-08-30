@@ -510,6 +510,14 @@ CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
 # returned to 0.0; it had failed only while the Q-Former was briefly re-enabled.
 # Re-measured 2026-08-30 with tests/explainability/ added: 740 tests,
 # 732 passed, 5 failed, 3 skipped. Still the same five.
+#
+# ON THE TRAINING HOST the baseline is different and better, because the full
+# stack is installed there: no --ignore is needed and test_stage1_eval_hook
+# passes. Measured 2026-08-30 in ~/.venvs/meta-cxr-stage1-311 with
+# CUDA_VISIBLE_DEVICES="": 759 tests, 753 passed, 4 failed, 2 skipped. The four
+# are all test_native_independence, still the missing private
+# configs/env_config.yaml. Use this number, not the CPU-box one, when judging
+# whether a change broke something on the host.
 # ⚠ It was SIX for a while: test_encoder_finetune.py::TestShippedConfig::
 #   test_encoder_finetune_is_on_with_patterns asserted `len(patterns) == 5`,
 #   the SHALLOW unfreeze of run_20260820_ft, and 814b778 deepened the config to
