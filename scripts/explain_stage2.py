@@ -41,7 +41,8 @@ from scripts.evaluate_explanation import _assert_private_output_location  # noqa
 from training.explainability import attention_capture as capture  # noqa: E402
 from training.explainability import projection, rollout  # noqa: E402
 from training.explainability.sentence_attribution import (  # noqa: E402
-    LexiconSentenceLabeler,
+    LABELERS,
+    LEXICON_LABELER_NAME,
     attribute_sentences,
     dataset_parse_coverage,
 )
@@ -76,6 +77,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--skip-randomization-gate", action="store_true",
                         help="run without the Adebayo sanity check. Recorded in "
                              "the summary.")
+    # v1 stays the default so the n=1513 val run remains reproducible. v2 adds
+    # findings outside the CheXpert 14, which raises coverage without adding
+    # anything to verify them against.
+    parser.add_argument("--labeler", choices=sorted(LABELERS), default=LEXICON_LABELER_NAME)
     parser.add_argument("--model-id", default=capture.MEDGEMMA_MODEL_ID)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=16)
@@ -385,7 +390,7 @@ def explain_study(model, batch, span, study, args) -> tuple[list, dict]:
         str(study.findings_clean).strip(),
         token_texts=token_texts,
         token_nll=[float(nll[p]) for p in positions],
-        labeler=LexiconSentenceLabeler(),
+        labeler=LABELERS[args.labeler](),
     )
 
     mode = args.graph_mode
@@ -548,7 +553,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "graph_mode_requested": args.graph_mode,
         "rollout_method": rollout.METHOD_CHEFER,
         "attention_implementation": dict(capture.ATTN_IMPLEMENTATION),
-        "labeler": LexiconSentenceLabeler.name,
+        "labeler": args.labeler,
         "coverage": coverage,
         "ablation_gate": gate.to_dict() if gate is not None else None,
         "ablation_gate_skipped": bool(args.skip_ablation_gate),

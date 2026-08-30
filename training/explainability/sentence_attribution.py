@@ -39,6 +39,7 @@ from typing import Protocol, runtime_checkable
 
 try:  # ``python script.py`` from inside training/
     from safety.claims import (
+        ABNORMALITY_SYNONYMS,
         LexiconClaimParser,
         split_sentences,
         unparsed_sentences,
@@ -49,23 +50,91 @@ except ImportError:  # pragma: no cover - exercised only outside the repo root
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from safety.claims import (  # noqa: F401
+        ABNORMALITY_SYNONYMS,
         LexiconClaimParser,
         split_sentences,
         unparsed_sentences,
     )
 
 LEXICON_LABELER_NAME = "lexicon_v1"
+EXTENDED_LABELER_NAME = "lexicon_v2"
+
+#: Which taxonomy a label belongs to. This distinction is load-bearing and must
+#: survive into every output: Stage 1 predicts the 14 and nothing predicts the
+#: rest, so a sentence labelled ``Aortic Abnormality`` has no classifier to be
+#: checked against, while one labelled ``Cardiomegaly`` does. Collapsing the two
+#: would let an unverifiable finding be read as a verified one -- the same
+#: reason ``explanation_metrics`` refuses to average its lung and bbox
+#: populations together.
+TIER_CHEXPERT_14 = "chexpert_14"
+TIER_EXTENDED = "extended"
+
+#: Wording for the existing 14 that ``lexicon_v1`` does not match. Measured, not
+#: guessed: these are the terms that dominate the unlabelled sentences on the
+#: val split -- lung(91), volumes(75), enlarged(40), heart(36), tube(30).
+#: They stay inside the 14, so nothing about the Stage-1 correspondence changes.
+ADDITIONAL_CHEXPERT_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "Cardiomegaly": (
+        "heart size", "cardiac silhouette", "heart is enlarged",
+        "cardiac contour", "heart borders",
+    ),
+    "Atelectasis": (
+        "low lung volumes", "lung volumes are low", "low volumes",
+        "decreased lung volumes", "collapse", "collapsed",
+    ),
+    "Edema": ("pulmonary vascular congestion", "vascular prominence", "vascularity"),
+    "Lung Opacity": ("infiltrate", "infiltrates", "opacification", "density", "densities"),
+    "Pleural Effusion": ("blunting", "costophrenic angle", "pleural fluid"),
+    "Support Devices": ("tube", "line", "leads", "device", "devices", "port", "stent"),
+}
+
+#: Findings a radiologist genuinely reports that the CheXpert 14 has no slot
+#: for. Derived from the `outside_14` bucket, which is 10.8% of unlabelled
+#: sentences on the val split.
+#:
+#: ⚠ NOTHING PREDICTS THESE. They are labels for what a sentence says, not
+#: predictions to check it against, and they carry ``TIER_EXTENDED`` for that
+#: reason. Adding them raises coverage; it does not add verification.
+#:
+#: ⚠ This list is a proposal and needs a clinician's sign-off before any
+#: published claim, exactly like the kappa table in `CLAUDE.md`.
+EXTENDED_FINDINGS: dict[str, tuple[str, ...]] = {
+    "Degenerative Change": (
+        "degenerative", "degenerative changes", "spondylosis", "osteophyte",
+        "osteophytes", "disc space narrowing", "osteopenia", "osteoporosis",
+    ),
+    "Spinal Deformity": ("scoliosis", "scoliotic", "kyphosis", "kyphotic"),
+    "Aortic Abnormality": (
+        "tortuous aorta", "aortic tortuosity", "tortuosity", "tortuous",
+        "unfolded aorta",
+        "ectatic aorta", "aortic calcification", "atherosclerotic",
+        "atherosclerosis", "aortic knob",
+    ),
+    "Hernia": ("hiatal hernia", "hernia", "herniation"),
+    "Postsurgical Change": (
+        "sternotomy", "sternotomy wires", "surgical clips", "clips",
+        "post-surgical", "postsurgical", "cabg", "resection", "lobectomy",
+    ),
+    "Hyperinflation": (
+        "hyperinflation", "hyperinflated", "hyperexpanded", "emphysema",
+        "emphysematous", "copd",
+    ),
+    "Scarring": ("scarring", "scar", "fibrosis", "fibrotic", "granuloma", "granulomas"),
+    "Chest Wall Deformity": ("pectus excavatum", "pectus", "chest wall deformity"),
+    "Upper Abdomen": ("bowel gas", "gastric distension", "free air", "pneumoperitoneum"),
+}
 
 
 @dataclass(frozen=True)
 class SentenceLabel:
-    """One finding asserted by one sentence, with its polarity."""
+    """One finding asserted by one sentence, with its polarity and its tier."""
 
     finding: str
     polarity: str
+    tier: str = TIER_CHEXPERT_14
 
     def to_dict(self) -> dict[str, str]:
-        return {"finding": self.finding, "polarity": self.polarity}
+        return {"finding": self.finding, "polarity": self.polarity, "tier": self.tier}
 
 
 @runtime_checkable
@@ -81,6 +150,28 @@ class SentenceLabeler(Protocol):
 
     def label(self, sentence: str) -> tuple[SentenceLabel, ...]:
         ...
+
+
+def build_extended_synonyms() -> dict[str, tuple[str, ...]]:
+    """The 14 (augmented) plus the extra findings, as one lexicon.
+
+    ``ABNORMALITY_SYNONYMS`` is taken by reference rather than copied, so a
+    change to the repository's own lexicon propagates here instead of quietly
+    diverging.
+    """
+    merged: dict[str, tuple[str, ...]] = {}
+    for finding, terms in ABNORMALITY_SYNONYMS.items():
+        merged[finding] = tuple(terms) + ADDITIONAL_CHEXPERT_SYNONYMS.get(finding, ())
+    for finding, terms in EXTENDED_FINDINGS.items():
+        if finding in merged:
+            raise ValueError(f"{finding!r} is already one of the 14 labels")
+        merged[finding] = tuple(terms)
+    return merged
+
+
+def label_tier(finding: str) -> str:
+    """Which taxonomy a finding belongs to. Never guess this downstream."""
+    return TIER_CHEXPERT_14 if finding in ABNORMALITY_SYNONYMS else TIER_EXTENDED
 
 
 class LexiconSentenceLabeler:
@@ -104,9 +195,40 @@ class LexiconSentenceLabeler:
         # Parsing one sentence at a time keeps ``sentence_index`` irrelevant and
         # makes the adapter independent of how the caller split the report.
         return tuple(
-            SentenceLabel(finding=claim.finding, polarity=claim.polarity)
+            SentenceLabel(
+                finding=claim.finding,
+                polarity=claim.polarity,
+                tier=label_tier(claim.finding),
+            )
             for claim in self._parser.parse(text)
         )
+
+
+class ExtendedLexiconSentenceLabeler(LexiconSentenceLabeler):
+    """The 14 with better synonyms, plus findings outside that taxonomy.
+
+    ⚠ **`safety/claims.py` is deliberately NOT modified.** Its 14 labels
+    correspond one-to-one with Stage 1's classification head, and
+    `safety/pipeline.py` reconciles each claim against that classifier. Adding
+    labels there would produce claims with no prediction to check them against,
+    which is a quiet way to turn a verification pipeline into a description
+    pipeline. The extension lives here, where nothing is being verified.
+
+    Everything this labeler emits carries a ``tier``. Sentences labelled
+    ``TIER_EXTENDED`` gained coverage, not verification -- keep the two apart
+    in any report.
+    """
+
+    name = EXTENDED_LABELER_NAME
+
+    def __init__(self, parser: LexiconClaimParser | None = None):
+        super().__init__(parser or LexiconClaimParser(build_extended_synonyms()))
+
+
+LABELERS = {
+    LEXICON_LABELER_NAME: LexiconSentenceLabeler,
+    EXTENDED_LABELER_NAME: ExtendedLexiconSentenceLabeler,
+}
 
 
 @dataclass(frozen=True)
