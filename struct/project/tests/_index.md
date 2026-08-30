@@ -138,13 +138,14 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 ## Nhóm 8 — Explainability Stage 2
 
 `tests/explainability/` — namespace package, **cố ý không có `__init__.py`**
-(xem bẫy `iterative-stratification` trong `CLAUDE.md`). 91 test, toàn bộ chạy
+(xem bẫy `iterative-stratification` trong `CLAUDE.md`). **149 test**, toàn bộ chạy
 trên máy CPU không có transformers/torchvision, `rc=0`.
 
 | Test | Kiểm gì |
 |---|---|
 | `test_rollout.py` (30) | Rollout Chefer bằng ma trận dựng tay có đáp án tính tay. Pin thứ tự **clamp-rồi-mean** (đảo lại cho ra 0.0 thay vì 2.0, cùng shape, không báo lỗi); pin thứ tự hợp thành lớp; span không có khối lượng → zeros **không phải** phân phối đều |
-| `test_projection.py` (33) | Ô vuông tổng hợp 4 góc × 2 lưới, kiểm cả khối lượng góc phần tư lẫn pixel đỉnh; số học `14*32 == 7*64 == 448`; từ chối chiếu soft token Q-Former; `normalize_map` pin số học vào `_normalize_cam` của Stage 1 |
+| `test_projection.py` (50) | Ô vuông tổng hợp 4 góc × 2 lưới, kiểm cả khối lượng góc phần tư lẫn pixel đỉnh; số học `14*32 == 7*64 == 448`; từ chối chiếu soft token Q-Former; `normalize_map` pin số học vào `_normalize_cam` của Stage 1 |
+| `test_attention_capture.py` (43) | Model thay thế thuần torch: chọn module **theo tên** (vision tower mồi kiểu sdpa phải KHÔNG bị bắt), hook luôn gỡ kể cả khi lỗi, split `train` RAISE, NLL dịch một bước và mask trả `nan`, cổng triệt tiêu đòi CI loại trừ 0 |
 | `test_sentence_attribution.py` (28) | Offset câu khớp `split_sentences`; gộp token→câu theo chồng lấn ký tự; `parse_coverage` gộp theo **câu** không theo study; nhãn theo **allowlist** |
 
 ⚠ Tầng GPU (đẩy ảnh thật qua encoder thật, test triệt tiêu soft token) **chưa

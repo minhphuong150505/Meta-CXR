@@ -321,32 +321,90 @@ def test_nll_rejects_a_length_mismatch():
 # --------------------------------------------------------------------------
 
 
-def test_ablation_passes_when_removing_the_image_hurts():
-    delta = assert_visual_tokens_matter([1.0, 1.0, 1.0], [2.0, 2.5, 1.5])
-    assert delta == pytest.approx(1.0)
+# Real measurements, 12 MIMIC test studies, MedGemma bf16, 2026-08-30. Per-study
+# mean-token-NLL deltas against the baseline. No identifiers, no report text --
+# these are aggregate numbers and nothing else.
+REAL_ZERO_DELTAS = [
+    -0.0301, -0.0477, -0.0848, -0.2106, +0.2046, +0.1209,
+    -0.1377, +0.2363, +0.1650, +0.1715, +0.1138, +0.1408,
+]
+REAL_MISMATCH_DELTAS = [
+    +0.1305, +0.0546, +0.0119, -0.0912, +0.3383, +0.2623,
+    +0.4346, +0.0017, -0.0269, +0.3825, +0.1652, +0.5776,
+]
+
+
+def _score(deltas, condition):
+    from training.explainability.attention_capture import score_ablation
+
+    return score_ablation([0.0] * len(deltas), deltas, condition=condition)
+
+
+def test_ablation_passes_when_removing_the_image_reliably_hurts():
+    result = _score([0.4, 0.5, 0.45, 0.6, 0.55, 0.5], "zeroed")
+    assert result.established is True
+    assert result.ci_low > 0
+    assert result.fraction_worse == 1.0
+    assert assert_visual_tokens_matter(result) is result
 
 
 def test_ablation_raises_when_the_image_makes_no_difference():
+    result = _score([0.0, 0.001, -0.001, 0.0, 0.002, -0.002], "zeroed")
+    assert result.established is False
     with pytest.raises(SoftTokenAblationFailed, match="not using the image"):
-        assert_visual_tokens_matter([1.0, 1.0], [1.0, 1.0001])
+        assert_visual_tokens_matter(result)
 
 
 def test_ablation_raises_when_removing_the_image_HELPS():
-    # A negative delta is at least as alarming as a zero one.
+    """A negative delta is at least as alarming as a zero one."""
+    result = _score([-0.5, -0.4, -0.6, -0.45, -0.55, -0.5], "zeroed")
+    assert result.established is False
     with pytest.raises(SoftTokenAblationFailed):
-        assert_visual_tokens_matter([2.0, 2.0], [1.0, 1.0])
+        assert_visual_tokens_matter(result)
 
 
-def test_ablation_ignores_nan_positions_consistently():
-    delta = assert_visual_tokens_matter(
-        [1.0, float("nan"), 1.0], [2.0, float("nan"), 2.0]
-    )
-    assert delta == pytest.approx(1.0)
+def test_a_threshold_clearing_mean_with_a_ci_across_zero_is_NOT_a_pass():
+    """The measurement that forced this gate to be rewritten.
+
+    On 12 real studies the zero-ablation returned +0.0535, which clears the
+    0.05 threshold, with a 95% CI of [-0.0283, +0.1314] and only 7 of 12
+    studies worse. A threshold-only gate called that a pass. It is a null.
+    """
+    result = _score(REAL_ZERO_DELTAS, "zeroed")
+    assert result.mean_delta == pytest.approx(0.0535, abs=0.001)
+    assert result.mean_delta > 0.05          # clears the threshold
+    assert result.ci_low < 0 < result.ci_high  # and is still indistinguishable from 0
+    assert result.established is False
+    with pytest.raises(SoftTokenAblationFailed, match="not established"):
+        assert_visual_tokens_matter(result)
 
 
-def test_ablation_rejects_mismatched_lengths():
-    with pytest.raises(ValueError, match="matching non-empty"):
-        assert_visual_tokens_matter([1.0, 2.0], [1.0])
+def test_the_mismatched_image_control_IS_established_on_the_same_studies():
+    """Same 12 studies, sharper question, and this one clears zero."""
+    result = _score(REAL_MISMATCH_DELTAS, "mismatched")
+    assert result.mean_delta == pytest.approx(0.1868, abs=0.001)
+    assert result.ci_low > 0
+    assert result.fraction_worse == pytest.approx(10 / 12)
+    assert result.established is True
+    assert assert_visual_tokens_matter(result) is result
+
+
+def test_the_bootstrap_is_deterministic():
+    first = _score(REAL_MISMATCH_DELTAS, "mismatched")
+    second = _score(REAL_MISMATCH_DELTAS, "mismatched")
+    assert (first.ci_low, first.ci_high) == (second.ci_low, second.ci_high)
+
+
+def test_ablation_rejects_too_few_studies():
+    from training.explainability.attention_capture import score_ablation
+
+    with pytest.raises(ValueError, match="at least 2 paired studies"):
+        score_ablation([1.0], [2.0], condition="zeroed")
+
+
+def test_assert_refuses_a_bare_number():
+    with pytest.raises(TypeError, match="must come from score_ablation"):
+        assert_visual_tokens_matter(0.5)
 
 
 # --------------------------------------------------------------------------
