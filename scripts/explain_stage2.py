@@ -72,6 +72,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="studies used for the gate before any map is written")
     parser.add_argument("--skip-ablation-gate", action="store_true",
                         help="run without the gate. Recorded in the summary.")
+    parser.add_argument("--skip-randomization-gate", action="store_true",
+                        help="run without the Adebayo sanity check. Recorded in "
+                             "the summary.")
     parser.add_argument("--model-id", default=capture.MEDGEMMA_MODEL_ID)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=16)
@@ -301,6 +304,59 @@ def _attribute_per_sentence(model, batch, span, attributed, positions, args):
     return maps, flags
 
 
+def run_randomization_gate(model, processor, frame, args, image_root, device) -> dict:
+    """Adebayo's cascading randomization, on one real study.
+
+    Asks a different question from the ablation gate: not "does the model use
+    the image" but "does the MAP depend on what the model learned". A map that
+    survives randomising the network is a function of the input and the
+    architecture, which is the failure Adebayo et al. 2018 found in several
+    methods that looked convincing.
+
+    Weights are restored in ``finally`` at every step, so a failure here leaves
+    the model trained.
+    """
+    import torch
+
+    batch = build_batch(processor, model, frame.iloc[0], image_root, device)
+    span = locate(model, batch)
+    positions = target_positions(batch, span)
+    num_layers = len(capture.language_attention_modules(model))
+
+    def attribute(layer_indices):
+        restore = None
+        try:
+            if layer_indices:
+                restore = capture.randomize_layers(model, layer_indices, seed=args.seed)
+            outputs, captured, _embeds = capture.teacher_forced_forward(model, batch, span)
+            attention = capture.stack_captured(captured, expected_layers=num_layers)
+            score = outputs.logits[0, [p - 1 for p in positions], :].max(dim=-1).values.sum()
+            gradients = None
+            if not args.no_gradient_weight:
+                gradients, _reason = capture.gradient_weighted_layers(
+                    score, captured, retain_graph=False
+                )
+            values, _trace = capture.attribute_visual_tokens(
+                attention, span, positions, gradients=gradients
+            )
+            result = values.detach().cpu().clone()
+            del outputs, captured, attention, gradients
+            return result
+        finally:
+            if restore is not None:
+                restore()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    result = capture.cascading_randomization(attribute, num_layers)
+    LOGGER.info(
+        "randomization: rho by step %s -> final %+0.4f, degrades=%s",
+        dict(zip(result.steps, [round(c, 4) for c in result.correlations], strict=True)),
+        result.final_correlation, result.degrades,
+    )
+    return result
+
+
 def explain_study(model, batch, span, study, args) -> tuple[list, dict]:
     """Sentence-level attribution for one study.
 
@@ -409,6 +465,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         gate = run_ablation_gate(model, processor, frame, args, args.image_root, device)
         capture.assert_visual_tokens_matter(gate)
 
+    randomization = None
+    if args.skip_randomization_gate:
+        LOGGER.warning(
+            "RANDOMIZATION GATE SKIPPED. Nothing has checked that the maps "
+            "depend on the model's learned weights rather than on the input "
+            "and the architecture."
+        )
+    else:
+        randomization = run_randomization_gate(
+            model, processor, frame, args, args.image_root, device
+        )
+        capture.assert_randomization_degrades(randomization)
+
     jsonl_path = output_dir / f"explanations_{split}.jsonl"
     keymap_path = output_dir / f"keymap_{split}.jsonl"
     studies, written = [], 0
@@ -468,6 +537,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "coverage": coverage,
         "ablation_gate": gate.to_dict() if gate is not None else None,
         "ablation_gate_skipped": bool(args.skip_ablation_gate),
+        "randomization_gate": randomization.to_dict() if randomization is not None else None,
+        "randomization_gate_skipped": bool(args.skip_randomization_gate),
         "peak_vram_bytes": (
             int(torch.cuda.max_memory_allocated()) if torch.cuda.is_available() else None
         ),
