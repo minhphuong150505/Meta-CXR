@@ -67,7 +67,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="directory that directly contains files/")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--split", choices=capture.ALLOWED_SPLITS, default="test")
-    parser.add_argument("--limit", type=int, default=20, help="studies to explain")
+    parser.add_argument("--limit", type=int, default=20,
+                        help="studies to explain; 0 means the whole split")
     parser.add_argument("--ablation-studies", type=int, default=12,
                         help="studies used for the gate before any map is written")
     parser.add_argument("--skip-ablation-gate", action="store_true",
@@ -78,8 +79,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model-id", default=capture.MEDGEMMA_MODEL_ID)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=16)
-    parser.add_argument("--min-findings-tokens", type=int, default=30)
-    parser.add_argument("--max-findings-tokens", type=int, default=90)
+    # No default bounds. The previous 30-90 silently excluded the longest
+    # reports -- val's longest carry 121-138 findings tokens -- so the worst
+    # case was never exercised and the cohort was quietly narrowed.
+    parser.add_argument("--min-findings-tokens", type=int, default=None)
+    parser.add_argument("--max-findings-tokens", type=int, default=None)
     parser.add_argument("--graph-mode", choices=GRAPH_MODES, default=GRAPH_AUTO,
                         help="auto retries a study per-sentence if the shared "
                              "graph OOMs; measured worst case in val is 13.49 "
@@ -110,21 +114,22 @@ def select_studies(manifest: Path, split: str, args) -> list:
                 f"the manifest holds no rows for split {split!r} (accepted "
                 f"{aliases}); its split column contains {present}"
             )
-    frame = frame[
-        frame["target_valid"]
-        & frame["ViewPosition"].isin(["PA", "AP"])
-        & frame["findings_token_count"].between(
-            args.min_findings_tokens, args.max_findings_tokens
-        )
-    ]
+    frame = frame[frame["target_valid"] & frame["ViewPosition"].isin(["PA", "AP"])]
+    if args.min_findings_tokens is not None:
+        frame = frame[frame["findings_token_count"] >= args.min_findings_tokens]
+    if args.max_findings_tokens is not None:
+        frame = frame[frame["findings_token_count"] <= args.max_findings_tokens]
     if frame.empty:
         raise SystemExit(
             f"no study in split {split!r} matches ViewPosition in (PA, AP) with "
-            f"{args.min_findings_tokens}-{args.max_findings_tokens} findings "
-            "tokens; widen the bounds"
+            f"findings tokens in [{args.min_findings_tokens}, "
+            f"{args.max_findings_tokens}]; widen or drop the bounds"
         )
     # +1 so the last study still has a partner for the mismatch control.
-    wanted = min(len(frame), max(args.limit, args.ablation_studies) + 1)
+    if args.limit and args.limit > 0:
+        wanted = min(len(frame), max(args.limit, args.ablation_studies) + 1)
+    else:
+        wanted = len(frame)  # --limit 0 == the whole split
     return frame.sample(n=wanted, random_state=args.seed).reset_index(drop=True)
 
 
@@ -210,9 +215,10 @@ def run_ablation_gate(model, processor, frame, args, image_root, device) -> dict
 
     result = capture.score_ablation(baseline, mismatched, condition="mismatched_image")
     LOGGER.info(
-        "ablation %s: mean %+0.4f CI [%+0.4f, %+0.4f] worse %.0f%% established=%s",
-        result.condition, result.mean_delta, result.ci_low, result.ci_high,
-        100 * result.fraction_worse, result.established,
+        "ablation %s (n=%d studies): mean %+0.4f CI [%+0.4f, %+0.4f] worse %.0f%% "
+        "established=%s",
+        result.condition, result.num_studies, result.mean_delta, result.ci_low,
+        result.ci_high, 100 * result.fraction_worse, result.established,
     )
     return result
 
@@ -350,7 +356,7 @@ def run_randomization_gate(model, processor, frame, args, image_root, device) ->
 
     result = capture.cascading_randomization(attribute, num_layers)
     LOGGER.info(
-        "randomization: rho by step %s -> final %+0.4f, degrades=%s",
+        "randomization (n=1 study): rho by step %s -> final %+0.4f, degrades=%s",
         dict(zip(result.steps, [round(c, 4) for c in result.correlations], strict=True)),
         result.final_correlation, result.degrades,
     )
@@ -478,13 +484,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         capture.assert_randomization_degrades(randomization)
 
+    planned = len(frame) if not args.limit or args.limit <= 0 else min(
+        args.limit, len(frame) - 1
+    )
+    LOGGER.info("explaining n=%d studies from split %r", planned, split)
+
     jsonl_path = output_dir / f"explanations_{split}.jsonl"
     keymap_path = output_dir / f"keymap_{split}.jsonl"
     studies, written = [], 0
     with jsonl_path.open("w", encoding="utf-8") as handle:
         keymap = keymap_path.open("w", encoding="utf-8") if args.write_key_map else None
         try:
-            for index in range(min(args.limit, len(frame) - 1)):
+            for index in range(planned):
                 study = frame.iloc[index]
                 key = sample_key(study.dicom_id)
                 batch = build_batch(processor, model, study, args.image_root, device)
@@ -518,7 +529,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 del batch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                LOGGER.info("explained %d/%d", written, min(args.limit, len(frame) - 1))
+                LOGGER.info("explained %d/%d studies (n target=%d)",
+                            written, planned, planned)
         finally:
             if keymap is not None:
                 keymap.close()
@@ -528,7 +540,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "schema_version": SCHEMA_VERSION,
         "split": split,
         "model_id": args.model_id,
+        "n_studies": written,
         "studies_written": written,
+        "n_ablation_studies": gate.num_studies if gate is not None else 0,
+        "n_randomization_studies": 0 if randomization is None else 1,
         "gradient_weighted": not args.no_gradient_weight,
         "graph_mode_requested": args.graph_mode,
         "rollout_method": rollout.METHOD_CHEFER,
@@ -546,11 +561,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     (output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    print(f"wrote {written} studies to {jsonl_path}")
+    print(f"n={written} studies written to {jsonl_path}")
+    if gate is not None:
+        print(
+            f"ablation n={gate.num_studies}: {gate.mean_delta:+.4f} "
+            f"[{gate.ci_low:+.4f}, {gate.ci_high:+.4f}], established={gate.established}"
+        )
     print(
         f"parse_coverage {coverage['parse_coverage']:.3f} over "
-        f"{coverage['num_sentences']} sentences -- quote this beside any "
-        f"sentence-level claim"
+        f"n={coverage['num_sentences']} sentences in n={coverage['num_studies']} "
+        f"studies -- quote n beside any number from this run"
     )
     return 0
 

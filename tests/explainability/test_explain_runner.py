@@ -345,3 +345,41 @@ def test_randomization_restores_the_weights_even_on_failure():
                    source.index("def explain_study(")]
     assert "finally:" in block
     assert "restore()" in block
+
+
+# --------------------------------------------------------------------------
+# n must be impossible to miss
+# --------------------------------------------------------------------------
+
+
+def test_token_bounds_no_longer_default_to_a_narrow_window(runner):
+    """The old 30-90 default silently excluded val's longest reports."""
+    args = runner.parse_args(
+        ["--manifest", "m.csv", "--image-root", ".", "--output-dir", "o"]
+    )
+    assert args.min_findings_tokens is None
+    assert args.max_findings_tokens is None
+
+
+def test_limit_zero_means_the_whole_split(runner):
+    args = runner.parse_args(
+        ["--manifest", "m.csv", "--image-root", ".", "--output-dir", "o", "--limit", "0"]
+    )
+    assert args.limit == 0
+    source = RUNNER.read_text(encoding="utf-8")
+    assert "wanted = len(frame)  # --limit 0 == the whole split" in source
+
+
+def test_every_reported_number_carries_its_n():
+    source = RUNNER.read_text(encoding="utf-8")
+    assert "ablation %s (n=%d studies)" in source
+    assert "randomization (n=1 study)" in source
+    assert "explained %d/%d studies (n target=%d)" in source
+    assert 'print(f"n={written} studies written' in source
+    assert "quote n beside any number from this run" in source
+
+
+def test_the_summary_carries_n_for_each_measurement():
+    source = RUNNER.read_text(encoding="utf-8")
+    for key in ('"n_studies"', '"n_ablation_studies"', '"n_randomization_studies"'):
+        assert key in source, key
