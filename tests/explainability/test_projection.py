@@ -307,3 +307,172 @@ def test_normalize_map_puts_the_extremes_at_zero_and_one():
     assert float(normalized.min()) == pytest.approx(0.0)
     assert float(normalized.max()) == pytest.approx(1.0)
     assert float(normalized[0, 1]) == pytest.approx(0.25)
+
+
+# --------------------------------------------------------------------------
+# The common frame: original image coordinates
+# --------------------------------------------------------------------------
+#
+# Stage 1 and MedGemma preprocess differently, so neither map means anything to
+# the other until both are carried back to the original radiograph. The numbers
+# below were taken from real torchvision on the training host 2026-08-30.
+
+from training.explainability.projection import (  # noqa: E402
+    MEDGEMMA_GRID,
+    MEDGEMMA_IMAGE_SIZE,
+    OriginalFrame,
+    Stage1CropGeometry,
+    medgemma_map_in_original,
+    stage1_map_in_original,
+)
+
+# (original w, h) -> (resized w, h, crop_left, crop_top), from torchvision itself
+TORCHVISION_CASES = [
+    ((2544, 3056), (512, 615, 32, 84)),
+    ((3056, 2544), (615, 512, 84, 32)),
+    ((2022, 2022), (512, 512, 32, 32)),
+    ((2500, 3000), (512, 614, 32, 83)),
+    ((1935, 2544), (512, 673, 32, 112)),
+]
+
+
+@pytest.mark.parametrize(("original", "expected"), TORCHVISION_CASES)
+def test_crop_geometry_matches_real_torchvision(original, expected):
+    """Pinned against torchvision 0.24.1 output, not against the docs.
+
+    Resize(int) truncates the long side with int(), CenterCrop offsets with
+    int(round(...)). Getting either wrong shifts every map by a few pixels
+    with nothing to show for it.
+    """
+    geometry = Stage1CropGeometry.from_original(OriginalFrame(*original))
+    assert (
+        geometry.resized_width,
+        geometry.resized_height,
+        geometry.crop_left,
+        geometry.crop_top,
+    ) == expected
+
+
+def test_crop_box_lands_inside_the_original():
+    geometry = Stage1CropGeometry.from_original(OriginalFrame(2544, 3056))
+    x0, y0, x1, y1 = geometry.crop_box_in_original()
+    assert 0 <= x0 < x1 <= 2544
+    assert 0 <= y0 < y1 <= 3056
+
+
+def test_a_square_original_discards_only_the_resize_margin():
+    geometry = Stage1CropGeometry.from_original(OriginalFrame(2022, 2022))
+    # 448/512 of each side survives, so 1 - (448/512)^2.
+    assert geometry.discarded_fraction == pytest.approx(1 - (448 / 512) ** 2, abs=1e-3)
+
+
+def test_a_tall_original_discards_much_more():
+    """Stage 1 never sees a third of a portrait radiograph; MedGemma always does."""
+    geometry = Stage1CropGeometry.from_original(OriginalFrame(2544, 3056))
+    assert geometry.discarded_fraction == pytest.approx(0.363, abs=0.01)
+    assert geometry.discarded_fraction > Stage1CropGeometry.from_original(
+        OriginalFrame(2022, 2022)
+    ).discarded_fraction
+
+
+def test_an_image_smaller_than_the_crop_is_refused():
+    with pytest.raises(ValueError, match="smaller than CenterCrop"):
+        Stage1CropGeometry.from_original(OriginalFrame(100, 120), short_side=200, crop_size=448)
+
+
+def test_canvas_preserves_the_original_aspect():
+    frame = OriginalFrame(2544, 3056)
+    height, width = frame.canvas(max_side=512)
+    assert height == 512  # portrait -> the long side is capped
+    assert width == pytest.approx(512 * 2544 / 3056, abs=1)
+    assert width / height == pytest.approx(frame.aspect, abs=0.01)
+
+
+def test_medgemma_grid_tiles_its_own_896_square():
+    assert MEDGEMMA_GRID.covered_px == (MEDGEMMA_IMAGE_SIZE, MEDGEMMA_IMAGE_SIZE)
+    assert MEDGEMMA_GRID.num_tokens == 256  # mm_tokens_per_image
+
+
+def test_medgemma_map_covers_the_whole_canvas():
+    """MedGemma squashed the entire image, so nothing is outside its view."""
+    frame = OriginalFrame(2544, 3056)
+    values = torch.ones(MEDGEMMA_GRID.num_tokens)
+    projected = medgemma_map_in_original(values, frame, normalize=False)
+    assert projected.shape == frame.canvas()
+    assert bool((projected > 0).all())
+
+
+def test_medgemma_corner_survives_the_anisotropic_undo():
+    frame = OriginalFrame(2544, 3056)
+    cells = torch.zeros(16, 16)
+    cells[0, 15] = 1.0  # top-right
+    projected = medgemma_map_in_original(cells.reshape(-1), frame)
+    h, w = projected.shape
+    assert float(projected[: h // 2, w // 2 :].sum()) > float(
+        projected[h // 2 :, : w // 2].sum()
+    )
+
+
+def test_stage1_map_is_zero_where_the_crop_discarded_the_image():
+    """0 outside the box means 'Stage 1 could not look here'."""
+    frame = OriginalFrame(2544, 3056)
+    geometry = Stage1CropGeometry.from_original(frame)
+    projected = stage1_map_in_original(torch.ones(448, 448), geometry, normalize=False)
+    assert projected.shape == frame.canvas()
+    assert float(projected[0, 0]) == 0.0        # top edge is cropped away
+    h, w = projected.shape
+    assert float(projected[h // 2, w // 2]) == pytest.approx(1.0)
+    assert float((projected > 0).float().mean()) == pytest.approx(
+        1 - geometry.discarded_fraction, abs=0.02
+    )
+
+
+def test_stage1_and_medgemma_land_on_the_same_canvas():
+    """The whole point: two maps that can finally be compared."""
+    frame = OriginalFrame(2544, 3056)
+    geometry = Stage1CropGeometry.from_original(frame)
+    canvas = frame.canvas(max_side=256)
+    a = medgemma_map_in_original(torch.rand(256), frame, canvas_hw=canvas)
+    b = stage1_map_in_original(torch.rand(448, 448), geometry, canvas_hw=canvas)
+    assert a.shape == b.shape == canvas
+
+
+def test_a_centre_blob_agrees_between_the_two_frames():
+    """A finding in the middle must project to the middle in BOTH pipelines.
+
+    The centre is the one region both preprocessings keep, so it is where the
+    two frames have to agree. If either transform were inverted, mirrored or
+    left un-corrected, these two centroids would separate.
+    """
+    frame = OriginalFrame(2544, 3056)
+    geometry = Stage1CropGeometry.from_original(frame)
+    canvas = frame.canvas(max_side=256)
+
+    medgemma_cells = torch.zeros(16, 16)
+    medgemma_cells[7:9, 7:9] = 1.0
+    stage1_cells = torch.zeros(448, 448)
+    stage1_cells[200:248, 200:248] = 1.0
+
+    a = medgemma_map_in_original(medgemma_cells.reshape(-1), frame, canvas_hw=canvas)
+    b = stage1_map_in_original(stage1_cells, geometry, canvas_hw=canvas)
+
+    def centroid(m):
+        total = m.sum()
+        rows = torch.arange(m.shape[0], dtype=torch.float32)[:, None]
+        cols = torch.arange(m.shape[1], dtype=torch.float32)[None, :]
+        return float((m * rows).sum() / total), float((m * cols).sum() / total)
+
+    ar, ac = centroid(a)
+    br, bc = centroid(b)
+    assert abs(ar - br) < 0.05 * canvas[0]
+    assert abs(ac - bc) < 0.05 * canvas[1]
+
+
+def test_outside_value_is_configurable_and_distinguishable():
+    frame = OriginalFrame(2544, 3056)
+    geometry = Stage1CropGeometry.from_original(frame)
+    projected = stage1_map_in_original(
+        torch.ones(448, 448), geometry, normalize=False, outside_value=float("nan")
+    )
+    assert torch.isnan(projected[0, 0])
+    assert not torch.isnan(projected[projected.shape[0] // 2, projected.shape[1] // 2])

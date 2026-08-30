@@ -299,3 +299,230 @@ def project_to_image(
     if normalize:
         upsampled = normalize_map(upsampled)
     return upsampled[0] if squeeze else upsampled
+
+
+# ---------------------------------------------------------------------------
+# The common frame: original image coordinates
+# ---------------------------------------------------------------------------
+#
+# Stage 1 and MedGemma do NOT see the same picture, and neither transform is the
+# other's. Verified on the training host 2026-08-30:
+#
+#   Stage 1     original -> Resize(512) on the SHORTER side, aspect PRESERVED
+#                        -> CenterCrop(448), which DISCARDS the long axis' edges
+#   MedGemma    original -> resize to 896x896, aspect NOT preserved (measured:
+#                           2544x3056, aspect 0.8325, comes out 1.0), no crop
+#
+# So a MedGemma map cannot be laid over the Stage-1 crop, and the two cannot be
+# compared, until both are carried back to the ORIGINAL image. That frame is the
+# only one both pipelines agree on, and it is the one this section targets.
+#
+# ⚠ These projections are an ALIGNMENT utility, not a storage format. A map
+# rasterised at original resolution is a 7-megapixel patient-derived image;
+# persist the native grid (16x16 / 14x14 / 7x7) as .npz instead, exactly as the
+# Stage-1 XAI evaluator does.
+
+MEDGEMMA_IMAGE_SIZE = 896
+MEDGEMMA_GRID = GridSpec(height=16, width=16, patch_px=56)
+
+STAGE1_RESIZE_SHORT_SIDE = 512
+
+
+@dataclass(frozen=True)
+class OriginalFrame:
+    """The un-preprocessed radiograph, in pixels."""
+
+    width: int
+    height: int
+
+    def __post_init__(self) -> None:
+        for name in ("width", "height"):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer, got {value!r}")
+
+    @property
+    def aspect(self) -> float:
+        return self.width / self.height
+
+    def canvas(self, max_side: int = 512) -> tuple[int, int]:
+        """An aspect-preserving ``(height, width)`` to compare maps on.
+
+        Comparing on a SQUARE canvas would re-introduce exactly the distortion
+        this section exists to undo, so the canvas keeps the original aspect.
+        """
+        if not isinstance(max_side, int) or isinstance(max_side, bool) or max_side <= 0:
+            raise ValueError(f"max_side must be a positive integer, got {max_side!r}")
+        if self.width >= self.height:
+            width = max_side
+            height = max(1, int(round(max_side * self.height / self.width)))
+        else:
+            height = max_side
+            width = max(1, int(round(max_side * self.width / self.height)))
+        return (height, width)
+
+
+@dataclass(frozen=True)
+class Stage1CropGeometry:
+    """Where the Stage-1 448 crop sits inside the original image.
+
+    Mirrors ``torchvision.transforms.Resize(int)`` and ``CenterCrop(int)``
+    exactly, because an off-by-one here is a silent misalignment:
+
+    * ``Resize(s)`` scales the SHORTER side to ``s`` and takes the longer side
+      to ``int(s * long / short)`` -- truncation, not rounding, which is why the
+      two axes end up with very slightly different scales.
+    * ``CenterCrop(c)`` offsets by ``int(round((size - c) / 2))``.
+
+    Pinned against the real torchvision on the host: 2544x3056 -> 512x615,
+    top=84 left=32; 2500x3000 -> 512x614, top=83 left=32.
+    """
+
+    frame: OriginalFrame
+    resized_width: int
+    resized_height: int
+    crop_left: int
+    crop_top: int
+    crop_size: int = 448
+
+    @classmethod
+    def from_original(
+        cls,
+        frame: OriginalFrame,
+        short_side: int = STAGE1_RESIZE_SHORT_SIDE,
+        crop_size: int = 448,
+    ) -> Stage1CropGeometry:
+        width, height = frame.width, frame.height
+        short, long_ = (width, height) if width <= height else (height, width)
+        new_short = short_side
+        new_long = int(short_side * long_ / short)  # int(), matching torchvision
+        if width <= height:
+            resized_width, resized_height = new_short, new_long
+        else:
+            resized_width, resized_height = new_long, new_short
+        if resized_width < crop_size or resized_height < crop_size:
+            raise ValueError(
+                f"Resize({short_side}) gives {resized_width}x{resized_height}, which is "
+                f"smaller than CenterCrop({crop_size}); the crop would pad rather than crop"
+            )
+        return cls(
+            frame=frame,
+            resized_width=resized_width,
+            resized_height=resized_height,
+            crop_left=int(round((resized_width - crop_size) / 2.0)),
+            crop_top=int(round((resized_height - crop_size) / 2.0)),
+            crop_size=crop_size,
+        )
+
+    @property
+    def scale_x(self) -> float:
+        return self.resized_width / self.frame.width
+
+    @property
+    def scale_y(self) -> float:
+        return self.resized_height / self.frame.height
+
+    def crop_box_in_original(self) -> tuple[float, float, float, float]:
+        """Half-open ``(x0, y0, x1, y1)`` of the 448 crop, in original pixels."""
+        x0 = self.crop_left / self.scale_x
+        y0 = self.crop_top / self.scale_y
+        x1 = (self.crop_left + self.crop_size) / self.scale_x
+        y1 = (self.crop_top + self.crop_size) / self.scale_y
+        return (x0, y0, x1, y1)
+
+    @property
+    def discarded_fraction(self) -> float:
+        """Fraction of the original image the centre crop throws away.
+
+        Worth surfacing: Stage 1 never sees it, MedGemma always does, so a
+        MedGemma map may legitimately be hot somewhere Stage 1 could not look.
+        """
+        x0, y0, x1, y1 = self.crop_box_in_original()
+        kept = (x1 - x0) * (y1 - y0)
+        return 1.0 - kept / (self.frame.width * self.frame.height)
+
+
+def _resize_map(values: torch.Tensor, size_hw: tuple[int, int], mode: str) -> torch.Tensor:
+    kwargs = {"size": size_hw, "mode": mode}
+    if mode == MODE_BILINEAR:
+        kwargs["align_corners"] = False
+    return torch.nn.functional.interpolate(values[None, None], **kwargs)[0, 0]
+
+
+def medgemma_map_in_original(
+    attribution: torch.Tensor,
+    frame: OriginalFrame,
+    *,
+    grid: GridSpec = MEDGEMMA_GRID,
+    canvas_hw: tuple[int, int] | None = None,
+    mode: str = MODE_BILINEAR,
+    normalize: bool = True,
+) -> torch.Tensor:
+    """Carry a 16x16 MedGemma attribution back onto the original image.
+
+    MedGemma squashed the whole image into a square, so undoing it is a single
+    ANISOTROPIC resize straight to the canvas aspect -- there is no crop to
+    account for, and every part of the original is covered.
+    """
+    assert_spatial_projection_supported("vision_patch_grid")
+    if not isinstance(frame, OriginalFrame):
+        raise TypeError("frame must be an OriginalFrame")
+    if not torch.is_tensor(attribution) or attribution.ndim != 1:
+        raise ValueError(
+            f"attribution must be 1-D [N], got "
+            f"{tuple(attribution.shape) if torch.is_tensor(attribution) else type(attribution)}"
+        )
+    if attribution.shape[0] != grid.num_tokens:
+        raise ValueError(
+            f"attribution carries {attribution.shape[0]} values but the grid declares "
+            f"{grid.height}x{grid.width} = {grid.num_tokens}"
+        )
+    if not torch.isfinite(attribution).all():
+        raise ValueError("attribution contains non-finite values")
+
+    target = canvas_hw if canvas_hw is not None else frame.canvas()
+    cells = attribution.to(torch.float32).reshape(grid.height, grid.width)
+    projected = _resize_map(cells, target, mode)
+    return normalize_map(projected) if normalize else projected
+
+
+def stage1_map_in_original(
+    attribution: torch.Tensor,
+    geometry: Stage1CropGeometry,
+    *,
+    canvas_hw: tuple[int, int] | None = None,
+    mode: str = MODE_BILINEAR,
+    normalize: bool = True,
+    outside_value: float = 0.0,
+) -> torch.Tensor:
+    """Carry a Stage-1 448-frame map back onto the original image.
+
+    Two corrections, in this order: undo the centre crop by placing the map at
+    its real box, and undo the aspect-preserving resize by scaling into that
+    box. Everything the crop discarded is filled with ``outside_value`` -- 0 by
+    default, meaning "Stage 1 could not look here", which is NOT the same claim
+    as "Stage 1 looked and found nothing". Keep them distinguishable downstream.
+    """
+    if not isinstance(geometry, Stage1CropGeometry):
+        raise TypeError("geometry must be a Stage1CropGeometry")
+    if not torch.is_tensor(attribution) or attribution.ndim != 2:
+        raise ValueError("attribution must be a 2-D [H, W] map in the 448 crop frame")
+    if not torch.isfinite(attribution).all():
+        raise ValueError("attribution contains non-finite values")
+
+    frame = geometry.frame
+    target_h, target_w = canvas_hw if canvas_hw is not None else frame.canvas()
+    canvas_scale_x = target_w / frame.width
+    canvas_scale_y = target_h / frame.height
+
+    x0, y0, x1, y1 = geometry.crop_box_in_original()
+    left = int(round(x0 * canvas_scale_x))
+    top = int(round(y0 * canvas_scale_y))
+    right = min(target_w, int(round(x1 * canvas_scale_x)))
+    bottom = min(target_h, int(round(y1 * canvas_scale_y)))
+    box_w, box_h = max(1, right - left), max(1, bottom - top)
+
+    resized = _resize_map(attribution.to(torch.float32), (box_h, box_w), mode)
+    canvas = torch.full((target_h, target_w), float(outside_value), dtype=torch.float32)
+    canvas[top : top + box_h, left : left + box_w] = resized
+    return normalize_map(canvas) if normalize else canvas
