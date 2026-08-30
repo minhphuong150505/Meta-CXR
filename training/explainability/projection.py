@@ -323,7 +323,38 @@ def project_to_image(
 # Stage-1 XAI evaluator does.
 
 MEDGEMMA_IMAGE_SIZE = 896
+
+#: MedGemma's LM-visible grid. Verified from the checkpoint's own config on the
+#: training host 2026-08-30, not inferred:
+#:
+#:   vision_config.image_size = 896, vision_config.patch_size = 14
+#:       -> SigLIP tiles 896/14 = 64x64 = 4096 patches
+#:   config.mm_tokens_per_image = 256
+#:       -> the multimodal projector pools 4x to 16x16
+#:   so ONE language-model image token covers 896/16 = 56 px of the 896 square.
+#:
+#: The 56 is therefore the POOLED patch size, not SigLIP's 14. Attributing to
+#: the language sequence attributes to the pooled grid, so 56 is the number
+#: that matters here; 14 would be right only for a map computed inside the
+#: vision tower, which this branch does not do.
+MEDGEMMA_SIGLIP_PATCH_PX = 14
+MEDGEMMA_SIGLIP_GRID = GridSpec(height=64, width=64, patch_px=MEDGEMMA_SIGLIP_PATCH_PX)
+MEDGEMMA_POOLING_FACTOR = 4
 MEDGEMMA_GRID = GridSpec(height=16, width=16, patch_px=56)
+
+#: `assert_shared_coordinate_frame(STAGE1_GRIDS)` covers 14*32 == 7*64 == 448,
+#: which is the Stage-1 frame ONLY. The medgemma_direct path has its own square
+#: and its own arithmetic, so it gets its own import-time check rather than
+#: riding on one that does not describe it.
+assert_shared_coordinate_frame({"medgemma": MEDGEMMA_GRID}, MEDGEMMA_IMAGE_SIZE)
+assert_shared_coordinate_frame({"siglip": MEDGEMMA_SIGLIP_GRID}, MEDGEMMA_IMAGE_SIZE)
+if MEDGEMMA_SIGLIP_GRID.height != MEDGEMMA_GRID.height * MEDGEMMA_POOLING_FACTOR:
+    raise ValueError(
+        f"SigLIP tiles {MEDGEMMA_SIGLIP_GRID.height}x{MEDGEMMA_SIGLIP_GRID.width} and the "
+        f"projector pools {MEDGEMMA_POOLING_FACTOR}x, which does not give "
+        f"{MEDGEMMA_GRID.height}x{MEDGEMMA_GRID.width}; the grid and the pooling factor "
+        "disagree, so every medgemma_direct map would be reshaped wrongly"
+    )
 
 STAGE1_RESIZE_SHORT_SIDE = 512
 

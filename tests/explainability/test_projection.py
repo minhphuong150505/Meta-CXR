@@ -476,3 +476,77 @@ def test_outside_value_is_configurable_and_distinguishable():
     )
     assert torch.isnan(projected[0, 0])
     assert not torch.isnan(projected[projected.shape[0] // 2, projected.shape[1] // 2])
+
+
+# --------------------------------------------------------------------------
+# The medgemma_direct grid has its own arithmetic and its own assert
+# --------------------------------------------------------------------------
+#
+# `assert_shared_coordinate_frame(STAGE1_GRIDS)` checks 14*32 == 7*64 == 448 and
+# says NOTHING about the medgemma_direct path, which lives in a different square.
+
+from training.explainability.projection import (  # noqa: E402
+    MEDGEMMA_POOLING_FACTOR,
+    MEDGEMMA_SIGLIP_GRID,
+    MEDGEMMA_SIGLIP_PATCH_PX,
+)
+
+
+def test_the_medgemma_grid_tiles_896_not_448():
+    assert MEDGEMMA_GRID.covered_px == (896, 896)
+    assert 16 * 56 == 896
+    # The Stage-1 number must NOT accidentally satisfy it.
+    assert MEDGEMMA_GRID.covered_px != (STAGE1_IMAGE_SIZE, STAGE1_IMAGE_SIZE)
+
+
+def test_the_siglip_grid_also_tiles_896():
+    assert MEDGEMMA_SIGLIP_GRID.covered_px == (896, 896)
+    assert 896 // MEDGEMMA_SIGLIP_PATCH_PX == 64
+
+
+def test_pooling_relates_the_two_grids():
+    """4096 SigLIP patches pool 4x into the 256 tokens the LM sees."""
+    assert MEDGEMMA_SIGLIP_GRID.num_tokens == 4096
+    assert MEDGEMMA_SIGLIP_GRID.height // MEDGEMMA_POOLING_FACTOR == MEDGEMMA_GRID.height
+    assert MEDGEMMA_GRID.num_tokens == 256
+
+
+def test_the_attributed_patch_size_is_the_pooled_one_not_siglips():
+    """56, not 14. Attribution is to the LM sequence, i.e. the pooled grid."""
+    assert MEDGEMMA_GRID.patch_px == 56
+    assert MEDGEMMA_SIGLIP_PATCH_PX == 14
+    assert MEDGEMMA_GRID.patch_px == MEDGEMMA_SIGLIP_PATCH_PX * MEDGEMMA_POOLING_FACTOR
+
+
+def test_a_medgemma_grid_that_does_not_tile_896_is_refused():
+    with pytest.raises(ValueError, match="do not cover the crop exactly"):
+        assert_shared_coordinate_frame({"medgemma": GridSpec(16, 16, 28)}, 896)
+
+
+def test_the_stage1_assert_would_NOT_have_caught_a_broken_medgemma_grid():
+    """Why the second assert exists at all.
+
+    A 16x16 grid at 28 px tiles 448 exactly, so the Stage-1 frame check passes
+    it happily while it is wrong by a factor of two for medgemma_direct.
+    """
+    wrong = GridSpec(16, 16, 28)
+    assert_shared_coordinate_frame({"x": wrong}, STAGE1_IMAGE_SIZE)   # passes
+    with pytest.raises(ValueError):
+        assert_shared_coordinate_frame({"x": wrong}, 896)             # caught here
+
+
+@pytest.mark.parametrize("corner", sorted(CORNERS))
+def test_synthetic_square_on_the_medgemma_grid_lights_the_right_corner(corner):
+    """The same corner check as Stage 1, but on the 16x16 grid and 896 square."""
+    cells = torch.zeros(MEDGEMMA_GRID.height, MEDGEMMA_GRID.width)
+    row = 0 if corner.startswith("top") else MEDGEMMA_GRID.height - 1
+    column = 0 if corner.endswith("left") else MEDGEMMA_GRID.width - 1
+    cells[row, column] = 1.0
+    projected = project_to_image(cells.reshape(-1), MEDGEMMA_GRID, 896)
+    half = 896 // 2
+    quadrants = {
+        "top_left": projected[:half, :half], "top_right": projected[:half, half:],
+        "bottom_left": projected[half:, :half], "bottom_right": projected[half:, half:],
+    }
+    masses = {k: float(v.sum()) for k, v in quadrants.items()}
+    assert max(masses, key=masses.__getitem__) == corner

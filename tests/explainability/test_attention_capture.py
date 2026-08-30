@@ -523,3 +523,154 @@ def test_visual_features_can_be_overridden_for_the_mismatch_control():
         inspect.signature(build_visual_inputs).parameters["visual_features"].kind
         is inspect.Parameter.KEYWORD_ONLY
     )
+
+
+# --------------------------------------------------------------------------
+# The randomization sanity check (Adebayo et al. 2018)
+# --------------------------------------------------------------------------
+
+
+def test_spearman_of_a_map_with_itself_is_one():
+    from training.explainability.attention_capture import spearman_correlation
+
+    values = torch.rand(64)
+    assert spearman_correlation(values, values) == pytest.approx(1.0)
+
+
+def test_spearman_of_a_reversed_ranking_is_minus_one():
+    from training.explainability.attention_capture import spearman_correlation
+
+    values = torch.arange(32, dtype=torch.float32)
+    assert spearman_correlation(values, -values) == pytest.approx(-1.0)
+
+
+def test_spearman_is_invariant_to_a_monotone_rescale():
+    """A rescaled map ranks regions identically, so it is NOT a degradation."""
+    from training.explainability.attention_capture import spearman_correlation
+
+    values = torch.rand(64)
+    assert spearman_correlation(values, values * 7.5 + 3.0) == pytest.approx(1.0)
+
+
+def test_spearman_against_a_constant_map_is_zero_not_one():
+    # A constant map carries no ordering; reporting agreement would be false.
+    from training.explainability.attention_capture import spearman_correlation
+
+    assert spearman_correlation(torch.rand(32), torch.ones(32)) == 0.0
+
+
+def test_spearman_averages_ties():
+    from training.explainability.attention_capture import spearman_correlation
+
+    a = torch.tensor([1.0, 1.0, 2.0, 2.0])
+    assert spearman_correlation(a, torch.tensor([5.0, 5.0, 9.0, 9.0])) == pytest.approx(1.0)
+
+
+def test_randomize_layers_changes_weights_and_restores_them(model):
+    from training.explainability.attention_capture import randomize_layers
+
+    module = model.language_model.layers[2].self_attn
+    before = module.scale.detach().clone()
+    restore = randomize_layers(model, [2])
+    assert not torch.equal(module.scale, before)
+    restore()
+    assert torch.equal(module.scale, before)
+
+
+def test_randomize_layers_touches_only_the_named_layers(model):
+    from training.explainability.attention_capture import randomize_layers
+
+    untouched = model.language_model.layers[0].self_attn.scale.detach().clone()
+    restore = randomize_layers(model, [2])
+    try:
+        assert torch.equal(model.language_model.layers[0].self_attn.scale, untouched)
+    finally:
+        restore()
+
+
+def test_randomize_layers_rejects_an_out_of_range_index(model):
+    from training.explainability.attention_capture import randomize_layers
+
+    with pytest.raises(IndexError, match="outside"):
+        randomize_layers(model, [99])
+
+
+def test_cascading_takes_layers_from_the_LAST_backwards():
+    from training.explainability.attention_capture import cascading_randomization
+
+    seen = []
+
+    def attribute(indices):
+        seen.append(tuple(indices))
+        return torch.rand(16)
+
+    cascading_randomization(attribute, num_layers=8, steps=[1, 2, 4])
+    assert seen[0] == ()                 # the original comes first
+    assert seen[1] == (7,)               # last layer
+    assert seen[2] == (6, 7)
+    assert seen[3] == (4, 5, 6, 7)
+
+
+def test_randomization_passes_when_the_map_falls_apart():
+    from training.explainability.attention_capture import (
+        assert_randomization_degrades,
+        cascading_randomization,
+    )
+
+    original = torch.arange(64, dtype=torch.float32)
+
+    def attribute(indices):
+        if not indices:
+            return original
+        # more layers randomised -> less of the original ordering survives
+        noise = torch.randperm(64).to(torch.float32)
+        weight = len(indices) / 8
+        return original * (1 - weight) + noise * weight
+
+    torch.manual_seed(0)
+    result = cascading_randomization(attribute, num_layers=8)
+    assert result.degrades is True
+    assert abs(result.final_correlation) < 0.5
+    assert assert_randomization_degrades(result) is result
+
+
+def test_randomization_RAISES_when_the_map_is_unchanged():
+    """The failure Adebayo et al. found: a map that ignores the weights."""
+    from training.explainability.attention_capture import (
+        RandomizationSanityFailed,
+        assert_randomization_degrades,
+        cascading_randomization,
+    )
+
+    fixed = torch.rand(64)
+    result = cascading_randomization(lambda _indices: fixed, num_layers=8)
+    assert result.final_correlation == pytest.approx(1.0)
+    assert result.degrades is False
+    with pytest.raises(RandomizationSanityFailed, match="does not depend on what the model learned"):
+        assert_randomization_degrades(result)
+
+
+def test_a_strongly_ANTI_correlated_map_also_fails():
+    """|rho| is the test: a map that flips sign still tracks the weights' absence."""
+    from training.explainability.attention_capture import cascading_randomization
+
+    original = torch.arange(64, dtype=torch.float32)
+    result = cascading_randomization(
+        lambda indices: original if not indices else -original, num_layers=8
+    )
+    assert result.final_correlation == pytest.approx(-1.0)
+    assert result.degrades is False
+
+
+def test_default_steps_are_geometric_and_end_at_every_layer():
+    from training.explainability.attention_capture import cascading_randomization
+
+    result = cascading_randomization(lambda _i: torch.rand(16), num_layers=34)
+    assert result.steps == (1, 2, 4, 8, 16, 34)
+
+
+def test_assert_refuses_something_that_is_not_a_result():
+    from training.explainability.attention_capture import assert_randomization_degrades
+
+    with pytest.raises(TypeError, match="must come from cascading_randomization"):
+        assert_randomization_degrades(0.1)
