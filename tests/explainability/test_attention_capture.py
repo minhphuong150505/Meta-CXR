@@ -17,8 +17,8 @@ from training.explainability.attention_capture import (  # noqa: E402
     ATTN_IMPLEMENTATION,
     SOURCE_QFORMER_SOFT_TOKEN,
     QFormerCrossAttentionUnavailable,
-    SoftTokenAblationFailed,
     TrainSplitRefused,
+    VisualAblationFailed,
     assert_split_allowed,
     assert_visual_tokens_matter,
     attribute_visual_tokens,
@@ -351,7 +351,7 @@ def test_ablation_passes_when_removing_the_image_reliably_hurts():
 def test_ablation_raises_when_the_image_makes_no_difference():
     result = _score([0.0, 0.001, -0.001, 0.0, 0.002, -0.002], "zeroed")
     assert result.established is False
-    with pytest.raises(SoftTokenAblationFailed, match="not using the image"):
+    with pytest.raises(VisualAblationFailed, match="not using the image"):
         assert_visual_tokens_matter(result)
 
 
@@ -359,7 +359,7 @@ def test_ablation_raises_when_removing_the_image_HELPS():
     """A negative delta is at least as alarming as a zero one."""
     result = _score([-0.5, -0.4, -0.6, -0.45, -0.55, -0.5], "zeroed")
     assert result.established is False
-    with pytest.raises(SoftTokenAblationFailed):
+    with pytest.raises(VisualAblationFailed):
         assert_visual_tokens_matter(result)
 
 
@@ -375,7 +375,7 @@ def test_a_threshold_clearing_mean_with_a_ci_across_zero_is_NOT_a_pass():
     assert result.mean_delta > 0.05          # clears the threshold
     assert result.ci_low < 0 < result.ci_high  # and is still indistinguishable from 0
     assert result.established is False
-    with pytest.raises(SoftTokenAblationFailed, match="not established"):
+    with pytest.raises(VisualAblationFailed, match="not established"):
         assert_visual_tokens_matter(result)
 
 
