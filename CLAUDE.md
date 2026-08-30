@@ -1858,6 +1858,33 @@ anything. The lung-mask population is 30x larger but only supports the weaker
 claim "the model stays inside the lungs"; `ExplanationSummary` keeps the two
 apart on purpose.
 
+⚠⚠ **`target_valid` admits one-line reports, and Stage 2 trains on them.**
+Measured on the val frontal cohort 2026-08-30, n=1,513, every row marked
+`target_filter_reason = VALID`:
+
+| `findings_token_count` | min 5 | p1 8 | p5 12 | median 52 | max 146 |
+|---|---|---|---|---|---|
+| studies at or below 10 tokens | **64 (4.2%)** | | | | |
+| studies at or below 15 tokens | **91 (6.0%)** | | | | |
+
+Found from the other end: 154 of those 1,513 studies produce ZERO labelled
+sentences in the Stage-2 explanation run, and they turn out to be one-line
+reports -- median **1 sentence** and **59 characters**, against 5 and 318 for
+the rest, with 55% carrying exactly one sentence. Their content is
+overwhelmingly technique and header fragments (35% technical, 34% unclassified
+whose commonest word is "chest"), and they contain LESS missed pathology than
+the general population (1.8% vs 5.7%).
+
+Harmless for the explanation layer -- they simply score zero coverage. Not
+harmless for Stage 2, which trains and is scored on the same cohort, so
+roughly 6% of its generation targets are one-line technique fragments. That
+dilutes the loss and every NLG metric computed from it.
+
+Not fixed here: the length threshold lives in
+`preporcessing/preprocess_mimic_cxr.py` and changing it means rebuilding the
+manifests, which is its own piece of work. Recorded so it is not rediscovered
+from scratch.
+
 **Use `processed/full_allviews_v2`, nothing else.** Two stale exports sit beside
 it on the training host, and `meta-cxr-manifests-upgraded-20260806` was wired up
 despite the name. Tell a stale export by any of: `extraction_method` is a single

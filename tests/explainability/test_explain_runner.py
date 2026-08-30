@@ -383,3 +383,34 @@ def test_the_summary_carries_n_for_each_measurement():
     source = RUNNER.read_text(encoding="utf-8")
     for key in ('"n_studies"', '"n_ablation_studies"', '"n_randomization_studies"'):
         assert key in source, key
+
+
+def test_header_and_request_fragments_are_technical(diagnose):
+    for text in (
+        "Chest radiograph submitted for evaluation.",
+        "PA and lateral chest.",
+        "ADDENDUM.",
+        "Indication: shortness of breath.",
+    ):
+        assert diagnose.classify(text) == "technical", text
+
+
+def test_a_bare_chest_does_NOT_make_a_sentence_technical(diagnose):
+    """TECHNICAL is checked first, so a bare 'chest' would swallow real content.
+
+    'chest' is the commonest word in the unclassified bucket (61 of 91
+    sentences), which makes it the tempting keyword and the wrong one: every
+    sentence below would then be filed as technique.
+    """
+    for text in (
+        "Patchy opacity in the left chest.",
+        "A mass is seen in the right chest.",
+        "Increasing density at the right chest base.",
+    ):
+        assert diagnose.classify(text) != "technical", text
+
+
+def test_the_phrase_forms_still_catch_real_headers(diagnose):
+    """Only the phrase forms are matched, and they are enough for headers."""
+    assert diagnose.classify("Frontal and lateral chest.") == "technical"
+    assert diagnose.classify("Single view chest radiograph.") == "technical"
