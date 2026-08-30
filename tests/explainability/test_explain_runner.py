@@ -156,3 +156,60 @@ def test_the_summary_is_valid_json_shaped(tmp_path):
     path = tmp_path / "summary.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True))
     assert json.loads(path.read_text())["split"] == "test"
+
+
+# --------------------------------------------------------------------------
+# Graph mode: peak memory must not grow without bound with sentence count
+# --------------------------------------------------------------------------
+
+
+def test_graph_mode_defaults_to_auto(runner):
+    args = runner.parse_args(
+        ["--manifest", "m.csv", "--image-root", ".", "--output-dir", "o"]
+    )
+    assert args.graph_mode == runner.GRAPH_AUTO
+
+
+def test_all_three_graph_modes_are_selectable(runner):
+    for mode in runner.GRAPH_MODES:
+        args = runner.parse_args(
+            ["--manifest", "m.csv", "--image-root", ".", "--output-dir", "o",
+             "--graph-mode", mode]
+        )
+        assert args.graph_mode == mode
+
+
+def test_auto_falls_back_only_on_oom_and_an_explicit_mode_does_not():
+    source = RUNNER.read_text(encoding="utf-8")
+    assert "except torch.OutOfMemoryError:" in source
+    # An explicitly chosen mode must propagate the OOM rather than silently
+    # switching: a run that half-changes strategy without saying so is worse
+    # than one that stops.
+    assert "if mode != GRAPH_AUTO:\n            raise" in source
+
+
+def test_the_mode_actually_used_is_recorded_per_study():
+    source = RUNNER.read_text(encoding="utf-8")
+    assert '"graph_mode": used' in source
+    assert '"graph_mode_requested": args.graph_mode' in source
+
+
+def test_per_sentence_mode_frees_the_graph_between_sentences():
+    """retain_graph=False is the whole point of that path."""
+    source = RUNNER.read_text(encoding="utf-8")
+    per_sentence = source[source.index("def _attribute_per_sentence("):
+                          source.index("def explain_study(")]
+    assert "retain_graph=False" in per_sentence
+    assert "empty_cache()" in per_sentence
+    shared = source[source.index("def _attribute_shared("):
+                    source.index("def _attribute_per_sentence(")]
+    assert "retain_graph=True" in shared
+
+
+def test_a_sentence_with_no_tokens_still_gets_a_map_slot():
+    """Every sentence keeps an entry, so attribution_index stays aligned."""
+    source = RUNNER.read_text(encoding="utf-8")
+    for block in ("_attribute_shared", "_attribute_per_sentence"):
+        body = source[source.index(f"def {block}("):]
+        body = body[: body.index("\ndef ", 1)]
+        assert "torch.zeros(span.length)" in body, block

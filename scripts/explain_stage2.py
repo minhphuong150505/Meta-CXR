@@ -71,6 +71,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=16)
     parser.add_argument("--min-findings-tokens", type=int, default=30)
     parser.add_argument("--max-findings-tokens", type=int, default=90)
+    parser.add_argument("--graph-mode", choices=GRAPH_MODES, default=GRAPH_AUTO,
+                        help="auto retries a study per-sentence if the shared "
+                             "graph OOMs; measured worst case in val is 13.49 "
+                             "GiB of 15.48 with the shared graph")
     parser.add_argument("--no-gradient-weight", action="store_true",
                         help="plain rollout, no gradient term. Recorded in every record.")
     parser.add_argument("--write-key-map", action="store_true",
@@ -193,8 +197,101 @@ def run_ablation_gate(model, processor, frame, args, image_root, device) -> dict
     return result
 
 
+GRAPH_SHARED = "shared"
+GRAPH_PER_SENTENCE = "per-sentence"
+GRAPH_AUTO = "auto"
+GRAPH_MODES = (GRAPH_AUTO, GRAPH_SHARED, GRAPH_PER_SENTENCE)
+
+
+def _sentence_score(logits, positions, token_indices):
+    """Teacher-forced: the logits at t-1 produced the token at t."""
+    rows = [positions[i] for i in token_indices]
+    return logits[0, [r - 1 for r in rows], :].max(dim=-1).values.sum(), rows
+
+
+def _attribute_shared(model, batch, span, attributed, positions, outputs, captured, args):
+    """One forward for the study, one gradient per sentence, graph retained.
+
+    Cheapest, and what the smoke run used. Measured on the six worst studies in
+    val (12-14 sentences): peak 13.49 GiB of 15.48, i.e. 2.0 GiB of headroom.
+    It survives val's worst case and does not have much left over, which is why
+    the auto mode exists.
+    """
+    import torch
+
+    attention = capture.stack_captured(
+        captured, expected_layers=len(capture.language_attention_modules(model))
+    )
+    maps, flags = [], []
+    for sentence in attributed.sentences:
+        if not sentence.token_indices:
+            maps.append(torch.zeros(span.length))
+            flags.append(False)
+            continue
+        score, rows = _sentence_score(outputs.logits, positions, sentence.token_indices)
+        gradients = None
+        if not args.no_gradient_weight:
+            gradients, reason = capture.gradient_weighted_layers(
+                score, captured, retain_graph=True
+            )
+            if reason:
+                LOGGER.warning("gradient fallback: %s", reason)
+        values, trace = capture.attribute_visual_tokens(
+            attention, span, rows, gradients=gradients
+        )
+        maps.append(values)
+        flags.append(bool(trace.gradient_weighted))
+        del gradients
+    del attention
+    return maps, flags
+
+
+def _attribute_per_sentence(model, batch, span, attributed, positions, args):
+    """One forward AND one backward per sentence, graph freed in between.
+
+    Costs a forward per sentence instead of per study, and in exchange the peak
+    does not grow with the number of sentences. This is the mode to use when
+    the shared graph runs out of room; it is slower, not worse.
+    """
+    import torch
+
+    maps, flags = [], []
+    for sentence in attributed.sentences:
+        if not sentence.token_indices:
+            maps.append(torch.zeros(span.length))
+            flags.append(False)
+            continue
+        outputs, captured, _embeds = capture.teacher_forced_forward(model, batch, span)
+        attention = capture.stack_captured(
+            captured, expected_layers=len(capture.language_attention_modules(model))
+        )
+        score, rows = _sentence_score(outputs.logits, positions, sentence.token_indices)
+        gradients = None
+        if not args.no_gradient_weight:
+            gradients, reason = capture.gradient_weighted_layers(
+                score, captured, retain_graph=False
+            )
+            if reason:
+                LOGGER.warning("gradient fallback: %s", reason)
+        values, trace = capture.attribute_visual_tokens(
+            attention, span, rows, gradients=gradients
+        )
+        maps.append(values)
+        flags.append(bool(trace.gradient_weighted))
+        del outputs, captured, attention, gradients
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    return maps, flags
+
+
 def explain_study(model, batch, span, study, args) -> tuple[list, dict]:
-    """One forward, then one gradient per sentence."""
+    """Sentence-level attribution for one study.
+
+    ``--graph-mode auto`` runs the shared-graph path and, on an OOM, redoes the
+    study one sentence at a time. An OOM here is a capacity finding about a
+    long report, not a defect, and it is recorded per study so a run cannot
+    quietly become half one mode and half the other without saying so.
+    """
     import torch
 
     positions = target_positions(batch, span)
@@ -202,53 +299,63 @@ def explain_study(model, batch, span, study, args) -> tuple[list, dict]:
     labels[:, : positions[0]] = -100
 
     outputs, captured, _embeds = capture.teacher_forced_forward(model, batch, span)
-    attention = capture.stack_captured(
-        captured, expected_layers=len(capture.language_attention_modules(model))
-    )
     nll = capture.per_token_nll(outputs.logits, labels)
-
     tokenizer = model._explain_tokenizer
     token_texts = [tokenizer.decode([int(t)]) for t in batch["input_ids"][0, positions]]
-    token_nll = [float(nll[p]) for p in positions]
     attributed = attribute_sentences(
         str(study.findings_clean).strip(),
         token_texts=token_texts,
-        token_nll=token_nll,
+        token_nll=[float(nll[p]) for p in positions],
         labeler=LexiconSentenceLabeler(),
     )
 
-    maps, records = [], []
-    for sentence in attributed.sentences:
-        if not sentence.token_indices:
-            values = torch.zeros(span.length)
-            trace = None
-        else:
-            rows = [positions[i] for i in sentence.token_indices]
-            # Teacher-forced: logits at t-1 produced the token at t.
-            score = outputs.logits[0, [r - 1 for r in rows], :].max(dim=-1).values.sum()
-            gradients = None
-            if not args.no_gradient_weight:
-                gradients, reason = capture.gradient_weighted_layers(
-                    score, captured, retain_graph=True
-                )
-                if reason:
-                    LOGGER.warning("gradient fallback: %s", reason)
-            values, trace = capture.attribute_visual_tokens(
-                attention, span, rows, gradients=gradients
+    mode = args.graph_mode
+    used = mode
+    try:
+        if mode == GRAPH_PER_SENTENCE:
+            del outputs, captured
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            maps, flags = _attribute_per_sentence(
+                model, batch, span, attributed, positions, args
             )
-        grid = span.grid
-        maps.append(values.detach().cpu().reshape(grid.height, grid.width).numpy())
-        record = sentence.to_dict()
-        record["attribution_index"] = len(maps) - 1
-        record["gradient_weighted"] = bool(trace.gradient_weighted) if trace else False
-        records.append(record)
+        else:
+            used = GRAPH_SHARED
+            maps, flags = _attribute_shared(
+                model, batch, span, attributed, positions, outputs, captured, args
+            )
+    except torch.OutOfMemoryError:
+        if mode != GRAPH_AUTO:
+            raise
+        LOGGER.warning(
+            "shared graph ran out of memory on a %d-sentence study; redoing it "
+            "one sentence at a time", len(attributed.sentences),
+        )
+        try:
+            del outputs, captured
+        except NameError:  # pragma: no cover
+            pass
+        torch.cuda.empty_cache()
+        used = GRAPH_PER_SENTENCE
+        maps, flags = _attribute_per_sentence(
+            model, batch, span, attributed, positions, args
+        )
 
-    del outputs, captured, attention
-    return maps, {
+    grid = span.grid
+    records = []
+    for index, sentence in enumerate(attributed.sentences):
+        record = sentence.to_dict()
+        record["attribution_index"] = index
+        record["gradient_weighted"] = flags[index]
+        records.append(record)
+    arrays = [m.detach().cpu().reshape(grid.height, grid.width).numpy() for m in maps]
+
+    return arrays, {
         "sentences": records,
         "parse_coverage": attributed.parse_coverage,
         "labeler": attributed.labeler,
         "unparsed_sentences": list(attributed.unparsed),
+        "graph_mode": used,
         "study_summary": attributed,
     }
 
@@ -337,6 +444,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "model_id": args.model_id,
         "studies_written": written,
         "gradient_weighted": not args.no_gradient_weight,
+        "graph_mode_requested": args.graph_mode,
         "rollout_method": rollout.METHOD_CHEFER,
         "attention_implementation": dict(capture.ATTN_IMPLEMENTATION),
         "labeler": LexiconSentenceLabeler.name,
