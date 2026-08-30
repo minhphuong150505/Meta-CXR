@@ -441,3 +441,27 @@ def test_gradients_and_attention_fuse_without_a_shape_error(model):
     values, trace = attribute_visual_tokens(attention, span, [5], gradients=grads)
     assert values.shape == (2,)
     assert trace.gradient_weighted is True
+
+
+def test_visual_features_can_be_overridden_for_the_mismatch_control():
+    """The mismatched-image control must go through the same scatter path.
+
+    Zeroing asks "does anything visual matter"; substituting another study's
+    features asks "does THIS image matter", which is the sharper question and
+    the one a zero vector cannot pose -- zeros are out of distribution, not
+    absent.
+    """
+    import inspect
+
+    from training.explainability.attention_capture import (
+        build_visual_inputs,
+        teacher_forced_forward,
+    )
+
+    for fn in (build_visual_inputs, teacher_forced_forward):
+        assert "visual_features" in inspect.signature(fn).parameters, fn.__name__
+    # keyword-only, so it can never be passed by accident in positional order
+    assert (
+        inspect.signature(build_visual_inputs).parameters["visual_features"].kind
+        is inspect.Parameter.KEYWORD_ONLY
+    )

@@ -532,12 +532,24 @@ def load_medgemma_for_explanation(
     return processor, model
 
 
-def build_visual_inputs(model, batch: dict, visual_span: VisualSpan) -> torch.Tensor:
+def build_visual_inputs(
+    model,
+    batch: dict,
+    visual_span: VisualSpan,
+    *,
+    visual_features: torch.Tensor | None = None,
+) -> torch.Tensor:
     """Run the vision tower under ``no_grad`` and scatter its output into embeds.
 
     The vision tower is deliberately kept OUT of the autograd graph: the rollout
     stops at the visual tokens in the language sequence and never reaches into
     SigLIP, so retaining its activations is pure cost.
+
+    ``visual_features`` overrides what the tower produced. That is what makes the
+    MISMATCHED-image control possible: same prompt, same target, same positions,
+    another study's picture. It is a sharper question than zeroing -- zeros are
+    out of distribution and a model may simply be confused by them, whereas a
+    real image of the wrong patient asks precisely "is THIS image being used?".
 
     The scatter is a SUBSTITUTION at the visual positions -- the same operation
     ``training/medgemma/soft_tokens.py`` performs for Q-Former tokens, and the
@@ -545,9 +557,10 @@ def build_visual_inputs(model, batch: dict, visual_span: VisualSpan) -> torch.Te
     described using another study's image, with no error and a loss that still
     looks fine. Hence the explicit shape check.
     """
-    with torch.no_grad():
-        features = model.get_image_features(pixel_values=batch["pixel_values"])
-    flat = features.reshape(-1, features.shape[-1])
+    if visual_features is None:
+        with torch.no_grad():
+            visual_features = model.get_image_features(pixel_values=batch["pixel_values"])
+    flat = visual_features.reshape(-1, visual_features.shape[-1])
     if flat.shape[0] != visual_span.length:
         raise RuntimeError(
             f"vision tower produced {flat.shape[0]} tokens but the located span holds "
@@ -573,18 +586,22 @@ def teacher_forced_forward(
     *,
     labels: torch.Tensor | None = None,
     ablate_visual: bool = False,
+    visual_features: torch.Tensor | None = None,
     logits_to_keep: int = 0,
 ):
     """One teacher-forced pass with the KV cache off and attention captured.
 
-    ``ablate_visual`` zeroes the scattered visual embeddings in place of the
-    real features. That is the ablation :func:`assert_visual_tokens_matter`
-    scores: same prompt, same target, same positions, no image content.
+    Two controls, deliberately different questions. ``ablate_visual`` zeroes the
+    scattered embeddings -- "does anything visual matter?" -- and
+    ``visual_features`` substitutes another study's features -- "does THIS
+    image matter?". The second is the stronger test, because a zero vector is
+    not "no information" but an out-of-distribution point, and a model may
+    perform worse OR better when handed one.
 
     Returns ``(outputs, captured, embeds)``. ``captured`` is still attached to
     the graph, so the caller may take gradients before letting it go.
     """
-    embeds = build_visual_inputs(model, batch, visual_span)
+    embeds = build_visual_inputs(model, batch, visual_span, visual_features=visual_features)
     if ablate_visual:
         with torch.no_grad():
             embeds[0, visual_span.start : visual_span.end, :] = 0.0
