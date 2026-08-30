@@ -1141,6 +1141,46 @@ legacy prompt is used. The prompt prefix is masked out of training labels, and
 the soft token is added to `bad_words_ids` at generation.
 `configs/prompt_ablation/P1..P9.yaml` drive `scripts/run_prompt_ablation.py`.
 
+### Full-pipeline inference on the TEST split — measured 2026-08-31
+
+The first end-to-end run of both stages on test, from
+`run_20260820_ft/checkpoint_best`. ⚠ **No Q-Former and no Stage-2 fine-tune are
+involved**, and neither is available: `lambda_itc/itm/lm` are `0.0` so the
+Q-Former's image path never trained, and no Stage-2 adapter exists on the host.
+
+**Stage 1, classification, n=3,269.** Thresholds calibrated on val
+(`--selection plateau --plateau-fraction 0.95 --min-positive 5`), scored on test
+under `study_presence` + `marginal_presence`. **Reproduces the recorded numbers
+exactly**, which is the useful part — the pipeline is intact:
+
+| macro_auroc | micro_auroc | macro_auprc | pos_macro_f1 | precision | recall | specificity |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.7643 | 0.8166 | 0.3203 | 0.3542 | 0.2931 | 0.5373 | 0.8020 |
+
+**Stage 2, generation, n=300 test studies, ZERO-SHOT.**
+`google/medgemma-1.5-4b-it` out of the box via
+`scripts/generate_stage2_reports.py`; 0 failures, 26.7 min, peak 10.65 GiB,
+generated median 66 words against a reference median of 57.
+
+| BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.3066 | 0.1752 | 0.1091 | 0.0704 | 0.2373 | 0.0556 | — | 0.8112 |
+
+⚠ CIDEr is **0.0556**, i.e. near zero, while BERTScore is 0.81. That gap is the
+expected signature of a zero-shot model producing fluent, clinically-plausible
+prose that does not reuse the corpus' n-grams; it is not evidence of a working
+report generator. **These are baseline numbers for an un-finetuned model and
+must never be quoted as this project's Stage-2 result.** Clinical metrics
+(CheXbert/RadGraph/RadCliQ) are reported as unavailable, not as zero.
+
+**Stage-2 explanation, n=200 test studies.** Both gates passed before any map
+was written: ablation (mismatched image, n=100) **+0.1523 [+0.1226, +0.1825]**,
+established; randomization rho **0.923 -> 0.871 -> 0.704 -> 0.410 -> 0.359 ->
+0.144** across 1..34 layers, degrades. `parse_coverage` **0.683** over 1,155
+sentences with `lexicon_v2`. Eight example overlays rendered by
+`scripts/render_explanation_examples.py`; they are patient images and stay on
+the host.
+
 ### Stage-2 explainability — `training/explainability/` (branch `feat/stage2-explainability`)
 
 Post-hoc XAI over the language head. **It is an OBSERVER: nothing in Stage 1 or
