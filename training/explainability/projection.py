@@ -32,14 +32,18 @@ BioViL-T tiles it 14x14 at 32 px per cell; PubMedCLIP resizes that same square
 to 224 and tiles it 7x7 at 64 px per cell, plus one non-spatial CLS token. Both
 therefore describe the *same* field of view.
 
-.. warning::
-   That conclusion is UNVERIFIED as of this module's writing: the PubMedCLIP
-   ``preprocessor_config.json`` could not be read on the planning box because
-   the checkpoint is not cached there. It rests on the CLIP ViT-B/32 defaults
-   plus the comment at ``blip2_qformer.py:687-696``. It is not left as a
-   comment: :func:`assert_shared_coordinate_frame` checks the arithmetic at
-   import time for the declared Stage-1 grids, and must be called again with
-   whatever geometry the live model actually reports.
+VERIFIED on the training host 2026-08-30. PubMedCLIP's
+``preprocessor_config.json`` reads ``do_resize: true, size: 224,
+do_center_crop: true, crop_size: 224, resample: 3``. The dataset hands it a
+SQUARE 448x448 tensor, so the resize takes it to 224x224 and the centre crop is
+a no-op: a pure downscale of the same crop, no second crop, no offset. The two
+encoders describe one field of view.
+
+That is now evidence rather than inference, but it is still not left as a
+comment: :func:`assert_shared_coordinate_frame` checks the arithmetic at import
+time for the declared Stage-1 grids, and should be called again with whatever
+geometry a live model actually reports -- a future config change to the crop
+size would break the frame without touching this file.
 """
 
 from __future__ import annotations

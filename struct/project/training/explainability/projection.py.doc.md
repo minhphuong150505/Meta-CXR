@@ -1,5 +1,5 @@
 > Source: `training/explainability/projection.py` (297 dòng)
-> Status: ✅ ACTIVE — ⚠ hệ toạ độ PubMedCLIP CHƯA xác minh trên máy train
+> Status: ✅ ACTIVE — hệ toạ độ PubMedCLIP đã xác minh trên máy train 2026-08-30
 > Last verified against source: 2026-08-30
 
 # `training/explainability/projection.py`
@@ -22,13 +22,19 @@ Dataset áp `Resize(512)` cạnh ngắn rồi `CenterCrop(448)`, ra **một** te
 vì đầu vào **đã vuông**, center-crop 224 là no-op và phép biến đổi thuần tuý là
 hạ mẫu. Hai encoder cùng field of view. `14*32 == 7*64 == 448`.
 
-⚠⚠ **Kết luận này CHƯA XÁC MINH.** `preprocessor_config.json` của
-`flaviagiammarino/pubmed-clip-vit-base-patch32` không đọc được trên máy dev
-(checkpoint không có trong HF cache). Nó dựa vào mặc định CLIP ViT-B/32 cộng
-comment tại `blip2_qformer.py:687-696`. **Phải `cat` file đó trên máy train để
-chốt.**
+✅ **XÁC MINH trên máy train ngày 2026-08-30.**
+`preprocessor_config.json` của `flaviagiammarino/pubmed-clip-vit-base-patch32`:
 
-Vì chưa chốt, nó **không được để nằm trong comment**:
+```json
+{ "do_resize": true, "size": 224,
+  "do_center_crop": true, "crop_size": 224, "resample": 3 }
+```
+
+Đầu vào là tensor **vuông** 448×448, nên resize đưa về 224×224 và center-crop
+224 là **no-op** — hạ mẫu thuần tuý của cùng một crop, không có crop thứ hai,
+không lệch toạ độ. Đây giờ là bằng chứng, không còn là suy luận.
+
+Dù vậy nó vẫn **không được để nằm trong comment**:
 `assert_shared_coordinate_frame(STAGE1_GRIDS)` chạy **lúc import module** và ném
 `ValueError` nếu số học sai. Hàm nhận grid tuỳ ý nên `attention_capture.py` gọi
 lại được với hình học model thật báo về.
