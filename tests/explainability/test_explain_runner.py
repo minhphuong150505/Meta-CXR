@@ -459,8 +459,16 @@ def test_only_the_two_registered_labelers_exist():
     assert sorted(LABELERS) == ["lexicon_v1", "lexicon_v2"]
 
 
-def test_the_labeler_used_is_recorded_in_both_summaries():
-    assert '"labeler": args.labeler' in RUNNER.read_text(encoding="utf-8")
-    assert '"labeler": args.labeler' in (
-        REPO / "scripts" / "diagnose_parse_coverage.py"
-    ).read_text(encoding="utf-8")
+def test_both_summaries_carry_the_frozen_lexicon_provenance():
+    """Not just the labeler name: the version and the content hash.
+
+    A name can be reused after an edit; a content hash cannot. Since v2 was
+    fitted to val, any artifact must say exactly which lexicon produced it.
+    """
+    for path in (RUNNER, REPO / "scripts" / "diagnose_parse_coverage.py"):
+        assert "**lexicon_metadata(args.labeler)" in path.read_text(encoding="utf-8"), path
+
+    from training.explainability.sentence_attribution import lexicon_metadata
+
+    block = lexicon_metadata("lexicon_v2")
+    assert set(block) == {"labeler", "lexicon_version", "lexicon_hash", "lexicon_labels"}

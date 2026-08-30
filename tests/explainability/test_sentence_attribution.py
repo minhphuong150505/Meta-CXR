@@ -440,3 +440,71 @@ def test_v1_remains_available_so_earlier_runs_stay_reproducible():
     assert study.labeler == "lexicon_v1"
     # and v1 must still behave as v1: it does NOT know the extended findings
     assert not LexiconSentenceLabeler().label("Degenerative changes of the spine.")
+
+
+# --------------------------------------------------------------------------
+# The freeze
+# --------------------------------------------------------------------------
+#
+# lexicon_v2 was FITTED TO VAL: its extra CheXpert-14 synonyms were read off the
+# word frequencies of sentences v1 failed to label on that split, and its nine
+# extended findings came from the outside_14 bucket measured there. So 0.6477 on
+# val is in-sample. These tests do not undo that -- nothing can -- they stop it
+# recurring, by turning any further edit into a red test rather than a quietly
+# better number.
+
+FROZEN_LEXICON_HASHES = {
+    "lexicon_v1": "f809b80b33579b43",
+    "lexicon_v2": "3fcf80ad1c9b6c78",
+}
+
+
+def test_the_lexicons_are_frozen():
+    """⚠ If this fails you have changed a lexicon.
+
+    That is only legitimate for a reason INDEPENDENT of val results -- a
+    clinician's correction, a bug in a term. It is NOT legitimate because
+    coverage looked low. If the change is right, measure on test once, update
+    the hash here, and record why in CLAUDE.md.
+    """
+    from training.explainability.sentence_attribution import lexicon_metadata
+
+    for name, expected in FROZEN_LEXICON_HASHES.items():
+        assert lexicon_metadata(name)["lexicon_hash"] == expected, name
+
+
+def test_the_hash_is_content_addressed_not_order_dependent():
+    from training.explainability.sentence_attribution import lexicon_fingerprint
+
+    a = {"B": ("y", "x"), "A": ("q",)}
+    b = {"A": ("q",), "B": ("x", "y")}
+    assert lexicon_fingerprint(a) == lexicon_fingerprint(b)
+
+
+def test_the_hash_changes_when_one_term_is_added():
+    from training.explainability.sentence_attribution import lexicon_fingerprint
+
+    base = {"A": ("q",)}
+    assert lexicon_fingerprint(base) != lexicon_fingerprint({"A": ("q", "r")})
+
+
+def test_provenance_rides_on_every_study_record():
+    payload = attribute_sentences(REPORT).to_dict()
+    assert payload["labeler"] == "lexicon_v2"
+    assert payload["lexicon_version"] == "v2"
+    assert payload["lexicon_hash"] == FROZEN_LEXICON_HASHES["lexicon_v2"]
+    assert payload["lexicon_labels"] == "23"
+
+
+def test_v1_records_carry_v1_provenance():
+    payload = attribute_sentences(REPORT, labeler=LexiconSentenceLabeler()).to_dict()
+    assert payload["lexicon_version"] == "v1"
+    assert payload["lexicon_hash"] == FROZEN_LEXICON_HASHES["lexicon_v1"]
+    assert payload["lexicon_labels"] == "14"
+
+
+def test_an_unknown_labeler_has_no_provenance_to_invent():
+    from training.explainability.sentence_attribution import lexicon_metadata
+
+    with pytest.raises(ValueError, match="unknown labeler"):
+        lexicon_metadata("lexicon_v3")

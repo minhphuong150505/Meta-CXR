@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from hashlib import blake2b
 from typing import Protocol, runtime_checkable
 
 try:  # ``python script.py`` from inside training/
@@ -245,6 +246,52 @@ LABELERS = {
 #: existing output becomes ambiguous.
 DEFAULT_LABELER_NAME = EXTENDED_LABELER_NAME
 
+#: FROZEN 2026-08-30. See `lexicon_fingerprint`.
+LEXICON_VERSIONS = {LEXICON_LABELER_NAME: "v1", EXTENDED_LABELER_NAME: "v2"}
+
+
+def lexicon_fingerprint(synonyms: dict[str, tuple[str, ...]]) -> str:
+    """Content hash of a lexicon, stable across runs and Python versions.
+
+    ⚠ **THIS IS A FREEZE, AND IT EXISTS BECAUSE THE LEXICON WAS FITTED TO VAL.**
+
+    `lexicon_v2` was not derived from an independent source. Its extra
+    CheXpert-14 synonyms were read off the word frequencies of the sentences
+    `lexicon_v1` failed to label ON THE VAL SPLIT, and the nine extended
+    findings were chosen from the `outside_14` bucket measured on that same
+    split. Its 0.6477 coverage on val is therefore an IN-SAMPLE number, not a
+    held-out estimate, and it will be optimistic by an unknown amount.
+
+    Freezing does not undo that. What it does is stop it happening again: the
+    hash is written into every artifact, and
+    ``tests/explainability/test_sentence_attribution.py`` pins the v2 value, so
+    any edit to the lexicon turns a test red instead of silently producing a
+    better-looking number. The honest next step is to measure v2 on the test
+    split, ONCE, and report that as the estimate.
+    """
+    parts = []
+    for finding in sorted(synonyms):
+        terms = ",".join(sorted(synonyms[finding]))
+        parts.append(f"{finding}={terms}")
+    return blake2b("|".join(parts).encode("utf-8"), digest_size=8).hexdigest()
+
+
+def lexicon_metadata(name: str) -> dict[str, str]:
+    """The provenance block that rides on every record and every summary."""
+    if name not in LABELERS:
+        raise ValueError(f"unknown labeler {name!r}; known: {sorted(LABELERS)}")
+    synonyms = (
+        build_extended_synonyms()
+        if name == EXTENDED_LABELER_NAME
+        else dict(ABNORMALITY_SYNONYMS)
+    )
+    return {
+        "labeler": name,
+        "lexicon_version": LEXICON_VERSIONS[name],
+        "lexicon_hash": lexicon_fingerprint(synonyms),
+        "lexicon_labels": str(len(synonyms)),
+    }
+
 
 @dataclass(frozen=True)
 class SentenceRecord:
@@ -291,7 +338,7 @@ class StudyAttribution:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "labeler": self.labeler,
+            **lexicon_metadata(self.labeler),
             "parse_coverage": self.parse_coverage,
             "num_sentences": self.num_sentences,
             "num_labelled_sentences": self.num_labelled_sentences,
