@@ -670,6 +670,16 @@ study (not image) → anchor + ≤1 auxiliary view
   0 carries the global view, the 49 patches carry local deviation from it.
   Do **not** feed this encoder 448: measured worse (0.714) and it puts CLIP's
   interpolated position embeddings out of distribution while frozen.
+  **The two encoders share ONE coordinate frame, verified on the host
+  2026-08-30**, so a saliency map from either can be overlaid on the same image
+  without an offset. `preprocessor_config.json` for
+  `flaviagiammarino/pubmed-clip-vit-base-patch32` is `do_resize: true,
+  size: 224, do_center_crop: true, crop_size: 224, resample: 3`, and the
+  dataset hands it a SQUARE 448x448 tensor — so the resize goes to 224x224 and
+  the centre crop is a no-op. A pure downscale of the same crop, no second
+  crop. `14*32 == 7*64 == 448`, checked at import by
+  `training/explainability/projection.assert_shared_coordinate_frame`. Change
+  the crop size and that stops holding.
 - **`model.image_size` must equal `vis_processor.*.image_size` (448).** It is not
   self-evident: `init_vision_encoder` ignores it for biovil, so nothing read the
   value and the BLIP-2 default of 224 sat in the model config unnoticed. It now
