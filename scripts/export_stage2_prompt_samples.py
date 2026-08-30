@@ -27,7 +27,6 @@ sys.path.insert(0, str(REPO_ROOT))
 from scripts._stage2_fixtures import synthetic_records  # noqa: E402
 from stage2.prompts import (  # noqa: E402
     PromptBuilder,
-    VisualMode,
     context_from_record,
     load_prompt_config,
 )
