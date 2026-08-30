@@ -39,7 +39,14 @@ from training.explainability.projection import GridSpec  # noqa: E402
 
 
 class FakeAttention(torch.nn.Module):
-    """Returns ``(output, weights)`` like eager attention."""
+    """Returns ``(output, weights)`` like eager attention.
+
+    The weights genuinely produce the output -- ``output = weights @ hidden`` --
+    rather than being computed alongside it. That matters: an earlier version
+    returned weights that nothing downstream consumed, and
+    ``torch.autograd.grad`` then reported them as "not used in the graph",
+    which is a property of the stand-in and not of any real attention layer.
+    """
 
     def __init__(self, heads: int, length: int):
         super().__init__()
@@ -47,12 +54,9 @@ class FakeAttention(torch.nn.Module):
         self.scale = torch.nn.Parameter(torch.ones(1))
 
     def forward(self, hidden):
-        weights = torch.softmax(
-            torch.tril(torch.ones(1, self.heads, self.length, self.length)) * self.scale
-            - 1e9 * (1 - torch.tril(torch.ones(1, self.heads, self.length, self.length))),
-            dim=-1,
-        )
-        return hidden * self.scale, weights
+        causal = torch.tril(torch.ones(1, self.heads, self.length, self.length))
+        weights = torch.softmax(causal * self.scale - 1e9 * (1 - causal), dim=-1)
+        return torch.matmul(weights.mean(dim=1), hidden), weights
 
 
 class SdpaAttention(torch.nn.Module):
@@ -395,3 +399,45 @@ def test_the_image_grid_source_does_not_warn():
 def test_attention_implementation_is_eager_lm_and_sdpa_vision():
     """Both halves cost an OOM to discover; neither may drift."""
     assert ATTN_IMPLEMENTATION == {"text_config": "eager", "vision_config": "sdpa"}
+
+
+# --------------------------------------------------------------------------
+# gradient_weighted_layers -- shapes, which a stand-in model can still pin
+# --------------------------------------------------------------------------
+
+
+def test_gradients_come_back_shaped_like_the_attention(model):
+    """Regression: the grads were wrapped a second time and came out 5-D.
+
+    ``torch.autograd.grad`` already returns tensors mirroring its inputs, so
+    each one is [B, H, S, S] and needs no extra axis. This went unnoticed on
+    CPU because no test called the function -- it surfaced only on the GPU run.
+    """
+    from training.explainability.attention_capture import gradient_weighted_layers
+
+    hidden = torch.zeros(1, 6, 4, requires_grad=True)
+    with capture_attention(model) as captured:
+        output = model(hidden)
+    grads, reason = gradient_weighted_layers(output.sum(), captured, retain_graph=False)
+    assert reason is None
+    assert grads.shape == (3, 2, 6, 6)          # [L, H, S, S], matching the attention
+    assert grads.dtype == torch.float32
+
+
+def test_gradients_and_attention_fuse_without_a_shape_error(model):
+    from training.explainability.attention_capture import gradient_weighted_layers
+
+    hidden = torch.zeros(1, 6, 4, requires_grad=True)
+    with capture_attention(model) as captured:
+        output = model(hidden)
+    attention = stack_captured(captured, expected_layers=3)
+    grads, _ = gradient_weighted_layers(output.sum(), captured, retain_graph=False)
+    assert grads.shape == attention.shape
+
+    span = locate_visual_tokens(
+        torch.tensor([[262144, 262144, 9, 9, 9, 9]]), 262144,
+        expected_count=2, source="medgemma_image_grid",
+    )
+    values, trace = attribute_visual_tokens(attention, span, [5], gradients=grads)
+    assert values.shape == (2,)
+    assert trace.gradient_weighted is True

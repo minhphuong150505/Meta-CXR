@@ -383,7 +383,9 @@ def gradient_weighted_layers(
         if not allow_fallback:
             raise
         return None, f"RuntimeError during autograd.grad: {str(exc)[:200]}"
-    return rollout.stack_layers([g[None] for g in grads], batch_index=0).to(torch.float32), None
+    # ``grads`` already mirror the captured tensors' [B, H, S, S]; wrapping them
+    # again would make them 5-D.
+    return rollout.stack_layers(list(grads), batch_index=0).to(torch.float32), None
 
 
 def attribute_visual_tokens(
