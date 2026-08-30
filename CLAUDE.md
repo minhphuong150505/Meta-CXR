@@ -508,6 +508,13 @@ CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
 #   test_stage1_eval_hook      1 -- missing torchvision
 # test_loss_weight_gating went green again on 2026-08-19 when lambda_itc/itm/lm
 # returned to 0.0; it had failed only while the Q-Former was briefly re-enabled.
+# ⚠ On branch feat/stage2-explainability the baseline is SIX, not five:
+#   test_encoder_finetune.py::TestShippedConfig::test_encoder_finetune_is_on_with_patterns
+#   asserts 5 unfreeze patterns while mimic_cxr_full.yaml now ships 8 (the deep
+#   unfreeze of run_20260821_deep). The CONFIG is right and the test is stale --
+#   it was not updated by commit 814b778. Verified 2026-08-30 by moving the new
+#   explainability directories aside and re-running: it still fails, so it is
+#   pre-existing. Fix the test, not the config.
 CUDA_VISIBLE_DEVICES="" python -m pytest tests/test_explanation_metrics.py -q  # 7 passed
 python -m pytest tests/test_stage2_prompts.py -q          # one file
 python -m pytest tests/test_stage2_prompts.py -q -k negative_policy   # one test
@@ -1114,6 +1121,55 @@ Opt-in via `--prompt-config configs/stage2_prompt_v2.yaml`; without the flag the
 legacy prompt is used. The prompt prefix is masked out of training labels, and
 the soft token is added to `bad_words_ids` at generation.
 `configs/prompt_ablation/P1..P9.yaml` drive `scripts/run_prompt_ablation.py`.
+
+### Stage-2 explainability — `training/explainability/` (branch `feat/stage2-explainability`)
+
+Post-hoc XAI over the language head. **It is an OBSERVER: nothing in Stage 1 or
+Stage 2 imports it, and deleting the directory leaves both pipelines byte-for-byte
+unchanged.** Keep it that way -- a layer that can alter what it explains is not
+an explanation layer. Only `attention_capture.py` (NOT YET WRITTEN, needs the GPU
+host) touches a live model; it installs and removes every hook in `finally`.
+
+⚠⚠ **Q-Former soft tokens carry NO geometry, so stage 1 of the pipeline alone
+cannot produce a heatmap for the `meta_cxr_qformer*` modes.** The 32 soft tokens
+are `query_output.last_hidden_state`: each has already cross-attended over all
+246 visual tokens, and those cross-attention weights are **not** in the cached
+Stage-2 record (`.sensitive_stage1_cache/` holds only `[32, 768]`). Rolling
+attention back to them says which *soft token* a sentence used, never which
+*image region*. `projection.assert_spatial_projection_supported` raises
+`SpatialProjectionUnsupported` rather than rendering a picture that would look
+meaningful and not be. **`medgemma_direct` is the only route here that yields a
+real spatial map**, because MedGemma's own vision tower has a patch grid.
+
+⚠ `rollout.py` imports `torch` and nothing else -- no model, no `transformers`,
+no cross-import from this repo. That is what makes its arithmetic checkable
+against hand-computed matrices on a CPU box, which is the only machine the
+planning session has. Do not add an import there for convenience.
+
+⚠ **The rollout formula is Chefer et al. 2021 as this repo reads it, and has NOT
+been checked against the project's own design document** (that file was never
+reachable in the session that wrote the module). Check it before quoting a
+number. If it differs, the change is confined to `fuse_heads` and
+`_rollout_chefer`, and the hand-computed tests will catch it.
+
+Two details that cost a test each, both pinned:
+`fuse_heads` clamps **before** averaging over heads (mean-then-clamp lets a
+negative head cancel a positive one: 2.0 becomes 0.0, same shape, no error), and
+a span that receives no attributed mass returns **zeros, not a uniform
+distribution** -- "this sentence did not use the image" is a real answer.
+
+Sentence labels come from `LexiconSentenceLabeler` (`lexicon_v1`), a thin adapter
+over `safety.claims.LexiconClaimParser`. **This repository implements no trained
+clinical labeler and this one must never be presented as one.** Its limit is
+measured, not assumed: `parse_coverage` rides on every study record and is
+aggregated **by sentence, not by study** -- quote it beside any sentence-level
+result. Unparsed sentences are kept, flagged `spatially_meaningful: false`.
+
+Output is `.jsonl` (already git-ignored), one line per study, written through
+`scripts/evaluate_explanation.py`'s `_assert_private_output_location`; maps are
+`.npz` at native grid resolution (14x14 / 7x7), never upsampled PNG.
+
+91 CPU tests in `tests/explainability/` (namespace package -- no `__init__.py`).
 
 ### Evaluation — `training/evaluation/`, driven by `scripts/evaluate_stage*.py`
 

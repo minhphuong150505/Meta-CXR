@@ -1,6 +1,6 @@
-> Source: `tests/` (36 file Python, gồm `conftest.py`)
+> Source: `tests/` (48 file Python, gồm `conftest.py` và `tests/explainability/`)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-14
+> Last verified against source: 2026-08-30
 
 # `tests/`
 
@@ -130,6 +130,21 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 |---|---|
 | `test_pretrained_findings.py` (553) | P8: loader fail-closed, resume, budget, guard Impression, provenance |
 | `test_safety_pipeline.py` (297) | ❓ `SafetyPipeline`, `RuleBasedClaimReconciler`, `require_grounding` |
+
+## Nhóm 8 — Explainability Stage 2
+
+`tests/explainability/` — namespace package, **cố ý không có `__init__.py`**
+(xem bẫy `iterative-stratification` trong `CLAUDE.md`). 91 test, toàn bộ chạy
+trên máy CPU không có transformers/torchvision, `rc=0`.
+
+| Test | Kiểm gì |
+|---|---|
+| `test_rollout.py` (30) | Rollout Chefer bằng ma trận dựng tay có đáp án tính tay. Pin thứ tự **clamp-rồi-mean** (đảo lại cho ra 0.0 thay vì 2.0, cùng shape, không báo lỗi); pin thứ tự hợp thành lớp; span không có khối lượng → zeros **không phải** phân phối đều |
+| `test_projection.py` (33) | Ô vuông tổng hợp 4 góc × 2 lưới, kiểm cả khối lượng góc phần tư lẫn pixel đỉnh; số học `14*32 == 7*64 == 448`; từ chối chiếu soft token Q-Former; `normalize_map` pin số học vào `_normalize_cam` của Stage 1 |
+| `test_sentence_attribution.py` (28) | Offset câu khớp `split_sentences`; gộp token→câu theo chồng lấn ký tự; `parse_coverage` gộp theo **câu** không theo study; nhãn theo **allowlist** |
+
+⚠ Tầng GPU (đẩy ảnh thật qua encoder thật, test triệt tiêu soft token) **chưa
+viết** — cần máy train.
 
 ## Parent
 

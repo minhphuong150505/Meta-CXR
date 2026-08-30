@@ -230,6 +230,10 @@ Meta-CXR-source/
 │   ├── medgemma/
 │   │   ├── soft_tokens.py          🟡 ⚠ chỗ dễ sai nhất repo
 │   │   └── capabilities.py         ✅
+│   ├── explainability/             🟡 XAI hậu nghiệm Stage 2 — NGƯỜI QUAN SÁT
+│   │   ├── rollout.py              ✅ Chefer rollout, CHỈ import torch
+│   │   ├── projection.py           ✅ lưới đặc trưng → ảnh, CHỈ import torch
+│   │   └── sentence_attribution.py ✅ tách câu, nhãn lexicon_v1, parse coverage
 │   ├── trainer/                    ❓ D-001 — chỉ test import
 │   │   ├── checkpointing.py  state.py
 │   └── evaluation/                 ✅ 17 file Python
@@ -285,7 +289,8 @@ Meta-CXR-source/
 ├── results/                        ✅ Table 5 encoder ablation (4/4 complete)
 │   └── table5_encoder_ablation.{md,json,csv}
 │
-├── tests/                          ✅ 36 file Python — enforce invariant kiến trúc
+├── tests/                          ✅ 48 file Python — enforce invariant kiến trúc
+│   ├── explainability/             ✅ 91 test CPU (namespace pkg, KHÔNG có __init__.py)
 │   └── fixtures/notebooks/*.fixture
 │
 ├── utils/                          ⚠ POTENTIALLY_UNUSED — zero import toàn repo
@@ -366,12 +371,13 @@ Meta-CXR-source/
 - [`pipeline_modes.py`](project/training/pipeline_modes.py.doc.md)
 - [`stage2_utils.py`](project/training/stage2_utils.py.doc.md)
 
-#### `training/dataio/` · `training/stage1/` · `training/medgemma/` · `training/trainer/` · `training/evaluation/`
+#### `training/dataio/` · `training/stage1/` · `training/medgemma/` · `training/trainer/` · `training/evaluation/` · `training/explainability/`
 [📁 dataio](project/training/dataio/_index.md) ·
 [📁 stage1](project/training/stage1/_index.md) ·
 [📁 medgemma](project/training/medgemma/_index.md) ·
 [📁 trainer](project/training/trainer/_index.md) ·
-[📁 evaluation](project/training/evaluation/_index.md)
+[📁 evaluation](project/training/evaluation/_index.md) ·
+[📁 explainability](project/training/explainability/_index.md)
 
 ### `stage2/prompts/` — Prompt v2
 [📁 Directory documentation](project/stage2/prompts/_index.md)
