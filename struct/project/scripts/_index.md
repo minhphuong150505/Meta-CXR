@@ -31,6 +31,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `evaluate_stage1.py` (328) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz` |
 | `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |
 | `evaluate_explanation.py` | [📄](evaluate_explanation.py.doc.md) | ✅ XAI — load checkpoint, cần autograd sống, không train |
+| `explain_stage2.py` | [📄](explain_stage2.py.doc.md) | ✅ XAI Stage 2 — JSONL + npz lưới gốc; cổng triệt tiêu huỷ được cả lần chạy |
 
 ### Phân tích prompt
 
