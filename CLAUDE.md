@@ -1323,24 +1323,40 @@ the composition below was measured on a 300-study subsample (1,556 sentences,
 coverage 0.493). But most of the miss is not a labeler
 failure**, which is what decides whether a better labeler is worth building:
 
-| bucket | share of the 789 unparsed | before header keywords |
+Measured over the **whole val split**: n=1,513 studies, 7,786 sentences,
+4,028 of them unparsed. The diagnostic reaches the same cohort and the same
+0.4827 coverage as the GPU run by an independent path, which is a useful check
+on both.
+
+| bucket | share of the 4,028 unparsed | 300-study subsample |
 |---|---:|---:|
-| `normal` — normality/negation naming no finding | **39.5%** | 39.5% |
-| `technical` — priors, projection, positioning, headers | **26.0%** | 23.1% |
-| `unclassified` | **16.5%** | 19.3% |
-| `outside_14` — real finding outside the 14-label taxonomy | 12.7% | 12.8% |
-| `missed_14` — wording for one of the 14 the lexicon should have caught | **5.3%** | 5.3% |
+| `normal` — normality/negation naming no finding | **41.0%** | 39.5% |
+| `technical` — priors, projection, positioning, headers | **26.9%** | 26.0% |
+| `unclassified` | **15.8%** | 16.5% |
+| `outside_14` — real finding outside the 14-label taxonomy | 10.8% | 12.7% |
+| `missed_14` — wording for one of the 14 the lexicon should have caught | **5.4%** | 5.3% |
+
+The subsample was representative; every bucket moved by under 2 points.
 
 Adding header and request phrases moved mass from `unclassified` into
-`technical` and left `missed_14` at exactly 42 sentences — the change did not
-steal from the bucket that decides anything, which is what makes it safe.
+`technical` and left `missed_14` unmoved — 42 sentences before and after on the
+subsample. A reclassification that drained the bucket the decision rests on
+would have been worse than no change.
 
 So better synonyms *within* the 14 labels address about 5% of the misses.
-⚠ Treat that 5.3% as a **lower bound**: word frequencies over the remaining
-`unclassified` bucket show `volumes`, `device`, `line`, `tube`, `heart`,
-`enlarged` — Support-Devices, Cardiomegaly and low-lung-volume phrasings the
-classifier does not bucket. A realistic figure is ~10%, still far below
-`normal` + `technical` at 65.5%.
+⚠ **5.4% is the lower bound; 10.4% is the upper, and both are now measured.**
+Of the 636 remaining `unclassified` sentences on full val, **202 (31.8%)**
+contain a word that would name one of the 14 labels if the lexicon carried the
+synonym — the bucket's commonest terms are `lung`(91), `volumes`(75),
+`enlarged`(40), `heart`(36), `tube`(30), i.e. low-lung-volume, Cardiomegaly and
+Support-Devices phrasings. Counting all of them gives (217+202)/4028 = **10.4%**,
+and that is generous, since `aorta`(34)/`aortic`(34)/`tortuous`(23) in the same
+bucket are `outside_14`, not missed labels.
+
+**So better synonyms inside the 14 labels address 5–10% of the misses, against
+`normal` + `technical` at 67.9%.** In absolute terms that is 217–419 sentences
+of 7,786, i.e. 2.8–5.4% of all sentences. That is the number the
+"is a better labeler worth building" decision rests on.
 `scripts/diagnose_parse_coverage.py` writes the sentences it sorted, grouped,
 so the classifier can be checked; that file is report text and stays on the host.
 

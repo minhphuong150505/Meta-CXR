@@ -67,6 +67,31 @@ lệ, **7.786 câu**, 15 MB đầu ra. Peak **11.31 GiB / 15.48**; mọi study d
 
 ⚠ Các số smoke n=6 (coverage 0.606, ablation +0.1868) **không phải kết quả**.
 
+## Bộ chẩn đoán đi kèm — `diagnose_parse_coverage.py`
+
+⚠ **Bộ phân loại của nó KHÔNG được runner dùng.** `explain_stage2.py` lấy nhãn
+từ `LexiconSentenceLabeler`; `classify()` chỉ phân loại các câu *đã* không gắn
+được nhãn. Sửa từ khoá phân loại **không** làm đổi `parse_coverage`, bản đồ hay
+gate — nên đừng chạy lại 23 phút GPU sau khi sửa nó.
+
+Toàn val, n=1.513 study / 7.786 câu / 4.028 câu unparsed, chạy trong **1 giây**:
+
+| nhóm | % của unparsed |
+|---|---:|
+| `normal` | **41.0%** |
+| `technical` | **26.9%** |
+| `unclassified` | 15.8% |
+| `outside_14` | 10.8% |
+| `missed_14` | **5.4%** |
+
+Bộ chẩn đoán ra **đúng** cohort và **đúng** coverage 0.4827 như GPU runner, qua
+một đường code độc lập — một phép kiểm chéo cho cả hai.
+
+⚠ `missed_14` nằm giữa **5.4% (chặt) và 10.4% (nới)**: 202/636 câu
+`unclassified` chứa từ chỉ một trong 14 nhãn mà lexicon thiếu synonym. Tức
+217–419 câu trên 7.786 = **2,8–5,4% tổng số câu**. Đó là con số để quyết định
+có đầu tư labeler tốt hơn hay không.
+
 ## ⚠ `parse_coverage` phải đi kèm mọi kết luận mức câu
 
 Ghi ở **cả hai cấp** và in ra khi kết thúc. Đo thật trên 6 study / 33 câu:
