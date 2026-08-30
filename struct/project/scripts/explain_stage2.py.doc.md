@@ -67,6 +67,27 @@ lệ, **7.786 câu**, 15 MB đầu ra. Peak **11.31 GiB / 15.48**; mọi study d
 
 ⚠ Các số smoke n=6 (coverage 0.606, ablation +0.1868) **không phải kết quả**.
 
+## Hai lần chạy đầy đủ, so sánh trực tiếp
+
+`~/xai_val` (v1) và `~/xai_val_v2` (v2) trên máy train, mỗi lần 1.513 study,
+15 MB, 0 lỗi.
+
+| | `lexicon_v1` | `lexicon_v2` |
+|---|---:|---:|
+| `parse_coverage` | 0.4827 | **0.6477** |
+| câu có nhãn / 7.786 | 3.758 | **5.043** |
+| `spatially_meaningful` | 48.3% | **64.8%** |
+| study coverage 0 | 154 | **128** |
+| peak VRAM | 11.31 GiB | 11.31 GiB |
+| ablation n=100 | +0.1788 | +0.1788 |
+| randomization rho cuối | -0.0030 | -0.0030 |
+
+Hai gate tái lập **đúng tới từng chữ số** giữa hai lần — bắt buộc phải vậy, vì
+chúng không phụ thuộc labeler. Đây là phép kiểm tính tất định của cả đường chạy.
+
+⚠ Nhãn theo tầng dưới v2: **6.384 `chexpert_14`, 611 `extended`**. Chỉ tầng đầu
+mới có classifier để đối chiếu.
+
 ## Bộ chẩn đoán đi kèm — `diagnose_parse_coverage.py`
 
 ⚠ **Bộ phân loại của nó KHÔNG được runner dùng.** `explain_stage2.py` lấy nhãn
