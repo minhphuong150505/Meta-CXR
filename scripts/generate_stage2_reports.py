@@ -89,6 +89,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         train_adapter=False,
         quantize_4bit=False,
     )
+    # Inference only: nothing trains, so freeze everything before asserting.
+    # Without this the assert fires a FALSE POSITIVE -- with no adapter applied,
+    # no LoRA has narrowed anything, so every parameter still carries the base
+    # model's requires_grad=True and the guard counts 419M "trainable" vision
+    # params. Freezing first makes the guard mean what it says: zero trainable
+    # vision parameters in the run that is about to happen.
+    for parameter in llm.model.parameters():
+        parameter.requires_grad_(False)
+    llm.model.eval()
     llm.assert_vision_tower_frozen()
 
     path = output_dir / f"generated_{args.split}.jsonl"
