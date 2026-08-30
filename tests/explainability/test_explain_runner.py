@@ -414,3 +414,40 @@ def test_the_phrase_forms_still_catch_real_headers(diagnose):
     """Only the phrase forms are matched, and they are enough for headers."""
     assert diagnose.classify("Frontal and lateral chest.") == "technical"
     assert diagnose.classify("Single view chest radiograph.") == "technical"
+
+
+def test_the_runner_defaults_to_v1_so_the_n1513_run_reproduces(runner):
+    args = runner.parse_args(
+        ["--manifest", "m.csv", "--image-root", ".", "--output-dir", "o"]
+    )
+    assert args.labeler == "lexicon_v1"
+
+
+def test_both_labelers_are_selectable_from_the_runner(runner):
+    for name in ("lexicon_v1", "lexicon_v2"):
+        args = runner.parse_args(
+            ["--manifest", "m.csv", "--image-root", ".", "--output-dir", "o",
+             "--labeler", name]
+        )
+        assert args.labeler == name
+
+
+def test_both_labelers_are_selectable_from_the_diagnostic(diagnose):
+    for name in ("lexicon_v1", "lexicon_v2"):
+        args = diagnose.parse_args(
+            ["--manifest", "m.csv", "--output-dir", "o", "--labeler", name]
+        )
+        assert args.labeler == name
+
+
+def test_only_the_two_registered_labelers_exist():
+    from training.explainability.sentence_attribution import LABELERS
+
+    assert sorted(LABELERS) == ["lexicon_v1", "lexicon_v2"]
+
+
+def test_the_labeler_used_is_recorded_in_both_summaries():
+    assert '"labeler": args.labeler' in RUNNER.read_text(encoding="utf-8")
+    assert '"labeler": args.labeler' in (
+        REPO / "scripts" / "diagnose_parse_coverage.py"
+    ).read_text(encoding="utf-8")

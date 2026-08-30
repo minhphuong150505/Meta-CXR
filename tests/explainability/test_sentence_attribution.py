@@ -268,7 +268,7 @@ def test_to_dict_is_json_serialisable_and_carries_coverage():
     assert '"labeler": "lexicon_v1"' in encoded
     assert payload["parse_coverage"] == pytest.approx(0.5)
     assert payload["sentences"][1]["labels"] == [
-        {"finding": "Cardiomegaly", "polarity": "positive"}
+        {"finding": "Cardiomegaly", "polarity": "positive", "tier": "chexpert_14"}
     ]
     assert payload["sentences"][0]["spatially_meaningful"] is False
 
@@ -284,3 +284,135 @@ def test_the_only_labeler_name_ever_emitted_is_on_the_allowlist():
     allowed = {LEXICON_LABELER_NAME}
     for text in (REPORT, "", "Mild cardiomegaly is present."):
         assert attribute_sentences(text).to_dict()["labeler"] in allowed
+
+
+# --------------------------------------------------------------------------
+# lexicon_v2: the 14 with better synonyms, plus findings outside that taxonomy
+# --------------------------------------------------------------------------
+
+from training.explainability.sentence_attribution import (  # noqa: E402
+    EXTENDED_FINDINGS,
+    EXTENDED_LABELER_NAME,
+    LABELERS,
+    TIER_CHEXPERT_14,
+    TIER_EXTENDED,
+    ExtendedLexiconSentenceLabeler,
+    build_extended_synonyms,
+    label_tier,
+)
+
+
+def test_safety_claims_is_left_alone():
+    """The 14 map one-to-one onto Stage 1's head and safety/ reconciles against it.
+
+    Extending that lexicon in place would create claims with no prediction to
+    check them against, turning a verification pipeline into a description
+    pipeline. The extension lives in this layer instead.
+    """
+    from safety.claims import ABNORMALITY_SYNONYMS
+
+    assert len(ABNORMALITY_SYNONYMS) == 14
+    assert not set(EXTENDED_FINDINGS) & set(ABNORMALITY_SYNONYMS)
+
+
+def test_the_extended_lexicon_keeps_all_14_and_adds_more():
+    merged = build_extended_synonyms()
+    from safety.claims import ABNORMALITY_SYNONYMS
+
+    assert set(ABNORMALITY_SYNONYMS) <= set(merged)
+    assert len(merged) == 14 + len(EXTENDED_FINDINGS)
+
+
+def test_the_base_synonyms_are_taken_by_reference_not_copied():
+    """A change to the repository's lexicon must propagate, not diverge."""
+    from safety.claims import ABNORMALITY_SYNONYMS
+
+    merged = build_extended_synonyms()
+    for finding, terms in ABNORMALITY_SYNONYMS.items():
+        assert set(terms) <= set(merged[finding]), finding
+
+
+def test_every_label_reports_its_tier():
+    assert label_tier("Cardiomegaly") == TIER_CHEXPERT_14
+    assert label_tier("Degenerative Change") == TIER_EXTENDED
+    for finding in EXTENDED_FINDINGS:
+        assert label_tier(finding) == TIER_EXTENDED
+
+
+def test_v1_labels_also_carry_a_tier_and_it_is_always_chexpert_14():
+    for label in LexiconSentenceLabeler().label("There is no pneumothorax."):
+        assert label.tier == TIER_CHEXPERT_14
+
+
+def test_the_tier_survives_into_the_serialised_record():
+    """Whoever reads the JSONL must be able to tell the two apart."""
+    study = attribute_sentences(
+        "Degenerative changes of the spine.", labeler=ExtendedLexiconSentenceLabeler()
+    )
+    payload = study.to_dict()["sentences"][0]["labels"][0]
+    assert payload["tier"] == TIER_EXTENDED
+    assert payload["finding"] == "Degenerative Change"
+
+
+@pytest.mark.parametrize(
+    ("text", "finding"),
+    [
+        ("Degenerative changes of the thoracic spine.", "Degenerative Change"),
+        ("Mild thoracic scoliosis.", "Spinal Deformity"),
+        ("The aorta is tortuous.", "Aortic Abnormality"),
+        ("A hiatal hernia is again seen.", "Hernia"),
+        ("Median sternotomy wires are intact.", "Postsurgical Change"),
+        ("Emphysematous changes are present.", "Hyperinflation"),
+        ("Biapical scarring is unchanged.", "Scarring"),
+        ("Pectus excavatum deformity.", "Chest Wall Deformity"),
+        ("Bowel gas is seen below the diaphragm.", "Upper Abdomen"),
+    ],
+)
+def test_extended_findings_are_recognised(text, finding):
+    labels = ExtendedLexiconSentenceLabeler().label(text)
+    assert finding in {label.finding for label in labels}, text
+
+
+@pytest.mark.parametrize(
+    ("text", "finding"),
+    [
+        ("The heart size is enlarged.", "Cardiomegaly"),
+        ("Low lung volumes are noted.", "Atelectasis"),
+        ("Patchy infiltrate at the right base.", "Lung Opacity"),
+        ("Blunting of the left costophrenic angle.", "Pleural Effusion"),
+        ("The tube tip is in good position.", "Support Devices"),
+    ],
+)
+def test_wording_v1_missed_is_now_caught_and_stays_in_the_14(text, finding):
+    labels = ExtendedLexiconSentenceLabeler().label(text)
+    matched = [label for label in labels if label.finding == finding]
+    assert matched, text
+    assert matched[0].tier == TIER_CHEXPERT_14
+
+
+def test_v1_did_not_catch_those_which_is_why_v2_exists():
+    v1 = LexiconSentenceLabeler()
+    for text in ("The heart size is enlarged.", "Low lung volumes are noted."):
+        assert not v1.label(text), text
+
+
+def test_polarity_still_works_on_extended_findings():
+    labels = ExtendedLexiconSentenceLabeler().label("No hiatal hernia is seen.")
+    assert labels[0].finding == "Hernia"
+    assert labels[0].polarity == "negative"
+
+
+def test_word_boundaries_stop_line_matching_midline():
+    labels = ExtendedLexiconSentenceLabeler().label("The trachea is midline.")
+    assert "Support Devices" not in {label.finding for label in labels}
+
+
+def test_both_labelers_are_registered_and_named():
+    assert LABELERS[LEXICON_LABELER_NAME] is LexiconSentenceLabeler
+    assert LABELERS[EXTENDED_LABELER_NAME] is ExtendedLexiconSentenceLabeler
+    assert ExtendedLexiconSentenceLabeler().name == "lexicon_v2"
+
+
+def test_v1_remains_available_so_earlier_runs_stay_comparable():
+    assert LexiconSentenceLabeler().name == "lexicon_v1"
+    assert attribute_sentences(REPORT).labeler == "lexicon_v1"

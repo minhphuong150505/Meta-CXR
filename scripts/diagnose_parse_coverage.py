@@ -41,7 +41,8 @@ if str(_REPO_ROOT) not in sys.path:
 from safety.claims import ABNORMALITY_SYNONYMS  # noqa: E402
 from scripts.evaluate_explanation import _assert_private_output_location  # noqa: E402
 from training.explainability.sentence_attribution import (  # noqa: E402
-    LexiconSentenceLabeler,
+    LABELERS,
+    LEXICON_LABELER_NAME,
     locate_sentences,
 )
 
@@ -99,6 +100,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--studies", type=int, default=300)
     parser.add_argument("--sample", type=int, default=30,
                         help="unparsed sentences to write out for a human to read")
+    parser.add_argument("--labeler", choices=sorted(LABELERS), default=LEXICON_LABELER_NAME)
     parser.add_argument("--seed", type=int, default=16)
     return parser.parse_args(argv)
 
@@ -140,7 +142,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         n=min(args.studies, len(frame)), random_state=args.seed
     ).reset_index(drop=True)
 
-    labeler = LexiconSentenceLabeler()
+    labeler = LABELERS[args.labeler]()
     buckets: dict[str, list[str]] = {}
     total = labelled = 0
     for text in frame["findings_clean"].fillna(""):
@@ -154,6 +156,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     unparsed = total - labelled
     counts = {name: len(values) for name, values in sorted(buckets.items())}
     summary = {
+        "labeler": args.labeler,
         "studies": int(len(frame)),
         "sentences": total,
         "labelled": labelled,
@@ -185,8 +188,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         lines.append("")
     (output_dir / "unparsed_sample.md").write_text("\n".join(lines), encoding="utf-8")
 
-    print(f"studies {summary['studies']}  sentences {total}  "
-          f"parse_coverage {summary['parse_coverage']:.3f}")
+    print(f"labeler {args.labeler}  studies n={summary['studies']}  "
+          f"sentences n={total}  parse_coverage {summary['parse_coverage']:.3f}")
     print(f"unparsed {unparsed}:")
     for name, value in counts.items():
         print(f"  {name:12s} {value:5d}  {value / unparsed:6.1%} of unparsed")
