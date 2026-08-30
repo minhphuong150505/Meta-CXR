@@ -1,0 +1,363 @@
+#!/usr/bin/env python3
+"""Explain a Stage-2 report: which sentence leaned on which part of the image.
+
+Writes one JSONL line per study plus one NPZ of attribution maps per study, and
+a run-level summary. The maps are stored at the model's NATIVE grid resolution
+(16x16 for MedGemma) and never as an upsampled PNG: a rendered overlay is a
+patient-derived image, and this command's job is to produce evidence, not
+pictures.
+
+The gate runs FIRST and can abort the whole run. If substituting another
+study's image does not measurably degrade the report, every map that follows
+would be meaningless -- either the visual span is located wrongly or the model
+is not using the image -- so the run stops instead of producing a directory of
+plausible-looking artifacts. ``--skip-ablation-gate`` exists, warns loudly, and
+records the skip in the summary.
+
+Privacy. Output is PhysioNet credentialed derivative data:
+  * the destination is refused unless it is outside the repository or Git
+    confirms it is ignored (the same check ``evaluate_explanation.py`` makes);
+  * filenames carry a sequential index, never an identifier;
+  * the JSONL carries a ``sample_key`` fingerprint rather than the real ids.
+    ``--write-key-map`` emits the join separately and is the single most
+    sensitive artifact this command can produce.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import sys
+from collections.abc import Sequence
+from hashlib import blake2b
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.evaluate_explanation import _assert_private_output_location  # noqa: E402
+from training.explainability import attention_capture as capture  # noqa: E402
+from training.explainability import projection, rollout  # noqa: E402
+from training.explainability.sentence_attribution import (  # noqa: E402
+    LexiconSentenceLabeler,
+    attribute_sentences,
+    dataset_parse_coverage,
+)
+
+LOGGER = logging.getLogger("explain_stage2")
+
+PROMPT = "Describe the chest radiograph."
+SCHEMA_VERSION = 1
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--manifest", required=True, type=Path, help="split CSV")
+    parser.add_argument("--image-root", required=True, type=Path,
+                        help="directory that directly contains files/")
+    parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--split", choices=capture.ALLOWED_SPLITS, default="test")
+    parser.add_argument("--limit", type=int, default=20, help="studies to explain")
+    parser.add_argument("--ablation-studies", type=int, default=12,
+                        help="studies used for the gate before any map is written")
+    parser.add_argument("--skip-ablation-gate", action="store_true",
+                        help="run without the gate. Recorded in the summary.")
+    parser.add_argument("--model-id", default=capture.MEDGEMMA_MODEL_ID)
+    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--seed", type=int, default=16)
+    parser.add_argument("--min-findings-tokens", type=int, default=30)
+    parser.add_argument("--max-findings-tokens", type=int, default=90)
+    parser.add_argument("--no-gradient-weight", action="store_true",
+                        help="plain rollout, no gradient term. Recorded in every record.")
+    parser.add_argument("--write-key-map", action="store_true",
+                        help="also write sample_key -> identifiers. Most sensitive output.")
+    parser.add_argument("--verbose", action="store_true")
+    return parser.parse_args(argv)
+
+
+def sample_key(value: str) -> str:
+    """Stable, non-reversible handle for one study."""
+    return blake2b(str(value).encode("utf-8"), digest_size=12).hexdigest()
+
+
+def select_studies(manifest: Path, split: str, args) -> list:
+    import pandas as pd
+
+    frame = pd.read_csv(manifest)
+    if "split" in frame.columns:
+        frame = frame[frame["split"] == split]
+    frame = frame[
+        frame["target_valid"]
+        & frame["ViewPosition"].isin(["PA", "AP"])
+        & frame["findings_token_count"].between(
+            args.min_findings_tokens, args.max_findings_tokens
+        )
+    ]
+    if frame.empty:
+        raise SystemExit("no study matches the selection; widen the token bounds")
+    # +1 so the last study still has a partner for the mismatch control.
+    wanted = min(len(frame), max(args.limit, args.ablation_studies) + 1)
+    return frame.sample(n=wanted, random_state=args.seed).reset_index(drop=True)
+
+
+def build_batch(processor, model, row, image_root: Path, device):
+    import torch
+    from PIL import Image
+
+    with Image.open(image_root / row.image_path) as handle:
+        image = handle.convert("RGB").copy()
+    messages = [
+        {"role": "user", "content": [{"type": "image", "image": image},
+                                     {"type": "text", "text": PROMPT}]},
+        {"role": "assistant",
+         "content": [{"type": "text", "text": str(row.findings_clean).strip()}]},
+    ]
+    encoded = processor.apply_chat_template(
+        messages, tokenize=True, add_generation_prompt=False,
+        return_dict=True, return_tensors="pt",
+    )
+    return {
+        key: (value.to(device, model.dtype) if value.is_floating_point() else value.to(device))
+        for key, value in encoded.items()
+        if torch.is_tensor(value)
+    }
+
+
+def locate(model, batch):
+    return capture.locate_visual_tokens(
+        batch["input_ids"],
+        model.config.image_token_index,
+        expected_count=projection.MEDGEMMA_GRID.num_tokens,
+        source=capture.SOURCE_MEDGEMMA_IMAGE,
+        grid=projection.MEDGEMMA_GRID,
+    )
+
+
+def target_positions(batch, span) -> list[int]:
+    """Positions of the assistant turn, i.e. what the model had to produce."""
+    total = int(batch["input_ids"].shape[1])
+    start = span.end + 4  # the turn markers the chat template inserts after the image
+    if start >= total:
+        raise RuntimeError("no target tokens after the visual span; the target was truncated")
+    return list(range(start, total))
+
+
+def mean_token_nll_for(model, batch, span, positions, **kwargs) -> list[float]:
+    import torch
+
+    labels = batch["input_ids"].clone()
+    labels[:, : positions[0]] = -100
+    with torch.no_grad():
+        outputs, _captured, _embeds = capture.teacher_forced_forward(
+            model, batch, span, **kwargs
+        )
+    values = capture.per_token_nll(outputs.logits, labels)
+    del outputs
+    return [float(v) for v in values if v == v]
+
+
+def run_ablation_gate(model, processor, frame, args, image_root, device) -> dict:
+    """Substitute another study's image and require an established degradation."""
+    import torch
+
+    baseline, mismatched = [], []
+    count = min(args.ablation_studies, len(frame) - 1)
+    for index in range(count):
+        batch = build_batch(processor, model, frame.iloc[index], image_root, device)
+        span = locate(model, batch)
+        positions = target_positions(batch, span)
+        values = mean_token_nll_for(model, batch, span, positions)
+        baseline.append(sum(values) / len(values))
+
+        other = build_batch(processor, model, frame.iloc[index + 1], image_root, device)
+        with torch.no_grad():
+            features = model.get_image_features(pixel_values=other["pixel_values"])
+        values = mean_token_nll_for(
+            model, batch, span, positions, visual_features=features
+        )
+        mismatched.append(sum(values) / len(values))
+        del batch, other, features
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        LOGGER.info("gate %d/%d", index + 1, count)
+
+    result = capture.score_ablation(baseline, mismatched, condition="mismatched_image")
+    LOGGER.info(
+        "ablation %s: mean %+0.4f CI [%+0.4f, %+0.4f] worse %.0f%% established=%s",
+        result.condition, result.mean_delta, result.ci_low, result.ci_high,
+        100 * result.fraction_worse, result.established,
+    )
+    return result
+
+
+def explain_study(model, batch, span, study, args) -> tuple[list, dict]:
+    """One forward, then one gradient per sentence."""
+    import torch
+
+    positions = target_positions(batch, span)
+    labels = batch["input_ids"].clone()
+    labels[:, : positions[0]] = -100
+
+    outputs, captured, _embeds = capture.teacher_forced_forward(model, batch, span)
+    attention = capture.stack_captured(
+        captured, expected_layers=len(capture.language_attention_modules(model))
+    )
+    nll = capture.per_token_nll(outputs.logits, labels)
+
+    tokenizer = model._explain_tokenizer
+    token_texts = [tokenizer.decode([int(t)]) for t in batch["input_ids"][0, positions]]
+    token_nll = [float(nll[p]) for p in positions]
+    attributed = attribute_sentences(
+        str(study.findings_clean).strip(),
+        token_texts=token_texts,
+        token_nll=token_nll,
+        labeler=LexiconSentenceLabeler(),
+    )
+
+    maps, records = [], []
+    for sentence in attributed.sentences:
+        if not sentence.token_indices:
+            values = torch.zeros(span.length)
+            trace = None
+        else:
+            rows = [positions[i] for i in sentence.token_indices]
+            # Teacher-forced: logits at t-1 produced the token at t.
+            score = outputs.logits[0, [r - 1 for r in rows], :].max(dim=-1).values.sum()
+            gradients = None
+            if not args.no_gradient_weight:
+                gradients, reason = capture.gradient_weighted_layers(
+                    score, captured, retain_graph=True
+                )
+                if reason:
+                    LOGGER.warning("gradient fallback: %s", reason)
+            values, trace = capture.attribute_visual_tokens(
+                attention, span, rows, gradients=gradients
+            )
+        grid = span.grid
+        maps.append(values.detach().cpu().reshape(grid.height, grid.width).numpy())
+        record = sentence.to_dict()
+        record["attribution_index"] = len(maps) - 1
+        record["gradient_weighted"] = bool(trace.gradient_weighted) if trace else False
+        records.append(record)
+
+    del outputs, captured, attention
+    return maps, {
+        "sentences": records,
+        "parse_coverage": attributed.parse_coverage,
+        "labeler": attributed.labeler,
+        "unparsed_sentences": list(attributed.unparsed),
+        "study_summary": attributed,
+    }
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING,
+        format="%(levelname)s %(message)s",
+    )
+    split = capture.assert_split_allowed(args.split)
+    output_dir = _assert_private_output_location(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    maps_dir = output_dir / "maps"
+    maps_dir.mkdir(exist_ok=True)
+
+    import numpy as np
+    import torch
+
+    frame = select_studies(args.manifest, split, args)
+    processor, model = capture.load_medgemma_for_explanation(
+        args.model_id, device=args.device
+    )
+    model._explain_tokenizer = getattr(processor, "tokenizer", processor)
+    device = next(model.parameters()).device
+
+    gate = None
+    if args.skip_ablation_gate:
+        LOGGER.warning(
+            "ABLATION GATE SKIPPED. Nothing has checked that the model uses the "
+            "image; every map below may be meaningless."
+        )
+    else:
+        gate = run_ablation_gate(model, processor, frame, args, args.image_root, device)
+        capture.assert_visual_tokens_matter(gate)
+
+    jsonl_path = output_dir / f"explanations_{split}.jsonl"
+    keymap_path = output_dir / f"keymap_{split}.jsonl"
+    studies, written = [], 0
+    with jsonl_path.open("w", encoding="utf-8") as handle:
+        keymap = keymap_path.open("w", encoding="utf-8") if args.write_key_map else None
+        try:
+            for index in range(min(args.limit, len(frame) - 1)):
+                study = frame.iloc[index]
+                key = sample_key(study.dicom_id)
+                batch = build_batch(processor, model, study, args.image_root, device)
+                span = locate(model, batch)
+                maps, payload = explain_study(model, batch, span, study, args)
+                studies.append(payload.pop("study_summary"))
+
+                # Native grid only. An upsampled render is a patient image.
+                name = f"study_{index:05d}.npz"
+                np.savez_compressed(
+                    maps_dir / name,
+                    maps=np.stack(maps).astype(np.float32),
+                    grid=np.array([span.grid.height, span.grid.width], dtype=np.int32),
+                )
+                handle.write(json.dumps({
+                    "schema_version": SCHEMA_VERSION,
+                    "sample_key": key,
+                    "split": split,
+                    "attribution_map": f"maps/{name}",
+                    "attribution_grid": span.grid.to_dict(),
+                    "visual_span": span.to_dict(),
+                    "rollout_method": rollout.METHOD_CHEFER,
+                    **payload,
+                }, ensure_ascii=False) + "\n")
+                if keymap is not None:
+                    keymap.write(json.dumps({
+                        "sample_key": key, "dicom_id": str(study.dicom_id),
+                        "study_id": str(study.study_id), "subject_id": str(study.subject_id),
+                    }) + "\n")
+                written += 1
+                del batch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                LOGGER.info("explained %d/%d", written, min(args.limit, len(frame) - 1))
+        finally:
+            if keymap is not None:
+                keymap.close()
+
+    coverage = dataset_parse_coverage(studies)
+    summary = {
+        "schema_version": SCHEMA_VERSION,
+        "split": split,
+        "model_id": args.model_id,
+        "studies_written": written,
+        "gradient_weighted": not args.no_gradient_weight,
+        "rollout_method": rollout.METHOD_CHEFER,
+        "attention_implementation": dict(capture.ATTN_IMPLEMENTATION),
+        "labeler": LexiconSentenceLabeler.name,
+        "coverage": coverage,
+        "ablation_gate": gate.to_dict() if gate is not None else None,
+        "ablation_gate_skipped": bool(args.skip_ablation_gate),
+        "peak_vram_bytes": (
+            int(torch.cuda.max_memory_allocated()) if torch.cuda.is_available() else None
+        ),
+    }
+    (output_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(f"wrote {written} studies to {jsonl_path}")
+    print(
+        f"parse_coverage {coverage['parse_coverage']:.3f} over "
+        f"{coverage['num_sentences']} sentences -- quote this beside any "
+        f"sentence-level claim"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
