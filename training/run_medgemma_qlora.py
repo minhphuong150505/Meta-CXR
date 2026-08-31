@@ -24,6 +24,12 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# VariantLLM and the evaluation helpers still live in the Figure-9 module, so
+# this pulls in torch/transformers/peft -- which medgemma_direct needs anyway.
+# It no longer pulls in LAVIS, the vision encoders, the Q-Former or MHCAC:
+# those are confined to training/stage1/lavis_loader.py and imported only from
+# inside build_stage1_records(). Enforced by tests/test_native_independence.py.
+import train_eval_figure9_llm_variants_200 as fig9  # noqa: E402
 from dataio.manifest import (  # noqa: E402
     DEFAULT_SECTION_MODE,
     FINDINGS_AND_IMPRESSION,
@@ -40,13 +46,6 @@ from pipeline_modes import (  # noqa: E402
 )
 from pipeline_modes import requires_stage1 as modes_require_stage1  # noqa: E402
 from run_context import Stage1Context  # noqa: E402
-
-# VariantLLM and the evaluation helpers still live in the Figure-9 module, so
-# this pulls in torch/transformers/peft -- which medgemma_direct needs anyway.
-# It no longer pulls in LAVIS, the vision encoders, the Q-Former or MHCAC:
-# those are confined to training/stage1/lavis_loader.py and imported only from
-# inside build_stage1_records(). Enforced by tests/test_native_independence.py.
-import train_eval_figure9_llm_variants_200 as fig9  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -124,6 +123,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--grad-accum", type=int, default=8)
+    # 0 keeps the historical behaviour: the adapter is written only at epoch
+    # end. Set it for long single-epoch runs -- a full-cohort epoch is ~70 h,
+    # and this machine has hung without warning before.
+    parser.add_argument("--save-every-updates", type=int, default=0,
+                        help="write a recovery adapter every N optimizer "
+                             "updates. Marked status=in_progress; resuming "
+                             "from it still restarts the epoch.")
     parser.add_argument("--lora-lr", type=float, default=1e-4)
     parser.add_argument("--projector-lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=0.01)
@@ -274,6 +280,7 @@ def train_mode(
             max_length=args.max_length,
             patience=args.patience,
             resume_state=resume_dir,
+            save_every_updates=args.save_every_updates,
         )
         del llm
         fig9.clear_memory()

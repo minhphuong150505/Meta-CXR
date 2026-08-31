@@ -1146,6 +1146,7 @@ class VariantLLM:
         patience: int = 2,
         seed: int = SEED,
         resume_state: str | Path | None = None,
+        save_every_updates: int = 0,
     ) -> dict:
         if not records:
             raise ValueError("training records are empty")
@@ -1238,6 +1239,45 @@ class VariantLLM:
                     scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
                     global_step += 1
+                    if save_every_updates and global_step % save_every_updates == 0:
+                        # RECOVERY ARTIFACT, not a resume point. save_adapter is
+                        # otherwise called only after the batch loop ends, so a
+                        # single epoch over the full 176k-record cohort runs
+                        # ~70 h with nothing on disk, and a hang at hour 69
+                        # loses all of it. This machine has a documented
+                        # history of hard hangs, so that is not a theoretical
+                        # risk.
+                        #
+                        # ⚠ Resuming from this still restarts the epoch:
+                        # ``resume_state`` sets start_epoch = epoch + 1 and
+                        # nothing skips the batches already seen. What it
+                        # saves is the trained ADAPTER, which is the expensive
+                        # part; status="in_progress" marks it so a partial
+                        # adapter is never mistaken for a finished run.
+                        self.save_adapter(
+                            last_dir,
+                            status="in_progress",
+                            trainer_state={
+                                "epoch": epoch,
+                                "global_step": global_step,
+                                "best_val_loss": best_val,
+                                "bad_epochs": bad_epochs,
+                                "optimizer": optimizer.state_dict(),
+                                "scheduler": scheduler.state_dict(),
+                                "data_generator_state": generator.get_state(),
+                                "torch_rng_state": torch.get_rng_state(),
+                                "cuda_rng_state": (
+                                    torch.cuda.get_rng_state_all()
+                                    if torch.cuda.is_available() else None
+                                ),
+                            },
+                            training_config=training_config,
+                        )
+                        print(
+                            f"[train] recovery checkpoint at update {global_step} "
+                            f"(epoch {epoch + 1}, batch {batch_index + 1}/{len(loader)})",
+                            flush=True,
+                        )
                 progress.set_postfix(loss=f"{float(raw_loss.detach().float().cpu()):.4f}")
 
             train_loss = running_loss / max(len(loader), 1)
@@ -1532,7 +1572,7 @@ def evaluate_variant(
     preds: list[str] = []
     failures = 0
     if jsonl_path.exists():
-        with open(jsonl_path, "r", encoding="utf-8") as f:
+        with open(jsonl_path, encoding="utf-8") as f:
             for line in f:
                 try:
                     item = json.loads(line)

@@ -128,3 +128,49 @@ class SoftTokenBatchValidation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --------------------------------------------------------------------------
+# Mid-epoch recovery checkpointing
+# --------------------------------------------------------------------------
+
+
+def test_train_fine_accepts_save_every_updates():
+    """A full-cohort epoch is ~70 h and save_adapter otherwise runs only after
+    the batch loop, so a hang late in the epoch loses everything."""
+    import ast
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "training" / "train_eval_figure9_llm_variants_200.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "train_fine"
+    )
+    names = [a.arg for a in fn.args.args] + [a.arg for a in fn.args.kwonlyargs]
+    assert "save_every_updates" in names
+
+
+def test_the_recovery_save_is_marked_in_progress():
+    """A partial adapter must never be mistaken for a finished run."""
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "training" / "train_eval_figure9_llm_variants_200.py"
+    ).read_text(encoding="utf-8")
+    block = source[source.index("if save_every_updates and global_step"):]
+    block = block[: block.index("print(")]
+    assert 'status="in_progress"' in block
+
+
+def test_the_default_keeps_the_old_behaviour():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[1] / "training" / "run_medgemma_qlora.py"
+    ).read_text(encoding="utf-8")
+    assert '"--save-every-updates", type=int, default=0' in source
