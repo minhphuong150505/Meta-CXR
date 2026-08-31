@@ -60,7 +60,27 @@ fi
 if command -v nvidia-smi >/dev/null; then
   read -r util mem tot <<<"$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total \
       --format=csv,noheader,nounits | head -1 | tr -d ',')"
-  note "gpu" "util=${util}% mem=${mem}/${tot} MiB"
+  read -r temp pwr plim fan <<<"$(nvidia-smi \
+      --query-gpu=temperature.gpu,power.draw,power.limit,fan.speed \
+      --format=csv,noheader,nounits | head -1 | tr -d ',')"
+  note "gpu" "util=${util}% mem=${mem}/${tot} MiB ${temp}C ${pwr}/${plim}W fan ${fan}%"
+
+  # Thermals matter on a multi-day run: this card sustains ~74 C at 100% load
+  # with no throttling, so anything near the mid-80s is a change worth seeing.
+  if [ "${temp:-0}" -ge 87 ]; then
+    note "  ^^ ALERT" "GPU at ${temp}C; this card runs 74C healthy, throttling is imminent or active"
+    bump 3
+  elif [ "${temp:-0}" -ge 80 ]; then
+    note "  ^^ WARN" "GPU at ${temp}C, above its measured 74C steady state"
+    bump 2
+  fi
+  # The authoritative signal is the driver's own throttle flags, not the number.
+  thr=$(nvidia-smi --query-gpu=clocks_throttle_reasons.hw_thermal_slowdown,clocks_throttle_reasons.sw_thermal_slowdown \
+        --format=csv,noheader 2>/dev/null | grep -ci "Active" || true)
+  if [ "${thr:-0}" -gt 0 ] && nvidia-smi --query-gpu=clocks_throttle_reasons.hw_thermal_slowdown,clocks_throttle_reasons.sw_thermal_slowdown --format=csv,noheader 2>/dev/null | grep -qv "Not Active"; then
+    note "  ^^ ALERT" "driver reports THERMAL SLOWDOWN active"
+    bump 3
+  fi
   if [ "$status" -ne 4 ] && [ "${util:-0}" -le "$GPU_IDLE_PCT" ]; then
     note "  ^^ ALERT" "GPU <=${GPU_IDLE_PCT}% with a live process: the DataLoader-deadlock / ntfs-3g-stall signature"
     bump 3
