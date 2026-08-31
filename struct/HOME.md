@@ -267,6 +267,7 @@ Meta-CXR-source/
 │
 ├── scripts/                        🧰 CLI
 │   ├── vm_preflight.py             🧰 chạy TRƯỚC mọi run dài
+│   ├── train_healthcheck.sh         🧰 monitor chỉ đọc Stage 1/2; cron dùng exit code
 │   ├── calibrate_thresholds.py     ✅   evaluate_stage1.py ✅
 │   ├── evaluate_explanation.py     ✅ XAI, checkpoint + autograd, không train
 │   ├── evaluate_stage2.py          ✅   check_notebook_privacy.py ✅ pre-commit

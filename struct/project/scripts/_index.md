@@ -1,6 +1,6 @@
-> Source: `scripts/` (13 file)
+> Source: `scripts/` (20 file)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-19
+> Last verified against source: 2026-08-31
 
 # `scripts/`
 
@@ -20,6 +20,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | File | Doc | Status | Vai trò |
 |---|---|---|---|
 | `vm_preflight.py` (202) | [📄](vm_preflight.py.doc.md) | 🧰 | Kiểm tra CUDA, RAM, disk, shm, path, HF auth. **Không tải weight, không download** |
+| `train_healthcheck.sh` | [📄](train_healthcheck.sh.doc.md) | 🧰 | Monitor chỉ đọc Stage 1/2; exit 0/2/3/4 cho OK/WARN/ALERT/IDLE |
 | `check_notebook_privacy.py` (363) | [📄](check_notebook_privacy.py.doc.md) | ✅ ★ | Pre-commit hook chặn notebook mang dữ liệu MIMIC vào Git |
 | `check_itc_gate.py` (305) | [📄](check_itc_gate.py.doc.md) | 🔬 | Cổng ITC: ITC đã thoát chance chưa, trước khi đốt ~33 h GPU. Exit 1 khi trượt |
 
@@ -72,7 +73,7 @@ Record có đúng hình dạng pipeline thật phát ra (`pred_groups`, views, p
 
 ## Main responsibilities
 
-1. Kiểm tra máy trước run dài.
+1. Kiểm tra máy trước run dài và theo dõi run đang chạy mà không can thiệp.
 2. Calibrate threshold rồi chấm điểm classification/generation — không GPU.
 3. Phân tích prompt mà không train.
 4. Chặn rò rỉ dữ liệu vào Git.

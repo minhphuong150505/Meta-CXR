@@ -794,6 +794,11 @@ chỉ đổi người thực thi — Claude Code đã được cài và xác th�
   tiên kèm ~20 dòng ngữ cảnh và frame traceback cuối, các số quan trọng (`s/it`,
   `max mem`, từng loss term, `epoch`/`iter`, VRAM nếu OOM), và đường dẫn log gốc
   trên host để hỏi `grep` cụ thể sau.
+- `scripts/train_healthcheck.sh` là monitor **chỉ đọc** cho cả hai stage. Trước
+  một thí nghiệm đã lên lịch, đặt `RUN_DIR`, `LOG` và `EXPECT_RUNNING=1`; process
+  biến mất khi đó là ALERT (exit 3), không bị coi là IDLE. Monitor theo dõi mtime
+  của cả checkpoint Stage 1 (`*.pth`) lẫn artifact cứu hộ Stage 2
+  (`adapter_model.safetensors`, `trainer_state.pt`).
 - Khi **Opus hết usage**, chuyển việc cho agent **Sonnet 5** thay vì chờ — Sonnet đủ
   để thực thi kế hoạch đã viết và triage log, rẻ hơn nhiều. Giữ Opus cho quyết định
   kiến trúc/recipe.

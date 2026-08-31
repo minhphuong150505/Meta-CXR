@@ -1169,6 +1169,21 @@ Three fixes landed 2026-08-18 when it was made to supervise *continuously*:
 survives at `<data drive>/torch-cache/hub/checkpoints/`. Symlink
 `~/.cache/torch/hub/checkpoints` at it to skip 1.9 GB.
 
+#### Read-only run monitoring — `scripts/train_healthcheck.sh`
+
+This is the compact check used by cron and manual SSH triage; it never restarts
+or kills a run. Set `RUN_DIR` and `LOG` to the active artifact directory and raw
+log. Set **`EXPECT_RUNNING=1` for a scheduled experiment**: if the Python process
+vanishes (for example after the Stage-2 `NVRM Xid 8` observed 2026-08-31), the
+result is ALERT/exit 3 instead of ordinary IDLE/exit 4.
+
+Progress is the newest artifact **write**, across both formats: Stage 1
+`*.pth`, and Stage 2 `adapter_model.safetensors` / `trainer_state.pt` under
+`checkpoints/last`. Do not narrow this back to `*.pth`; that made a healthy
+Stage-2 recovery save invisible. `find -printf %T@` includes fractional seconds,
+so the script strips the fraction before shell arithmetic — the former direct
+subtraction raised `arithmetic syntax error` on real Stage-1 checkpoints.
+
 #### Explanation-aware loss and XAI evaluation
 
 **OFF IN PRODUCTION as of 2026-08-17** — `lambda_explanation` and
