@@ -9,7 +9,9 @@ adapter cứu hộ. Raw log được giữ tại
 
 Arm A đã được chạy lại từ 15:21:12; arm B đã móc chuỗi tự khởi động sau nó. Mọi
 con số dưới đây là **đo được**, kèm ngày đo và điều kiện; chỗ nào chưa chạy thì
-nói rõ là chưa chạy.
+nói rõ là chưa chạy. Checkpoint cứu hộ đầu tiên của attempt mới được xác minh lúc
+15:33:41: batch 256, update 32, `status=in_progress`, adapter 119,3 MB và trainer
+state 238,8 MB tại `~/ft_only_full/.../checkpoints/last/` trên host.
 
 ---
 

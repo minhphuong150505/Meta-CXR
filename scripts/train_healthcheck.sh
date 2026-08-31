@@ -5,6 +5,8 @@
 #
 # Prints a compact report and exits with a status the caller can branch on:
 #   0 OK      2 WARN (worth a look)      3 ALERT (act now)      4 IDLE (nothing running)
+# Set EXPECT_RUNNING=1 for a scheduled experiment: a vanished process is then
+# an ALERT instead of ordinary IDLE.
 #
 # What it checks, and why each one is here rather than the obvious alternative:
 #
@@ -26,6 +28,7 @@
 set -uo pipefail
 RUN_DIR="${RUN_DIR:-}"
 LOG="${LOG:-}"
+EXPECT_RUNNING="${EXPECT_RUNNING:-0}"
 STALL_MIN="${STALL_MIN:-45}"     # no checkpoint write for this long -> WARN
 GPU_IDLE_PCT="${GPU_IDLE_PCT:-5}"
 
@@ -46,10 +49,18 @@ run_row=$(ps -eo pid,ppid,etimes,cmd --no-headers 2>/dev/null | awk -v self="$$"
   $1 != self && $1 != par && $2 != self &&
   /bin\/python/ &&
   (/pretraining\.train/ || /run_medgemma_qlora\.py/ || /explain_stage2\.py/) { print; exit }')
+run_live=0
 if [ -z "$run_row" ]; then
-  note "process" "NONE RUNNING"
-  bump 4
+  if [ "$EXPECT_RUNNING" = "1" ]; then
+    note "process" "NONE RUNNING (but EXPECT_RUNNING=1)"
+    note "  ^^ ALERT" "the scheduled run exited or never started"
+    bump 3
+  else
+    note "process" "NONE RUNNING"
+    bump 4
+  fi
 else
+  run_live=1
   main=$(echo "$run_row" | awk '{print $1}')
   et=$(echo "$run_row" | awk '{print $3}')
   what=$(echo "$run_row" | grep -oE "pretraining\.train|run_medgemma_qlora\.py|explain_stage2\.py" | head -1)
@@ -81,7 +92,7 @@ if command -v nvidia-smi >/dev/null; then
     note "  ^^ ALERT" "driver reports THERMAL SLOWDOWN active"
     bump 3
   fi
-  if [ "$status" -ne 4 ] && [ "${util:-0}" -le "$GPU_IDLE_PCT" ]; then
+  if [ "$run_live" -eq 1 ] && [ "${util:-0}" -le "$GPU_IDLE_PCT" ]; then
     note "  ^^ ALERT" "GPU <=${GPU_IDLE_PCT}% with a live process: the DataLoader-deadlock / ntfs-3g-stall signature"
     bump 3
   fi
@@ -112,18 +123,32 @@ fi
 
 # ---- progress: newest checkpoint WRITE ---------------------------------------
 if [ -n "$RUN_DIR" ] && [ -d "$RUN_DIR" ]; then
-  newest=$(find "$RUN_DIR" -name '*.pth' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1)
+  # Stage 1 rewrites checkpoint_last.pth. Stage 2 rewrites the recovery
+  # adapter/trainer state under checkpoints/last. Track both formats by mtime;
+  # counting files cannot show progress when the same path is overwritten.
+  newest=$(find "$RUN_DIR" -type f \( \
+      -name '*.pth' -o \
+      -name 'adapter_model.safetensors' -o \
+      -name 'trainer_state.pt' \
+    \) -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1)
   if [ -n "$newest" ]; then
-    age=$(( ($(date +%s) - ${newest%% *}) / 60 ))
+    newest_epoch=${newest%% *}
+    newest_epoch=${newest_epoch%%.*}
+    age=$(( ($(date +%s) - newest_epoch) / 60 ))
     note "last checkpoint" "${age} min ago  ($(basename "${newest#* }"))"
-    if [ "$status" -ne 4 ] && [ "$age" -gt "$STALL_MIN" ]; then
+    if [ "$run_live" -eq 1 ] && [ "$age" -gt "$STALL_MIN" ]; then
       note "  ^^ WARN" "no checkpoint write in ${age} min (threshold ${STALL_MIN})"
       bump 2
     fi
   else
     note "last checkpoint" "none yet"
   fi
-  note "checkpoints" "$(find "$RUN_DIR" -name '*.pth' | wc -l) files, $(du -sh "$RUN_DIR" 2>/dev/null | cut -f1)"
+  checkpoint_count=$(find "$RUN_DIR" -type f \( \
+      -name '*.pth' -o \
+      -name 'adapter_model.safetensors' -o \
+      -name 'trainer_state.pt' \
+    \) | wc -l)
+  note "checkpoints" "${checkpoint_count} files, $(du -sh "$RUN_DIR" 2>/dev/null | cut -f1)"
 fi
 
 # ---- training numbers, by name, from the log --------------------------------
@@ -161,7 +186,7 @@ if mountpoint -q /mnt/drive1tb 2>/dev/null; then
   note "/mnt/drive1tb" "mounted ($(findmnt -no FSTYPE /mnt/drive1tb))"
 else
   note "/mnt/drive1tb" "NOT MOUNTED"
-  if [ "$status" -ne 4 ]; then
+  if [ "$run_live" -eq 1 ]; then
     note "  ^^ ALERT" "dataset gone mid-run; it is not in fstab and every reboot loses it"
     bump 3
   else
