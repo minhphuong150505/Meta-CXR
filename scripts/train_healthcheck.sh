@@ -86,8 +86,13 @@ fi
 # ---- training numbers, by name, from the log --------------------------------
 if [ -n "$LOG" ] && [ -f "$LOG" ]; then
   note "log" "$(stat -c%s "$LOG" | awk '{printf "%.1f MB", $1/1048576}'), last write $(( ($(date +%s) - $(stat -c%Y "$LOG")) / 60 )) min ago"
-  last=$(grep -oE "epoch: \[[0-9]+\]" "$LOG" | tail -1)
-  [ -n "$last" ] && note "epoch" "$last"
+  # Epoch AND iteration, and the epoch index is NEVER pinned. A monitoring
+  # grep hardcoded to epoch 0 kept returning a stale line after a run moved to
+  # epoch 1, and one epoch's iterations divided by two epochs' wall clock
+  # produced a factor-of-two throughput error that stood in CLAUDE.md until the
+  # run's own timestamps contradicted it.
+  last=$(tr '\r' '\n' < "$LOG" | grep -oE "epoch: \[[0-9]+\] +\[ *[0-9]+/[0-9]+\]" | tail -1)
+  [ -n "$last" ] && note "position" "$last"
   for k in time: loss_cls loss_mpc loss_distill loss_itc loss_itm loss_lm; do
     v=$(grep -oE "$k [0-9.]+" "$LOG" | tail -1 | awk '{print $2}')
     [ -n "$v" ] && note "$k" "$v"
