@@ -10,13 +10,30 @@ until 2026-08-18. It moved here because the feature is switched off in
 production, so the 206 lines no longer need to load in every session — but they
 are the whole record of why it was turned off and what re-enabling it requires.
 
-⚠ **Every `/mnt/drive1tb/...` path below is historical.** The training host was
-wiped and reinstalled on 2026-08-17: the mask cache, the CheXmask and MS-CXR
-source CSVs, and the checkpoints the evaluator ran against are all gone, and the
-dataset disk is now `/dev/nvme0n1p2` and unmounted. The paths are kept because
-they document the layout to recreate, not because anything is there. Rebuilding
-the cache is a prerequisite for re-testing any of this — see "The training host"
-in `CLAUDE.md`.
+⚠ **Partly corrected 2026-08-31 — the SOURCES survived, and the cache has been
+rebuilt.** This paragraph used to say the CheXmask and MS-CXR CSVs were gone.
+They are not: both are on the data drive, which the 2026-08-17 reinstall did not
+touch, and `CLAUDE.md`'s survival table was right where this file was wrong.
+Verified on the host:
+
+| | |
+|---|---|
+| `datasets/chexmask/MIMIC-CXR-JPG.csv` | present, 12,381 MB, header key is `dicom_id` |
+| `datasets/ms-cxr/MS_CXR_Local_Alignment_v1.1.0.csv` | present, 311,892 bytes, 1,448 boxes |
+| `datasets/explanation_masks/` (old cache) | present but **has no `masks_bbox_*`** — the 2026-08-14 build |
+
+**The cache is rebuilt at `/home/phuong/explanation_masks_v2` (2026-08-31), and
+it carries the bbox pair.** It had to go on `/home`: the data drive is now
+mounted `ntfs3 ro`, so the old in-place location is not writable.
+
+⚠ Two things were needed to make the documented build command work at all:
+`configs/env_config.yaml` does not exist on a fresh host (create it from the
+example — it is git-ignored), and
+`preporcessing/build_explanation_masks.py` did not put the repo root on
+`sys.path`, so running it by path died in `_project_manifest_paths` with
+`ModuleNotFoundError: local_config` *after* `--inspect` had succeeded. Fixed.
+
+Checkpoints the old A/B evaluator ran against are still gone; that part stands.
 
 
 **OFF IN PRODUCTION as of 2026-08-17 — `lambda_explanation` and
@@ -67,6 +84,22 @@ elsewhere.** That is the mechanism to fix first.
 0.25 reads like a result and is chance. `evaluate_explanation.py` does not yet
 emit the baseline itself — compute it from the cache
 (`(masks > 0).mean(axis=(1,2))`).
+
+**Baselines for the 2026-08-31 rebuild, measured rather than assumed:**
+
+| split | lung N | lung baseline | lung p50 | bbox N | bbox baseline | bbox p50 |
+|---|---:|---:|---:|---:|---:|---:|
+| train | 208,987 | 0.3466 | 0.3435 | 928 | 0.1555 | 0.1265 |
+| val | 1,690 | 0.3520 | 0.3457 | 7 | 0.0730 | 0.0713 |
+| test | 2,959 | **0.3314** | 0.3239 | 188 | **0.2366** | 0.2284 |
+
+The test figures reproduce the previously recorded 0.3301 / 0.2366 — bbox to the
+digit — which is the strongest available evidence that the rebuild is equivalent
+to the cache the A/B was run against. Integrity checked on every split: uint8
+`[N,112,112]`, values exactly `{0,255}`, rows unique and in range, **zero** empty
+and **zero** all-ones masks, bbox keys of the form `<dicom_id>:<label_index>`.
+`train` lung N is 208,987, matching the anchor count `CLAUDE.md` records, so the
+builder's reimplemented anchor selection still agrees with `build_study_index`.
 
 ⚠ **The two terms are not separately logged**, so no past run can tell you what
 the strong term did. `blip2_qformer.py:1297` blends them into one scalar as
