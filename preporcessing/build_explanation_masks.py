@@ -19,12 +19,23 @@ import argparse
 import json
 import math
 import os
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from PIL import Image
+
+# Run as `python preporcessing/build_explanation_masks.py`, sys.path[0] is
+# `preporcessing/`, so the repo-root `local_config` is not importable and the
+# build dies at _project_manifest_paths with ModuleNotFoundError -- after the
+# argument parsing and the --inspect path have both succeeded, which makes it
+# look like a config problem rather than a path one. Every script under
+# scripts/ already does this; this one did not.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 CHEXMASK_COLUMNS = (
     "dicom_id",
