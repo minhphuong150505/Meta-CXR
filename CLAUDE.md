@@ -856,6 +856,59 @@ study (not image) → anchor + ≤1 auxiliary view
 
   **Four independent measurements, four times chance. Stop proposing this.**
 
+  **THE CAUSE IS NOW IDENTIFIED FROM THE LITERATURE, AND IT IS BATCH SIZE.**
+  Checked 2026-08-31 against the papers rather than guessed:
+
+  | | BLIP-2 stage 1 | this repo |
+  |---|---|---|
+  | contrastive batch | **1,680-2,320** | **8** |
+  | negatives | in-batch, **no queue** | 256-entry queue off the LIVE encoder |
+  | pretraining data | 129M images | ~222k studies |
+  | hardware | 16x A100 40G, <6 days | 1x RTX 5060 Ti 16G |
+
+  That is a **210x smaller batch** and ~580x less data. Softmax contrastive
+  gives a positive pair the gradient "be more similar than the hardest of N-1
+  negatives"; at N=8 the hardest negative is usually easy, so the gradient is
+  weak and noisy. Chance is the predicted outcome, not a mystery.
+
+  Note also that BLIP-2 **removed** the momentum queue precisely because a
+  frozen image encoder lets you fit big batches. This repo kept a queue *and*
+  has a tiny batch — the worst of both, and the queue is filled from the live
+  encoder, so its keys are stale.
+
+  ⚠ **BLIP-2's own ablation says stage-1 representation learning is NOT
+  optional if you want the soft-token bridge**: "Without representation
+  learning, the Q-Former fails to bridge the modality gap", and OPT-style
+  decoders then show "catastrophic forgetting where performance drastically
+  degrades as training proceeds". So `meta_cxr_qformer` cannot be rescued by
+  skipping stage 1 — it either gets a real contrastive batch or it does not
+  work.
+
+  **Three ways out, in the order they are worth trying.** None has been tried.
+
+  1. **GradCache + the frozen-feature cache.** GradCache decouples the
+     contrastive backward from the encoder along the batch dimension, giving
+     near-constant memory for an arbitrarily large effective batch. This repo
+     is unusually well placed for it: the encoders are frozen and
+     `run.feature_cache_dir` already exists, so the Q-Former can train alone on
+     cached features and an effective batch of ~1,000+ becomes reachable on one
+     16 GB card. This attacks the measured cause directly.
+  2. **Replace softmax ITC with SigLIP's pairwise sigmoid loss.** It removes
+     the global normalisation, so each pair is scored independently and small
+     batches degrade far less; it is also cheaper in memory. Its sweet spot is
+     still ~32k, so treat it as a multiplier on (1) rather than a substitute.
+  3. **Close the route.** Keep `lambda_itc/itm/lm: 0.0`, match the reference
+     implementation, and commit to `medgemma_direct`. Cheapest and honest —
+     but it retires `meta_cxr_qformer` permanently.
+
+  ⚠ **Cost correction: an epoch at batch 8 took 6h22m, not the 3.3 h the
+  MetricLogger `time:` field implied (0.82 s/it actual against 0.43 reported).
+  A 10-epoch run is ~64 hours, not ~33.** Aborted at the end of epoch 1 on the
+  gate result.
+
+  Sources: BLIP-2 (arXiv 2301.12597), SigLIP (arXiv 2303.15343), GradCache
+  (arXiv 2101.06983).
+
   Every arm lands on chance. The gate needs `delta_nats >= +0.10`; the pinned run
   returns **-0.0025**. Pinning the temperature removes the exploding loss and
   changes nothing else, so **the collapsing temperature was a symptom.**
