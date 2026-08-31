@@ -901,10 +901,21 @@ study (not image) → anchor + ≤1 auxiliary view
      implementation, and commit to `medgemma_direct`. Cheapest and honest —
      but it retires `meta_cxr_qformer` permanently.
 
-  ⚠ **Cost correction: an epoch at batch 8 took 6h22m, not the 3.3 h the
-  MetricLogger `time:` field implied (0.82 s/it actual against 0.43 reported).
-  A 10-epoch run is ~64 hours, not ~33.** Aborted at the end of epoch 1 on the
-  gate result.
+  **Cost, measured and then corrected — MetricLogger is RIGHT.** An epoch at
+  batch 8 is **3h26m at 0.4445 s/it** (27,844 iters), so a 10-epoch run is
+  **~34 h**. Checkpoint writes are negligible: 3.38 GB in 1.4 s, 2.37 GB/s.
+
+  ⚠ A "0.82 s/it actual vs 0.43 reported" claim briefly stood here and was
+  WRONG. It came from a monitoring grep hardcoded to `epoch: \[0\]`, which
+  kept returning a stale epoch-0 line after the run moved to epoch 1; one
+  epoch's iterations were then divided by two epochs' wall clock. The run's own
+  timestamps settle it — `Start training epoch 0` 01:00:37, epoch summary
+  04:26:54 (`Total time: 3:26:16, 0.4445 s / it`), `Start training epoch 1`
+  04:26:57, killed 07:21:27 at epoch 1 iteration 23,750, which is the same
+  0.44 s/it. **When monitoring a multi-epoch run, never pin the epoch index in
+  the progress grep.**
+
+  Aborted during epoch 1 on the gate result.
 
   Sources: BLIP-2 (arXiv 2301.12597), SigLIP (arXiv 2303.15343), GradCache
   (arXiv 2101.06983).
