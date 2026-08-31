@@ -38,8 +38,8 @@ from stage2.prompts.policies import (  # noqa: E402
 from stage2.prompts.schemas import PartKind  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "training"))
-from stage2_utils import masked_label_ids  # noqa: E402
 from medgemma.soft_tokens import soft_token_bad_words_ids  # noqa: E402
+from stage2_utils import masked_label_ids  # noqa: E402
 
 QF = VisualMode.QFORMER_GUIDED
 
@@ -406,3 +406,60 @@ def test_config_round_trips_from_yaml(tmp_path):
     assert config.visual_mode is VisualMode.QFORMER_GUIDED
     assert config.negative_policy is NegativePolicy.CRITICAL_ONLY
     assert config.uncertainty_policy is UncertaintyPolicy.EXPLICIT_POSSIBLE
+
+
+# --------------------------------------------------------------------------
+# Experiment 2: the two arms must isolate exactly one variable
+# --------------------------------------------------------------------------
+
+
+def _arm_payload(name):
+    """The config with comments stripped, so only the settings are compared."""
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "configs" / f"experiment_{name}.yaml"
+    return [
+        line for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def test_the_two_experiment_arms_differ_in_one_line():
+    """native_anchor_only vs native_anchor_guided is the whole experiment.
+
+    Both arms use MedGemma's own vision tower; the ONLY difference is whether
+    structured P/N/U cues from MHCAC classification appear in the prompt. If a
+    second setting ever drifts between these files the comparison stops
+    isolating that variable, and the result stops meaning what it claims --
+    silently, because both runs would still complete and still produce metrics.
+    """
+    only = _arm_payload("native_anchor_only")
+    guided = _arm_payload("native_anchor_guided")
+    assert len(only) == len(guided), "the two arms have different numbers of settings"
+    differing = [
+        (a, b) for a, b in zip(only, guided, strict=True) if a != b
+    ]
+    assert len(differing) == 1, f"expected exactly one differing line, got {differing}"
+    assert "visual_mode" in differing[0][0]
+    assert differing[0][0].strip().endswith("native_anchor_only")
+    assert differing[0][1].strip().endswith("native_anchor_guided")
+
+
+def test_neither_arm_uses_a_qformer_visual_mode():
+    """Stage 1 ships lambda_itc/itm/lm = 0.0, so soft tokens are untrained."""
+    for name in ("native_anchor_only", "native_anchor_guided"):
+        assert not any("qformer" in line for line in _arm_payload(name)), name
+
+
+def test_both_arms_load_through_the_real_config_loader():
+    import yaml
+
+    from stage2.prompts import VisualMode
+
+    for name, expected in (
+        ("native_anchor_only", VisualMode.NATIVE_ANCHOR_ONLY),
+        ("native_anchor_guided", VisualMode.NATIVE_ANCHOR_GUIDED),
+    ):
+        raw = yaml.safe_load("\n".join(_arm_payload(name)))
+        assert VisualMode(raw["prompt"]["visual_mode"]) is expected
+        assert expected.image_mode == "native"
