@@ -1,8 +1,15 @@
 # Báo cáo: fine-tune MedGemma cho sinh phần FINDINGS (Stage 2)
 
-**Trạng thái:** arm A đang chạy từ 2026-08-31 08:46; arm B đã móc chuỗi tự khởi
-động. Mọi con số dưới đây là **đo được**, kèm ngày đo và điều kiện; chỗ nào chưa
-chạy thì nói rõ là chưa chạy.
+**Trạng thái (cập nhật 2026-08-31 15:25):** attempt đầu của arm A chạy từ 08:46
+đến 09:49 rồi dừng ở batch 1.323/88.156 với `torch.AcceleratorError: CUDA error:
+the launch timed out and was terminated`. Kernel ghi `NVRM Xid 8` đúng thời điểm
+đó; đây không phải OOM (run dùng 12.530 MiB VRAM) và không phải quá nhiệt. Chưa có
+adapter cứu hộ. Raw log được giữ tại
+`~/ft_only_full.failed-xid8-20260831-094940.log` trên host.
+
+Arm A đã được chạy lại từ 15:21:12; arm B đã móc chuỗi tự khởi động sau nó. Mọi
+con số dưới đây là **đo được**, kèm ngày đo và điều kiện; chỗ nào chưa chạy thì
+nói rõ là chưa chạy.
 
 ---
 
@@ -213,7 +220,15 @@ hình đã huấn luyện" tới "một JSONL báo cáo có metric". Script dùn
 **`--save-every-updates`** — `save_adapter` vốn chỉ chạy **sau khi vòng lặp batch
 kết thúc**, nên một epoch trên toàn bộ dataset chạy ~70 giờ **không có một
 checkpoint nào**, và một lần treo ở giờ thứ 69 mất sạch. Máy này có tiền sử treo
-cứng không báo trước. Nay ghi adapter mỗi 250 bước cập nhật (~13 phút).
+cứng không báo trước. Nay ghi adapter mỗi **32 bước cập nhật optimizer**. Với
+gradient accumulation 8 và 2,85 giây mỗi batch, nhịp đo được là khoảng 12 phút:
+`32 × 8 × 2,85 = 730 giây`.
+
+⚠ Lệnh đầu tiên dùng `--save-every-updates 250` và báo cáo từng gọi đó là
+"~13 phút". Sai: bộ đếm chỉ tăng sau `optimizer.step()`, nên 250 update thực tế
+là khoảng **95 phút**. Xid 8 xảy ra ở phút 63, trước checkpoint đầu tiên. Attempt
+relaunch ngắn với 250 đã được dừng chủ động và lưu riêng ngay khi phát hiện; cả
+hai arm hiện dùng 32. Batch, accumulation, LR, loss và dữ liệu không đổi.
 
 ⚠ Nó là **artifact cứu hộ, không phải điểm resume**: `resume_state` đặt
 `start_epoch = epoch + 1` và không có gì bỏ qua các batch đã chạy, nên resume vẫn
