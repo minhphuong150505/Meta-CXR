@@ -87,6 +87,29 @@ if command -v nvidia-smi >/dev/null; then
   fi
 fi
 
+# ---- CPU and drives ---------------------------------------------------------
+# Thresholds are the ones the hardware declares (coretemp high=80 crit=100,
+# NVMe high=89.8 crit=94.8), not numbers picked here. Measured steady state
+# under a GPU-bound run: package 55 C, most cores 35-42 C, NVMe 38-39 C -- the
+# CPU only feeds dataloader workers, so a hot package means something changed.
+if command -v sensors >/dev/null; then
+    pkg=$(sensors 2>/dev/null | awk '/^Package id 0:/ {gsub(/[+°C]/,"",$4); print int($4); exit}')
+    [ -n "$pkg" ] && note "cpu package" "${pkg}C (high 80, crit 100)"
+    if [ "${pkg:-0}" -ge 90 ]; then
+        note "  ^^ ALERT" "CPU at ${pkg}C, past its declared high of 80"
+        bump 3
+    elif [ "${pkg:-0}" -ge 80 ]; then
+        note "  ^^ WARN" "CPU at ${pkg}C, at its declared high"
+        bump 2
+    fi
+    hot=$(sensors 2>/dev/null | awk '/^Composite:/ {gsub(/[+°C]/,"",$2); if ($2+0>m) m=$2+0} END {print int(m)}')
+    [ -n "$hot" ] && [ "$hot" -gt 0 ] && note "nvme hottest" "${hot}C (high 89.8, crit 94.8)"
+    if [ "${hot:-0}" -ge 85 ]; then
+        note "  ^^ ALERT" "NVMe at ${hot}C, approaching its critical point"
+        bump 3
+    fi
+fi
+
 # ---- progress: newest checkpoint WRITE ---------------------------------------
 if [ -n "$RUN_DIR" ] && [ -d "$RUN_DIR" ]; then
   newest=$(find "$RUN_DIR" -name '*.pth' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1)
