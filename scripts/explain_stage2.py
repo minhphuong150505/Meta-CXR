@@ -86,6 +86,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="lexicon_v2 is the default; pass lexicon_v1 to reproduce "
                              "runs recorded before 2026-08-30")
     parser.add_argument("--model-id", default=capture.MEDGEMMA_MODEL_ID)
+    parser.add_argument(
+        "--adapter",
+        type=Path,
+        default=None,
+        help=(
+            "Stage-2 QLoRA adapter directory, merged into the base weights. "
+            "WITHOUT IT THIS EXPLAINS THE UN-FINETUNED MODEL -- a zero-shot "
+            "baseline, not this project's Stage 2."
+        ),
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=16)
     # No default bounds. The previous 30-90 silently excluded the longest
@@ -464,8 +474,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     import torch
 
     frame = select_studies(args.manifest, split, args)
+    mode = "medgemma_direct_finetuned" if args.adapter else "medgemma_direct_zeroshot"
+    if args.adapter is None:
+        LOGGER.warning(
+            "No --adapter: explaining the base model. These maps describe "
+            "%s out of the box, NOT this project's fine-tuned Stage 2.",
+            args.model_id,
+        )
     processor, model = capture.load_medgemma_for_explanation(
-        args.model_id, device=args.device
+        args.model_id, device=args.device, adapter=args.adapter
     )
     model._explain_tokenizer = getattr(processor, "tokenizer", processor)
     device = next(model.parameters()).device
@@ -549,6 +566,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "schema_version": SCHEMA_VERSION,
         "split": split,
         "model_id": args.model_id,
+        "mode": mode,
+        "adapter": str(args.adapter) if args.adapter else None,
         "n_studies": written,
         "studies_written": written,
         "n_ablation_studies": gate.num_studies if gate is not None else 0,

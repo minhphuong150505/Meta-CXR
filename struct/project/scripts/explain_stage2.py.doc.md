@@ -128,7 +128,8 @@ PYTORCH_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 \
 python scripts/explain_stage2.py \
   --manifest <.../processed/full_allviews_v2/test.csv> \
   --image-root <thư mục chứa trực tiếp files/> \
-  --output-dir ~/xai_out --split test --limit 6 --ablation-studies 8 --verbose
+  --output-dir ~/xai_out --split test --limit 6 --ablation-studies 8 --verbose \
+  --adapter <stage2-adapter-dir>
 ```
 
 Peak VRAM đo được **10.7 GiB / 15.5** — cao hơn 9.9 của một forward đơn vì
@@ -146,3 +147,15 @@ Peak VRAM đo được **10.7 GiB / 15.5** — cao hơn 9.9 của một forward 
 `tests/explainability/test_explain_runner.py` — 14 test CPU. Chúng kiểm phần
 phải đúng **trước khi** cần tới GPU: chốt chặn bảo mật, khuôn tên file, ngữ
 nghĩa tham số, và các trường bắt buộc trong bản ghi.
+
+## `--adapter` — bắt buộc nếu muốn giải thích model đã fine-tune
+
+Không có cờ này, lệnh giải thích `google/medgemma-1.5-4b-it` **nguyên bản**. Bản
+đồ vẫn vẽ ra, hai cổng vẫn chạy, `summary.json` vẫn hợp lệ — nhưng đó là baseline
+zero-shot, không phải Stage 2 của dự án. `summary.json` ghi `mode`
+(`medgemma_direct_zeroshot` / `medgemma_direct_finetuned`) và `adapter`, và runner
+in cảnh báo khi thiếu cờ, nên không còn cách nào nhầm lẫn trong im lặng.
+
+⚠ Adapter được huấn luyện trên base NF4 nhưng merge vào base bf16, nên model được
+giải thích không bit-identical với model đã train. Đây là đường triển khai QLoRA
+tiêu chuẩn; chênh lệch nhỏ nhưng có thật — phải nói ra, đừng ngụ ý là một.

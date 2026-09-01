@@ -38,6 +38,7 @@ import warnings
 from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import torch
 
@@ -45,7 +46,6 @@ try:
     from training.explainability import projection, rollout
 except ImportError:  # pragma: no cover - direct-script execution
     import sys
-    from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from training.explainability import projection, rollout
@@ -772,6 +772,7 @@ def load_medgemma_for_explanation(
     *,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
+    adapter: str | Path | None = None,
 ):
     """Load MedGemma frozen, in bf16, instrumented for explanation.
 
@@ -783,6 +784,23 @@ def load_medgemma_for_explanation(
     Every parameter is frozen. That is not a safety flourish: ``.backward()``
     over ~4B trainable parameters allocates about 8 GiB of gradients that
     nothing here reads, and it is what turned a comfortable pass into an OOM.
+
+    ``adapter`` applies a Stage-2 QLoRA adapter and **merges** it into the base
+    weights. Merging, rather than leaving the PEFT wrappers in place, is what
+    keeps every other assumption in this module true: the language attention
+    modules stay the plain Gemma modules that ``language_attention_modules``
+    finds and ``capture_attention`` hooks, and ``randomize_layers`` re-initialises
+    real weights rather than a frozen base underneath an adapter it cannot see.
+
+    ⚠ The adapter was trained against an NF4-quantised base and is merged here
+    into a bf16 one, so the merged model is not bit-identical to the model that
+    was fine-tuned. That is the standard QLoRA deployment path and the
+    difference is small, but it is a difference: state it rather than implying
+    the explained model is exactly the trained one.
+
+    ⚠ With ``adapter=None`` this explains ``google/medgemma-1.5-4b-it`` out of
+    the box. That is a zero-shot baseline, not this project's Stage 2, and any
+    number from it must be labelled that way.
     """
     from transformers import AutoModelForImageTextToText, AutoProcessor
 
@@ -792,6 +810,17 @@ def load_medgemma_for_explanation(
         torch_dtype=dtype,
         attn_implementation=dict(ATTN_IMPLEMENTATION),
     ).to(torch.device(device))
+    if adapter is not None:
+        adapter_path = Path(adapter)
+        if not (adapter_path / "adapter_config.json").is_file():
+            raise FileNotFoundError(
+                f"{adapter_path} has no adapter_config.json; refusing to silently "
+                "explain the base model instead of the fine-tuned one"
+            )
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, str(adapter_path))
+        model = model.merge_and_unload()
     model.eval()
     for parameter in model.parameters():
         parameter.requires_grad_(False)
