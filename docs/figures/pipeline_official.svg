@@ -1,0 +1,221 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 980" width="1700" height="980" font-family="Inter, Helvetica, Arial, sans-serif">
+<defs>
+  <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+  </marker>
+  <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#7A3FA8"/>
+  </marker>
+</defs>
+<rect width="1700" height="980" fill="#ffffff"/>
+
+<text x="850" y="42" text-anchor="middle" font-size="27" font-weight="700" fill="#16191d">META-CXR — Chest X-Ray Understanding and Report Generation</text>
+<text x="850" y="70" text-anchor="middle" font-size="14" fill="#5a6270">Stage 1 and Stage 2 are trained and run independently. Stage 2 does not consume Stage 1 output.</text>
+
+<!-- ============ INPUT ============ -->
+<rect x="25" y="105" width="190" height="500" rx="10" fill="#F4F5F6" stroke="#5a6270" stroke-width="1.6"/>
+<text x="120" y="133" text-anchor="middle" font-size="15" font-weight="700" fill="#2b2f36">INPUT</text>
+<text x="120" y="153" text-anchor="middle" font-size="12.5" fill="#5a6270">One chest X-ray study</text>
+<line x1="45" y1="166" x2="195" y2="166" stroke="#c9ced6"/>
+<text x="45" y="192" font-size="12.5" font-weight="600" fill="#2b2f36">Anchor view — required</text>
+<text x="45" y="211" font-size="11.5" fill="#5a6270">priority PA &gt; AP &gt; lateral</text>
+<rect x="52" y="222" width="126" height="126" rx="4" fill="#dfe3e8" stroke="#a8b0ba"/>
+<text x="115" y="292" text-anchor="middle" font-size="11" fill="#8892a0">frontal radiograph</text>
+<text x="45" y="378" font-size="12.5" font-weight="600" fill="#2b2f36">Auxiliary view — optional</text>
+<text x="45" y="397" font-size="11.5" fill="#5a6270">at most one, usually lateral</text>
+<rect x="52" y="408" width="126" height="126" rx="4" fill="#eaedf0" stroke="#a8b0ba" stroke-dasharray="4 3"/>
+<text x="115" y="478" text-anchor="middle" font-size="11" fill="#8892a0">lateral radiograph</text>
+<text x="45" y="561" font-size="11" fill="#6b7480">Sampling is one row per STUDY,</text>
+<text x="45" y="578" font-size="11" fill="#6b7480">not per image.</text>
+
+<!-- ============ STAGE 1 ============ -->
+<rect x="240" y="105" width="1175" height="228" rx="10" fill="#FDF3EA" stroke="#E8720C" stroke-width="1.8"/>
+<text x="258" y="130" font-size="15.5" font-weight="700" fill="#C4600A">STAGE 1 — Multi-view abnormality understanding (META-CXR)</text>
+
+<rect x="256" y="146" width="262" height="170" rx="8" fill="#ffffff" stroke="#E8720C" stroke-width="1.3"/>
+<text x="387" y="170" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">Vision encoders + view fusion</text>
+<line x1="272" y1="180" x2="502" y2="180" stroke="#f0d8c0"/>
+<text x="272" y="200" font-size="11.5" fill="#2b2f36">BioViL-T (ResNet50) · 448²</text>
+<text x="272" y="217" font-size="11" fill="#6b7480">14 × 14 = 196 tokens, 32 px/cell</text>
+<text x="272" y="240" font-size="11.5" fill="#2b2f36">PubMedCLIP (ViT) · 224²</text>
+<text x="272" y="257" font-size="11" fill="#6b7480">1 CLS + 7 × 7 = 50 tokens, 64 px</text>
+<text x="272" y="281" font-size="11" fill="#6b7480">View fusion per encoder on raw</text>
+<text x="272" y="296" font-size="11" fill="#6b7480">features: anchor = Q, aux = K/V</text>
+<text x="272" y="311" font-size="11" fill="#6b7480">Partial unfreeze, 31.9M params</text>
+
+<rect x="538" y="146" width="196" height="170" rx="8" fill="#ffffff" stroke="#E8720C" stroke-width="1.3"/>
+<text x="636" y="170" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">Projection &amp; concat</text>
+<line x1="554" y1="180" x2="718" y2="180" stroke="#f0d8c0"/>
+<text x="554" y="203" font-size="11.5" fill="#2b2f36">FC → d_model = 1408</text>
+<text x="554" y="227" font-size="11.5" font-weight="600" fill="#2b2f36">246 visual tokens</text>
+<text x="554" y="244" font-size="11" fill="#6b7480">= 196 + 1 CLS + 49</text>
+<text x="554" y="270" font-size="11" fill="#6b7480">Each encoder keeps its</text>
+<text x="554" y="285" font-size="11" fill="#6b7480">native scale — nothing is</text>
+<text x="554" y="300" font-size="11" fill="#6b7480">pooled or dropped.</text>
+
+<rect x="754" y="146" width="212" height="170" rx="8" fill="#ffffff" stroke="#E8720C" stroke-width="1.3"/>
+<text x="860" y="170" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">MHCAC</text>
+<line x1="770" y1="180" x2="950" y2="180" stroke="#f0d8c0"/>
+<text x="770" y="203" font-size="11.5" fill="#2b2f36">14 learnable class queries,</text>
+<text x="770" y="219" font-size="11.5" fill="#2b2f36">one per abnormality</text>
+<text x="770" y="243" font-size="11.5" fill="#2b2f36">Multi-head cross-attention</text>
+<text x="770" y="259" font-size="11" fill="#6b7480">over the 246 visual tokens</text>
+<text x="770" y="284" font-size="11" fill="#6b7480">Report text enters only as</text>
+<text x="770" y="299" font-size="11" fill="#6b7480">a TRAINING teacher; the</text>
+<text x="770" y="314" font-size="11" fill="#6b7480">student path is image-only.</text>
+
+<rect x="986" y="146" width="414" height="170" rx="8" fill="#ffffff" stroke="#E8720C" stroke-width="1.3"/>
+<text x="1193" y="170" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">Two prediction heads</text>
+<line x1="1002" y1="180" x2="1384" y2="180" stroke="#f0d8c0"/>
+<rect x="1002" y="190" width="184" height="62" rx="5" fill="#FDF3EA" stroke="#e0a970"/>
+<text x="1094" y="209" text-anchor="middle" font-size="11.5" font-weight="600" fill="#2b2f36">Classification head — q</text>
+<text x="1094" y="226" text-anchor="middle" font-size="11" fill="#6b7480">Positive / Negative / Uncertain</text>
+<text x="1094" y="242" text-anchor="middle" font-size="11" fill="#6b7480">per abnormality, given mention</text>
+<rect x="1200" y="190" width="184" height="62" rx="5" fill="#FDF3EA" stroke="#e0a970"/>
+<text x="1292" y="209" text-anchor="middle" font-size="11.5" font-weight="600" fill="#2b2f36">Mention gate — m</text>
+<text x="1292" y="226" text-anchor="middle" font-size="11" fill="#6b7480">binary, per abnormality:</text>
+<text x="1292" y="242" text-anchor="middle" font-size="11" fill="#6b7480">will the report mention it?</text>
+<rect x="1002" y="262" width="382" height="42" rx="5" fill="#FBE9D5" stroke="#E8720C"/>
+<text x="1193" y="280" text-anchor="middle" font-size="12" font-weight="700" fill="#2b2f36">P(present) = σ(m) · q_positive</text>
+<text x="1193" y="296" text-anchor="middle" font-size="10.5" fill="#6b7480">thresholds calibrated on VALIDATION only; test held out</text>
+
+<!-- ============ STAGE 2 ============ -->
+<rect x="240" y="360" width="1175" height="200" rx="10" fill="#EAF1FC" stroke="#2E5FAC" stroke-width="1.8"/>
+<text x="258" y="385" font-size="15.5" font-weight="700" fill="#24509A">STAGE 2 — Report generation (native MedGemma, medgemma_direct)</text>
+
+<rect x="256" y="400" width="228" height="142" rx="8" fill="#ffffff" stroke="#2E5FAC" stroke-width="1.3"/>
+<text x="370" y="424" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">Anchor image</text>
+<line x1="272" y1="434" x2="468" y2="434" stroke="#cfdcf2"/>
+<text x="272" y="456" font-size="11.5" fill="#2b2f36">Read straight from the split</text>
+<text x="272" y="472" font-size="11.5" fill="#2b2f36">manifest — no Stage-1 model,</text>
+<text x="272" y="488" font-size="11.5" fill="#2b2f36">checkpoint, Q-Former or MHCAC.</text>
+<text x="272" y="514" font-size="11" fill="#6b7480">Own preprocessing: resize to</text>
+<text x="272" y="529" font-size="11" fill="#6b7480">896 × 896, aspect NOT preserved.</text>
+
+<rect x="504" y="400" width="228" height="142" rx="8" fill="#ffffff" stroke="#2E5FAC" stroke-width="1.3"/>
+<text x="618" y="424" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">MedGemma vision tower</text>
+<line x1="520" y1="434" x2="716" y2="434" stroke="#cfdcf2"/>
+<text x="520" y="456" font-size="11.5" fill="#2b2f36">SigLIP, patch 14</text>
+<text x="520" y="473" font-size="11" fill="#6b7480">896 / 14 → 64 × 64 patches</text>
+<text x="520" y="497" font-size="11.5" fill="#2b2f36">Multimodal projector, 4× pool</text>
+<text x="520" y="514" font-size="11.5" font-weight="600" fill="#2b2f36">→ 256 image tokens (16 × 16)</text>
+<text x="520" y="530" font-size="11" fill="#6b7480">one token covers 56 px</text>
+
+<rect x="752" y="400" width="278" height="142" rx="8" fill="#ffffff" stroke="#2E5FAC" stroke-width="1.3"/>
+<text x="891" y="424" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">Prompt assembly</text>
+<line x1="768" y1="434" x2="1014" y2="434" stroke="#cfdcf2"/>
+<text x="768" y="456" font-size="11.5" fill="#2b2f36">PromptBuilder v2</text>
+<text x="768" y="473" font-size="11" fill="#6b7480">visual_mode = native_anchor_only</text>
+<text x="768" y="497" font-size="11.5" fill="#2b2f36">Image tokens + instruction</text>
+<text x="768" y="514" font-size="11" fill="#6b7480">Prompt prefix masked out of the</text>
+<text x="768" y="529" font-size="11" fill="#6b7480">training labels.</text>
+
+<rect x="1050" y="400" width="350" height="142" rx="8" fill="#ffffff" stroke="#2E5FAC" stroke-width="1.3"/>
+<text x="1225" y="424" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">MedGemma 1.5 4B-it</text>
+<line x1="1066" y1="434" x2="1384" y2="434" stroke="#cfdcf2"/>
+<text x="1066" y="456" font-size="11.5" fill="#2b2f36">Gemma decoder, 4-bit NF4 + QLoRA</text>
+<text x="1066" y="473" font-size="11.5" fill="#2b2f36">LoRA r = 16, α = 32</text>
+<text x="1066" y="497" font-size="11" fill="#6b7480">Adapters target the LANGUAGE tower</text>
+<text x="1066" y="512" font-size="11" fill="#6b7480">only — an all-linear fallback is</text>
+<text x="1066" y="527" font-size="11" fill="#6b7480">refused, as it would adapt the vision</text>
+<text x="1066" y="542" font-size="11" fill="#6b7480">tower too. Single GPU, no DDP.</text>
+
+<!-- ============ XAI ============ -->
+<rect x="240" y="588" width="1175" height="196" rx="10" fill="#F3EBFA" stroke="#7A3FA8" stroke-width="1.8"/>
+<text x="258" y="613" font-size="15.5" font-weight="700" fill="#68329A">STAGE-2 EXPLAINABILITY — post-hoc observer (modifies nothing; fully removable)</text>
+
+<rect x="256" y="628" width="240" height="140" rx="8" fill="#ffffff" stroke="#7A3FA8" stroke-width="1.3"/>
+<text x="376" y="652" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">Sentence segmentation</text>
+<line x1="272" y1="662" x2="480" y2="662" stroke="#e0cff0"/>
+<text x="272" y="684" font-size="11.5" fill="#2b2f36">Split the generated FINDINGS</text>
+<text x="272" y="700" font-size="11.5" fill="#2b2f36">into sentences</text>
+<text x="272" y="724" font-size="11.5" fill="#2b2f36">Label each with lexicon_v2</text>
+<text x="272" y="740" font-size="11" fill="#6b7480">23 labels, content-hash frozen.</text>
+<text x="272" y="755" font-size="11" fill="#6b7480">Not a trained clinical labeler.</text>
+
+<rect x="516" y="628" width="248" height="140" rx="8" fill="#ffffff" stroke="#7A3FA8" stroke-width="1.3"/>
+<text x="640" y="652" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">Attention rollout</text>
+<line x1="532" y1="662" x2="748" y2="662" stroke="#e0cff0"/>
+<text x="532" y="684" font-size="11.5" fill="#2b2f36">Gradient-weighted rollout</text>
+<text x="532" y="700" font-size="11" fill="#6b7480">(Chefer et al., 2021)</text>
+<text x="532" y="724" font-size="11.5" fill="#2b2f36">Ā = mean_h relu(∇A ⊙ A)</text>
+<text x="532" y="742" font-size="11.5" fill="#2b2f36">R_l = R_{l−1} + Ā_l R_{l−1}</text>
+<text x="532" y="758" font-size="11" fill="#6b7480">over all 34 language layers</text>
+
+<rect x="784" y="628" width="226" height="140" rx="8" fill="#ffffff" stroke="#7A3FA8" stroke-width="1.3"/>
+<text x="897" y="652" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">Per-sentence heatmap</text>
+<line x1="800" y1="662" x2="994" y2="662" stroke="#e0cff0"/>
+<text x="800" y="684" font-size="11.5" fill="#2b2f36">Attribution over the 256</text>
+<text x="800" y="700" font-size="11.5" fill="#2b2f36">image tokens → 16 × 16 map</text>
+<text x="800" y="724" font-size="11" fill="#6b7480">Stored at native grid resolution,</text>
+<text x="800" y="739" font-size="11" fill="#6b7480">never as an upsampled image.</text>
+<text x="800" y="758" font-size="11" fill="#6b7480">No mass → zeros, not uniform.</text>
+
+<rect x="1030" y="628" width="370" height="140" rx="8" fill="#ffffff" stroke="#7A3FA8" stroke-width="1.3"/>
+<text x="1215" y="652" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b2f36">Two sanity gates — run BEFORE any map is written</text>
+<line x1="1046" y1="662" x2="1384" y2="662" stroke="#e0cff0"/>
+<text x="1046" y="686" font-size="11.5" font-weight="600" fill="#2b2f36">1 · Ablation — substitute another study's image</text>
+<text x="1046" y="702" font-size="11" fill="#6b7480">Bootstrap CI over studies must exclude zero.</text>
+<text x="1046" y="726" font-size="11.5" font-weight="600" fill="#2b2f36">2 · Cascading weight randomization</text>
+<text x="1046" y="742" font-size="11" fill="#6b7480">(Adebayo et al., 2018) — rank correlation with the</text>
+<text x="1046" y="757" font-size="11" fill="#6b7480">original map must decay toward zero.</text>
+
+<!-- ============ OUTPUT ============ -->
+<rect x="1435" y="105" width="245" height="679" rx="10" fill="#E9F5ED" stroke="#2E7D4F" stroke-width="1.8"/>
+<text x="1557" y="132" text-anchor="middle" font-size="15.5" font-weight="700" fill="#256640">OUTPUT</text>
+
+<rect x="1451" y="148" width="213" height="120" rx="7" fill="#ffffff" stroke="#2E7D4F" stroke-width="1.2"/>
+<text x="1557" y="170" text-anchor="middle" font-size="12" font-weight="700" fill="#2b2f36">Abnormality predictions</text>
+<text x="1465" y="192" font-size="11" fill="#6b7480">14 abnormalities, per study</text>
+<text x="1465" y="211" font-size="11" fill="#6b7480">Framing: study_presence</text>
+<text x="1465" y="228" font-size="11" fill="#6b7480">Score: marginal_presence</text>
+<text x="1465" y="252" font-size="11" fill="#6b7480">AUROC · AUPRC · F1 ·</text>
+<text x="1465" y="262" font-size="11" fill="#6b7480">Precision · Recall · Specificity</text>
+
+<rect x="1451" y="400" width="213" height="142" rx="7" fill="#ffffff" stroke="#2E7D4F" stroke-width="1.2"/>
+<text x="1557" y="422" text-anchor="middle" font-size="12" font-weight="700" fill="#2b2f36">Generated report</text>
+<rect x="1465" y="434" width="185" height="34" rx="4" fill="#EAF1FC" stroke="#8fb0e0"/>
+<text x="1557" y="456" text-anchor="middle" font-size="12" font-weight="600" fill="#24509A">FINDINGS</text>
+<text x="1465" y="490" font-size="11" fill="#6b7480">BLEU-1..4 · ROUGE-L ·</text>
+<text x="1465" y="506" font-size="11" fill="#6b7480">METEOR · CIDEr · BERTScore</text>
+<text x="1465" y="527" font-size="10.5" fill="#a33b3b">Clinical metrics not implemented —</text>
+<text x="1465" y="538" font-size="10.5" fill="#a33b3b">reported unavailable, never as 0.</text>
+
+<rect x="1451" y="628" width="213" height="140" rx="7" fill="#ffffff" stroke="#2E7D4F" stroke-width="1.2"/>
+<text x="1557" y="650" text-anchor="middle" font-size="12" font-weight="700" fill="#2b2f36">Explanation maps</text>
+<rect x="1472" y="662" width="80" height="80" rx="4" fill="#2b2f36"/>
+<ellipse cx="1512" cy="700" rx="26" ry="30" fill="#4a4f57"/>
+<circle cx="1500" cy="694" r="9" fill="#d97a2b" opacity="0.85"/>
+<rect x="1562" y="662" width="80" height="80" rx="4" fill="#2b2f36"/>
+<ellipse cx="1602" cy="700" rx="26" ry="30" fill="#4a4f57"/>
+<circle cx="1616" cy="708" r="8" fill="#d97a2b" opacity="0.85"/>
+<text x="1557" y="760" text-anchor="middle" font-size="10.5" fill="#6b7480">one map per sentence, 16 × 16</text>
+
+<!-- ============ ARROWS ============ -->
+<path d="M215,225 L250,225" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M215,470 L250,470" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M518,231 L532,231" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M734,231 L748,231" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M966,231 L980,231" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M1400,225 L1445,225 L1445,148" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M484,471 L498,471" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M732,471 L746,471" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M1030,471 L1044,471" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M1400,471 L1445,471" stroke="#333" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+<path d="M1225,542 L1225,566 L200,566 L200,690 L250,690" stroke="#7A3FA8" stroke-width="1.7" fill="none" stroke-dasharray="6 4" marker-end="url(#ag)"/>
+<text x="700" y="580" font-size="11" font-style="italic" fill="#7A3FA8">generated report is fed back for post-hoc explanation</text>
+<path d="M496,697 L510,697" stroke="#7A3FA8" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
+<path d="M764,697 L778,697" stroke="#7A3FA8" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
+<path d="M1010,697 L1024,697" stroke="#7A3FA8" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
+<path d="M1400,697 L1445,697" stroke="#7A3FA8" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
+
+<!-- ============ FOOTNOTES ============ -->
+<line x1="25" y1="812" x2="1680" y2="812" stroke="#d5dae0"/>
+<text x="25" y="836" font-size="12" font-weight="700" fill="#2b2f36">Design notes</text>
+<text x="25" y="858" font-size="11.5" fill="#4a5260">· <tspan font-weight="600">The two stages are decoupled.</tspan> Stage 2 reads the split manifest directly and imports no Stage-1 code; deleting Stage 1 leaves report generation unchanged. Stage-1 predictions are evaluated on their own.</text>
+<text x="25" y="878" font-size="11.5" fill="#4a5260">· <tspan font-weight="600">A Q-Former soft-token bridge was investigated and is not used.</tspan> With λ_ITC = λ_ITM = λ_LM = 0 its image path never trains; four independent retrieval measurements returned chance, attributable to a contrastive batch ~210× smaller than BLIP-2's.</text>
+<text x="25" y="898" font-size="11.5" fill="#4a5260">· <tspan font-weight="600">Blank CheXpert cells are masked, not negative.</tspan> 79.4% of the label matrix is blank; those cells train the mention gate and are excluded from the classification loss.</text>
+<text x="25" y="918" font-size="11.5" fill="#4a5260">· <tspan font-weight="600">The two stages do not share a coordinate frame.</tspan> Stage 1 resizes the shorter side to 512 and centre-crops 448 (aspect preserved); MedGemma squashes to 896 × 896 without preserving aspect. Maps are projected back to the ORIGINAL image before any comparison.</text>
+<text x="25" y="938" font-size="11.5" fill="#4a5260">· <tspan font-weight="600">The explainability layer is an observer.</tspan> Nothing in Stage 1 or Stage 2 imports it; both gates abort the run before a single map is written.</text>
+<text x="25" y="966" font-size="10.5" fill="#8892a0">Trained on MIMIC-CXR-JPG p10–p19 (PhysioNet credentialed access). Splits are patient- and study-disjoint. Single NVIDIA RTX 5060 Ti 16 GB; no distributed training.</text>
+</svg>
