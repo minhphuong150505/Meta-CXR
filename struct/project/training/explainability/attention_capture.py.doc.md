@@ -77,7 +77,7 @@ cáo không độc lập, khoảng tin cậy theo token sẽ hẹp giả tạo.
 | `per_token_nll` | Dịch một bước; vị trí bị mask trả `nan`, **không phải 0.0** |
 | `gradient_weighted_layers` | `autograd.grad`; fallback **mặc định tắt** |
 | `score_ablation` / `assert_visual_tokens_matter` | Cổng triệt tiêu có CI |
-| `load_medgemma_for_explanation` | import transformers **lazy** |
+| `load_medgemma_for_explanation` | import transformers **lazy**; `adapter=` nạp LoRA Stage-2 rồi `merge_and_unload()` — merge chứ không giữ wrapper PEFT, để `language_attention_modules` / `capture_attention` / `randomize_layers` vẫn thấy đúng module Gemma gốc. Thiếu `adapter_config.json` thì **RAISE**, không im lặng giải thích model gốc |
 | `build_visual_inputs` | Vision dưới `no_grad`, scatter vào embedding; `visual_features` để thay ảnh study khác |
 | `teacher_forced_forward` | KV cache tắt, attention bắt qua hook |
 | `qformer_cross_attention` | **Interface, RAISE** — xem [`_index.md`](_index.md) |

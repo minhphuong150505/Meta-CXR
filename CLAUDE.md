@@ -1391,6 +1391,37 @@ on a synthetic non-radiograph zeroing actually made the target EASIER to
 predict (-0.84). Substituting another patient's image asks the question that
 matters — is THIS image being used — and stays in distribution.
 
+⚠⚠ **`scripts/explain_stage2.py` explained the BASE model until 2026-09-01 —
+it had no `--adapter` flag at all.** Every XAI number recorded before that date
+therefore describes `google/medgemma-1.5-4b-it` out of the box, not this
+project's Stage 2, and the two full val runs (`~/xai_val`, `~/xai_val_v2`) are
+zero-shot baselines. That is still a legitimate result for the two sanity gates,
+which test the method rather than the fine-tune; it is not a result about the
+fine-tuned model. `--adapter` now merges a Stage-2 QLoRA adapter into the bf16
+base (`merge_and_unload`, so the attention modules stay the plain Gemma ones the
+hooks and `randomize_layers` expect), raises if `adapter_config.json` is absent,
+and `summary.json` records `mode` + `adapter`. ⚠ The adapter was trained against
+an NF4 base and is merged into a bf16 one — the standard QLoRA deployment path,
+but not bit-identical to what was trained. Say so.
+
+⚠⚠ **`native_anchor_guided` (Stage-2 arm B) IS NOT WIRED, and it fails
+SILENTLY.** `build_records` (`training/dataio/manifest.py:229`) emits only
+`sample_key`, `ref`, `image_path`, `anchor_view`, `auxiliary_views` — no
+`pred_groups`. `context_from_record` (`stage2/prompts/records.py:41`) turns the
+absent key into an empty tuple, and nothing in `builder.py`/`validation.py`
+raises when a guided mode receives zero cues. The only producer of `pred_groups`
+is `build_stage1_records`, whose own docstring forbids native mode from calling
+it. So running `--prompt-config configs/experiment_native_anchor_guided.yaml`
+today trains on prompts **identical to arm A**, differing only by RNG — a 70-hour
+no-op. `tests/test_stage2_prompts.py::test_the_two_experiment_arms_differ_in_one_line`
+does not catch this: it compares the two YAML files, not the two prompts.
+**Arm B was dropped from the pipeline on 2026-09-01** at the user's decision;
+arm A (`native_anchor_only`) is the official Stage-2 run. If it is ever revived,
+the agreed cue source is `marginal_presence = sigmoid(m) x q_pos` with thresholds
+calibrated on validation — NOT `classify_with_thresholds`
+(`train_eval_figure9_llm_variants_200.py:352`), which softmaxes the
+classification logits alone and never touches the mention gate.
+
 **The deliverable is `scripts/explain_stage2.py`.** One JSONL line per study
 (sentence text, `lexicon_v1` labels, map path, `mean_token_nll`,
 `spatially_meaningful`), one NPZ of maps per study at the native 16x16 grid,
