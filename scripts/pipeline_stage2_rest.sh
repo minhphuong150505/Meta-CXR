@@ -39,7 +39,7 @@ complete() {  # $1 = adapter dir, $2 = label
 }
 watch_env() { printf 'EXPECT_RUNNING=%s\nRUN_DIR=%s\nLOG=%s\n' "$1" "$2" "$3" > ~/.train_watchdog.env; }
 
-: > "$NOTE"; log "pipeline armed (arm A only; arm B removed); waiting for arm A"
+: > "$NOTE"; log "pipeline armed: arm A -> arm C smoke -> arm C full -> eval; waiting for arm A"
 gpu_free
 complete "$ADIR" "arm A" || die "arm A did not complete; nothing downstream started"
 log "arm A complete: $(grep '^\[epoch' $A.log | tail -1)"
