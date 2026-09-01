@@ -1169,6 +1169,26 @@ Three fixes landed 2026-08-18 when it was made to supervise *continuously*:
 survives at `<data drive>/torch-cache/hub/checkpoints/`. Symlink
 `~/.cache/torch/hub/checkpoints` at it to skip 1.9 GB.
 
+⚠⚠ **Never `pgrep -f` / `pkill -f` a pattern that appears in your own command
+line.** It has cost two SSH sessions on this host. `pgrep -f "bash
+/home/phuong/pipeline_rest.sh"` matched the *ssh command running it*, so a dead
+process was reported STILL ALIVE; and `pkill -9 -f` with the same pattern killed
+its own parent shell, which looked like the command mysteriously truncating its
+output half way. An `awk` over `ps -eo pid,cmd` has exactly the same problem the
+moment the script's name appears anywhere else on the line — including in a `cp`
+that deploys it. Two forms that are safe:
+
+```bash
+ps -p <pid> -o pid=,stat=,cmd=                      # when the pid is known
+ps -eo pid,args --no-headers | \
+  awk '$2=="bash" && $3=="/home/phuong/pipeline_rest.sh" {print $1}'
+```
+
+The second matches `argv` positionally, so a `bash -lc "...pipeline_rest.sh..."`
+wrapper has `-lc` in `$2` and cannot match. Same family as the epoch-pinned
+progress grep recorded above: a monitoring command that lies about its own
+subject.
+
 #### Read-only run monitoring — `scripts/train_healthcheck.sh`
 
 This is the compact check used by cron and manual SSH triage; it never restarts
