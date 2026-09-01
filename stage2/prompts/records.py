@@ -38,6 +38,25 @@ def context_from_record(
     Accepts either a ``pred_groups`` dict ({"positive": [...], ...}) or explicit
     ``positive_findings`` / ``uncertain_findings`` / ``negative_findings`` keys.
     """
+    # A guided mode whose record carries no prediction keys AT ALL is the
+    # wiring bug this guard exists for: `_as_tuple(None)` returns (), the
+    # builder emits a prompt with no cues, and the run trains for days on
+    # prompts indistinguishable from the unguided arm. Distinguish "no keys"
+    # from "keys present but empty" -- the latter is a legitimate prediction
+    # (a study Stage 1 called normal) and must still be allowed through.
+    prediction_keys = (
+        "pred_groups",
+        "positive_findings",
+        "uncertain_findings",
+        "negative_findings",
+    )
+    if visual_mode.includes_structured and not any(key in record for key in prediction_keys):
+        raise ValueError(
+            f"visual_mode={visual_mode.value} places Stage-1 findings in the "
+            "prompt, but this record carries none of "
+            f"{prediction_keys}. Native manifest records have no predictions "
+            "attached; a guided mode needs records built with a Stage-1 pass."
+        )
     groups = record.get("pred_groups") or {}
     positive = _as_tuple(record.get("positive_findings") or groups.get("positive"))
     uncertain = _as_tuple(record.get("uncertain_findings") or groups.get("uncertain"))

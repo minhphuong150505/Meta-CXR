@@ -1215,6 +1215,7 @@ implementation detail and made the hybrid easy to mislabel as "native MedGemma")
 | `medgemma_direct` (default) | no | MedGemma's own image tower + projector |
 | `meta_cxr_qformer` | yes | Q-Former soft tokens |
 | `meta_cxr_qformer_with_mhcac_prompt` | yes | soft tokens + structured P/N/U text |
+| `meta_cxr_native_qformer_guided` | yes | MedGemma's own image tower **plus** soft tokens, **plus** P/N/U text |
 | `text_only_language_prior_ablation` | no | none — the only mode with `requires_multimodal=False` |
 | `both_for_ablation` | — | runs direct then qformer sequentially |
 
@@ -1415,12 +1416,69 @@ it. So running `--prompt-config configs/experiment_native_anchor_guided.yaml`
 today trains on prompts **identical to arm A**, differing only by RNG — a 70-hour
 no-op. `tests/test_stage2_prompts.py::test_the_two_experiment_arms_differ_in_one_line`
 does not catch this: it compares the two YAML files, not the two prompts.
-**Arm B was dropped from the pipeline on 2026-09-01** at the user's decision;
-arm A (`native_anchor_only`) is the official Stage-2 run. If it is ever revived,
-the agreed cue source is `marginal_presence = sigmoid(m) x q_pos` with thresholds
-calibrated on validation — NOT `classify_with_thresholds`
-(`train_eval_figure9_llm_variants_200.py:352`), which softmaxes the
-classification logits alone and never touches the mention gate.
+**It now RAISES rather than degrading silently** — `context_from_record`
+refuses a guided mode whose record carries none of `pred_groups` /
+`positive_findings` / `uncertain_findings` / `negative_findings`. Present-but-empty
+is still accepted, because a study Stage 1 called normal is a real prediction.
+**Arm B itself is superseded by `meta_cxr_native_qformer_guided` below**, which
+gets its cues from the Stage-1 pass that already produces them.
+
+**`meta_cxr_native_qformer_guided` is the originally-designed architecture, added
+2026-09-01.** MedGemma keeps its OWN vision tower on the anchor image **and**
+additionally receives the 32 Q-Former soft tokens, with MHCAC P/N/U cues in the
+text. The distinction that matters: the two `meta_cxr_qformer*` modes
+**substitute** soft tokens for the image (`image_mode` is a hard three-way switch
+at `train_eval_figure9_llm_variants_200.py:608`, and the native branch takes
+pixels only), so they ask "can soft tokens replace MedGemma's vision"; this mode
+**supplements** it, and against `medgemma_direct` it asks "what do the soft tokens
+and cues ADD". Config: `configs/experiment_native_qformer_guided.yaml`, which
+differs from `experiment_native_anchor_only.yaml` in `visual_mode` alone.
+
+Implementation notes, each of which was a place the old code was half-right:
+- `image_mode` gained a **third** value, `native_qformer`, rather than a flag on
+  one of the existing two. Every branch now tests `NATIVE_PIXEL_MODES` or
+  `SOFT_TOKEN_MODES` (module-level frozensets) instead of `== "native"` /
+  `== "qformer"`, because a dozen sites branched on those strings and reusing one
+  would have made each of them silently half-configured.
+- `collate_train` stacks **every** non-sequence tensor. It used to stack
+  `qformer_embs` *or* everything else, which would have dropped `pixel_values`.
+- `adapter_is_complete` and `resumable_adapter` require `img_proj.pt` for any
+  soft-token mode, not just `"qformer"`.
+- `native_qformer` **requires `--prompt-config`**; the constructor raises without
+  it. The soft-token placeholders come from the v2 builder, and the legacy
+  `build_native_instruction()` emits none — so the substitution would find zero
+  positions and return the embeddings untouched, i.e. a run that looks like the
+  combined mode and is plain native MedGemma.
+- `_chat_texts` now raises for any native mode. Those must go through
+  `_native_chat_inputs`, which embeds the real PIL image so the processor expands
+  image tokens identically for prompt and full chat; the string path would
+  produce a different prefix and unmask prompt tokens during training.
+- `PromptBuilder` needed no change: `uses_native_image` and `uses_soft_tokens`
+  were already independent conditions emitting independent `PromptPart`s.
+
+⚠ **The Q-Former's image path was never contrastively trained, and this mode does
+not change that.** With `lambda_itc/itm/lm = 0.0` its cross-attention carries
+BLIP-2 weights fitted to EVA-ViT features, while here it reads 246
+BioViL+PubMedCLIP tokens — a different feature space entirely. The 32 soft tokens
+are therefore a fixed, unadapted readout of the image, not a learned visual
+summary. The reference implementation is in the same position. State this beside
+any result from this arm; it is the caveat, not a footnote.
+
+⚠ **Two measured costs before running it at full scale.** `build_stage1_records`
+iterates at **batch size 1** (it asserts `generation_mask.numel() == 1`), so the
+train pass is ~220k single-study forwards; and its cache holds
+220,216 x 32 x 768 fp16 = **10.1 GiB** of soft tokens, `torch.load`ed whole into
+a 30 GB host. Stage-2's DataLoaders use `num_workers=0`, so that is one process's
+RSS rather than one per worker — survivable, but it is why
+`scripts/pipeline_stage2_rest.sh` runs a 200-study smoke of this mode **before**
+committing to the full run. Neither number has been confirmed on GPU.
+
+The cue source in `classify_with_thresholds`
+(`train_eval_figure9_llm_variants_200.py:352`) softmaxes the classification
+logits alone and **never touches the mention gate**, so the cues are `q`, not
+`marginal_presence = sigmoid(m) x q_pos` — the score measured to beat `q` on
+14 of 14 labels. Changing that is the agreed next improvement and has not been
+made.
 
 **The deliverable is `scripts/explain_stage2.py`.** One JSONL line per study
 (sentence text, `lexicon_v1` labels, map path, `mean_token_nll`,

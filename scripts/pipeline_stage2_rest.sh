@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Everything left to run after the Stage-2 arm A fine-tune, in order, on one GPU.
 #
-# ⚠ ARM B (native_anchor_guided) WAS REMOVED ON 2026-09-01 AND MUST NOT BE ADDED
-# BACK UNTIL THE CUES ARE ACTUALLY WIRED. `build_records` emits no `pred_groups`,
-# `context_from_record` turns the absent key into an empty tuple, and no guard
-# rejects a guided mode with zero cues -- so arm B trained on prompts IDENTICAL
-# to arm A and differed only by RNG. Seventy hours for a duplicate run.
-# See CLAUDE.md, "native_anchor_guided IS NOT WIRED".
+# ⚠ ARM B (native_anchor_guided) IS NOT RUN HERE. Native manifest records carry
+# no `pred_groups`, so that arm trained on prompts IDENTICAL to arm A. It now
+# RAISES instead of degrading silently (stage2/prompts/records.py), which is the
+# fix; wiring the cues onto the native route was superseded by arm C below.
+#
+# ARM C (meta_cxr_native_qformer_guided) is the originally-designed architecture:
+# MedGemma keeps its own vision tower AND additionally receives the 32 Q-Former
+# soft tokens, with MHCAC cues in the text. It requires a Stage-1 pass, which is
+# why the smoke gate exists -- see step 1.
 #
 # Rules this encodes, each of which costs real time if broken:
 #   * ONE GPU job at a time -- never overlap;
@@ -42,9 +45,48 @@ complete "$ADIR" "arm A" || die "arm A did not complete; nothing downstream star
 log "arm A complete: $(grep '^\[epoch' $A.log | tail -1)"
 watch_env 0 "" ""
 
-# ---- 1. generate on TEST --------------------------------------------------
+C=$HOME/ft_guided_full
+CDIR=$C/adapters/medgemma_qlora_meta_cxr_native_qformer_guided
+CFG=configs/experiment_native_qformer_guided.yaml
+
+# ---- 1. SMOKE the combined mode before spending 70 h on it ----------------
+# The Stage-1 record pass runs at batch 1 over ~220k studies and caches ~10 GiB
+# of soft tokens; the prompt must carry 32 <qformer_soft_token> placeholders and
+# a real image at the same time. None of that has run on a GPU. Prove it small
+# first: a failure here costs 20 minutes, the same failure at hour 3 of the full
+# run costs the Stage-1 pass as well.
+SM=$HOME/ft_guided_smoke
+log "STEP 1/5: arm C smoke (200 train studies)"
+rm -rf "$SM"
+CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
+  training/run_medgemma_qlora.py --pipeline-mode meta_cxr_native_qformer_guided \
+  --section-mode findings_only --prompt-config "$CFG" \
+  --train-limit 200 --val-limit 10 --test-limit 10 \
+  --train-epochs 1 --batch-size 2 --grad-accum 8 --num-workers 4 \
+  --output-dir "$SM" --no-upload >> "$HOME/smoke_guided.log" 2>&1
+complete "$SM/adapters/medgemma_qlora_meta_cxr_native_qformer_guided" "arm C smoke" \
+  || die "arm C smoke failed -- read $HOME/smoke_guided.log; NOT starting the 70 h run"
+log "  smoke ok; the combined mode trains end to end"
+
+# ---- 2. arm C, full ------------------------------------------------------
+log "STEP 2/5: arm C full (~70 h)"
+rm -rf "$C" "$C.log"; watch_env 1 "$C/adapters" "$C.log"
+setsid nohup env CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
+  training/run_medgemma_qlora.py --pipeline-mode meta_cxr_native_qformer_guided \
+  --section-mode findings_only --prompt-config "$CFG" \
+  --train-epochs 1 --batch-size 2 --grad-accum 8 --num-workers 4 \
+  --save-every-updates 250 --skip-test --output-dir "$C" --no-upload \
+  > "$C.log" 2>&1 < /dev/null &
+sleep 120
+pgrep -f run_medgemma_qlora >/dev/null || die "arm C failed to start; see $C.log"
+gpu_free
+complete "$CDIR" "arm C" || die "arm C did not complete"
+log "arm C complete: $(grep '^\[epoch' $C.log | tail -1)"
+watch_env 0 "" ""
+
+# ---- 3. generate on TEST --------------------------------------------------
 OUT=$HOME/gen_test_only
-log "STEP 1/3: generating test reports from the fine-tuned adapter"
+log "STEP 3/5: generating test reports from the fine-tuned adapter"
 rm -rf "$OUT"
 CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
   scripts/generate_stage2_reports.py --manifest "$MAN" --image-root "$IMG" \
@@ -56,7 +98,7 @@ m=$($PY -c "import json;print(json.load(open('$OUT/summary.json'))['mode'])" 2>/
 [ "$m" = "medgemma_direct_finetuned" ] || die "generation ran as '$m', not finetuned"
 
 # ---- 2. NLG metrics -------------------------------------------------------
-log "STEP 2/3: NLG metrics"
+log "STEP 4/5: NLG metrics"
 CUDA_VISIBLE_DEVICES=0 $PY scripts/evaluate_stage2.py \
   --predictions "$OUT/generated_test.jsonl" \
   --metrics bleu,rouge,meteor,cider,bertscore --skip-clinical-metrics \
@@ -70,7 +112,7 @@ log "  metrics written"
 # is a zero-shot baseline and not this project's Stage 2; it fails silently,
 # producing a complete and entirely valid-looking summary.json about the wrong
 # model. The mode check below is the backstop.
-log "STEP 3/3: Stage-2 XAI (fine-tuned)"
+log "STEP 5/5: Stage-2 XAI (fine-tuned)"
 rm -rf "$HOME/xai_test_only"
 CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
   scripts/explain_stage2.py --manifest "$MAN" --image-root "$IMG" \
@@ -87,4 +129,6 @@ fi
 log "PIPELINE DONE. Remaining by hand:"
 log "  * MS-CXR grounding comparison -- no script yet; Stage-2 maps are in"
 log "    MedGemma's 896 frame, MS-CXR boxes are in original-image coordinates."
-log "  * Arm B, if it is ever wanted, needs the MHCAC cue join written first."
+log "  * Generation / NLG / XAI for ARM C -- the combined mode needs Stage-1"
+log "    records at generation time, which scripts/generate_stage2_reports.py"
+log "    does not build. Compare arm A vs arm C by hand until it does."

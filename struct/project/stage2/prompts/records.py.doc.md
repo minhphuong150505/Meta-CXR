@@ -42,3 +42,15 @@ vào record phải qua đây mới tới prompt được.
 - **Parent:** [`_index.md`](_index.md)
 
 ← [HOME](../../../HOME.md)
+
+## Chốt chặn guided-mode (2026-09-01)
+
+`context_from_record` RAISE nếu `visual_mode.includes_structured` mà record
+không có **bất kỳ** khoá nào trong `pred_groups` / `positive_findings` /
+`uncertain_findings` / `negative_findings`.
+
+Phân biệt "không có khoá" với "có khoá nhưng rỗng": vế sau là một dự đoán
+hợp lệ (study được Stage 1 cho là bình thường) và vẫn phải đi qua. Vế trước
+là lỗi nối dây — `_as_tuple(None)` trả `()`, builder phát prompt không cue,
+và nhánh guided huấn luyện nhiều ngày trên prompt không phân biệt được với
+nhánh đối chứng.

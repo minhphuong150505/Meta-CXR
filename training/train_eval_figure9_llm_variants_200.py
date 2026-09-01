@@ -162,6 +162,19 @@ BERTSCORE_MODEL = "microsoft/deberta-xlarge-mnli"
 SMOOTH = SmoothingFunction().method1
 
 VICUNA_MODEL_ID = "lmsys/vicuna-7b-v1.3"
+#: ``image_mode`` values in which MedGemma's OWN vision tower receives pixels.
+#: ``native_qformer`` appears in BOTH of these sets on purpose -- it is the
+#: originally-designed architecture, where the 32 soft tokens SUPPLEMENT the
+#: image rather than replace it. Branching on these sets rather than on
+#: ``== "native"`` / ``== "qformer"`` is what keeps the combined mode from being
+#: silently half-configured: every site that used to test one string now tests
+#: the capability it actually cares about.
+NATIVE_PIXEL_MODES = frozenset({"native", "native_qformer"})
+#: ``image_mode`` values in which projected Q-Former vectors are substituted at
+#: ``<qformer_soft_token>`` positions.
+SOFT_TOKEN_MODES = frozenset({"qformer", "native_qformer"})
+ALL_IMAGE_MODES = frozenset({"qformer", "native", "native_qformer", "text_only"})
+
 MEDGEMMA_MODEL_ID = "google/medgemma-1.5-4b-it"
 VICUNA_EXISTING_LORA = PROJECT_DIR / "checkpoints/lora-vicuna-7b-report-20250621"
 MEDGEMMA_EXISTING_LORA = "DeepRadiology/medgemma1.5-CXR"
@@ -605,10 +618,21 @@ class VariantLLM:
         gradient_checkpointing: bool = True,
         prompt_config: PromptConfig | None = None,
     ):
-        if image_mode not in {"qformer", "native", "text_only"}:
-            raise ValueError("image_mode must be 'qformer', 'native' or 'text_only'")
-        if image_mode in {"native", "text_only"} and family != "medgemma":
+        if image_mode not in ALL_IMAGE_MODES:
+            raise ValueError(f"image_mode must be one of {sorted(ALL_IMAGE_MODES)}")
+        if image_mode in {"native", "native_qformer", "text_only"} and family != "medgemma":
             raise ValueError(f"{image_mode} image mode is only supported for MedGemma")
+        if image_mode == "native_qformer" and prompt_config is None:
+            # The soft tokens live in the prompt text, and the legacy
+            # build_native_instruction() emits none. Without a v2 prompt config
+            # the substitution would find zero positions and silently return the
+            # embeddings untouched -- a run that looks exactly like a working
+            # combined mode while being plain native MedGemma.
+            raise ValueError(
+                "native_qformer requires --prompt-config: the soft-token "
+                "placeholders come from the v2 prompt builder, and the legacy "
+                "instruction emits none"
+            )
         # Opt-in v2 prompt builder. None keeps the exact legacy prompt strings.
         if prompt_config is not None:
             if family != "medgemma":
@@ -711,7 +735,7 @@ class VariantLLM:
                     revision=load_kwargs.get("revision"),
                     transformers_version=getattr(transformers, "__version__", None),
                 )
-            if self.image_mode == "qformer" and self.img_token not in self.tokenizer.get_vocab():
+            if self.image_mode in SOFT_TOKEN_MODES and self.img_token not in self.tokenizer.get_vocab():
                 self.tokenizer.add_special_tokens({"additional_special_tokens": [self.img_token]})
                 self.model.resize_token_embeddings(len(self.tokenizer))
             if self.quantize_4bit:
@@ -724,7 +748,7 @@ class VariantLLM:
             self.model.to(self.device)
         self.img_token_id = None
         self.img_proj = None
-        if self.image_mode == "qformer":
+        if self.image_mode in SOFT_TOKEN_MODES:
             self.img_token_id = self.tokenizer.convert_tokens_to_ids(self.img_token)
             if self.img_token_id is None or self.img_token_id < 0:
                 raise RuntimeError(f"could not register image token {self.img_token}")
@@ -933,17 +957,17 @@ class VariantLLM:
             prompt = build_prompt(record["pred_groups"], self.img_token, prompt_style) + "\nASSISTANT:"
             return prompt, prompt + " " + target + (self.tokenizer.eos_token or "")
         content: list[dict[str, Any]] = []
-        if self.image_mode == "native":
-            content.append({"type": "image"})
-            # The native ablation receives pixels only.  In particular, do not
-            # include Q-Former/MHCAC predictions here, otherwise it is not a
-            # valid native-image baseline.
-            instruction = (
-                self._render_prompt_text(record)
-                if self.prompt_config is not None
-                else build_native_instruction()
+        if self.image_mode in NATIVE_PIXEL_MODES:
+            # Any mode that feeds MedGemma's own vision tower must go through
+            # _native_chat_inputs, which embeds the real PIL image so the
+            # processor expands the image tokens identically for prompt and
+            # full chat. Rendering to a string here would produce a different
+            # image-token prefix and unmask prompt tokens during training.
+            raise RuntimeError(
+                f"_chat_texts is the string path; image_mode={self.image_mode!r} "
+                "must use _native_chat_inputs"
             )
-        elif self.prompt_config is not None:
+        if self.prompt_config is not None:
             instruction = self._render_prompt_text(record)
         else:
             instruction = build_prompt(record["pred_groups"], self.img_token, prompt_style)
@@ -1021,7 +1045,7 @@ class VariantLLM:
             max_length=max_length,
             add_special_tokens=False,
         )
-        if self.image_mode == "native":
+        if self.image_mode in NATIVE_PIXEL_MODES:
             prompt_encoded = self._native_chat_inputs(
                 record,
                 include_target=False,
@@ -1052,7 +1076,7 @@ class VariantLLM:
             raise ValueError("target was completely truncated; increase max_length")
         item = {key: value[0] for key, value in encoded.items() if torch.is_tensor(value)}
         item["labels"] = torch.tensor(labels, dtype=torch.long)
-        if self.image_mode == "qformer":
+        if self.image_mode in SOFT_TOKEN_MODES:
             item["qformer_embs"] = record["qformer_embs"].float()
         return item
 
@@ -1071,12 +1095,12 @@ class VariantLLM:
                 padding = torch.full((max_len - tensor.shape[0],), pad_value, dtype=tensor.dtype)
                 padded.append(torch.cat([tensor, padding]))
             batch[key] = torch.stack(padded)
-        if self.image_mode == "qformer":
-            batch["qformer_embs"] = torch.stack([item["qformer_embs"] for item in items])
-        else:
-            for key in items[0]:
-                if key not in sequence_keys:
-                    batch[key] = torch.stack([item[key] for item in items])
+        # Stack every non-sequence tensor, whatever it is. The combined mode
+        # carries BOTH pixel_values and qformer_embs, so the old
+        # qformer-or-everything-else branch would have dropped one of them.
+        for key in items[0]:
+            if key not in sequence_keys:
+                batch[key] = torch.stack([item[key] for item in items])
         return batch
 
     def _forward_batch(self, batch: dict[str, torch.Tensor]):
@@ -1090,7 +1114,7 @@ class VariantLLM:
         }
         qformer = moved.pop("qformer_embs", None)
         old_embedding = None
-        if self.image_mode == "qformer":
+        if self.image_mode in SOFT_TOKEN_MODES:
             projected = self.img_proj(qformer.float())
             old_embedding = self.model.get_input_embeddings()
             self.model.set_input_embeddings(
@@ -1348,7 +1372,7 @@ class VariantLLM:
         self.model.eval()
         if self.img_proj is not None:
             self.img_proj.eval()
-        if self.image_mode == "native":
+        if self.image_mode in NATIVE_PIXEL_MODES:
             encoded = self._native_chat_inputs(
                 record,
                 include_target=False,
@@ -1375,7 +1399,7 @@ class VariantLLM:
             if torch.is_tensor(value)
         }
         old_embedding = None
-        if self.image_mode == "qformer":
+        if self.image_mode in SOFT_TOKEN_MODES:
             qformer = record["qformer_embs"].unsqueeze(0).to(self.device, dtype=torch.float32)
             projected = self.img_proj(qformer)
             old_embedding = self.model.get_input_embeddings()
@@ -1398,7 +1422,7 @@ class VariantLLM:
             # Stop the model spending probability mass on the soft-token
             # placeholder; None (native/text-only) leaves generation unchanged.
             bad_words = soft_token_bad_words_ids(
-                self.img_token_id if self.image_mode == "qformer" else None
+                self.img_token_id if self.image_mode in SOFT_TOKEN_MODES else None
             )
             if bad_words is not None:
                 generate_kwargs["bad_words_ids"] = bad_words

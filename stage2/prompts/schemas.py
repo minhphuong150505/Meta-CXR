@@ -23,10 +23,21 @@ class VisualMode(str, Enum):
     NATIVE_MULTIVIEW = "native_multiview"
     QFORMER_VISUAL_ONLY = "qformer_visual_only"
     QFORMER_GUIDED = "qformer_guided"
+    #: The originally-designed architecture: MedGemma keeps its own vision tower
+    #: AND additionally receives the 32 Q-Former soft tokens, with MHCAC cues in
+    #: the text. The `qformer_*` modes above SUBSTITUTE soft tokens for the
+    #: image; this one supplements it, which is a different claim -- "the soft
+    #: tokens add something the vision tower missed" rather than "the soft
+    #: tokens are the visual channel".
+    NATIVE_QFORMER_GUIDED = "native_qformer_guided"
 
     @property
     def uses_soft_tokens(self) -> bool:
-        return self in (VisualMode.QFORMER_VISUAL_ONLY, VisualMode.QFORMER_GUIDED)
+        return self in (
+            VisualMode.QFORMER_VISUAL_ONLY,
+            VisualMode.QFORMER_GUIDED,
+            VisualMode.NATIVE_QFORMER_GUIDED,
+        )
 
     @property
     def uses_native_image(self) -> bool:
@@ -34,6 +45,7 @@ class VisualMode(str, Enum):
             VisualMode.NATIVE_ANCHOR_ONLY,
             VisualMode.NATIVE_ANCHOR_GUIDED,
             VisualMode.NATIVE_MULTIVIEW,
+            VisualMode.NATIVE_QFORMER_GUIDED,
         )
 
     @property
@@ -43,6 +55,7 @@ class VisualMode(str, Enum):
             VisualMode.NATIVE_ANCHOR_GUIDED,
             VisualMode.NATIVE_MULTIVIEW,
             VisualMode.QFORMER_GUIDED,
+            VisualMode.NATIVE_QFORMER_GUIDED,
         )
 
     @property
@@ -51,7 +64,17 @@ class VisualMode(str, Enum):
 
     @property
     def image_mode(self) -> str:
-        """Legacy storage key kept so existing adapter dirs stay loadable."""
+        """Storage key for the adapter directory and the runner's branch.
+
+        The first two values are legacy and are kept exactly so existing adapter
+        dirs stay loadable. ``native_qformer`` is the combined channel and is
+        deliberately a THIRD value rather than a flag on one of the others: the
+        runner branches on this string in a dozen places, and reusing "native"
+        or "qformer" for a mode that does both would have made every one of
+        those branches silently half-right.
+        """
+        if self.uses_native_image and self.uses_soft_tokens:
+            return "native_qformer"
         return "qformer" if self.uses_soft_tokens else "native"
 
 

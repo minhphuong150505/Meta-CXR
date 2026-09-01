@@ -69,6 +69,22 @@ META_CXR_QFORMER_WITH_MHCAC_PROMPT = PipelineMode(
     ),
 )
 
+META_CXR_NATIVE_QFORMER_GUIDED = PipelineMode(
+    name="meta_cxr_native_qformer_guided",
+    image_mode="native_qformer",
+    requires_stage1=True,
+    uses_mhcac_prompt=True,
+    description=(
+        "The originally-designed architecture: MedGemma keeps its OWN vision "
+        "tower on the anchor image AND additionally receives the 32 Q-Former "
+        "soft tokens, with MHCAC positive/negative/uncertain findings in the "
+        "text. The two meta_cxr_qformer* modes above SUBSTITUTE soft tokens for "
+        "the image; this one supplements it, so the comparison against "
+        "medgemma_direct measures what the soft tokens and cues ADD on top of "
+        "MedGemma's own vision -- not whether they can replace it."
+    ),
+)
+
 TEXT_ONLY_LANGUAGE_PRIOR_ABLATION = PipelineMode(
     name="text_only_language_prior_ablation",
     image_mode="text_only",
@@ -119,6 +135,7 @@ PIPELINE_MODES = {
         MEDGEMMA_DIRECT,
         META_CXR_QFORMER,
         META_CXR_QFORMER_WITH_MHCAC_PROMPT,
+        META_CXR_NATIVE_QFORMER_GUIDED,
         TEXT_ONLY_LANGUAGE_PRIOR_ABLATION,
         PRETRAINED_MEDGEMMA_FINDINGS_FIRST,
         PRETRAINED_MEDGEMMA_IMPRESSION_PHASE2,

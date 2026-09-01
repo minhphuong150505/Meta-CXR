@@ -185,7 +185,9 @@ def deterministic_subset(records: list[dict], limit: int, seed: int) -> list[dic
 
 def resumable_adapter(path: Path, image_mode: str) -> bool:
     weights = (path / "adapter_model.safetensors").is_file() or (path / "adapter_model.bin").is_file()
-    projector_ok = image_mode != "qformer" or (path / "img_proj.pt").is_file()
+    # Any mode that carries soft tokens owns a trained img_proj; resuming
+    # without it would silently restart the bridge from a fresh nn.Linear.
+    projector_ok = image_mode not in fig9.SOFT_TOKEN_MODES or (path / "img_proj.pt").is_file()
     return weights and projector_ok and (path / "adapter_config.json").is_file() and (path / "trainer_state.pt").is_file()
 
 
