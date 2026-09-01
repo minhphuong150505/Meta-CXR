@@ -311,8 +311,26 @@ def test_multimodal_load_failure_raises_the_typed_error():
 
 
 def test_variant_llm_accepts_the_text_only_image_mode():
-    source = FIG9.read_text(encoding="utf-8")
-    assert '"qformer", "native", "text_only"' in source
+    """Pin the SET of accepted image modes, not the source line that spells it.
+
+    This used to grep for the literal `"qformer", "native", "text_only"`, which
+    broke the moment the tuple became a named frozenset -- a rename, not a
+    behaviour change. Asserting on the set says what actually matters: which
+    visual channels the runner will accept, and that adding one is a deliberate
+    edit here rather than an accident.
+    """
+    import ast
+
+    tree = ast.parse(FIG9.read_text(encoding="utf-8"))
+    modes = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "ALL_IMAGE_MODES"
+            for target in node.targets
+        ):
+            modes = ast.literal_eval(node.value.args[0])
+    assert modes is not None, "ALL_IMAGE_MODES is gone; the runner lost its mode allow-list"
+    assert set(modes) == {"qformer", "native", "native_qformer", "text_only"}
 
 
 def test_saved_metadata_records_multimodal_status():

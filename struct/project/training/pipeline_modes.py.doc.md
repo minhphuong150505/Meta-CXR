@@ -99,3 +99,19 @@ Mode ngoài → `ValueError` chỉ lệnh đúng · Mode lạ → `ValueError` l
 3. Giữ module stdlib-only. Thêm `import torch` ở đây phá test CPU.
 
 ← [training/](_index.md) · [HOME](../../HOME.md)
+
+## `meta_cxr_native_qformer_guided` (2026-09-01)
+
+Kiến trúc theo thiết kế gốc: MedGemma **giữ vision tower của nó** trên ảnh
+anchor VÀ nhận thêm 32 soft token Q-Former, kèm cue P/N/U của MHCAC trong
+phần text. `image_mode = "native_qformer"` — giá trị THỨ BA, không phải cờ
+gắn thêm vào `native` hay `qformer`, vì hàng chục nhánh trong runner rẽ theo
+chuỗi này.
+
+Khác biệt phải nói rõ: hai mode `meta_cxr_qformer*` **thay** ảnh bằng soft
+token; mode này **bổ sung**. Nên so với `medgemma_direct`, nó đo *soft token
+và cue THÊM được gì*, chứ không đo *soft token có thay được vision tower không*.
+
+`requires_stage1=True`, `uses_mhcac_prompt=True`. Record phải đến từ
+`build_stage1_records` (có cả `pred_groups`, `qformer_embs` và `image_path`
+tuyệt đối); record từ manifest native thiếu hai cái đầu và nay bị RAISE.

@@ -1,0 +1,78 @@
+# Experiment 2, arm C: native_qformer_guided -- the originally-designed
+# architecture.
+#
+# MedGemma keeps its OWN vision tower on the anchor image AND additionally
+# receives the 32 Q-Former soft tokens, with MHCAC Positive/Negative/Uncertain
+# cues in the text. Contrast with the two `qformer_*` modes, which SUBSTITUTE
+# soft tokens for the image: here they supplement it, so the comparison against
+# experiment_native_anchor_only.yaml measures what the soft tokens and cues ADD
+# on top of MedGemma's own vision.
+#
+# REQUIRES a Stage-1 pass. Records must come from build_stage1_records, which
+# attaches both `pred_groups` and `qformer_embs`; native manifest records carry
+# neither, and stage2.prompts.records now RAISES on them rather than emitting a
+# cue-free prompt.
+#
+# The Q-Former's image path was NOT contrastively trained -- Stage 1 ships
+# lambda_itc/itm/lm = 0.0, and its cross-attention carries BLIP-2 weights fitted
+# to EVA-ViT features, not to this repo's 246 BioViL+PubMedCLIP tokens. So the
+# 32 soft tokens are a fixed, unadapted readout of the image, not a learned
+# visual summary. That is also what the reference implementation does, and it is
+# the honest caveat to state beside any result from this arm. See
+# docs/negative_result_itc_qformer.md.
+
+# Stage-2 prompt configuration v2.
+# Loaded by stage2.prompts.load_prompt_config; every value is validated.
+# The visual evidence is primary; Stage-1 predictions are auxiliary cues.
+prompt:
+  version: stage2_prompt_v2
+
+  # native_anchor_only | native_anchor_guided | native_multiview
+  # | qformer_visual_only | qformer_guided | native_qformer_guided
+  visual_mode: native_qformer_guided
+
+  # compact_summary | critical_negatives | all_negatives | no_structured_normal_statement
+  normal_policy: compact_summary
+
+  # none | all | critical_only | top_k_confident | thresholded | normal_summary
+  negative_policy: critical_only
+  max_negative_findings: 4
+  negative_probability_threshold: 0.85
+
+  # explicit_possible | probability_bins | omit_low_confidence | preserve_three_class
+  uncertainty_policy: explicit_possible
+
+  # Absence worth stating even on a normal study. Must be modeled-ontology names;
+  # unknown names are filtered out (never crash).
+  critical_findings:
+    - Pneumothorax
+    - Pleural Effusion
+    - Consolidation
+    - Edema
+
+  evidence_priority:
+    visual_primary: true
+    structured_auxiliary: true
+
+  context:
+    include_views: true
+    include_indication: true
+    include_technique: true
+    include_prior_flag: true
+
+  temporal:
+    forbid_comparison_without_prior: true
+    # keep | remove_temporal_clauses | exclude_sample | require_prior_context
+    target_policy: keep
+
+  output:
+    section: findings
+    min_sentences: 1
+    max_sentences: 4
+    allow_bullets: false
+    allow_impression: false
+    allow_recommendations: false
+
+  token_budget:
+    preserve_visual_tokens: true
+    truncate_negatives_first: true

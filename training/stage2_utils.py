@@ -94,7 +94,9 @@ def adapter_is_complete(path: str | Path, image_mode: str) -> bool:
         adapter_dir / "manifest.json",
         adapter_dir / "trainer_state.pt",
     ]
-    if image_mode == "qformer":
+    # Every soft-token mode owns a trained img_proj. Testing == "qformer" would
+    # have called a combined-mode adapter complete while its bridge was missing.
+    if image_mode in ("qformer", "native_qformer"):
         required.append(adapter_dir / "img_proj.pt")
     if not all(item.is_file() for item in required) or not any(
         item.is_file() for item in adapter_weights
