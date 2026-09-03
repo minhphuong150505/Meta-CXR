@@ -1316,6 +1316,70 @@ sentences with `lexicon_v2`. Eight example overlays rendered by
 `scripts/render_explanation_examples.py`; they are patient images and stay on
 the host.
 
+### Arm A — the first FINE-TUNED Stage-2 run, and its full evaluation (2026-09-03)
+
+`medgemma_direct` + `configs/experiment_native_anchor_only.yaml`, findings-only,
+batch 2 x accum 8. **It is 0.86 of one epoch, not one epoch** — a planned machine
+shutdown at 09:33:31 killed it after 61h17m, and the update-9500 recovery
+checkpoint was promoted to the final adapter. `manifest.json` carries a
+`completion` block recording exactly that; read it before quoting anything.
+
+| | |
+|---|---:|
+| optimizer updates | **9,500 / 11,020** (86.2%) |
+| studies seen | 152,000 / 176,312 |
+| final LR | 4.9e-06 against a 1e-04 peak — the decay was essentially done |
+| mean train loss, last 2,000 logged steps | 0.938 |
+
+⚠ **No validation ever ran, so there was no model selection at all.**
+`best_val_loss` is `+inf` and `val_loss` is `None`: with `--train-epochs 1`,
+validation only fires at the end of the epoch, and the epoch never ended. This
+adapter is "the last checkpoint", not "the best one". State it in Limitations.
+
+⚠ **It is not resumable.** The saved DataLoader generator state postdates the
+epoch permutation, so the seen/unseen split cannot be recovered — finishing the
+last 14% cleanly is impossible, which is why the checkpoint was promoted instead.
+
+**Stage-2 generation, n=3,102 test studies, FINE-TUNED** (6h17m, 0 failures,
+peak 11.56 GiB):
+
+| BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.2871 | 0.1685 | 0.1101 | 0.0760 | 0.2358 | 0.2546 | 0.0603 | 0.7957 |
+
+⚠⚠ **Fine-tuning did not visibly beat zero-shot, and the honest statement is
+that this project cannot yet tell.** Against the n=300 zero-shot row above:
+BLEU-4 0.0704 -> 0.0760 and CIDEr 0.0556 -> 0.0603 rise, while BLEU-1
+0.3066 -> 0.2871, ROUGE-L 0.2373 -> 0.2358 and BERTScore 0.8112 -> 0.7957 fall.
+Net: flat. But the two runs are on **different cohorts of different size**
+(300 vs 3,102), so this is not a comparison. The control that would settle it is
+zero-shot on the **same 3,102 studies** (~6 h GPU), and it has not been run. Do
+not claim fine-tuning helped, and do not claim it hurt.
+
+**Stage-2 XAI, n=300 test studies — the first run ever on the FINE-TUNED model**
+(`mode: medgemma_direct_finetuned`; every XAI number recorded before 2026-09-01
+describes the base model). Both gates pass:
+
+| gate | n | result |
+|---|---:|---|
+| ablation, mismatched image | 100 | **+0.2160 [+0.1860, +0.2468]**, 94% worse, established |
+| randomization, 1/2/4/8/16/34 layers | 1 | 0.986 / 0.981 / 0.893 / 0.769 / 0.694 / **0.295**, degrades |
+| `parse_coverage`, `lexicon_v2` | 1,728 sentences | **0.6846** (1,183 labelled) |
+
+Peak 12.14 GiB. The randomization curve has the same shape as the zero-shot one
+including the flat first point (0.986 after re-initialising only the last
+layer) — that property survives fine-tuning and is still a thing to disclose.
+
+⚠ **Two orchestration bugs found here, both silent, both fixed 2026-09-03.**
+(1) `scripts/pipeline_stage2_rest.sh` checked `$OUT/summary.json` while
+`generate_stage2_reports.py` writes **`generation_summary.json`**; with
+`2>/dev/null` swallowing the `FileNotFoundError` the abort read
+`generation ran as '', not finetuned` and named nothing. It killed a chain whose
+generation step had fully succeeded. (2) Neither arm C command passed
+`--checkpoint-root`, so it defaulted to `./checkpoints`, which does not exist on
+the host — arm C would have died on startup. `CKPT_ROOT` is now declared once
+and passed to both.
+
 ### Stage-2 explainability — `training/explainability/` (branch `feat/stage2-explainability`)
 
 Post-hoc XAI over the language head. **It is an OBSERVER: nothing in Stage 1 or
@@ -1484,14 +1548,55 @@ are therefore a fixed, unadapted readout of the image, not a learned visual
 summary. The reference implementation is in the same position. State this beside
 any result from this arm; it is the caveat, not a footnote.
 
-⚠ **Two measured costs before running it at full scale.** `build_stage1_records`
-iterates at **batch size 1** (it asserts `generation_mask.numel() == 1`), so the
-train pass is ~220k single-study forwards; and its cache holds
-220,216 x 32 x 768 fp16 = **10.1 GiB** of soft tokens, `torch.load`ed whole into
-a 30 GB host. Stage-2's DataLoaders use `num_workers=0`, so that is one process's
-RSS rather than one per worker — survivable, but it is why
-`scripts/pipeline_stage2_rest.sh` runs a 200-study smoke of this mode **before**
-committing to the full run. Neither number has been confirmed on GPU.
+**The 200-study smoke PASSED on GPU 2026-09-03** — `status: complete`, both
+`adapter_model.safetensors` and `img_proj.pt` written, 0 generation failures.
+That is the first time this mode has run end to end anywhere: the prompt
+carrying 32 `<qformer_soft_token>` placeholders *and* a real image at the same
+time, and the per-row soft-token substitution, were both unproven before it.
+
+⚠ **`build_stage1_records` is 30x faster than this file used to claim.** It does
+iterate at **batch size 1** (it asserts `generation_mask.numel() == 1`), but
+measured on the 5060 Ti it runs at **~50 studies/s** — 1,500 val studies in ~30
+seconds, so the full 220k train pass is roughly **73 minutes**, not the 6-9 hours
+previously estimated here. Do not plan around the old figure. The cache claim
+stands: 220,216 x 32 x 768 fp16 = **10.1 GiB**, `torch.load`ed whole into a
+30 GB host, and Stage-2's DataLoaders use `num_workers=0` so that is one
+process's RSS rather than one per worker.
+
+⚠ Loading the Stage-1 checkpoint prints **`missing=539 unexpected=0`**, and that
+is CORRECT, not a defect. The checkpoint holds 870 tensors — only what changed
+(`Qformer` 336, `mhcac` 218, `visual_encoder` 197, `view_fusion` 38,
+`pubmedclip` 34, plus `query_tokens` and the small heads). The frozen bulk of
+both encoders loads from its own pretrained weights beforehand, so the missing
+keys are exactly those. Confirmed by the fact that evaluating from this
+checkpoint reproduces its recorded 0.7643 / 0.3542 exactly.
+
+**The soft tokens carry real signal — measured, not assumed (2026-09-03).**
+`scripts/probe_soft_tokens.py` linear-probes them before committing ~70 h to
+this arm. On 1,172 val studies from `run_20260820_ft/checkpoint_best`, under
+`study_presence`, 5-fold CV, mean-pooled `[N, 768]`:
+
+| | |
+|---|---:|
+| **macro AUROC, 10 findings** | **0.6847** |
+| same probe, **shuffled labels** | **0.4838** (the probe does not leak) |
+| MHCAC's own test macro AUROC | 0.7643 |
+| mean cosine **across** studies | **+0.4368** |
+| mean cosine **within** a study (32 tokens) | **+0.8022** |
+
+So a fixed, never-trained BLIP-2 readout retains ~90% of MHCAC's macro AUROC.
+Strongest: Edema 0.8146, Pneumothorax 0.7953, Pleural Effusion 0.7946. Weakest:
+Lung Lesion 0.5619. A linear probe is the right instrument here precisely
+because `img_proj` — the only trained layer between the soft tokens and MedGemma
+— is itself a single linear map.
+
+⚠ Quote the two cosines beside it. **+0.8022 within a study means the 32 tokens
+are largely redundant**, with an effective dimensionality well below 32; the
+readout is not degenerate (PubMedCLIP's broken stream measured 0.674 across
+studies against BioViL's 0.0017) but it is not clean either. And the comparison
+is indicative, not tight: the probe is **val**, mean-pooled, and `q`-equivalent
+with no mention gate, while 0.7643 is **test** with calibrated thresholds and
+`marginal_presence`.
 
 The cue source in `classify_with_thresholds`
 (`train_eval_figure9_llm_variants_200.py:352`) softmaxes the classification
