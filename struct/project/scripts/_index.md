@@ -1,4 +1,4 @@
-> Source: `scripts/` (20 file)
+> Source: `scripts/` (21 file)
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-31
 
@@ -48,6 +48,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | File | Doc | Status | Vai trò |
 |---|---|---|---|
 | `diagnose_stream_scale.py` (231) | [📄](diagnose_stream_scale.py.doc.md) | 🔬 | Đo RMS token mỗi encoder tại điểm nối + attention mass của MHCAC. **Read-only** — đo được chênh lệch **32×**, xem trang doc |
+| `probe_soft_tokens.py` (215) | [📄](probe_soft_tokens.py.doc.md) | 🔬 | Linear probe trên 32 soft token của Q-Former, trước khi đốt ~70 h cho arm C. Đo được **macro AUROC 0,6847** (xáo trộn 0,4838; MHCAC 0,7643) — soft token có tín hiệu dù cross-attention chưa train |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |
 

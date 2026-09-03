@@ -26,6 +26,11 @@ MAN=/mnt/drive1tb/mimic-cxr-jpg-full/processed/full_allviews_v2/test.csv
 IMG=/mnt/drive1tb/mimic-cxr-jpg-full
 NOTE=$HOME/pipeline_rest.status
 A=$HOME/ft_only_full
+# Arm C loads a Stage-1 checkpoint. Without this the CLI defaults to
+# --checkpoint-root "checkpoints", i.e. ~/Meta-CXR/checkpoints, which does not
+# exist -- arm C then dies on startup after the smoke gate has already passed
+# its own (cheaper) failure.
+CKPT_ROOT=${CKPT_ROOT:-$HOME/run_20260820_ft}
 ADIR=$A/adapters/medgemma_qlora_medgemma_direct
 
 log() { echo "[pipeline $(date '+%F %T')] $*" | tee -a "$NOTE"; }
@@ -61,6 +66,7 @@ rm -rf "$SM"
 CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
   training/run_medgemma_qlora.py --pipeline-mode meta_cxr_native_qformer_guided \
   --section-mode findings_only --prompt-config "$CFG" \
+  --checkpoint-root "$CKPT_ROOT" \
   --train-limit 200 --val-limit 10 --test-limit 10 \
   --train-epochs 1 --batch-size 2 --grad-accum 8 --num-workers 4 \
   --output-dir "$SM" --no-upload >> "$HOME/smoke_guided.log" 2>&1
@@ -74,6 +80,7 @@ rm -rf "$C" "$C.log"; watch_env 1 "$C/adapters" "$C.log"
 setsid nohup env CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
   training/run_medgemma_qlora.py --pipeline-mode meta_cxr_native_qformer_guided \
   --section-mode findings_only --prompt-config "$CFG" \
+  --checkpoint-root "$CKPT_ROOT" \
   --train-epochs 1 --batch-size 2 --grad-accum 8 --num-workers 4 \
   --save-every-updates 250 --skip-test --output-dir "$C" --no-upload \
   > "$C.log" 2>&1 < /dev/null &
@@ -94,7 +101,12 @@ CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
 [ -f "$OUT/generated_test.jsonl" ] || die "generation produced nothing"
 log "  $(wc -l < $OUT/generated_test.jsonl) reports"
 # The mode key is the guard against silently reporting a zero-shot run as ours.
-m=$($PY -c "import json;print(json.load(open('$OUT/summary.json'))['mode'])" 2>/dev/null)
+# The file is generation_summary.json, NOT summary.json -- explain_stage2.py
+# writes summary.json, this script does not, and checking the wrong name aborts
+# a chain whose generation step actually succeeded. Do not silence stderr here:
+# `2>/dev/null` turned a FileNotFoundError into an empty string and the abort
+# then reported mode='' , which names nothing.
+m=$($PY -c "import json;print(json.load(open('$OUT/generation_summary.json'))['mode'])")
 [ "$m" = "medgemma_direct_finetuned" ] || die "generation ran as '$m', not finetuned"
 
 # ---- 2. NLG metrics -------------------------------------------------------
