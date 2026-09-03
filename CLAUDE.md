@@ -145,7 +145,7 @@ wrote there, and only runs after the 2026-08-15 mount change wrote to `/home`.
 | OS | Ubuntu 26.04 LTS, root fs created 2026-08-17 20:54 |
 | System disk | 465.8 GB — `p1` 1 GB EFI, `p2` **139.7 GB ext4 `/`** (UUID `c2eb4245-…`), `p3` **325 GB ext4 `/home`** (UUID `ba112a5a-…`) |
 | Dataset disk | 931.5 GB — `p2` **930.7 GB NTFS, UUID `A4E6C088E6C05BE4`**, `p3` 781 MB NTFS |
-| `/mnt/drive1tb` | NOT persistent — absent from `/etc/fstab`, so **every reboot loses it**. `ntfs3`, `ro`. 931 GB, 612 GB used, 319 GB free |
+| `/mnt/drive1tb` | Persistent since 2026-09-02 — in `/etc/fstab` by UUID, `nofail`. **Check the DRIVER, not just the mountpoint** (see below). `ntfs3`, `ro`. 931 GB, 612 GB used, 319 GB free |
 | Checkpoints | old ones survive on the data drive (read-only); **new** runs need `run.output_dir=/home/phuong/<run>` (ext4, 324 GB free) |
 
 ⚠⚠ **NEVER MOUNT THIS DISK BY `/dev/nvmeXn1p2` — THE NAMES SWAP BETWEEN
@@ -166,6 +166,28 @@ df -T /mnt/drive1tb            # must say ntfs3, not fuseblk
 Confirm the target before mounting with
 `lsblk -o NAME,SIZE,FSTYPE,UUID,MOUNTPOINT` — the dataset partition is the
 930.7 G `ntfs` one with no mountpoint.
+
+⚠ **2026-09-02: the disk is now in `/etc/fstab`, and the first entry named the
+WRONG DRIVER.** It read `ntfs-3g`, so the 2026-09-03 09:33 reboot brought the
+disk back as `fuseblk` — the FUSE driver that stalled a real run on 2026-08-15
+(see below). The mountpoint existed and the data was readable, so nothing
+looked wrong; only `df -T` said so. **A reboot no longer loses the mount, which
+means nobody re-runs the mount command, which means nobody sees the driver.**
+Corrected the same day to:
+
+```
+UUID=A4E6C088E6C05BE4 /mnt/drive1tb ntfs3 ro,nofail,x-systemd.device-timeout=10 0 0
+```
+
+Check it after any reboot, and before any long run:
+
+```bash
+findmnt -no FSTYPE /mnt/drive1tb     # ntfs3 — if this says fuseblk, STOP
+```
+
+`~/pipeline_arm_a_first.sh` refuses to start on the wrong driver. Any new
+long-running script should do the same; the check costs nothing and the failure
+it prevents costs days.
 
 **MIMIC-CXR is confirmed intact** (2026-08-18, after the user mounted it):
 `mimic-cxr-jpg-full/files`, the metadata CSVs, and
@@ -433,12 +455,16 @@ Only one kernel is installed (`7.0.0-29-generic`), so there is no older kernel t
 A/B against yet.
 Full record: `docs/handoff/PLAN-2026-08-19-stage1-run.md`.
 
-⚠ **`/mnt/drive1tb` is not in `/etc/fstab`, so EVERY reboot loses it**, and this
-host reboots more than you would expect — it hung outright on 2026-08-18 22:25
-with **no Xid, no NVRM error, no MCE and no thermal event** in `journalctl -b -1`,
-and nothing logged at all at the moment of death (the signature of an abrupt
-power loss or hard hang, not a GPU fault). Mounting needs the user: there is no
-passwordless sudo.
+⚠ **SUPERSEDED 2026-09-02 — `/mnt/drive1tb` IS in `/etc/fstab` now** and
+survives a reboot; see the fstab entry and the driver trap in "The training
+host" above. What remains true is that this host reboots more than you would
+expect — it hung outright on 2026-08-18 22:25 with **no Xid, no NVRM error, no
+MCE and no thermal event** in `journalctl -b -1`, and nothing logged at all at
+the moment of death (the signature of an abrupt power loss or hard hang, not a
+GPU fault). And the risk simply moved: because nobody re-runs the mount command
+any more, nobody sees the driver, so **check `findmnt -no FSTYPE /mnt/drive1tb`
+after every reboot** — `fuseblk` there is the stall, not a missing mount.
+Mounting by hand still needs the user: there is no passwordless sudo.
 
 ⚠⚠ **The `nvme0n1` / `nvme1n1` names swapped AGAIN across that reboot**, which is
 now the third observed swap and should settle the question permanently. Within a
@@ -1226,6 +1252,41 @@ baseline beside it: 0.25 reads like a result and is chance.
 `google/medgemma-1.5-4b-it`, 4-bit NF4 QLoRA, single process / single GPU,
 checkpoint selected by validation cross-entropy.
 
+⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
+EPOCH. Every arm A number must be reported that way.** The planned
+`shutdown -h now` on 2026-09-03 09:33:31 killed it at 61h17m, batch
+76,964/88,156. It was not a crash — clean shutdown, no traceback, no Xid. The
+adapter in `adapters/medgemma_qlora_medgemma_direct/` was promoted by hand on
+2026-09-03 from the last recovery checkpoint: **update 9,500/11,020 (86.2%),
+batch 76,000/88,156, LR 4.907e-6** (4.9% of the 1e-4 peak, so the missing tail
+was contributing little). `best_val_loss` is `+inf` — no end-of-epoch
+validation ever ran, and the only loss evidence is the training curve (mean
+0.938 over the last 2,000 logged steps). The full provenance is the
+`completion` block in that directory's `manifest.json`.
+
+**Why it was promoted instead of resumed — this is the part that bites.**
+Resume here is EPOCH-level: `resume_state` sets `start_epoch = epoch + 1` and
+nothing skips the batches already seen. Relaunching the same command with
+`--train-epochs 1` therefore sets `start_epoch = 1`, runs `range(1, 1)` — an
+empty loop — falls through to the `if not adapter_is_complete(out_dir)`
+recovery branch, and writes that 86% adapter out as `status="complete"`
+**having trained nothing and having recorded nothing**. `resumable_adapter()`
+does not check status, so `checkpoints/last` is picked up automatically; the
+run looks like it succeeded in about four minutes. Doing it by hand was the
+only way to get the provenance written down.
+
+And mid-epoch resume is **impossible from what is on disk**: the checkpoint
+stores the DataLoader generator state as it stands *after* the epoch's
+permutation was drawn (`RandomSampler` consumes the generator once, at iterator
+creation), so the seen/unseen split cannot be reconstructed. `--train-epochs 2`
+would not continue the 14% either — it runs a whole second epoch (~70 h) and
+reshapes the LR schedule, the trap already recorded above for Stage 1.
+
+The run also predated commit `200caa9`: it used `--save-every-updates 250`
+(~97 min per checkpoint at 2.9 s/it), which cost 46 minutes of work to the
+shutdown and tripped the watchdog's 45-min healthcheck every cycle for days.
+New runs use 32 (~12 min).
+
 `training/pipeline_modes.py` is stdlib-only and names each architecture explicitly
 (the old `--image-mode {native,qformer,both}` was renamed because it described an
 implementation detail and made the hybrid easy to mislabel as "native MedGemma"):
@@ -1319,26 +1380,18 @@ the host.
 ### Arm A — the first FINE-TUNED Stage-2 run, and its full evaluation (2026-09-03)
 
 `medgemma_direct` + `configs/experiment_native_anchor_only.yaml`, findings-only,
-batch 2 x accum 8. **It is 0.86 of one epoch, not one epoch** — a planned machine
-shutdown at 09:33:31 killed it after 61h17m, and the update-9500 recovery
-checkpoint was promoted to the final adapter. `manifest.json` carries a
-`completion` block recording exactly that; read it before quoting anything.
+batch 2 x accum 8. **It is 0.86 of one epoch, not one epoch, and every number
+below must be reported that way.** The provenance — why it stopped, why the
+checkpoint was promoted by hand rather than resumed, and the empty-loop trap
+that makes an automatic relaunch write `status="complete"` having trained
+nothing — is in "ARM A ... STOPPED AT 0.86 OF ITS ONE EPOCH" under
+"The training host". Do not restate it here; read it there.
 
-| | |
-|---|---:|
-| optimizer updates | **9,500 / 11,020** (86.2%) |
-| studies seen | 152,000 / 176,312 |
-| final LR | 4.9e-06 against a 1e-04 peak — the decay was essentially done |
-| mean train loss, last 2,000 logged steps | 0.938 |
-
-⚠ **No validation ever ran, so there was no model selection at all.**
-`best_val_loss` is `+inf` and `val_loss` is `None`: with `--train-epochs 1`,
-validation only fires at the end of the epoch, and the epoch never ended. This
-adapter is "the last checkpoint", not "the best one". State it in Limitations.
-
-⚠ **It is not resumable.** The saved DataLoader generator state postdates the
-epoch permutation, so the seen/unseen split cannot be recovered — finishing the
-last 14% cleanly is impossible, which is why the checkpoint was promoted instead.
+The one consequence that belongs with the metrics: **no validation ever ran, so
+there was no model selection at all.** `best_val_loss` is `+inf` and `val_loss`
+is `None`, because with `--train-epochs 1` validation fires only at the end of
+the epoch and the epoch never ended. This adapter is "the last checkpoint", not
+"the best one". State it in Limitations.
 
 **Stage-2 generation, n=3,102 test studies, FINE-TUNED** (6h17m, 0 failures,
 peak 11.56 GiB):
