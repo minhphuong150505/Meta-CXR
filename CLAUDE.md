@@ -1433,6 +1433,42 @@ generation step had fully succeeded. (2) Neither arm C command passed
 the host — arm C would have died on startup. `CKPT_ROOT` is now declared once
 and passed to both.
 
+⚠⚠ **THE ALLOCATOR VARIABLE IS `PYTORCH_CUDA_ALLOC_CONF`, AND EVERY STAGE-2
+COMMAND HAD IT WRONG UNTIL 2026-09-03.** torch 2.9.1 does **not** read
+`PYTORCH_ALLOC_CONF` — it ignores it silently, with no warning, so
+`expandable_segments:True` was never once in effect for arm A, the smoke, the
+generation pass, or any XAI run. `scripts/supervise_stage1.sh` always had the
+right name; `scripts/pipeline_stage2_rest.sh` had the wrong one in all four
+places.
+
+Verified rather than assumed: setting a bogus key on each name and seeing which
+one torch complains about —
+
+```bash
+env PYTORCH_ALLOC_CONF=not_a_real_key:1      python -c "import torch; torch.empty(1,device='cuda')"  # no error
+env PYTORCH_CUDA_ALLOC_CONF=not_a_real_key:1 python -c "import torch; torch.empty(1,device='cuda')"  # raises
+```
+
+**It cost arm C its first attempt.** The run died of CUDA OOM at iteration
+**1,135 of 88,156** (1.3%, 1h03m into training) with the fragmentation signature
+the flag exists to prevent: of 14.82 GiB in use, **7.89 GiB was allocated and
+6.76 GiB was reserved-but-unallocated** — 46% of the process's VRAM lost to the
+caching allocator — while the failing request was only 1.36 GiB.
+
+⚠ **Do not "resume" a Stage-2 run that died mid-epoch.** `resume_state` sets
+`start_epoch = epoch + 1` and `trainer_state.pt` held `epoch=0`, so a relaunch
+runs `range(1, 1)` — an empty loop — falls through to the recovery branch and
+writes the 1.3% adapter out as `status="complete"` having trained nothing. Delete
+`adapters/` before relaunching, and **keep `.sensitive_stage1_cache/`**: its
+`cohort_id` is unchanged, so the 73-minute Stage-1 record pass is skipped.
+
+**Arm C attempt 2 (2026-09-03 22:57, pid 15897) is the live run.** Measured
+**3.32 s/it**, so 88,156 iterations is **~81 hours**, not the ~70 estimated
+here before. A host-side watcher (`~/armc_watch.sh` -> `~/armc_watch.log`) polls
+every 10 minutes and dumps the log tail on death — the previous watcher ran
+*through* SSH and died with the Tailscale session, costing three hours of blind
+time.
+
 ### Stage-2 explainability — `training/explainability/` (branch `feat/stage2-explainability`)
 
 Post-hoc XAI over the language head. **It is an OBSERVER: nothing in Stage 1 or
