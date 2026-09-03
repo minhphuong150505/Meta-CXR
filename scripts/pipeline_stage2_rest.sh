@@ -31,6 +31,13 @@ A=$HOME/ft_only_full
 # exist -- arm C then dies on startup after the smoke gate has already passed
 # its own (cheaper) failure.
 CKPT_ROOT=${CKPT_ROOT:-$HOME/run_20260820_ft}
+# ⚠ The variable is PYTORCH_CUDA_ALLOC_CONF. torch 2.9.1 does NOT read
+# PYTORCH_ALLOC_CONF -- it ignores it silently, with no warning. Every Stage-2
+# command in this file carried the wrong name until 2026-09-03, so
+# expandable_segments was never once in effect, and arm C died of exactly the
+# fragmentation it prevents: 6.76 GiB of 14.82 GiB in use was reserved-but-
+# unallocated. Verified by setting a bogus key on each name and seeing which one
+# torch complains about. scripts/supervise_stage1.sh always had it right.
 ADIR=$A/adapters/medgemma_qlora_medgemma_direct
 
 log() { echo "[pipeline $(date '+%F %T')] $*" | tee -a "$NOTE"; }
@@ -63,7 +70,7 @@ CFG=configs/experiment_native_qformer_guided.yaml
 SM=$HOME/ft_guided_smoke
 log "STEP 1/5: arm C smoke (200 train studies)"
 rm -rf "$SM"
-CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
+CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True $PY \
   training/run_medgemma_qlora.py --pipeline-mode meta_cxr_native_qformer_guided \
   --section-mode findings_only --prompt-config "$CFG" \
   --checkpoint-root "$CKPT_ROOT" \
@@ -77,7 +84,7 @@ log "  smoke ok; the combined mode trains end to end"
 # ---- 2. arm C, full ------------------------------------------------------
 log "STEP 2/5: arm C full (~70 h)"
 rm -rf "$C" "$C.log"; watch_env 1 "$C/adapters" "$C.log"
-setsid nohup env CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
+setsid nohup env CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True $PY \
   training/run_medgemma_qlora.py --pipeline-mode meta_cxr_native_qformer_guided \
   --section-mode findings_only --prompt-config "$CFG" \
   --checkpoint-root "$CKPT_ROOT" \
@@ -95,7 +102,7 @@ watch_env 0 "" ""
 OUT=$HOME/gen_test_only
 log "STEP 3/5: generating test reports from the fine-tuned adapter"
 rm -rf "$OUT"
-CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
+CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True $PY \
   scripts/generate_stage2_reports.py --manifest "$MAN" --image-root "$IMG" \
   --output-dir "$OUT" --split test --limit 0 --adapter "$ADIR" >> "$HOME/gen_only.log" 2>&1
 [ -f "$OUT/generated_test.jsonl" ] || die "generation produced nothing"
@@ -126,7 +133,7 @@ log "  metrics written"
 # model. The mode check below is the backstop.
 log "STEP 5/5: Stage-2 XAI (fine-tuned)"
 rm -rf "$HOME/xai_test_only"
-CUDA_VISIBLE_DEVICES=0 PYTORCH_ALLOC_CONF=expandable_segments:True $PY \
+CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True $PY \
   scripts/explain_stage2.py --manifest "$MAN" --image-root "$IMG" \
   --output-dir "$HOME/xai_test_only" --split test --limit 300 \
   --ablation-studies 100 --adapter "$ADIR" --verbose >> "$HOME/xai_only.log" 2>&1

@@ -124,7 +124,7 @@ như thiết kế, và số gộp mới là số nên trích. Một study trong 
 ## Cách chạy
 
 ```bash
-PYTORCH_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 \
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 \
 python scripts/explain_stage2.py \
   --manifest <.../processed/full_allviews_v2/test.csv> \
   --image-root <thư mục chứa trực tiếp files/> \
