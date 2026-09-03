@@ -1433,27 +1433,51 @@ generation step had fully succeeded. (2) Neither arm C command passed
 the host — arm C would have died on startup. `CKPT_ROOT` is now declared once
 and passed to both.
 
-⚠⚠ **THE ALLOCATOR VARIABLE IS `PYTORCH_CUDA_ALLOC_CONF`, AND EVERY STAGE-2
-COMMAND HAD IT WRONG UNTIL 2026-09-03.** torch 2.9.1 does **not** read
-`PYTORCH_ALLOC_CONF` — it ignores it silently, with no warning, so
-`expandable_segments:True` was never once in effect for arm A, the smoke, the
-generation pass, or any XAI run. `scripts/supervise_stage1.sh` always had the
-right name; `scripts/pipeline_stage2_rest.sh` had the wrong one in all four
-places.
+⚠ **BOTH allocator variable names work in torch 2.9.1, and the arm C OOM has NO
+established root cause. Corrected 2026-09-03 — an earlier version of this
+section claimed `PYTORCH_ALLOC_CONF` was silently ignored. It is not.**
 
-Verified rather than assumed: setting a bogus key on each name and seeing which
-one torch complains about —
+`PYTORCH_ALLOC_CONF` is the **new canonical** name, parsed in `libc10.so`
+(`AllocatorConfig.cpp`); `PYTORCH_CUDA_ALLOC_CONF` is a **deprecated alias**
+still honoured by `libtorch_cuda.so`, and using it prints
 
-```bash
-env PYTORCH_ALLOC_CONF=not_a_real_key:1      python -c "import torch; torch.empty(1,device='cuda')"  # no error
-env PYTORCH_CUDA_ALLOC_CONF=not_a_real_key:1 python -c "import torch; torch.empty(1,device='cuda')"  # raises
+```
+Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead
 ```
 
-**It cost arm C its first attempt.** The run died of CUDA OOM at iteration
-**1,135 of 88,156** (1.3%, 1h03m into training) with the fragmentation signature
-the flag exists to prevent: of 14.82 GiB in use, **7.89 GiB was allocated and
-6.76 GiB was reserved-but-unallocated** — 46% of the process's VRAM lost to the
-caching allocator — while the failing request was only 1.36 GiB.
+The test that produced the wrong conclusion was setting a bogus key on each name
+and seeing which one raised. Only the CUDA parser rejects unknown keys, so the
+new name looked inert. **That measures parser strictness, not whether the
+variable is read** — a false negative, and the reason to prefer a test that
+observes the *effect* over one that observes an error message.
+
+⚠ **The decisive test has NOT been run**, because it needs a free GPU and arm C
+is using 11.9 of 15.48 GiB. Run it before believing anything about this flag:
+
+```python
+# expandable_segments ON  -> reserved stays ~= the live tensor
+# expandable_segments OFF -> the freed segment cannot serve a larger request,
+#                            so reserved is roughly the SUM of both
+import torch
+a = torch.empty(2 << 28, device="cuda"); del a          # 1 GiB, freed
+b = torch.empty(3 << 28, device="cuda")                 # 1.5 GiB
+print(torch.cuda.memory_reserved() / 2**30)             # ~1.5 vs ~2.5
+```
+
+**What IS established about the failure**, independent of the flag: arm C
+attempt 1 died of CUDA OOM at iteration **1,135 of 88,156** (1.3%, 1h03m into
+training), and of 14.82 GiB in use, **7.89 GiB was allocated and 6.76 GiB was
+reserved-but-unallocated** — 46% of the process's VRAM stranded — while the
+failing request was only 1.36 GiB. Whether the flag was live or not, that much
+fragmentation at 1.3% of an 81-hour run is the thing to fix. Untested
+candidates, in the order worth trying: batch 1 with accum 16 (same effective
+batch, half the activation peak), then a lower `--max-length` than the current
+768.
+
+⚠ **The card is 16 GB but torch addresses 15.48 GiB.** `nvidia-smi` reports
+16,311 MiB total; `torch.cuda.mem_get_info` reports 15.48 GiB. The ~450 MiB gap
+is the CUDA context and driver reserve and is not recoverable. Measured with arm
+C running: process 11,866 MiB, free 3,803 MiB. Plan against 15.48, never 16.
 
 ⚠ **Do not "resume" a Stage-2 run that died mid-epoch.** `resume_state` sets
 `start_epoch = epoch + 1` and `trainer_state.pt` held `epoch=0`, so a relaunch
@@ -1463,11 +1487,11 @@ writes the 1.3% adapter out as `status="complete"` having trained nothing. Delet
 `cohort_id` is unchanged, so the 73-minute Stage-1 record pass is skipped.
 
 **Arm C attempt 2 (2026-09-03 22:57, pid 15897) is the live run.** Measured
-**3.32 s/it**, so 88,156 iterations is **~81 hours**, not the ~70 estimated
+**3.36 s/it**, so 88,156 iterations is **~82 hours**, not the ~70 estimated
 here before. A host-side watcher (`~/armc_watch.sh` -> `~/armc_watch.log`) polls
 every 10 minutes and dumps the log tail on death — the previous watcher ran
 *through* SSH and died with the Tailscale session, costing three hours of blind
-time.
+time on a run that had been dead for most of them.
 
 ### Stage-2 explainability — `training/explainability/` (branch `feat/stage2-explainability`)
 
