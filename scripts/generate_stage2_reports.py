@@ -72,6 +72,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "so two runs score the same studies.")
     parser.add_argument("--max-new-tokens", type=int, default=160)
     parser.add_argument("--seed", type=int, default=16)
+    # Both default to OFF. Every recorded Stage-2 number was produced without
+    # them, and changing that here would silently make those results
+    # irreproducible -- see VariantLLM.generate for the measured n-gram table.
+    parser.add_argument("--no-repeat-ngram-size", type=int, default=0,
+                        help="Block any n-gram from repeating. 0 = off. 5 is the "
+                             "measured operating point: it constrains 2.4%% of real "
+                             "reports and 44.6%% of generated ones.")
+    parser.add_argument("--repetition-penalty", type=float, default=0.0,
+                        help="HF repetition_penalty. 0 = off. Rescales every seen "
+                             "token, including clinical terms a report legitimately "
+                             "repeats, so prefer --no-repeat-ngram-size.")
 
     native = parser.add_argument_group("medgemma_direct record source")
     native.add_argument("--manifest", type=Path, default=None)
@@ -323,7 +334,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     with path.open("w", encoding="utf-8") as handle:
         for index, record in enumerate(records):
             try:
-                generated = llm.generate(record, "fine", args.max_new_tokens)
+                generated = llm.generate(
+                    record, "fine", args.max_new_tokens,
+                    no_repeat_ngram_size=args.no_repeat_ngram_size or None,
+                    repetition_penalty=args.repetition_penalty or None,
+                )
             except Exception as exc:  # one bad study must not lose the run
                 failures += 1
                 print(f"[gen] study {index} failed: {type(exc).__name__}", flush=True)
@@ -356,6 +371,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "n_written": n - failures,
         "n_failed": failures,
         "max_new_tokens": args.max_new_tokens,
+        "no_repeat_ngram_size": args.no_repeat_ngram_size or None,
+        "repetition_penalty": args.repetition_penalty or None,
         "seed": args.seed,
         "wall_seconds": round(time.time() - started, 1),
         "peak_vram_bytes": (
