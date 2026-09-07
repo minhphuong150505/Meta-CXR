@@ -197,3 +197,45 @@ def test_the_local_soft_token_set_matches_the_engine():
     """Skipped on a CPU box; the drift it guards is caught on the host."""
     fig9 = pytest.importorskip("training.train_eval_figure9_llm_variants_200")
     assert fig9.SOFT_TOKEN_MODES == gen.SOFT_TOKEN_IMAGE_MODES
+
+
+class TestAntiRepetitionDefaultsOff:
+    """Every recorded Stage-2 number was produced without these knobs.
+
+    Turning either on by default would silently make arm A's 3,102-study test
+    result irreproducible, so the defaults are the assertion.
+    """
+
+    def test_both_knobs_default_to_off(self, tmp_path):
+        args = gen.parse_args(["--output-dir", str(tmp_path)])
+        assert args.no_repeat_ngram_size == 0
+        assert args.repetition_penalty == 0.0
+
+    def test_they_parse_when_asked_for(self, tmp_path):
+        args = gen.parse_args([
+            "--output-dir", str(tmp_path),
+            "--no-repeat-ngram-size", "5", "--repetition-penalty", "1.1",
+        ])
+        assert args.no_repeat_ngram_size == 5
+        assert args.repetition_penalty == pytest.approx(1.1)
+
+    def test_zero_becomes_none_so_the_kwarg_is_absent(self, tmp_path):
+        """`or None` is what keeps generate_kwargs identical to the old dict.
+
+        Passing no_repeat_ngram_size=0 to HF is not the same as omitting it in
+        every version, so the script must send nothing at all when off.
+        """
+        args = gen.parse_args(["--output-dir", str(tmp_path)])
+        assert (args.no_repeat_ngram_size or None) is None
+        assert (args.repetition_penalty or None) is None
+
+
+def test_generate_accepts_the_knobs_as_keyword_only():
+    """Positional callers elsewhere in the repo must keep working unchanged."""
+    fig9 = pytest.importorskip("training.train_eval_figure9_llm_variants_200")
+    import inspect
+
+    params = inspect.signature(fig9.VariantLLM.generate).parameters
+    for name in ("no_repeat_ngram_size", "repetition_penalty"):
+        assert params[name].kind is inspect.Parameter.KEYWORD_ONLY
+        assert params[name].default is None
