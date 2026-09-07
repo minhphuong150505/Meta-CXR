@@ -536,6 +536,10 @@ CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
 # returned to 0.0; it had failed only while the Q-Former was briefly re-enabled.
 # Re-measured 2026-08-30 with tests/explainability/ added: 740 tests,
 # 732 passed, 5 failed, 3 skipped. Still the same five.
+# Re-measured 2026-09-07: 942 tests, 934 passed, 5 failed, 3 skipped -- still
+# the same five, so the growth is new coverage, not new breakage. On this CPU
+# box the four test_native_independence failures surface as a missing
+# torchvision rather than a missing env config; same tests, same count.
 #
 # ON THE TRAINING HOST the baseline is different and better, because the full
 # stack is installed there: no --ignore is needed and test_stage1_eval_hook
@@ -1433,6 +1437,44 @@ generation step had fully succeeded. (2) Neither arm C command passed
 the host — arm C would have died on startup. `CKPT_ROOT` is now declared once
 and passed to both.
 
+**`scripts/generate_stage2_reports.py` serves the soft-token modes as of
+2026-09-07.** It used to hardcode `image_mode="native"`, so arm C had no
+generation path at all. It now takes `--pipeline-mode` and picks the record
+source from it: `medgemma_direct` reads the split CSV, every `meta_cxr_*` mode
+calls `build_stage1_records` for the 32 soft tokens and the MHCAC cues. The
+native default and its `mode` string (`medgemma_direct_finetuned`) are
+unchanged, so `pipeline_stage2_rest.sh` STEP 3/5 still passes its own check.
+
+⚠⚠ **THE TWO RECORD SOURCES DRAW DIFFERENT COHORTS.** The native path filters
+to PA/AP and takes `DataFrame.sample(random_state=seed)`; the Stage-1 path takes
+dataset order filtered by `generation_mask`, no view filter. Same `--limit` is
+**not** the same studies, and "arm A vs arm C on 3,102 each" would repeat the
+mistake already recorded twice in this file. **`--restrict-to <earlier.jsonl>`
+is what makes the comparison valid** — `sample_key` is `blake2b(dicom_id, 12)`
+derived from the image filename stem on both paths, so it is identical across
+them and to every native JSONL already on disk.
+
+⚠ **`--adapter` without `img_proj.pt` is now refused, and that refusal is the
+point.** `load_img_proj_if_present()` returns *silently* when the file is
+absent, leaving a randomly-initialised 768->hidden projector; generation then
+produces fluent, clinically-shaped reports that describe noise, with no error
+anywhere. A soft-token mode also refuses to run zero-shot at all, for the same
+reason. `native_qformer` additionally requires `--prompt-config` (the legacy
+instruction emits no placeholders, so the substitution would find zero
+positions and quietly run as plain native MedGemma). All four checks run
+**before** torch/transformers/nltk are imported.
+
+**`--stage1-cache-dir` reuses the training run's encode pass**, worth ~73
+minutes: point it at the Stage-2 *training* output dir. It only hits when
+`--checkpoint-root` and `--stage1-run` match that run, so the script always
+calls `build_stage1_records` with `sample_limit=None` and applies `--limit`
+afterwards — narrowing it there would change `cohort_id` and miss the cache.
+
+Also fixed: `--frontal-only` was `action="store_true", default=True`, so the
+filter could never be switched off. It is `BooleanOptionalAction` now;
+`--no-frontal-only` works and the default is unchanged. Pinned by
+`tests/test_generate_stage2_reports.py` (23 tests).
+
 ⚠ **BOTH allocator variable names work in torch 2.9.1, and the arm C OOM has NO
 established root cause. Corrected 2026-09-03 — an earlier version of this
 section claimed `PYTORCH_ALLOC_CONF` was silently ignored. It is not.**
@@ -1486,12 +1528,51 @@ writes the 1.3% adapter out as `status="complete"` having trained nothing. Delet
 `adapters/` before relaunching, and **keep `.sensitive_stage1_cache/`**: its
 `cohort_id` is unchanged, so the 73-minute Stage-1 record pass is skipped.
 
-**Arm C attempt 2 (2026-09-03 22:57, pid 15897) is the live run.** Measured
-**3.36 s/it**, so 88,156 iterations is **~82 hours**, not the ~70 estimated
-here before. A host-side watcher (`~/armc_watch.sh` -> `~/armc_watch.log`) polls
-every 10 minutes and dumps the log tail on death — the previous watcher ran
-*through* SSH and died with the Tailscale session, costing three hours of blind
-time on a run that had been dead for most of them.
+✅ **ARM C ATTEMPT 2 COMPLETED, 2026-09-07 — a FULL epoch, and it is the first
+Stage-2 run in this project with real model selection.** Launched 2026-09-03
+22:57 (pid 15897), finished the training loop 09:34 on 09-07:
+**88,156/88,156 iterations in 82h28m35s at 3.37 s/it**, 0 restarts, 0 OOM, 0
+kernel faults. `manifest.json` says `status: "complete"` and it is earned:
+`global_step` 11,020 of 11,020 (176,312 samples / effective batch 16). Adapter,
+`img_proj.pt` and `trainer_state.pt` written 09:53.
+
+```
+best_val_loss  1.0019      <- a number, not +inf
+train_loss     1.0152
+bad_epochs     0
+```
+
+**Contrast with arm A, which is the whole point:** arm A stopped at 0.86 of its
+epoch, so validation never ran, `best_val_loss` is `+inf`, and its adapter is
+"the last checkpoint" promoted by hand. Arm C ran the epoch to its end, so
+validation fired and the checkpoint was actually selected.
+
+⚠ **Do not compare arm C's `train_loss` 1.0152 against arm A's 0.938.** Arm A's
+figure is the mean of its last 2,000 logged steps — 86% of the way in, so low by
+construction — while arm C's is an epoch mean. Different quantities. `val_loss`
+is the comparable one and arm A has none.
+
+Trainable: 31,771,136 of 2,521,835,376 (**1.26%**) — LoRA 29,802,496 +
+projector 1,968,640, **0 trainable vision parameters**.
+
+After the training loop the run went on to generate on validation (1,415
+studies at ~4.0 study/min, GPU 39%, 6.4 GiB). It was launched `--skip-test`, so
+**the test split still needs a separate generation pass.**
+
+A host-side watcher (`~/armc_watch.sh` -> `~/armc_watch.log`) polled every 10
+minutes and dumped the log tail on death — the previous watcher ran *through*
+SSH and died with the Tailscale session, costing three hours of blind time on a
+run that had been dead for most of them.
+
+⚠ **A ~3.5 h Tailscale outage on 2026-09-06 (≈18:00–19:44) looked like a dead
+host and was not.** `tailscale status` said `offline, last seen 1h ago`, ping
+was 100% loss and SSH timed out at the TCP level. The run was untouched: uptime
+stayed at 3 days (no reboot), pid 15897 kept its `etime`, and a checkpoint was
+written *during* the outage. The training process runs under `setsid` and does
+not depend on SSH. **Check `uptime -s` and the process `etime` before concluding
+anything died** — and note the diagnostic that settles it early: once SSH starts
+printing the Tailscale approval URL again, the host's `tailscaled` is answering,
+so the machine is up.
 
 ### Stage-2 explainability — `training/explainability/` (branch `feat/stage2-explainability`)
 

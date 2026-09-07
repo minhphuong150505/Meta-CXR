@@ -42,14 +42,14 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 |---|---|
 | Branch integration | Các nhánh tính năng đã được tích hợp tuyến tính vào `main`; xem [integration audit](docs/final_branch_integration_audit.md) |
 | Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC có trong code và đã chạy full trên GPU. Explanation loss **tắt** (lambda 0/0) sau A/B 2026-08-17; khối vision-language ITC/ITM/LM **tắt** (lambda 0/0/0) từ 2026-08-19 sau gate check — giống repo gốc |
-| Stage 2 implementation | MedGemma QLoRA, native-image và Q-Former routes có trong code; chưa GPU-validated |
+| Stage 2 implementation | MedGemma QLoRA. ✅ **Đã chạy trên GPU**: arm A (`medgemma_direct`) dừng ở **0,86 epoch** — không có validation, `best_val_loss` = `+inf`, adapter promote bằng tay. arm C (`meta_cxr_native_qformer_guided`) **xong trọn 1 epoch 2026-09-07**, 82h28m, `val_loss` **1,0019** — run Stage-2 đầu tiên thực sự có chọn mô hình |
 | Explanation masks | Full cache đã build và kiểm chứng (`explanation_masks_v2`, có `masks_bbox_*`). Không còn được training tiêu thụ; giữ cho evaluator |
 | XAI evaluation | Đã chạy trên GPU với 2 checkpoint (test split). **Cảnh báo: saliency precision ở mức ngẫu nhiên** — luôn kèm baseline diện tích mask |
 | CPU tests | Xem mục [Testing](#testing) cho output chạy thật của Phase 3 |
 | GPU evidence | Stage-1 full run xong; A/B explanation loss bật/tắt 5 epoch xong (2026-08-16/17) kèm calibration + eval test + XAI cả hai nhánh |
 | Checkpoint cũ | **Đã xoá toàn bộ 2026-08-14** (15 file, 39 GB) — các run đó đi sai hướng và không nạp được vào recipe hiện tại (Swin tắt → 98 token thay vì 147). Số liệu Table 5 còn trong `results/` nhưng không tái lập được |
 | Full MIMIC-CXR training | ✅ **Đã chạy xong 2026-08-20** — `run_20260819_xmpoff`, 10/10 epoch, `rc=0`, 12h35m, 0.3505 s/it, 0 kernel fault. Best epoch 6 |
-| Reproduced metrics | ✅ Stage 1 đã có kết quả test split (3,269 study), chấm một lần từ `checkpoint_best`, ngưỡng calibrate chỉ trên val — xem [Kết quả và cảnh báo metric](#kết-quả-và-cảnh-báo-metric). Stage 2 vẫn chưa có |
+| Reproduced metrics | ✅ Stage 1 đã có kết quả test split (3,269 study), chấm một lần từ `checkpoint_best`, ngưỡng calibrate chỉ trên val — xem [Kết quả và cảnh báo metric](#kết-quả-và-cảnh-báo-metric). Stage 2: arm A đã có NLG trên test (n=3.102) nhưng ⚠ **chưa tách được khỏi zero-shot** vì hai lần chạy khác cohort (300 vs 3.102); arm C chưa sinh test |
 | Máy train | Lỗi kernel fault liên tục từ 17/08 đã **hết** sau khi **tắt XMP** trong BIOS (4 thanh RAM 2 hãng chạy 3200 MT/s ngoài mức Intel validate). Chi phí: **+1.3%** tốc độ |
 
 ## Những thay đổi so với META-CXR gốc
@@ -237,6 +237,7 @@ Các `--pipeline-mode` mà CLI fine-tuning thực sự chấp nhận:
 | `medgemma_direct` | Mặc định; image tower/projector native của MedGemma, không cần Stage 1 |
 | `meta_cxr_qformer` | Q-Former visual soft-token ablation, cần Stage 1 |
 | `meta_cxr_qformer_with_mhcac_prompt` | Q-Former soft tokens cộng structured P/N/U cues, cần Stage 1 |
+| `meta_cxr_native_qformer_guided` | **Kiến trúc thiết kế ban đầu (arm C)**: MedGemma giữ vision tower riêng **cộng thêm** 32 Q-Former soft tokens **cộng** P/N/U cues. Khác hai mode trên ở chỗ soft token **bổ sung** cho ảnh chứ không **thay thế** ảnh. Cần Stage 1 và bắt buộc `--prompt-config` |
 | `text_only_language_prior_ablation` | Ablation không có ảnh; không phải vision pipeline |
 | `both_for_ablation` | Chạy `medgemma_direct`, sau đó `meta_cxr_qformer` trên cùng một GPU |
 
@@ -363,6 +364,40 @@ tên figure và không in identifier ra stdout.
 - METEOR, CIDEr và BERTScore dùng package tham chiếu tùy chọn;
 - per-sample error analysis, subgroup analysis và cờ possible temporal hallucination;
 - bootstrap intervals cho các per-sample metric khả dụng.
+
+#### Sinh báo cáo trước khi chấm — `scripts/generate_stage2_reports.py`
+
+`evaluate_stage2.py` đọc `.jsonl`; file đó do script này sinh ra. Từ 2026-09-07
+script nhận `--pipeline-mode` và tự chọn nguồn record: `medgemma_direct` đọc
+split CSV, còn mọi mode `meta_cxr_*` gọi `build_stage1_records` để lấy 32 soft
+token và cue P/N/U. Trước đó script hardcode đường native nên **arm C không có
+cách nào sinh báo cáo**.
+
+```bash
+# arm C, trên đúng những study mà arm A đã sinh
+python scripts/generate_stage2_reports.py \
+    --pipeline-mode meta_cxr_native_qformer_guided \
+    --prompt-config configs/experiment_native_qformer_guided.yaml \
+    --adapter <ft_guided_full>/adapters/medgemma_qlora_meta_cxr_native_qformer_guided \
+    --checkpoint-root <run_20260820_ft> --stage1-cache-dir <ft_guided_full> \
+    --restrict-to <gen_armA>/generated_test.jsonl \
+    --output-dir <private>/gen_armc --split test
+```
+
+⚠⚠ **Hai nguồn record cho hai cohort KHÁC NHAU.** Native lọc PA/AP rồi lấy
+`DataFrame.sample`; nhánh Stage-1 đi theo thứ tự dataset, lọc bằng
+`generation_mask`, không lọc view. Cùng `--limit` **không** phải cùng study.
+`--restrict-to` là thứ khiến phép so sánh có giá trị — `sample_key` là
+`blake2b(dicom_id)` nên khớp trên cả hai nhánh và với mọi file `.jsonl` cũ.
+
+⚠ Mode soft-token **từ chối chạy zero-shot** và **từ chối `--adapter` thiếu
+`img_proj.pt`**: `load_img_proj_if_present()` im lặng khi thiếu file, để lại
+projector khởi tạo ngẫu nhiên, và báo cáo sinh ra sẽ trôi chảy nhưng mô tả
+nhiễu mà không có lỗi nào.
+
+⚠ `--stage1-cache-dir` trỏ vào thư mục output của lần **train** thì dùng lại
+được pass encode Stage-1 (~73 phút). Chỉ trúng khi `--checkpoint-root` và
+`--stage1-run` khớp lần train đó.
 
 Clinical adapters hiện chỉ khai báo CheXbert, RadGraph và CheXpert labeler. Chúng cần dependency/checkpoint riêng và chưa được wire/validate để trả metric; evaluator báo `unavailable` hoặc `not implemented`, không thay bằng điểm 0. Không nên suy diễn lexical metrics thành độ đúng lâm sàng. Xem [evaluator validation](docs/evaluator_validation.md) và [evaluator audit](docs/evaluator_audit.md).
 

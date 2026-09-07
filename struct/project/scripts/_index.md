@@ -1,6 +1,6 @@
-> Source: `scripts/` (21 file)
+> Source: `scripts/` (22 file + `__pycache__`)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-31
+> Last verified against source: 2026-09-07
 
 # `scripts/`
 
@@ -31,6 +31,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `calibrate_thresholds.py` | [📄](calibrate_thresholds.py.doc.md) | ✅ Calibrate — **chỉ validation** |
 | `evaluate_stage1.py` (328) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz` |
 | `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |
+| `generate_stage2_reports.py` (381) | [📄](generate_stage2_reports.py.doc.md) | ✅ Sinh `.jsonl` cho dòng trên. `--pipeline-mode` chọn nguồn record: CSV (native) hay Stage-1 (soft token). ⚠ Hai cohort khác nhau — dùng `--restrict-to` mới so sánh được |
 | `evaluate_explanation.py` | [📄](evaluate_explanation.py.doc.md) | ✅ XAI — load checkpoint, cần autograd sống, không train |
 | `explain_stage2.py` | [📄](explain_stage2.py.doc.md) | ✅ XAI Stage 2 — JSONL + npz lưới gốc; cổng triệt tiêu huỷ được cả lần chạy |
 
