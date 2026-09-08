@@ -101,14 +101,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     stage1.add_argument("--threshold-path", type=Path, default=None)
     stage1.add_argument("--num-workers", type=int, default=4)
     stage1.add_argument("--cue-rule", default="conditional_positive",
-                        choices=("conditional_positive", "mention_gated"),
+                        choices=("conditional_positive", "mention_gated",
+                                 "marginal_positive", "none"),
                         help="How MHCAC predictions become P/N/U cues. "
                              "conditional_positive (default, what every recorded "
                              "run used) sorts all 13 findings on q alone. "
-                             "mention_gated opens the mention gate first and "
-                             "emits nothing for a finding the radiologist would "
-                             "not have written about. Changing this changes the "
-                             "Stage-1 cache identity, so it rebuilds.")
+                             "mention_gated opens the mention gate first. "
+                             "marginal_positive thresholds sigmoid(m)*q_pos per "
+                             "label and emits ONLY positives -- measured "
+                             "precision 0.407 vs 0.189, 1.46 cues/study vs 8.46. "
+                             "Changing this changes the Stage-1 cache identity, "
+                             "so it rebuilds.")
     stage1.add_argument("--stage1-cache-dir", type=Path, default=None,
                         help="Where .sensitive_stage1_cache lives. Point it at the "
                              "TRAINING output dir to reuse that run's encode pass; "
@@ -231,7 +234,7 @@ def stage1_records(args: argparse.Namespace) -> list[dict]:
     # "all" pass; --limit is applied afterwards, on the records themselves.
     records = fig9.build_stage1_records(
         context, args.checkpoint_root, cache_dir, args.split, None, args.num_workers,
-        use_mention_gate=(args.cue_rule == "mention_gated"),
+        cue_rule=args.cue_rule,
     )
     for record in records:
         record["view_position"] = None

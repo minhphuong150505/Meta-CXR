@@ -1,0 +1,15 @@
+{
+  "Enlarged Cardiomediastinum": {"marginal_positive": 0.54},
+  "Cardiomegaly":               {"marginal_positive": 0.62},
+  "Lung Opacity":               {"marginal_positive": 0.49},
+  "Lung Lesion":                {"marginal_positive": 0.39},
+  "Edema":                      {"marginal_positive": 0.84},
+  "Consolidation":              {"marginal_positive": 0.69},
+  "Pneumonia":                  {"marginal_positive": 0.65},
+  "Atelectasis":                {"marginal_positive": 0.48},
+  "Pneumothorax":               {"marginal_positive": 0.66},
+  "Pleural Effusion":           {"marginal_positive": 0.75},
+  "Pleural Other":              {"marginal_positive": 0.16},
+  "Fracture":                   {"marginal_positive": 0.23},
+  "Support Devices":            {"marginal_positive": 0.18}
+}
