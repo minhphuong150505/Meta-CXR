@@ -1603,12 +1603,21 @@ class Blip2Qformer(Blip2Base):
         return captions
 
     def forward_image(self, image, aux_image=None, aux_mask=None,
-                      anchor_view_id=None, aux_view_ids=None):
+                      anchor_view_id=None, aux_view_ids=None,
+                      return_mention=False):
         """Return image-only classification logits and learned Q-Former tokens.
 
         ``image`` may be a tensor (legacy API) or a complete samples dict.  The
         dict form supports the frozen-feature cache and study auxiliary view.
         Report text is intentionally ignored: this is the student/inference path.
+
+        ``return_mention=True`` appends the MHCAC mention-gate logits, giving
+        ``(classification_logits, query_tokens, mention_logits)``. The gate has
+        always been computed here and was discarded into ``_``; Stage-2 cue
+        building needs it, because ``classification_logits`` is ``q`` --
+        polarity CONDITIONAL on the finding being mentioned -- and a cue must
+        answer whether the finding is there at all. The default stays a 2-tuple
+        so `inference.py` and `blip2.compute_sim_matrix` are untouched.
         """
         cached = {}
         aux_cached = {}
@@ -1638,7 +1647,14 @@ class Blip2Qformer(Blip2Base):
 
         concat_image_embeds = shared_visual.tokens
 
-        classification_logits, attention, contrastive_loss, orth_loss, sparsity_loss, _ = self.mhcac(
+        (
+            classification_logits,
+            attention,
+            contrastive_loss,
+            orth_loss,
+            sparsity_loss,
+            mention_logits,
+        ) = self.mhcac(
             shared_visual,
             text_embeddings=None,
             labels=None,
@@ -1665,6 +1681,12 @@ class Blip2Qformer(Blip2Base):
         # txt_cls_token = text_output.last_hidden_state[:, 0, :]
         # print(f"query_output.last_hidden_state shape: {query_output.last_hidden_state.shape}")
 
+        if return_mention:
+            return (
+                classification_logits,
+                query_output.last_hidden_state,
+                mention_logits,
+            )
         return classification_logits, query_output.last_hidden_state
 
 

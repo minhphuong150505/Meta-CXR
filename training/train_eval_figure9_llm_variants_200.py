@@ -362,12 +362,75 @@ def field_value(field, index: int = 0) -> str:
         return str(field)
 
 
-def classify_with_thresholds(context: Stage1Context, logits: torch.Tensor) -> dict[str, list[str]]:
+#: Key a threshold JSON may carry per abnormality to gate cue emission.
+MENTION_THRESHOLD_KEY = "mention"
+DEFAULT_MENTION_THRESHOLD = 0.5
+
+
+def classify_with_thresholds(
+    context: Stage1Context,
+    logits: torch.Tensor,
+    mention_logits: torch.Tensor | None = None,
+    *,
+    use_mention_gate: bool = False,
+) -> dict[str, list[str]]:
+    """Sort the 13 reportable findings into positive / negative / uncertain.
+
+    ``logits`` is ``q``: the polarity distribution CONDITIONAL on the finding
+    having been mentioned. Blank CheXpert cells -- 79.5% of the matrix -- are
+    masked out of the classification loss, so this head never saw an example of
+    "absent from the report" and cannot answer whether a finding is there at
+    all. Sorting on ``q`` alone therefore emits a confident polarity for all 13
+    findings on every study, which is why cue precision measured 0.2931: about
+    seven in ten "Positive" cues are false.
+
+    ``use_mention_gate=True`` applies the two-stage rule this repo prescribes:
+    open the gate on a per-label threshold, then read the class off ``q``.
+    A finding whose gate stays shut is emitted in NO group -- "the radiologist
+    would not have written about this" is a real answer, and forcing it into
+    negative/uncertain is what inflated the cue list.
+
+    ⚠ Deliberately NOT an argmax over the marginal. With 79.5% of cells blank,
+    argmax over ``P(class) = sigmoid(m) * q[class]`` makes Positive
+    mathematically unwinnable even for a perfect conditional classifier; that
+    substitution once drove validation F1 to exactly 0.000000. See CLAUDE.md,
+    "A hierarchical alternative".
+
+    ⚠ ``m`` is NOT a calibrated mention probability. The gate trains with
+    inverse-frequency weights (``n_not_mentioned / n_mentioned * kappa_gate``,
+    capped at 10), so its odds are inflated and a raw 0.5 does not mean "even
+    chance it was mentioned". Fit the per-label threshold on validation and
+    pass it in the threshold JSON under ``"mention"``.
+
+    Default is off, so every recorded run keeps emitting exactly what it did.
+    """
     probs = torch.softmax(logits, dim=-1).tolist()
+    gate_probs = None
+    if use_mention_gate:
+        if mention_logits is None:
+            raise ValueError(
+                "use_mention_gate=True needs mention_logits. Stage-1 records "
+                "built before the gate was threaded through carry none; rebuild "
+                "them rather than silently falling back to q-only cues."
+            )
+        gate_probs = torch.sigmoid(mention_logits.reshape(-1).float()).tolist()
+        if len(gate_probs) != len(ABNORMALITIES_14):
+            raise ValueError(
+                f"mention_logits has {len(gate_probs)} entries, expected "
+                f"{len(ABNORMALITIES_14)}"
+            )
     out = {"positive": [], "negative": [], "uncertain": []}
-    for abn, p in zip(ABNORMALITIES_14, probs):
+    for index, (abn, p) in enumerate(zip(ABNORMALITIES_14, probs)):
         if abn == "No Finding":
             continue
+        if gate_probs is not None:
+            threshold = float(
+                context.threshold_for(abn).get(
+                    MENTION_THRESHOLD_KEY, DEFAULT_MENTION_THRESHOLD
+                )
+            )
+            if gate_probs[index] < threshold:
+                continue
         best_cls = select_threshold_class(
             p,
             context.threshold_for(abn),
@@ -456,7 +519,11 @@ def data_object_identity(path: str | Path) -> dict[str, Any]:
 
 
 def stage1_cohort_fingerprint(
-    context: Stage1Context, checkpoint_root: Path, split: str, sample_limit: int | None
+    context: Stage1Context,
+    checkpoint_root: Path,
+    split: str,
+    sample_limit: int | None,
+    use_mention_gate: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     ckpt_path = stage1_checkpoint_path(context, checkpoint_root)
     cfg_path = context.resolve_config_path(
@@ -473,6 +540,10 @@ def stage1_cohort_fingerprint(
         "thresholds": stable_fingerprint(context.fingerprint_payload()["thresholds"], length=32),
         "vis_root_name": Path(VIS_ROOT).name,
     }
+    # Part of the identity because it changes `pred_groups`, which is cached.
+    # Omitted when off so every cache built before the gate existed still hits.
+    if use_mention_gate:
+        payload["cue_rule"] = "mention_gated"
     return stable_fingerprint(payload), payload
 
 
@@ -484,6 +555,7 @@ def build_stage1_records(
     split: str,
     sample_limit: int | None,
     num_workers: int,
+    use_mention_gate: bool = False,
 ) -> list[dict]:
     """Build Q-Former records. Stage-1 only -- native MedGemma must not call this.
 
@@ -494,7 +566,7 @@ def build_stage1_records(
     exactly the Stage-1 coupling the pipeline split exists to remove.
     """
     cohort_id, cohort = stage1_cohort_fingerprint(
-        context, checkpoint_root, split, sample_limit
+        context, checkpoint_root, split, sample_limit, use_mention_gate
     )
     limit_name = str(sample_limit) if sample_limit and sample_limit > 0 else "all"
     # This local-only cache necessarily contains target report text and image
@@ -554,8 +626,19 @@ def build_stage1_records(
             for key, value in batch.items()
             if key in image_input_keys and torch.is_tensor(value)
         }
-        logits, qformer = model.forward_image(model_inputs)
-        record["pred_groups"] = classify_with_thresholds(context, logits[0].detach().cpu())
+        logits, qformer, mention = model.forward_image(
+            model_inputs, return_mention=True
+        )
+        mention_cpu = mention[0].detach().cpu().float()
+        # Stored raw and always, so a later analysis can re-derive cues under a
+        # different rule without another encode pass. 14 floats per study.
+        record["mention_logits"] = mention_cpu
+        record["pred_groups"] = classify_with_thresholds(
+            context,
+            logits[0].detach().cpu(),
+            mention_cpu,
+            use_mention_gate=use_mention_gate,
+        )
         record["qformer_embs"] = qformer[0].detach().cpu().to(torch.float16)
         records.append(record)
     tmp_path = cache_path.with_suffix(".tmp")
