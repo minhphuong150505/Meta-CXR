@@ -775,6 +775,145 @@ Chi tiết đầy đủ (bảng từng nhãn, so sánh 5 arm, đóng góp của 
 `Test/stage1_test/README.md` — thư mục đó **git-ignored** vì file `.npz` chứa định danh
 study của MIMIC-CXR.
 
+### ❌ Stage 2 — cắm Stage 1 vào prompt KHÔNG giúp (đo 2026-09-07/08)
+
+Đây là **kết quả âm**, và nó được giữ lại nguyên vẹn vì phép đo là có kiểm soát:
+cùng checkpoint, cùng cohort, cùng decoding, và **được nhân bản độc lập bởi hai
+cài đặt khác nhau**.
+
+#### Bối cảnh: hai arm
+
+| Arm | Kiến trúc | Huấn luyện |
+|---|---|---|
+| **A** | `medgemma_direct` — chỉ vision tower của MedGemma | 0,8621 epoch (bị dừng), không có validation, `best_val_loss` = `+inf` |
+| **C** | `meta_cxr_native_qformer_guided` — ảnh **cộng** 32 Q-Former soft token **cộng** cue P/N/U từ MHCAC | trọn 1 epoch, 82h28m, `val_loss` **1,0019** |
+
+Arm C là kiến trúc được thiết kế ban đầu của dự án, và nó được train **nhiều
+hơn** arm A.
+
+#### 1. Arm C kém hơn arm A trên cohort khớp
+
+2.772 study test mà **cả hai arm đều sinh ra output** (arm A lọc PA/AP rồi lấy
+mẫu ngẫu nhiên; nhánh Stage-1 đi theo thứ tự dataset lọc bằng `generation_mask`
+— hai cohort khác nhau, phải giao nhau mới so được). Bootstrap ghép cặp, 1.000
+lần lấy mẫu:
+
+| | Arm A | Arm C | Δ (C−A), CI95 |
+|---|---:|---:|:---|
+| BLEU-4 | 0,0763 | 0,0605 | — |
+| ROUGE-L | 0,2360 | 0,2161 | **−0,0198 [−0,0233; −0,0165]** |
+| METEOR | 0,2547 | 0,2548 | +0,0001 [−0,0048; +0,0048] |
+| CIDEr | 0,0584 | 0,0164 | **−0,0420 [−0,0518; −0,0334]** |
+| BERTScore-F1 | 0,7959 | 0,7587 | **−0,0372 [−0,0403; −0,0343]** |
+
+Ba trên bốn chỉ số kém hơn có ý nghĩa thống kê, METEOR hòa. Arm C được train
+nhiều hơn mà vẫn thua, nên thâm hụt **không** giải thích được bằng lượng huấn
+luyện.
+
+#### 2. Thủ phạm là cue, không phải soft token
+
+Can thiệp lúc suy luận trên một checkpoint arm C cố định, 100 study val, Δ ghép
+cặp so với đầu vào đầy đủ:
+
+| Can thiệp | BERTScore-F1 | CIDEr |
+|---|:---|:---|
+| **Bỏ cue P/N/U** | **+0,0107 [+0,0033; +0,0191]** ✅ | **+0,0093 [+0,0023; +0,0193]** ✅ |
+| Zero hoá soft token | +0,0042 [−0,0074; +0,0173] | −0,0020 [−0,0126; +0,0113] |
+| Bỏ cả hai | +0,0034 [−0,0084; +0,0160] | +0,0029 [−0,0104; +0,0183] |
+
+**Bỏ cue làm model TỐT LÊN.** Soft token gần như trung tính.
+
+#### 3. Cue kém vì `q` trả lời sai câu hỏi
+
+79,5% ô nhãn CheXpert để trống và bị mask khỏi loss, nên đầu classification chỉ
+học được *"NẾU bác sĩ có nhắc, thì dương hay âm?"* — nó chưa từng thấy ví dụ
+"không xuất hiện trong báo cáo". Đo trên chính file dự đoán của
+`run_20260820_ft`, macro 13 nhãn, framing `study_presence`:
+
+| Quy tắc dựng cue | Precision | Recall | Cue/study |
+|---|---:|---:|---:|
+| `conditional_positive` (arm C đã chạy) | **0,1887** | 0,8097 | **8,46** |
+| `mention_gated` (m ≥ 0,60) | 0,2357¹ | 0,4364¹ | 2,30¹ |
+| `marginal_positive` (ngưỡng theo nhãn, fit val) | **0,4069** | 0,3135 | **1,46** |
+
+¹ chỉ trên val. Thực tế mỗi study chỉ có **~1,6** bệnh — quy tắc đang chạy khẳng
+định gấp **hơn năm lần** thực tế.
+
+Với bệnh hiếm nó suy biến thành hằng số: `Fracture`, `Pleural Other`,
+`Lung Lesion` đều cho recall 1,000 với precision đúng bằng prevalence — tức
+"luôn luôn nói có". Ngược lại `Support Devices`, bệnh phổ biến nhất (34,4%),
+**chưa từng một lần** được gắn Positive.
+
+#### 4. Nhưng cue tốt hơn cũng KHÔNG cứu được
+
+Ba điều kiện, một checkpoint arm C cố định, **đúng 100 study val cùng thứ tự**
+(đã kiểm chứng `sample_key` trùng khớp), greedy 160 token:
+
+| Quy tắc | BLEU-1 | BLEU-4 | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---:|---:|---:|---:|---:|---:|
+| `conditional_positive` | 0,2115 | 0,0695 | 0,2358 | 0,2879 | 0,0100 | 0,7698 |
+| `marginal_positive` | 0,2129 | 0,0695 | 0,2379 | 0,2847 | 0,0076 | 0,7772 |
+| **`none`** | **0,2192** | **0,0723** | 0,2374 | **0,2900** | **0,0176** | **0,7813** |
+
+Bootstrap ghép cặp từng study, 2.000 lần:
+
+| So sánh | BERTScore-F1 | CIDEr |
+|---|:---|:---|
+| `none` − `conditional` | **+0,0115 [+0,0025; +0,0217]** ✅ | +0,0076 [−0,0049; +0,0243] |
+| `marginal` − `conditional` | +0,0073 [−0,0008; +0,0166] ❌ | −0,0024 [−0,0084; +0,0022] |
+| `none` − `marginal` | +0,0042 [−0,0041; +0,0118] ❌ | +0,0100 [−0,0009; +0,0279] |
+
+**Chỉ một so sánh có ý nghĩa, và đó là cái bỏ cue đi.** Nâng precision 2,2 lần
+và cắt số cue 5,8 lần không dịch chuyển được gì; CIDEr thậm chí đi ngược chiều.
+
+#### Nhân bản độc lập
+
+Dòng `conditional_positive` tái lập kết quả của một phép thử viết độc lập
+**đến bốn chữ số thập phân** (0,7698 / 0,2115 / 0,2358 / 0,0100), và
+`none − conditional` (+0,0115 [+0,0025; +0,0217]) khớp với `no_cues − full`
+của phép thử đó (+0,0107 [+0,0033; +0,0191]). Hai codebase, cùng một kết luận.
+
+#### Kết luận
+
+Kết luận là về **hướng đi**, không phải về quy tắc quyết định: quy tắc cue tốt
+nhất dựng được từ checkpoint Stage-1 hiện có đã được thử và không mua được gì.
+Cộng với việc zero hoá soft token là trung tính, cách đọc tiết kiệm nhất là
+**MedGemma đã tự lấy được thông tin đó từ ảnh** — cue đúng thì thừa, cue sai thì
+là nhiễu.
+
+#### Giới hạn — phải đọc kèm
+
+- **n = 100 cho mục 2 và 4.** CI rộng. `marginal − conditional` ở +0,0073
+  [−0,0008; +0,0166] là *suýt* có ý nghĩa: phải báo là **"chưa xác lập ở cỡ mẫu
+  này"**, không phải "không có tác dụng".
+- **Không phải ablation kiến trúc sạch.** Arm A 0,8621 epoch vs arm C 1 epoch.
+- **Can thiệp lúc suy luận ≠ huấn luyện lại.** Model được train *có* cue; bỏ cue
+  lúc sinh là lệch phân phối. Chưa chứng minh "train từ đầu không cue sẽ tốt hơn".
+- **Đường ảnh của Q-Former chưa từng được huấn luyện** (`lambda_itc/itm/lm` = 0),
+  nên 32 soft token là phép đọc BLIP-2 cố định. Kết quả trung tính của chúng là
+  đúng như dự đoán cho một nhánh chưa train, **không** phải phán quyết về kiến trúc
+  Q-Former.
+- **Không có chỉ số lâm sàng nào ở đây.** CIDEr của mọi arm đều gần 0. BLEU/ROUGE/
+  BERTScore đo chồng lặp bề mặt; "arm A tốt hơn arm C" **không** có nghĩa arm A tốt.
+- **Sinh văn bản bị sụp lặp ở cả hai arm** (arm A 28,1%, arm C 44,3% output có
+  5-gram lặp ≥3 lần, người viết 0,1%). Mọi số trên đều đo trong tình trạng đó.
+
+#### Tái lập
+
+```bash
+python scripts/generate_stage2_reports.py \
+    --pipeline-mode meta_cxr_native_qformer_guided \
+    --prompt-config configs/experiment_native_qformer_guided.yaml \
+    --adapter <ft_guided_full>/adapters/medgemma_qlora_meta_cxr_native_qformer_guided \
+    --checkpoint-root <run_20260820_ft> --stage1-cache-dir <cache> \
+    --split val --limit 100 --max-new-tokens 160 \
+    --cue-rule marginal_positive \
+    --threshold-path configs/stage2_cue_thresholds_marginal_pfit.json \
+    --output-dir <private>/marginal
+# đổi --cue-rule thành conditional_positive | none cho hai điều kiện còn lại
+# (none không cần --threshold-path)
+```
+
 ### Original paper reference results
 
 Bài báo META-CXR gốc có báo cáo classification và report-generation metrics cho kiến trúc/dữ liệu của công trình đó. Các số trong paper chỉ là tham khảo lịch sử, **không phải kết quả của repository/commit hiện tại**. README này không sao chép bảng số để tránh trộn nguồn; xem bài báo được dẫn trong mục Citation.
@@ -846,15 +985,27 @@ agent nằm ở [AGENTS.md](AGENTS.md) và `CLAUDE.md`.
 
 ## Hạn chế hiện tại
 
-- Stage 1 và Stage 2 **training** chưa được GPU smoke-tested trong lần tích hợp
-  hiện tại. Riêng Table 5 Stage-1 inference-only encoder ablation đã hoàn tất 4/4
-  trên full test split; xem `results/table5_encoder_ablation.*`.
+- Stage 2 **training đã chạy trên GPU**: arm A (`medgemma_direct`, 0,8621 epoch —
+  bị dừng, không có validation) và arm C (`meta_cxr_native_qformer_guided`, trọn
+  1 epoch, `val_loss` 1,0019). Kết quả: xem
+  [Stage 2 — cắm Stage 1 vào prompt KHÔNG giúp](#-stage-2--cắm-stage-1-vào-prompt-không-giúp-đo-2026-09-0708).
+  Table 5 Stage-1 inference-only encoder ablation đã hoàn tất 4/4 trên full test
+  split; xem `results/table5_encoder_ablation.*`.
 - Explanation loss chưa từng chạy smoke/full training trên GPU;
   `scripts/evaluate_explanation.py` chưa từng nạp checkpoint/dataset hay chạy
   end-to-end. Không dùng metric/heatmap từ đường này trong luận văn trước smoke.
 - Cache explanation mới chỉ được build/kiểm tra ở smoke val 200 study, chưa xác
   nhận full train/val/test cache.
-- Full training pipeline và Stage 2 metric chưa được tái lập từ pipeline final.
+- Stage 2 metric đã có (BLEU/ROUGE/METEOR/CIDEr/BERTScore trên test và val), nhưng
+  **chưa có chỉ số lâm sàng nào** và CIDEr của mọi arm đều gần 0 — không suy diễn
+  lexical metric thành độ đúng lâm sàng.
+- **Sinh văn bản Stage 2 bị sụp lặp ở cả hai arm** — 28,1% (arm A) và 44,3% (arm C)
+  output có 5-gram lặp ≥3 lần, so với 0,1% ở báo cáo bác sĩ thật. Mọi số Stage-2 đã
+  ghi đều đo trong tình trạng đó. `--no-repeat-ngram-size 5` khắc phục được nhưng
+  **mặc định tắt** để giữ khả năng tái lập.
+- `val_loss` **không phát hiện được** sụp lặp: nó là teacher-forced, mỗi bước được
+  mồi bằng tiền tố đúng, nên model chưa bao giờ ở chế độ sinh tự do nơi vòng lặp
+  hình thành. Một run có `val_loss` tốt vẫn có thể sinh ra văn bản lặp.
 - Split records hiện chưa mang prior linkage đầy đủ; temporal target policy mặc định vẫn là `keep`.
 - `native_multiview` tồn tại trong Prompt v2, nhưng native manifest hiện chỉ luồn anchor image và để `auxiliary_views` rỗng; Stage 2 native multi-image chưa hoàn chỉnh end-to-end.
 - METEOR, CIDEr và BERTScore phụ thuộc package tùy chọn; clinical metric adapters chưa được wire/validate.
