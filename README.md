@@ -937,9 +937,20 @@ Bài báo META-CXR gốc có báo cáo classification và report-generation metr
 
 ## Quy trình làm việc với agent (một Claude lập kế hoạch, một Claude thực thi)
 
-Từ 2026-08-19, **Codex không còn được dùng** (hết hạn gia hạn). Vai trò không đổi,
-chỉ đổi người thực thi — Claude Code đã được cài và xác thực sẵn trên máy train
-(`~/.local/bin/claude`).
+Người thực thi có thể là Claude Code **hoặc** Codex — cả hai đều đã cài và đều
+đã chạy việc thật (Codex gần nhất là 2026-09-08). Vai trò không phụ thuộc vào
+việc đó là ai.
+
+⚠ Ghi chú sửa 2026-09-08: tài liệu từng ghi "Codex không còn được dùng" từ
+2026-08-19. **Điều đó sai** và tồn tại ba tuần. Đừng cho rằng một công cụ không
+dùng được chỉ vì tài liệu nói vậy — kiểm tra bằng `command -v`.
+
+⚠⚠ **Một GPU, có thể có nhiều hơn một agent.** Ngày 2026-09-08 hai agent dùng
+chung máy train cách nhau vài giờ mà không đụng nhau, vì agent thứ hai kiểm tra
+trước khi phóng: `pgrep` tên job đã biết, `nvidia-smi` phải rảnh, và từ chối
+chạy nếu thư mục output đã tồn tại. Luật vẫn là **một card, một run, một đường
+output** — nhưng nó được bảo đảm bằng việc *kiểm tra*, không phải bằng việc giả
+định mình đang ở một mình.
 
 - **Phiên lập kế hoạch** (checkout này, không GPU) đọc code, thiết kế thay đổi, sửa
   source và cập nhật `CLAUDE.md` / `README.md` / `struct/`.
