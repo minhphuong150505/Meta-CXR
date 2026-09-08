@@ -374,13 +374,23 @@ DEFAULT_MARGINAL_THRESHOLD = 0.5
 CUE_RULE_CONDITIONAL = "conditional_positive"
 CUE_RULE_MENTION_GATED = "mention_gated"
 CUE_RULE_MARGINAL = "marginal_positive"
-#: Emit no cues at all. The prompt keeps its guided shape and its soft tokens,
-#: so this isolates the CUES from the rest of the guided mode -- an empty group
-#: is a real prediction ("nothing worth flagging"), which the prompt builder
-#: accepts; a record missing the keys entirely is what it refuses.
+#: Withhold structured predictions; retain the visual inputs and task instruction.
 CUE_RULE_NONE = "none"
 CUE_RULES = (CUE_RULE_CONDITIONAL, CUE_RULE_MENTION_GATED, CUE_RULE_MARGINAL,
              CUE_RULE_NONE)
+
+
+def with_cue_state(record: dict, cue_rule: str) -> dict:
+    """Annotate fresh/legacy cached groups without changing cached tensors."""
+    if cue_rule not in CUE_RULES:
+        raise ValueError(f"unknown cue_rule: {cue_rule!r}")
+    groups = record.get("pred_groups", {})
+    if cue_rule == CUE_RULE_NONE:
+        groups = {"positive": [], "negative": [], "uncertain": []}
+        state = "not_provided"
+    else:
+        state = "predicted" if any(groups.get(k) for k in ("positive", "negative", "uncertain")) else "abstained"
+    return {**record, "pred_groups": groups, "cue_rule": cue_rule, "cue_state": state}
 
 
 def classify_with_thresholds(
@@ -618,7 +628,7 @@ def build_stage1_records(
         print(f"[stage1] reusing {cache_path}")
         cached = load_torch_checkpoint(cache_path)
         if cached.get("cohort_id") == cohort_id:
-            return cached["records"]
+            return [with_cue_state(record, cue_rule) for record in cached["records"]]
         print("[stage1] cache manifest mismatch; rebuilding")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -680,7 +690,7 @@ def build_stage1_records(
             cue_rule=cue_rule,
         )
         record["qformer_embs"] = qformer[0].detach().cpu().to(torch.float16)
-        records.append(record)
+        records.append(with_cue_state(record, cue_rule))
     tmp_path = cache_path.with_suffix(".tmp")
     torch.save(
         {

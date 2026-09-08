@@ -78,6 +78,14 @@ class VisualMode(str, Enum):
         return "qformer" if self.uses_soft_tokens else "native"
 
 
+class CueState(str, Enum):
+    """Whether cues were withheld, abstained, or contain actual predictions."""
+
+    NOT_PROVIDED = "not_provided"
+    ABSTAINED = "abstained"
+    PREDICTED = "predicted"
+
+
 @dataclass(frozen=True)
 class PromptContext:
     """Everything the builder needs about one study. Absent facts are None/empty.
@@ -104,6 +112,18 @@ class PromptContext:
     has_support_devices: bool = False
     qformer_token_count: int | None = None
     prompt_version: str | None = None
+    cue_state: CueState | str | None = None
+
+    def __post_init__(self) -> None:
+        has_predictions = bool(
+            self.positive_findings or self.uncertain_findings or self.negative_findings
+        )
+        state = CueState(self.cue_state) if self.cue_state is not None else (
+            CueState.PREDICTED if has_predictions else CueState.ABSTAINED
+        )
+        if (state is CueState.PREDICTED) != has_predictions:
+            raise ValueError("cue_state contradicts the supplied finding groups")
+        object.__setattr__(self, "cue_state", state)
 
     @property
     def is_structurally_normal(self) -> bool:
@@ -113,7 +133,11 @@ class PromptContext:
         The prompt must still let visual evidence override it (Stage-1 false
         negative), which is why normal policies never assert "No Finding" as fact.
         """
-        return not self.positive_findings and not self.uncertain_findings
+        return (
+            self.cue_state is CueState.PREDICTED
+            and not self.positive_findings
+            and not self.uncertain_findings
+        )
 
 
 class PartKind(str, Enum):

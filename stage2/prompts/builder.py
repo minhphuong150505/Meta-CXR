@@ -12,6 +12,7 @@ import hashlib
 from typing import Callable
 
 from . import templates
+from .ontology import MODELED_FINDINGS
 from .policies import (
     NegativePolicy,
     NormalPolicy,
@@ -19,7 +20,7 @@ from .policies import (
     render_uncertain,
     select_negative_findings,
 )
-from .schemas import PartKind, PromptContext, PromptPart, RenderedPrompt, VisualMode
+from .schemas import CueState, PartKind, PromptContext, PromptPart, RenderedPrompt, VisualMode
 from .templates import join_or_none
 from .validation import PromptConfig, PromptConfigError
 
@@ -105,7 +106,10 @@ class PromptBuilder:
     # -- structured cues ----------------------------------------------------
     def _structured_parts(self, context: PromptContext) -> list[PromptPart]:
         cfg = self.config
-        if context.is_structurally_normal:
+        if context.cue_state in (CueState.NOT_PROVIDED, CueState.ABSTAINED):
+            return []
+        # Partial negative predictions do not justify an ontology-wide summary.
+        if context.is_structurally_normal and set(context.negative_findings) >= set(MODELED_FINDINGS):
             return self._normal_parts(context)
 
         possible = render_uncertain(

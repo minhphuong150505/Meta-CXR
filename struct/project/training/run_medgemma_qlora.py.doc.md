@@ -144,3 +144,6 @@ Ghi adapter + JSONL + `meta.json` · Upload GCS (trừ `--no-upload`) · Cấp p
 - **Related:** [`train_eval_figure9…`](train_eval_figure9_llm_variants_200.py.doc.md) · [`pipeline_modes.py`](pipeline_modes.py.doc.md)
 
 ← [HOME](../../HOME.md)
+## Cue rule (2026-09-08)
+
+`--cue-rule` dùng cùng choices/default với engine và generation. `main` truyền nó cho mọi split, ghi summary/run_manifest; `train_mode` truyền vào fingerprint val/test. Non-default rule cần Stage-1 mode và matching guided prompt config, tránh rơi vào legacy prompt. Chạy experiment với output mới; không tái sử dụng adapter của rule khác.

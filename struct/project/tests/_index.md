@@ -185,3 +185,6 @@ sẽ skip hoặc fail rõ ràng trên máy CPU thuần.
 [LEGACY_AND_OPTIONAL.md](../_meta/LEGACY_AND_OPTIONAL.md) · [D-010](../_meta/DECISIONS.md#d-010--tests-document-theo-nhóm-component)
 
 ← [Về HOME](../../HOME.md)
+## Cue contract regression
+
+`test_cue_contract.py`: synthetic tensors → groups → state → prompt, cache-hit normalization without model load, both visual channels intact, missing/contradictory state guard, partial negative specificity and actual training main/generation record wiring. Host execution only; no model training/generation in these tests.

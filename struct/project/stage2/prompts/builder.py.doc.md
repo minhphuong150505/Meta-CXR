@@ -51,3 +51,6 @@ Không.
 - **Parent:** [`_index.md`](_index.md)
 
 ← [HOME](../../../HOME.md)
+## Cue semantics (2026-09-08)
+
+`_structured_parts` trả [] với not_provided/abstained; visual parts, context và task instruction không đổi. Negative subset không vào `_normal_parts`; chỉ đủ 13 modeled negatives mới được tóm tắt. Trạng thái cue được kiểm tra ở PromptContext. Template identity tăng để phân biệt kết quả cũ.

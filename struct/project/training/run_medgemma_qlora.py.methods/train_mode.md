@@ -50,3 +50,6 @@ Vision tower không đóng băng → raise
 
 ## Modification risk
 Đổi `image_mode` string → adapter cũ không nhận diện được.
+## Cue identity (2026-09-08)
+
+Fingerprint val/test nhận args.cue_rule, khớp rule dùng tạo record. Không đổi optimizer, loss, YAML hay recipe. Experiment đổi cue rule cần output/adapter riêng.

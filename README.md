@@ -863,23 +863,25 @@ Bootstrap ghép cặp từng study, 2.000 lần:
 | `marginal` − `conditional` | +0,0073 [−0,0008; +0,0166] ❌ | −0,0024 [−0,0084; +0,0022] |
 | `none` − `marginal` | +0,0042 [−0,0041; +0,0118] ❌ | +0,0100 [−0,0009; +0,0279] |
 
-**Chỉ một so sánh có ý nghĩa, và đó là cái bỏ cue đi.** Nâng precision 2,2 lần
-và cắt số cue 5,8 lần không dịch chuyển được gì; CIDEr thậm chí đi ngược chiều.
+**Đính chính ngữ nghĩa:** dòng `none` trong bảng là kết quả trước sửa lỗi:
+nhóm rỗng vẫn sinh câu tóm tắt dự đoán bình thường, chưa xoá hẳn structured block.
+Không gán những số này cho `none` đã sửa. Chỉ CI BERTScore của
+`none − conditional` lịch sử loại trừ 0; cải thiện từ marginal chưa được xác lập.
 
 #### Nhân bản độc lập
 
 Dòng `conditional_positive` tái lập kết quả của một phép thử viết độc lập
 **đến bốn chữ số thập phân** (0,7698 / 0,2115 / 0,2358 / 0,0100), và
 `none − conditional` (+0,0115 [+0,0025; +0,0217]) khớp với `no_cues − full`
-của phép thử đó (+0,0107 [+0,0033; +0,0191]). Hai codebase, cùng một kết luận.
+của phép thử đó (+0,0107 [+0,0033; +0,0191]). Hướng thay đổi giống nhau,
+nhưng probe xoá trực tiếp structured block còn `none` cũ giữ câu normal.
 
 #### Kết luận
 
-Kết luận là về **hướng đi**, không phải về quy tắc quyết định: quy tắc cue tốt
-nhất dựng được từ checkpoint Stage-1 hiện có đã được thử và không mua được gì.
-Cộng với việc zero hoá soft token là trung tính, cách đọc tiết kiệm nhất là
-**MedGemma đã tự lấy được thông tin đó từ ảnh** — cue đúng thì thừa, cue sai thì
-là nhiễu.
+Ở checkpoint này, bỏ cues cũ cải thiện BERTScore trên 100 ca validation.
+Marginal cues chưa chứng minh cải thiện sinh báo cáo; chưa thể suy rộng sang
+mọi rule hoặc model được huấn luyện lại. Giả thuyết cues trùng thông tin ảnh
+chưa phải kết luận về cơ chế, và NLG không thay thế đánh giá độ đúng lâm sàng.
 
 #### Giới hạn — phải đọc kèm
 
@@ -1047,3 +1049,16 @@ META-CXR original work:
 ## License
 
 Repository hiện không có file license riêng ở top level. Bản LAVIS vendored giữ BSD 3-Clause License tại [`model/lavis/LICENSE.txt`](model/lavis/LICENSE.txt). Điều này không tự động xác định license cho mọi phần còn lại của repository; cần kiểm tra điều khoản của từng upstream model/dataset trước khi sử dụng hoặc phân phối.
+## Sửa contract cues (2026-09-08)
+
+Cả training và generation nhận `--cue-rule conditional_positive|mention_gated|marginal_positive|none`; training truyền cùng rule cho train/val/test và ghi vào summary/manifest. Mặc định vẫn là `conditional_positive` để giữ recipe cũ. Rule khác mặc định cần `--prompt-config` guided khớp visual mode; marginal dùng `--threshold-path configs/stage2_cue_thresholds_marginal_pfit.json`.
+
+Ba trạng thái được tách rõ: `not_provided` (chủ động bỏ cues), `abstained` (không chọn được cue), `predicted` (có dự đoán P/N/U). Hai trạng thái đầu không sinh structured block hay câu normal. Âm tính cho một phần nhãn chỉ được nêu cụ thể; chỉ đủ 13 nhãn âm tính mới được tóm tắt normal. Ảnh, soft tokens và instruction được giữ nguyên. Cache cũ được bổ sung trạng thái khi đọc, không đổi embedding. Template hash thay đổi để nhận diện semantics mới.
+
+Chạy rule khác trong output directory mới. Kiểm thử và audit cache validation nằm ở [handoff](docs/handoff/PLAN-2026-09-08-cue-contract.md); chưa chạy generation mới do GPU bận.
+
+Đã kiểm thử CPU trên host: **992 passed, 2 skipped**, so với revision gốc
+**974 passed, 2 skipped** — thêm 18 test pass, không có failure mới. Ruff có
+438 lỗi ở cả hai revision, không thêm lỗi. Audit cùng 1.415 ca validation:
+`none` bỏ 1.415 câu normal không có cơ sở; marginal bỏ 654 câu (46,2%) khi
+không có cue vượt ngưỡng. Đây là xác minh prompt, chưa phải cải thiện NLG/lâm sàng.

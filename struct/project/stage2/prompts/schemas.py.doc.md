@@ -58,3 +58,6 @@ trên. Mơ hồ ở đây làm hỏng ablation.
 - **Parent:** [`_index.md`](_index.md)
 
 ← [HOME](../../../HOME.md)
+## CueState và PromptContext.__post_init__
+
+`CueState`: `not_provided`, `abstained`, `predicted`. Context không có state tự suy ra predicted khi có P/N/U, abstained khi rỗng. State lạ hoặc mâu thuẫn với nhóm nhãn raise ValueError. `is_structurally_normal` chỉ đúng với predicted không có positive/uncertain; builder kiểm thêm đủ ontology trước khi tóm tắt normal.

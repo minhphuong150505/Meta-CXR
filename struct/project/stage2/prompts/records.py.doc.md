@@ -54,3 +54,6 @@ hợp lệ (study được Stage 1 cho là bình thường) và vẫn phải đi
 là lỗi nối dây — `_as_tuple(None)` trả `()`, builder phát prompt không cue,
 và nhánh guided huấn luyện nhiều ngày trên prompt không phân biệt được với
 nhánh đối chứng.
+## Correction: empty is abstention (2026-09-08)
+
+Nhóm rỗng không phải bằng chứng bình thường. `cue_state` được truyền vào `PromptContext`; record cũ rỗng suy ra abstained. Missing prediction keys vẫn raise ở guided mode, trừ khi ghi rõ `cue_state=not_provided`. State mâu thuẫn bị schema từ chối. `build_stage1_records` / `with_cue_state` là producer, `VariantLLM` là caller dùng chung train/inference.

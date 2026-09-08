@@ -114,3 +114,6 @@ Không có. Thư viện.
 [`configs/_index.md`](../../configs/_index.md)
 
 ← [`stage2/`](../_index.md) · [HOME](../../../HOME.md)
+## Cue contract (2026-09-08)
+
+`schemas.CueState` phân biệt withheld, abstention và dự đoán. `records.context_from_record` chuyển state từ Stage-1 records vào `PromptContext`; `builder._structured_parts` bỏ block khi withheld/abstained. Chỉ đầy đủ 13 negative mới được dùng normal policy; partial negatives đi qua chính sách negative cụ thể. Template identity đổi trong `templates.py`. Caller chung là engine Stage-2 cho cả train/inference; test `tests/test_cue_contract.py`.

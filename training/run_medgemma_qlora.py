@@ -74,6 +74,11 @@ def parse_args() -> argparse.Namespace:
         help="Optional Stage-1 validation-calibrated thresholds; default is image-only argmax.",
     )
     parser.add_argument(
+        "--cue-rule", choices=fig9.CUE_RULES, default=fig9.CUE_RULE_CONDITIONAL,
+        help="Stage-1 cue rule for all splits, identical to generation --cue-rule. "
+             "Non-default rules require a matching --prompt-config.",
+    )
+    parser.add_argument(
         "--pipeline-mode",
         choices=list(CHOICES),
         default=DEFAULT_PIPELINE_MODE,
@@ -304,7 +309,7 @@ def train_mode(
     llm.load_img_proj_if_present(adapter_dir)
     val_eval_records = deterministic_subset(val_records, args.val_generation_limit, fig9.SEED + 1)
     val_cohort, _ = fig9.stage1_cohort_fingerprint(
-        context, Path(args.checkpoint_root), "val", args.val_limit
+        context, Path(args.checkpoint_root), "val", args.val_limit, cue_rule=args.cue_rule
     )
     val_metrics = fig9.evaluate_variant(
         "medgemma",
@@ -323,7 +328,7 @@ def train_mode(
     test_metrics = None
     if not args.skip_test:
         test_cohort, _ = fig9.stage1_cohort_fingerprint(
-            context, Path(args.checkpoint_root), "test", args.test_limit
+            context, Path(args.checkpoint_root), "test", args.test_limit, cue_rule=args.cue_rule
         )
         test_metrics = fig9.evaluate_variant(
             "medgemma",
@@ -424,6 +429,16 @@ def main() -> None:
             f"visual_mode={prompt_config.visual_mode.value}",
             flush=True,
         )
+    if args.cue_rule != fig9.CUE_RULE_CONDITIONAL:
+        if not needs_stage1:
+            raise SystemExit("--cue-rule requires a Stage-1 pipeline mode")
+        if prompt_config is None or any(
+            mode.requires_stage1 and (
+                prompt_config.visual_mode.image_mode != mode.image_mode
+                or not prompt_config.visual_mode.includes_structured
+            ) for mode in modes
+        ):
+            raise SystemExit("non-default --cue-rule requires a matching guided --prompt-config")
     context = Stage1Context(
         run_name=args.stage1_run,
         config_path=args.stage1_config,
@@ -461,15 +476,18 @@ def main() -> None:
             )
         print(f"[stage1] train limit={args.train_limit or 'all'}", flush=True)
         train_records = fig9.build_stage1_records(
-            context, checkpoint_root, root, "train", args.train_limit, args.num_workers
+            context, checkpoint_root, root, "train", args.train_limit, args.num_workers,
+            cue_rule=args.cue_rule,
         )
         print(f"[stage1] validation limit={args.val_limit or 'all'}", flush=True)
         val_records = fig9.build_stage1_records(
-            context, checkpoint_root, root, "val", args.val_limit, args.num_workers
+            context, checkpoint_root, root, "val", args.val_limit, args.num_workers,
+            cue_rule=args.cue_rule,
         )
         print(f"[stage1] held-out test limit={args.test_limit or 'all'}", flush=True)
         test_records = fig9.build_stage1_records(
-            context, checkpoint_root, root, "test", args.test_limit, args.num_workers
+            context, checkpoint_root, root, "test", args.test_limit, args.num_workers,
+            cue_rule=args.cue_rule,
         )
     else:
         print(
@@ -501,6 +519,7 @@ def main() -> None:
         "prompt_config": str(args.prompt_config) if args.prompt_config else None,
         "prompt_version": prompt_config.version if prompt_config else "legacy_build_instruction",
         "stage1_checkpoint": context.run_name if needs_stage1 else None,
+        "cue_rule": args.cue_rule if needs_stage1 else None,
         "section_mode": args.section_mode,
         "target_section": args.section_mode.replace("_", " ").upper(),
         "max_new_tokens": args.max_new_tokens,
@@ -522,6 +541,7 @@ def main() -> None:
         "image_modes": [mode.image_mode for mode in modes],
         "section_mode": args.section_mode,
         "stage1_required": needs_stage1,
+        "cue_rule": args.cue_rule if needs_stage1 else None,
     }
     (root / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2), encoding="utf-8")
     print("[done]", json.dumps(summary, indent=2), flush=True)
