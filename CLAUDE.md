@@ -1475,6 +1475,91 @@ filter could never be switched off. It is `BooleanOptionalAction` now;
 `--no-frontal-only` works and the default is unchanged. Pinned by
 `tests/test_generate_stage2_reports.py` (23 tests).
 
+⚠⚠ **BETTER CUES DO NOT RESCUE ARM C. Measured 2026-09-08, and this is the
+result that decides the guided route.** Three conditions, ONE fixed arm C
+checkpoint, the SAME 100 val studies in the same order (verified: identical
+`sample_key` lists), same greedy decoding at 160 tokens, only the cue rule
+differing:
+
+| rule | BLEU-1 | BLEU-4 | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---:|---:|---:|---:|---:|---:|
+| `conditional_positive` (what arm C ran) | 0.2115 | 0.0695 | 0.2358 | 0.2879 | 0.0100 | 0.7698 |
+| `marginal_positive` (P-fit, 2.2x the precision) | 0.2129 | 0.0695 | 0.2379 | 0.2847 | 0.0076 | 0.7772 |
+| **`none`** | **0.2192** | **0.0723** | 0.2374 | **0.2900** | **0.0176** | **0.7813** |
+
+Paired per-study bootstrap, 2,000 resamples, seed 16:
+
+| comparison | BERTScore-F1 | CIDEr |
+|---|---|---|
+| `none` − `conditional` | **+0.0115 [+0.0025, +0.0217]** | +0.0076 [-0.0049, +0.0243] |
+| `marginal` − `conditional` | +0.0073 [**-0.0008**, +0.0166] | -0.0024 [-0.0084, +0.0022] |
+| `none` − `marginal` | +0.0042 [-0.0041, +0.0118] | +0.0100 [-0.0009, +0.0279] |
+
+**Only one comparison is established, and it is the one that removes the cues.**
+Raising cue precision from 0.189 to 0.407 and cutting the list from 8.46 to
+1.46 findings per study moves nothing: `marginal - conditional` does not clear
+zero, and its CIDEr -- the boilerplate-insensitive metric -- goes the *wrong*
+way. `none` beats `marginal` numerically on every metric but CIs cross zero.
+
+**This replicates independently.** The `conditional_positive` row reproduces the
+2026-09-08 Codex probe's `full` arm to four decimals (0.7698 / 0.2115 / 0.2358 /
+0.0100) from a different implementation, and `none` − `conditional`
+(+0.0115 [+0.0025, +0.0217]) matches that probe's `no_cues` − `full`
+(+0.0107 [+0.0033, +0.0191]). Two codebases, same answer.
+
+**So the honest conclusion is about the ROUTE, not the cue rule.** Injecting
+Stage-1 predictions into the prompt does not help, and at Stage 1's current
+quality it hurts; the fix is not a better decision rule, because the best rule
+this project can build from the existing checkpoint was tried and bought
+nothing. Together with the earlier finding that zeroing the soft tokens is
+roughly neutral, the most economical reading is that MedGemma already recovers
+this information from the image, so a cue is redundant when right and pure
+noise when wrong.
+
+⚠ n=100. The CIs are wide and `marginal - conditional` at +0.0073
+[-0.0008, +0.0166] is *nearly* significant -- report it as "not established at
+this n", not as "no effect". A larger run could separate it from zero; nothing
+here says it would separate it from `none`.
+
+⚠⚠ **STAGE-2 GENERATION DEGENERATES, IN BOTH ARMS, AND `val_loss` CANNOT SEE
+IT (measured 2026-09-08).** Fraction of reports whose output contains a 5-gram
+repeated 3+ times, greedy decoding, no repetition penalty:
+
+| | n | 5-gram repeated 3+ times | median words |
+|---|---:|---:|---:|
+| arm C val, `max_new_tokens=256` | 300 | **85.3%** | 148 |
+| arm C test, `max_new_tokens=160` | 300 | **44.3%** | 93 |
+| arm A test, `max_new_tokens=160` | 3,102 | **28.1%** | 61 |
+| **real radiologist reports** | 3,102 | **0.1%** | 55 |
+
+Two things follow, and both matter more than the arm A/arm C gap. **It is not
+an arm C defect** -- arm A repeats 280x more than humans do and its recorded
+numbers were produced that way. And **half of arm C's excess was the token cap
+alone**: 85.3% -> 44.3% purely from 256 -> 160.
+
+⚠ **`val_loss` 1.0019 is not evidence against this and never could be.** It is
+teacher-forced: every step is conditioned on the *true* prefix, so the model is
+never in the free-running regime where a loop can form. A Stage-2 run can have
+a good validation loss and generate text like this. Do not read "arm C had real
+model selection" as "arm C generates well" -- different claims, and only the
+first is established.
+
+**`--no-repeat-ngram-size` and `--repetition-penalty` exist now, and both
+default to OFF** so every recorded number stays reproducible.
+`VariantLLM.generate` takes them keyword-only and leaves `generate_kwargs`
+byte-identical when unset. **5 is the operating point, chosen from the data** --
+fraction of reports containing at least one repeated n-gram, real vs arm A
+generated: n=3 **22.0% / 59.3%**, n=4 6.7% / 51.5%, n=5 **2.4% / 44.6%**,
+n=6 1.2% / 41.9%. Below 5 the constraint charges radiologists for ordinary
+phrasing; at 3 it would hit one real report in five.
+
+⚠ Arm C's first test generation (n=300, 160 tokens, no blocking) scored
+BLEU-1 0.2283, BLEU-4 0.0594, ROUGE-L 0.2151, METEOR 0.2563, CIDEr **0.0140**,
+BERTScore-F1 0.7595 [0.7517, 0.7668]; `excessive_repetition` 33%, generated
+median 126 words against a reference median of 67. **It is NOT comparable to
+arm A's n=3,102 row** -- different cohort and different size, the comparison
+this file has already warned about twice. Use `--restrict-to`.
+
 ⚠ **BOTH allocator variable names work in torch 2.9.1, and the arm C OOM has NO
 established root cause. Corrected 2026-09-03 — an earlier version of this
 section claimed `PYTORCH_ALLOC_CONF` was silently ignored. It is not.**
