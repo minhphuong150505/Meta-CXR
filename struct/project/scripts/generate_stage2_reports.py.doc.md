@@ -1,6 +1,6 @@
-> Source: `scripts/generate_stage2_reports.py` (381 dòng)
+> Source: `scripts/generate_stage2_reports.py` (412 dòng)
 > Status: ✅ ACTIVE — sinh báo cáo, ghi `.jsonl` cho `evaluate_stage2.py`
-> Last verified against source: 2026-09-07
+> Last verified against source: 2026-09-08
 
 # `scripts/generate_stage2_reports.py`
 
@@ -74,6 +74,66 @@ Cache chỉ trúng khi khớp `cohort_id`, tức cùng `--checkpoint-root`,
 `--stage1-run` **và** cùng `sample_limit`. Vì thế script luôn gọi
 `build_stage1_records` với `sample_limit=None` và áp `--limit` **sau đó**, trên
 danh sách record — thu hẹp ở tầng dưới sẽ trượt cache.
+
+## Chống lặp — `--no-repeat-ngram-size`, `--repetition-penalty`
+
+Cả hai **mặc định TẮT**. Mọi con số Stage-2 đã ghi đều sinh ra khi không có
+chúng, nên bật mặc định sẽ âm thầm làm kết quả cũ không tái lập được.
+`VariantLLM.generate` nhận chúng dạng keyword-only và giữ `generate_kwargs`
+y hệt cũ khi không truyền.
+
+**n=5 chọn từ dữ liệu, không phải theo thói quen.** Tỷ lệ báo cáo chứa ít nhất
+một n-gram lặp, đo trên 3.102 study test:
+
+| n | báo cáo THẬT | arm A sinh ra | nhận xét |
+|---|---:|---:|---|
+| 3 | **22,0%** | 59,3% | phạt oan 1/5 báo cáo thật |
+| 4 | 6,7% | 51,5% | |
+| **5** | **2,4%** | **44,6%** | **điểm vận hành, ~19:1** |
+| 6 | 1,2% | 41,9% | |
+
+Chặn dưới 5 là tính tiền bác sĩ vì cách hành văn bình thường — một báo cáo viết
+"there is no evidence of ..." hai lần là chuyện thường.
+
+⚠ `--repetition-penalty` rescale **mọi** token đã xuất hiện, kể cả thuật ngữ
+lâm sàng mà báo cáo lặp lại một cách chính đáng. Ưu tiên `--no-repeat-ngram-size`.
+
+## `--cue-rule` — cách dự đoán MHCAC thành cue P/N/U
+
+Chỉ áp dụng cho các mode `meta_cxr_*`. Đo trên file dự đoán của
+`run_20260820_ft`, macro 13 nhãn, framing `study_presence`, ngưỡng fit trên val:
+
+| Giá trị | Precision | Recall | Cue/study |
+|---|---:|---:|---:|
+| `conditional_positive` (mặc định) | 0,1887 | 0,8097 | 8,46 |
+| `mention_gated` | 0,2357¹ | 0,4364¹ | 2,30¹ |
+| `marginal_positive` | **0,4069** | 0,3135 | **1,46** |
+| `none` | — | — | 0 |
+
+¹ chỉ trên val. Thực tế mỗi study có **~1,6** bệnh.
+
+`conditional_positive` sắp xếp cả 13 nhãn chỉ dựa trên `q` — thang trả lời
+*"NẾU bác sĩ có nhắc thì dương hay âm?"*. Vì 79,5% ô nhãn để trống và bị mask
+khỏi loss, đầu này chưa từng thấy "không xuất hiện trong báo cáo", nên với bệnh
+hiếm nó suy biến thành hằng số "luôn nói có".
+
+`marginal_positive` đặt ngưỡng `sigmoid(m) · q_pos` **theo từng nhãn** và **chỉ
+phát nhóm positive** — không khẳng định bệnh nào vắng mặt, vì cue âm sai có thể
+dập tắt một bệnh có thật và dự án chưa đo gì về chất lượng cue âm. Ngưỡng ở
+`configs/stage2_cue_thresholds_marginal_pfit.json`.
+
+`none` phát nhóm rỗng nhưng **giữ nguyên hình dạng prompt guided và soft token**
+— dùng để tách riêng ảnh hưởng của cue. Nhóm rỗng là một dự đoán hợp lệ; record
+thiếu hẳn key mới là thứ prompt builder từ chối.
+
+⚠ **Đổi `--cue-rule` làm đổi luôn `cohort_id`**, nên cache Stage-1 sẽ dựng lại.
+Đó là chủ đích: `pred_groups` nằm trong cache, và dùng lại cache của quy tắc
+khác sẽ cho cue sai mà không báo lỗi.
+
+⚠ **Cue tốt hơn KHÔNG cải thiện được Stage 2.** Đo 2026-09-08 trên đúng 100
+study val, một checkpoint arm C: `none` − `conditional` là +0,0115
+[+0,0025; +0,0217] BERTScore (có ý nghĩa), còn `marginal` − `conditional` là
++0,0073 [−0,0008; +0,0166] (**chưa xác lập**). Xem `CLAUDE.md`.
 
 ## Một sửa lỗi kèm theo
 
