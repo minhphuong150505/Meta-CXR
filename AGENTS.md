@@ -6,10 +6,15 @@ venv trap, the config invariants and the loss/label policy. This file is the sho
 version for whoever is *executing* a plan — it states the role and the rules that
 are unsafe to learn by trial.
 
-Historical note: until 2026-08-19 the executor was Codex. That subscription lapsed;
-the executor is now Claude Code, installed and authenticated on the training host.
-Nothing about the role changed. This file stays agent-agnostic so it still works
-if the executor changes again.
+The executor may be Claude Code or Codex; both are installed and both have run
+real work here (Codex most recently on 2026-09-08). Nothing about the role
+depends on which. This file stays agent-agnostic on purpose.
+
+⚠ Whichever you are, you are **not necessarily alone on the GPU**. Before
+launching anything: `pgrep -af` the known job names, check `nvidia-smi` is idle,
+and refuse to start if your output directory already exists. On 2026-09-08 two
+agents used this host hours apart without colliding precisely because the second
+one ran those three checks.
 
 ## Your role: execute the plan, report back compactly
 

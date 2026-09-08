@@ -13,10 +13,29 @@ inside this directory.**
 
 ## Who does what — one Claude plans, another Claude executes
 
-Set by the user on 2026-08-19. **Codex is gone** — the subscription lapsed on
-2026-08-19 and the executor is now Claude Code, which is installed and
-authenticated on the training host (`~/.local/bin/claude`, 2.1.233). The split of
-*roles* is unchanged; only the executor's identity is.
+Set by the user on 2026-08-19. Claude Code is installed and authenticated on the
+training host (`~/.local/bin/claude`, 2.1.233). The split of *roles* below is
+what matters; the executor's identity is not fixed.
+
+⚠ **CORRECTED 2026-09-08: "Codex is gone — the subscription lapsed" was WRONG
+and stood here for three weeks.** Codex is installed (`~/.local/bin/codex`) and
+was driving real work as recently as today: session
+`01a076cf-5a6f-77f2-9526-ae8335c5bafd` ran 2026-09-06 20:01 → 2026-09-08 15:52,
+SSH'd to the training host, launched two GPU jobs (the matched Stage-2
+evaluation and the arm C signal probe), and wrote both
+`docs/handoff/PLAN-2026-09-08-*.md`. Its results are quoted in this file. Do not
+assume a tool is unavailable because a line here says so — check
+`command -v`.
+
+⚠⚠ **TWO AGENTS DROVE THIS ONE GPU ON 2026-09-08, AND IT WORKED — because the
+second one checked before it launched.** A Claude session was generating arm C
+test reports until ~11:45; the Codex session started its jobs at 14:40 and
+15:02. It guarded every launch with `pgrep` for the known job names, a
+`nvidia-smi` idle check, and `test ! -e <output dir>` so an existing directory
+aborted instead of being overwritten. That is the pattern to copy. The rule
+remains one card, one run, one output path — the 2026-08-19 double launch that
+left the wrong abort report on disk is what it exists to prevent — but the rule
+is enforced by *checking*, not by assuming you are alone.
 
 | | Planner — this checkout, no GPU | Executor — on the training host |
 |---|---|---|
