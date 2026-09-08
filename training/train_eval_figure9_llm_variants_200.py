@@ -263,7 +263,7 @@ def load_thresholds(path: str | Path | None) -> dict[str, dict[str, float]]:
             raise ValueError(f"threshold entry for {abnormality!r} must be an object")
         class_thresholds = {}
         for class_name, value in values.items():
-            if class_name not in CLASS_MAP:
+            if class_name not in CLASS_MAP and class_name not in CUE_THRESHOLD_KEYS:
                 raise ValueError(f"unknown threshold class {class_name!r} for {abnormality!r}")
             numeric = float(value)
             if not 0.0 <= numeric <= 1.0:
@@ -362,9 +362,25 @@ def field_value(field, index: int = 0) -> str:
         return str(field)
 
 
-#: Key a threshold JSON may carry per abnormality to gate cue emission.
+#: Extra per-abnormality keys a threshold JSON may carry for cue emission,
+#: beyond the P/N/U class names. Both are fitted on validation.
 MENTION_THRESHOLD_KEY = "mention"
+MARGINAL_THRESHOLD_KEY = "marginal_positive"
+CUE_THRESHOLD_KEYS = frozenset({MENTION_THRESHOLD_KEY, MARGINAL_THRESHOLD_KEY})
 DEFAULT_MENTION_THRESHOLD = 0.5
+DEFAULT_MARGINAL_THRESHOLD = 0.5
+
+#: How MHCAC predictions become P/N/U cues.
+CUE_RULE_CONDITIONAL = "conditional_positive"
+CUE_RULE_MENTION_GATED = "mention_gated"
+CUE_RULE_MARGINAL = "marginal_positive"
+#: Emit no cues at all. The prompt keeps its guided shape and its soft tokens,
+#: so this isolates the CUES from the rest of the guided mode -- an empty group
+#: is a real prediction ("nothing worth flagging"), which the prompt builder
+#: accepts; a record missing the keys entirely is what it refuses.
+CUE_RULE_NONE = "none"
+CUE_RULES = (CUE_RULE_CONDITIONAL, CUE_RULE_MENTION_GATED, CUE_RULE_MARGINAL,
+             CUE_RULE_NONE)
 
 
 def classify_with_thresholds(
@@ -372,71 +388,95 @@ def classify_with_thresholds(
     logits: torch.Tensor,
     mention_logits: torch.Tensor | None = None,
     *,
-    use_mention_gate: bool = False,
+    cue_rule: str = CUE_RULE_CONDITIONAL,
 ) -> dict[str, list[str]]:
-    """Sort the 13 reportable findings into positive / negative / uncertain.
+    """Turn MHCAC predictions into the P/N/U cue lists the prompt carries.
 
-    ``logits`` is ``q``: the polarity distribution CONDITIONAL on the finding
-    having been mentioned. Blank CheXpert cells -- 79.5% of the matrix -- are
-    masked out of the classification loss, so this head never saw an example of
-    "absent from the report" and cannot answer whether a finding is there at
-    all. Sorting on ``q`` alone therefore emits a confident polarity for all 13
-    findings on every study, which is why cue precision measured 0.2931: about
-    seven in ten "Positive" cues are false.
+    ``logits`` is ``q``: polarity CONDITIONAL on the finding having been
+    mentioned. 79.5% of the CheXpert matrix is blank and those cells are masked
+    out of the classification loss, so this head never saw "absent from the
+    report" and cannot say whether a finding is present at all.
 
-    ``use_mention_gate=True`` applies the two-stage rule this repo prescribes:
-    open the gate on a per-label threshold, then read the class off ``q``.
-    A finding whose gate stays shut is emitted in NO group -- "the radiologist
-    would not have written about this" is a real answer, and forcing it into
-    negative/uncertain is what inflated the cue list.
+    Three rules, measured on val/test of ``run_20260820_ft`` (macro over the 13
+    reportable findings, ``study_presence`` truth, thresholds fitted on val):
 
-    ⚠ Deliberately NOT an argmax over the marginal. With 79.5% of cells blank,
-    argmax over ``P(class) = sigmoid(m) * q[class]`` makes Positive
-    mathematically unwinnable even for a perfect conditional classifier; that
-    substitution once drove validation F1 to exactly 0.000000. See CLAUDE.md,
-    "A hierarchical alternative".
+    ==========================  =========  ======  ==========
+    rule                        precision  recall  cues/study
+    ==========================  =========  ======  ==========
+    conditional_positive         0.1887    0.8097     8.46
+    mention_gated (m>=0.60)      0.2357*   0.4364*    2.30*
+    marginal_positive            0.4069    0.3135     1.46
+    ==========================  =========  ======  ==========
 
-    ⚠ ``m`` is NOT a calibrated mention probability. The gate trains with
-    inverse-frequency weights (``n_not_mentioned / n_mentioned * kappa_gate``,
-    capped at 10), so its odds are inflated and a raw 0.5 does not mean "even
-    chance it was mentioned". Fit the per-label threshold on validation and
-    pass it in the threshold JSON under ``"mention"``.
+    Rows marked val-only are the middle one. About 1.6 findings are actually present per study, so
+    ``conditional_positive`` -- the rule every recorded run used -- asserts
+    roughly five times more than exists. For the rare findings it degenerates
+    into a constant: Fracture and Pleural Other come out at recall 1.000 with
+    precision equal to their prevalence, i.e. "always say yes". Support Devices,
+    the most common finding at 34.4%, is never called positive at all.
 
-    Default is off, so every recorded run keeps emitting exactly what it did.
+    ``marginal_positive`` thresholds ``sigmoid(m) * q_pos`` per label and emits
+    ONLY the positive group. Nothing is asserted absent: a wrong negative cue
+    can suppress a real finding, and this repo has measured nothing about
+    negative-cue quality. Emitting fewer, better cues is the point -- MedGemma
+    still has the image, so a missing cue costs little while a false one is
+    injected straight into the prompt.
+
+    ``mention_gated`` opens the gate per label, then reads the class off ``q``.
+    Kept because it is the rule CLAUDE.md prescribes, but it measured worse
+    than thresholding the marginal, so it is not the recommendation.
+
+    ⚠ Deliberately never an argmax over the marginal. With 79.5% of cells blank
+    that makes Positive mathematically unwinnable even for a perfect
+    conditional classifier, and once drove validation F1 to exactly 0.000000.
+
+    ⚠ ``m`` is not calibrated -- the gate trains with inverse-frequency weights
+    capped at 10 -- so both thresholds must be fitted on validation and passed
+    in the threshold JSON under ``"mention"`` / ``"marginal_positive"``.
+
+    Default is ``conditional_positive``, so every recorded run keeps emitting
+    exactly what it emitted.
     """
+    if cue_rule not in CUE_RULES:
+        raise ValueError(f"cue_rule must be one of {CUE_RULES}, got {cue_rule!r}")
+    if cue_rule == CUE_RULE_NONE:
+        return {"positive": [], "negative": [], "uncertain": []}
     probs = torch.softmax(logits, dim=-1).tolist()
-    gate_probs = None
-    if use_mention_gate:
+    gate = None
+    if cue_rule != CUE_RULE_CONDITIONAL:
         if mention_logits is None:
             raise ValueError(
-                "use_mention_gate=True needs mention_logits. Stage-1 records "
+                f"cue_rule={cue_rule!r} needs mention_logits. Stage-1 records "
                 "built before the gate was threaded through carry none; rebuild "
                 "them rather than silently falling back to q-only cues."
             )
-        gate_probs = torch.sigmoid(mention_logits.reshape(-1).float()).tolist()
-        if len(gate_probs) != len(ABNORMALITIES_14):
+        gate = torch.sigmoid(mention_logits.reshape(-1).float()).tolist()
+        if len(gate) != len(ABNORMALITIES_14):
             raise ValueError(
-                f"mention_logits has {len(gate_probs)} entries, expected "
+                f"mention_logits has {len(gate)} entries, expected "
                 f"{len(ABNORMALITIES_14)}"
             )
+    positive_index = list(CLASS_MAP).index("positive")
     out = {"positive": [], "negative": [], "uncertain": []}
     for index, (abn, p) in enumerate(zip(ABNORMALITIES_14, probs)):
         if abn == "No Finding":
             continue
-        if gate_probs is not None:
-            threshold = float(
-                context.threshold_for(abn).get(
-                    MENTION_THRESHOLD_KEY, DEFAULT_MENTION_THRESHOLD
-                )
+        thresholds = context.threshold_for(abn)
+        if cue_rule == CUE_RULE_MARGINAL:
+            score = gate[index] * float(p[positive_index])
+            floor = float(
+                thresholds.get(MARGINAL_THRESHOLD_KEY, DEFAULT_MARGINAL_THRESHOLD)
             )
-            if gate_probs[index] < threshold:
+            if score >= floor:
+                out["positive"].append(abn)
+            continue
+        if cue_rule == CUE_RULE_MENTION_GATED:
+            floor = float(
+                thresholds.get(MENTION_THRESHOLD_KEY, DEFAULT_MENTION_THRESHOLD)
+            )
+            if gate[index] < floor:
                 continue
-        best_cls = select_threshold_class(
-            p,
-            context.threshold_for(abn),
-            tuple(CLASS_MAP),
-        )
-        out[best_cls].append(abn)
+        out[select_threshold_class(p, thresholds, tuple(CLASS_MAP))].append(abn)
     return out
 
 
@@ -523,7 +563,7 @@ def stage1_cohort_fingerprint(
     checkpoint_root: Path,
     split: str,
     sample_limit: int | None,
-    use_mention_gate: bool = False,
+    cue_rule: str = CUE_RULE_CONDITIONAL,
 ) -> tuple[str, dict[str, Any]]:
     ckpt_path = stage1_checkpoint_path(context, checkpoint_root)
     cfg_path = context.resolve_config_path(
@@ -542,8 +582,8 @@ def stage1_cohort_fingerprint(
     }
     # Part of the identity because it changes `pred_groups`, which is cached.
     # Omitted when off so every cache built before the gate existed still hits.
-    if use_mention_gate:
-        payload["cue_rule"] = "mention_gated"
+    if cue_rule != CUE_RULE_CONDITIONAL:
+        payload["cue_rule"] = cue_rule
     return stable_fingerprint(payload), payload
 
 
@@ -555,7 +595,7 @@ def build_stage1_records(
     split: str,
     sample_limit: int | None,
     num_workers: int,
-    use_mention_gate: bool = False,
+    cue_rule: str = CUE_RULE_CONDITIONAL,
 ) -> list[dict]:
     """Build Q-Former records. Stage-1 only -- native MedGemma must not call this.
 
@@ -566,7 +606,7 @@ def build_stage1_records(
     exactly the Stage-1 coupling the pipeline split exists to remove.
     """
     cohort_id, cohort = stage1_cohort_fingerprint(
-        context, checkpoint_root, split, sample_limit, use_mention_gate
+        context, checkpoint_root, split, sample_limit, cue_rule
     )
     limit_name = str(sample_limit) if sample_limit and sample_limit > 0 else "all"
     # This local-only cache necessarily contains target report text and image
@@ -637,7 +677,7 @@ def build_stage1_records(
             context,
             logits[0].detach().cpu(),
             mention_cpu,
-            use_mention_gate=use_mention_gate,
+            cue_rule=cue_rule,
         )
         record["qformer_embs"] = qformer[0].detach().cpu().to(torch.float16)
         records.append(record)
