@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from .schemas import PromptContext, VisualMode
+from .schemas import CueState, PromptContext, VisualMode
 
 
 def _as_tuple(value: Any) -> tuple[str, ...]:
@@ -50,7 +50,12 @@ def context_from_record(
         "uncertain_findings",
         "negative_findings",
     )
-    if visual_mode.includes_structured and not any(key in record for key in prediction_keys):
+    cue_state = record.get("cue_state")
+    if (
+        visual_mode.includes_structured
+        and cue_state != CueState.NOT_PROVIDED
+        and not any(key in record for key in prediction_keys)
+    ):
         raise ValueError(
             f"visual_mode={visual_mode.value} places Stage-1 findings in the "
             "prompt, but this record carries none of "
@@ -69,6 +74,7 @@ def context_from_record(
     return PromptContext(
         study_id=str(record.get("study_id") or record.get("sample_key") or "unknown"),
         visual_mode=visual_mode,
+        cue_state=cue_state,
         positive_findings=positive,
         uncertain_findings=uncertain,
         negative_findings=negative,

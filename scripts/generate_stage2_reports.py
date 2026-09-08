@@ -131,6 +131,16 @@ SOFT_TOKEN_IMAGE_MODES = frozenset({"qformer", "native_qformer"})
 
 def validate_invocation(args: argparse.Namespace, mode) -> None:
     """Reject impossible combinations before anything expensive is imported."""
+    if args.cue_rule != "conditional_positive":
+        if not mode.requires_stage1:
+            raise SystemExit("--cue-rule requires a Stage-1 pipeline mode")
+        if args.prompt_config is None:
+            raise SystemExit("non-default --cue-rule requires a matching guided --prompt-config")
+        from stage2.prompts import load_prompt_config
+
+        prompt = load_prompt_config(args.prompt_config)
+        if prompt.visual_mode.image_mode != mode.image_mode or not prompt.visual_mode.includes_structured:
+            raise SystemExit("non-default --cue-rule requires a matching guided --prompt-config")
     if not mode.requires_stage1:
         if args.manifest is None or args.image_root is None:
             raise SystemExit(f"{mode.name} needs --manifest and --image-root")

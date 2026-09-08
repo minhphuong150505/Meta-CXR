@@ -124,3 +124,6 @@ Người dùng. `check_notebook_privacy.py` được `.pre-commit-config.yaml` g
 [`stage2/prompts/_index.md`](../stage2/prompts/_index.md)
 
 ← [Về HOME](../../HOME.md)
+## Cue generation contract (2026-09-08)
+
+`generate_stage2_reports --cue-rule` dùng cùng semantics với training. Non-default rule yêu cầu matching guided prompt; none thực sự bỏ structured block. Xem tests/test_cue_contract.py và handoff cue-contract cho kiểm thử CPU trên host.

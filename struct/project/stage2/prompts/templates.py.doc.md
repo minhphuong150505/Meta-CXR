@@ -43,3 +43,6 @@ là chủ ý. Ghi lại hash trong mọi báo cáo.
 - **Parent:** [`_index.md`](_index.md)
 
 ← [HOME](../../../HOME.md)
+## Identity correction (2026-09-08)
+
+`TEMPLATE_VERSION=stage2_prompt_v2_cue_states_v1` ghi nhận thay đổi semantics của builder, dù text fragment cũ vẫn giữ. Không dùng metric của `none` cũ để đại diện cho prompt mới.

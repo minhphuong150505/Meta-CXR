@@ -11,7 +11,7 @@ import hashlib
 
 from .schemas import VisualMode
 
-TEMPLATE_VERSION = "stage2_prompt_v2"
+TEMPLATE_VERSION = "stage2_prompt_v2_cue_states_v1"
 
 NONE_TOKEN = "none"
 

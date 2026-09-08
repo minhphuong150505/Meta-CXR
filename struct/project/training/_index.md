@@ -144,3 +144,6 @@ Xem [CALL_GRAPH.md §3](../_meta/CALL_GRAPH.md#3-stage-2--top-down).
 [`stage2/prompts/_index.md`](../stage2/prompts/_index.md)
 
 ← [Về HOME](../../HOME.md)
+## Cue rule xuyên suốt (2026-09-08)
+
+`run_medgemma_qlora --cue-rule` truyền vào `build_stage1_records` cho cả ba split và fingerprint evaluation; summary/run_manifest ghi rule. Engine `with_cue_state` bổ sung state cho cache cũ và record mới, trước khi `stage2.prompts.records` dựng context. Non-default rule yêu cầu prompt guided khớp mode.

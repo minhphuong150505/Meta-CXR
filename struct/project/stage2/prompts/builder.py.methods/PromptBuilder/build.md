@@ -24,3 +24,6 @@ API của built prompt/caller, không đụng tokenizer hay torch.
 artifact hash dù semantic nhìn giống nhau.
 
 ← [`builder.py`](../../builder.py.doc.md) · [HOME](../../../../../HOME.md)
+## Cue-state contract
+
+Nhận state đã validate từ PromptContext. Withheld và abstained bỏ structured parts nhưng giữ visual parts (native image và soft token) cùng instruction. `_structured_parts` chỉ chuyển sang `_normal_parts` khi đủ ontology negative; partial negative được render cụ thể. `tests/test_cue_contract.py` kiểm số image/soft tokens, không có normal giả và parity train/generation.

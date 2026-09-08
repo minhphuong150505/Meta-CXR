@@ -292,6 +292,7 @@ Meta-CXR-source/
 │
 ├── tests/                          ✅ 48 file Python — enforce invariant kiến trúc
 │   ├── explainability/             ✅ 91 test CPU (namespace pkg, KHÔNG có __init__.py)
+│   ├── test_cue_contract.py          ✅ cue states, cache compatibility, train/generation parity
 │   └── fixtures/notebooks/*.fixture
 │
 ├── utils/                          ⚠ POTENTIALLY_UNUSED — zero import toàn repo

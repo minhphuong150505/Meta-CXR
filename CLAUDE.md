@@ -1494,8 +1494,8 @@ filter could never be switched off. It is `BooleanOptionalAction` now;
 `--no-frontal-only` works and the default is unchanged. Pinned by
 `tests/test_generate_stage2_reports.py` (23 tests).
 
-⚠⚠ **BETTER CUES DO NOT RESCUE ARM C. Measured 2026-09-08, and this is the
-result that decides the guided route.** Three conditions, ONE fixed arm C
+⚠⚠ **BETTER CUES HAVE NOT ESTABLISHED A GENERATION GAIN. Measured 2026-09-08.**
+Three conditions, ONE fixed arm C
 checkpoint, the SAME 100 val studies in the same order (verified: identical
 `sample_key` lists), same greedy decoding at 160 tokens, only the cue rule
 differing:
@@ -1514,26 +1514,30 @@ Paired per-study bootstrap, 2,000 resamples, seed 16:
 | `marginal` − `conditional` | +0.0073 [**-0.0008**, +0.0166] | -0.0024 [-0.0084, +0.0022] |
 | `none` − `marginal` | +0.0042 [-0.0041, +0.0118] | +0.0100 [-0.0009, +0.0279] |
 
-**Only one comparison is established, and it is the one that removes the cues.**
+**Historical semantics correction (2026-09-08):** the `none` row above used
+empty groups that the old builder rendered as a compact normal-prediction
+statement. It was NOT a clean removal of the structured block. Keep these
+numbers as historical results; the corrected `none` needs new generation.
+The separate signal probe actually removed the structured parts and measured
+`no_cues - full` BERTScore +0.0107 [+0.0033, +0.0191].
+
+**Only the historical `none - conditional` BERTScore CI excludes zero.**
 Raising cue precision from 0.189 to 0.407 and cutting the list from 8.46 to
-1.46 findings per study moves nothing: `marginal - conditional` does not clear
+1.46 findings per study has not established a gain: `marginal - conditional` does not clear
 zero, and its CIDEr -- the boilerplate-insensitive metric -- goes the *wrong*
 way. `none` beats `marginal` numerically on every metric but CIs cross zero.
 
-**This replicates independently.** The `conditional_positive` row reproduces the
+**The full-input control reproduces independently.** The `conditional_positive` row reproduces the
 2026-09-08 Codex probe's `full` arm to four decimals (0.7698 / 0.2115 / 0.2358 /
 0.0100) from a different implementation, and `none` − `conditional`
 (+0.0115 [+0.0025, +0.0217]) matches that probe's `no_cues` − `full`
-(+0.0107 [+0.0033, +0.0191]). Two codebases, same answer.
+(+0.0107 [+0.0033, +0.0191]). The directions agree, but the interventions differ.
 
-**So the honest conclusion is about the ROUTE, not the cue rule.** Injecting
-Stage-1 predictions into the prompt does not help, and at Stage 1's current
-quality it hurts; the fix is not a better decision rule, because the best rule
-this project can build from the existing checkpoint was tried and bought
-nothing. Together with the earlier finding that zeroing the soft tokens is
-roughly neutral, the most economical reading is that MedGemma already recovers
-this information from the image, so a cue is redundant when right and pure
-noise when wrong.
+**The supported conclusion concerns this checkpoint and inference intervention.**
+Removing the original cues helped BERTScore on 100 validation studies. A gain
+from marginal cues has not been established at this n. Redundancy with native
+vision is a hypothesis, not proof that every cue rule or retrained guided model
+must fail. These NLG results do not establish clinical accuracy improvements.
 
 ⚠ n=100. The CIs are wide and `marginal - conditional` at +0.0073
 [-0.0008, +0.0166] is *nearly* significant -- report it as "not established at
@@ -1896,12 +1900,26 @@ is indicative, not tight: the probe is **val**, mean-pooled, and `q`-equivalent
 with no mention gate, while 0.7643 is **test** with calibrated thresholds and
 `marginal_presence`.
 
-The cue source in `classify_with_thresholds`
-(`train_eval_figure9_llm_variants_200.py:352`) softmaxes the classification
-logits alone and **never touches the mention gate**, so the cues are `q`, not
-`marginal_presence = sigmoid(m) x q_pos` — the score measured to beat `q` on
-14 of 14 labels. Changing that is the agreed next improvement and has not been
-made.
+**Cue contract, corrected 2026-09-08.** Both `run_medgemma_qlora.py` and
+`generate_stage2_reports.py` accept `--cue-rule`; all train/val/test records and
+training evaluation fingerprints receive it. The reproducibility default is
+still `conditional_positive` (`q` only). `marginal_positive` uses
+`sigmoid(m) * q_pos` and the validation-fit threshold JSON; `mention_gated` is
+also available. Non-default rules require a matching guided `--prompt-config`.
+
+`CueState` separates `not_provided` (`none`), `abstained` (no group selected),
+and `predicted` (one or more P/N/U findings). The first two emit no structured
+block, keeping native image, 32 soft tokens and task instructions intact.
+Partial negative predictions remain specific; a compact normal summary is
+allowed only when all 13 findings were explicitly predicted negative.
+Legacy cached records are annotated on read, without recomputing embeddings or
+modifying the cache. Template identity is `stage2_prompt_v2_cue_states_v1`;
+old empty-group generation results cannot be relabelled as corrected `none`.
+Use a fresh output directory for experiments with a different cue rule.
+
+Verification and aggregate-only cache audit:
+`docs/handoff/PLAN-2026-09-08-cue-contract.md`. GPU generation was not launched
+because the card was occupied; CPU checks cannot establish better reports.
 
 **The deliverable is `scripts/explain_stage2.py`.** One JSONL line per study
 (sentence text, `lexicon_v1` labels, map path, `mean_token_nll`,

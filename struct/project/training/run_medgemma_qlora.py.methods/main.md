@@ -62,3 +62,6 @@ Ghi adapter/JSONL/meta.json · Upload GCS · Cấp phát GPU
 
 ## Modification risk
 ⚠ Đừng nới lỏng kiểm tra section — âm thầm đổi target làm kết quả không so sánh được.
+## Cue wiring (2026-09-08)
+
+Sau resolve mode và load prompt, non-default cue rule được kiểm tra trước khi tạo output/record. Rule được truyền cho build_stage1_records ở train/val/test và ghi trong summary/run_manifest. Test chạy main với model/data loader giả lập, xác minh cả ba call và prompt parity với generation.
