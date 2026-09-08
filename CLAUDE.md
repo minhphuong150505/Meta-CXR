@@ -1977,6 +1977,35 @@ explanation. The gate aborts the run, like the ablation one, and both are
 recorded in `summary.json`. On the same run the ablation was **+0.2376
 [+0.1087, +0.3807], 100% of studies worse**.
 
+**The 256 image tokens are verified from the processor itself, not inferred
+(2026-09-06).** The number appears in `projection.py`, `attention_capture.py`
+and their tests, and until this check it rested on the checkpoint config plus
+the runtime assert in `locate_visual_tokens`. Printed on the host from
+`AutoConfig` + `AutoProcessor`, CPU only:
+
+```
+mm_tokens_per_image : 256          vision image_size : 896
+image_token_index   : 262144       vision patch_size : 14
+SigLIP patches      : 896/14 = 64 x 64 = 4096
+LM grid             : 16 x 16      pooling: 64/16 = 4      px/token: 896/16 = 56
+
+processor, real tokenization (a 2544x3056 study):
+  image tokens found : 256    span [5, 260]    contiguous: True
+  pixel_values       : (1, 3, 896, 896)
+VERDICT: mm_tokens_per_image=256, processor emits 256 -> MATCH
+```
+
+Two independent paths agree: the config declares 256 and the processor actually
+emits 256 contiguous image tokens. `pixel_values` coming back square from a
+portrait study also re-confirms that MedGemma resizes to 896x896 **without**
+preserving aspect, which is why its map and Stage 1's must both be carried back
+to the original image before they can be compared.
+
+⚠ `attention_capture.py`'s comment says "256 tokens at [5, 260] of a 282-token
+sequence". The span reproduces exactly; the **282** does not -- it was 278 here,
+because the total depends on the accompanying text. Quote the span, never the
+total. Re-run with `/tmp/vt.py` on the host (~30 s, no GPU).
+
 **MedGemma's grid has its own import-time assert.**
 `assert_shared_coordinate_frame(STAGE1_GRIDS)` checks 14*32 == 7*64 == 448 and
 says nothing about `medgemma_direct`, which lives in a different square. From
