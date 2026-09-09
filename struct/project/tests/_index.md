@@ -189,6 +189,8 @@ sẽ skip hoặc fail rõ ràng trên máy CPU thuần.
 
 `test_generation_stop_tokens.py` checks that generation honors model-specific
 list/scalar stopping IDs and tokenizer fallback using a synthetic token stream.
+It also checks reuse with unchanged settings and invalidation after EOS IDs,
+prompt config or template hash change through the real `evaluate_variant` path.
 
 `test_selective_cues.py` covers empirical precision/support fitting, tied-score
 handling, both missing-label sentinels, split/overwrite guards and disabled-label

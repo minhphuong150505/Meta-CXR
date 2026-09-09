@@ -143,6 +143,11 @@ stringify** vào prompt thay vì fail.
 ← [HOME](../../HOME.md)
 ## Cue state and cache compatibility (2026-09-08)
 
+`evaluate_variant` includes effective EOS IDs, `_prompt_metadata()` (config and
+template hashes) and section mode in its evaluation fingerprint. Unchanged
+settings reuse cached results; changed stopping or prompt semantics regenerate
+them. This is separate from the Stage-1 feature cache.
+
 Selective positive artifacts add binary `positive_enabled`. `load_thresholds`
 validates the flag; [validate_selective_thresholds](train_eval_figure9_llm_variants_200.py.methods/validate_selective_thresholds.md)
 requires a complete 13-label artifact and the marginal rule before cache access.

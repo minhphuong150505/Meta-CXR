@@ -146,6 +146,9 @@ Xem [CALL_GRAPH.md §3](../_meta/CALL_GRAPH.md#3-stage-2--top-down).
 ← [Về HOME](../../HOME.md)
 ## Cue rule xuyên suốt (2026-09-08)
 
+Evaluation cache của `evaluate_variant` phân biệt stop IDs, prompt metadata và
+section mode; không tái dùng kết quả trước sửa token dừng hoặc đổi prompt.
+
 Selective marginal cues hỗ trợ `positive_enabled` theo nhãn. Calibration CLI
 `scripts/calibrate_cue_precision.py` tắt nhãn không đạt precision/support trên
 validation; engine kiểm artifact đủ 13 nhãn trước cache/model access. Không đổi

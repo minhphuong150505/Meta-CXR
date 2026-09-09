@@ -221,3 +221,37 @@ only aggregate counts of tokens emitted after the first end-of-turn; retain
 generated text privately for matched NLG evaluation. This is a small mechanism
 probe, not a full held-out generation evaluation. Launch only after the current
 run exits and fresh GPU/job/output checks pass; no queued GPU process.
+
+### Follow-up status check and cache completion, 2026-09-09
+
+At the user's later status request, the GPU was idle: 170 MiB / 16,311 MiB,
+0% utilization, no known training/generation/evaluation Python job. Both
+100-case cue runs and their evaluations had finished, exit 0. Selective minus
+none: BERTScore +0.004295 (CI95 [-0.003208, +0.012384]), CIDEr +0.000209
+([-0.000412, +0.000947]); no established benefit. Repeated 5-gram >=3 times:
+50/100 versus 51/100. Aggregate comparison remains in the probe directory.
+
+The shared repository had advanced to `79139fc`, including completed 25-case
+stop-token and 100-case corrected-stop cue probes (recorded in CLAUDE.md).
+These completed probes supersede the pending-launch wording above. Their
+summary/comparison files and per-arm evaluation logs remain on the host.
+
+**Execution incident:** a duplicate invocation of the prepared 25-case runner
+(PID 114496) was rejected by its existing-output guard before any GPU inference.
+However, outer shell redirection had already truncated
+`/home/phuong/stage2_stop_probe_20260909.log` to zero bytes. That master log is
+lost; do not cite it as the original run log. The output directory, generated
+reports, `generation_summary.json`, `comparison.json`, and four per-arm
+`*_eval.log` files were verified present. No replacement GPU run was started.
+Future launches must check both the output directory and log before redirection,
+and use shell noclobber for the master log.
+
+Completed the remaining cache fix: evaluation fingerprints now include effective
+stop IDs, prompt config/template metadata and section mode. This prevents stale
+pre-fix generations/metrics from being reused. Regression test exercises actual
+cache reuse and invalidation. Host main was pulled again (already current).
+Full CPU command with the same exclusions as above: **exit 0, 1,013 passed,
+2 skipped**; raw log `/home/phuong/stage2_stop_final_tests_20260909.log`.
+Targeted four tests: exit 0, `/home/phuong/stage2_stop_cache_tests_20260909.log`.
+New test file passes Ruff; complete Ruff output remains baseline-only and is
+saved in `/home/phuong/stage2_stop_final_lint_20260909.json`.

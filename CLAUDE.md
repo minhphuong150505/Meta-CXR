@@ -1959,6 +1959,12 @@ to tokenizer EOS only when no model stop is configured. Generation summaries
 record the effective IDs. This fixes a shared A/C decoding defect; its effect
 on repetition and the A/C difference requires a separate matched probe.
 
+Evaluation cache identity now includes effective stop IDs, prompt metadata
+(config/template hashes), and section mode. `evaluate_variant` must not reuse
+pre-fix reports or scores after stopping or prompt semantics change. The final
+CPU suite including cache invalidation is 1,013 passed, 2 skipped; see the
+root-cause handoff for the follow-up status check and log incident.
+
 ✅⚠ **THE STOP DEFECT IS CONFIRMED, AND IT DOMINATES EVERY STAGE-2 NUMBER THIS
 PROJECT HAS RECORDED (measured 2026-09-09).** Paired probe, 25 val cases chosen
 by seed before any output was seen, four arms crossed (cues x stop IDs) inside
