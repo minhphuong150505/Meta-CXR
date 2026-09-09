@@ -1959,6 +1959,54 @@ to tokenizer EOS only when no model stop is configured. Generation summaries
 record the effective IDs. This fixes a shared A/C decoding defect; its effect
 on repetition and the A/C difference requires a separate matched probe.
 
+✅⚠ **THE STOP DEFECT IS CONFIRMED, AND IT DOMINATES EVERY STAGE-2 NUMBER THIS
+PROJECT HAS RECORDED (measured 2026-09-09).** Paired probe, 25 val cases chosen
+by seed before any output was seen, four arms crossed (cues x stop IDs) inside
+ONE loaded model instance with alternating arm order, greedy 160 tokens:
+
+| arm | tokens | hit the 160 cap | emitted `<end_of_turn>` | tokens AFTER it |
+|---|---:|---:|---:|---:|
+| `none_old` (stops `[1]`) | 4,000 | **25/25** | 25/25 | **3,112** |
+| `none_fixed` (stops `[1,106]`) | 888 | **0/25** | 25/25 | **0** |
+| `selective_old` | 4,000 | **25/25** | 25/25 | **3,096** |
+| `selective_fixed` | 904 | **0/25** | 25/25 | **0** |
+
+**The model signalled completion on every single generation and the code made it
+keep writing: 78% of all emitted tokens (3,112 of 4,000) came after
+`<end_of_turn>`, and 100% of outputs ran to the cap.** These are counts, not
+estimates. With the model's own stop IDs restored, output is 4.5x shorter, no
+generation reaches the cap, and nothing follows the terminator.
+
+Paired NLG effect, same 25 cases:
+
+| | old | fixed | delta, CI95 |
+|---|---:|---:|:---|
+| **CIDEr**, no cues | 0.0065 | **0.1683** | **+0.1618 [+0.0727, +0.2620]** |
+| **CIDEr**, selective | 0.0065 | **0.1587** | **+0.1522 [+0.0651, +0.2515]** |
+| ROUGE-L, no cues | 0.2269 | 0.2721 | +0.0451 [+0.0005, +0.0925] |
+| BERTScore-F1, no cues | 0.7770 | 0.8071 | +0.0301 [-0.0015, +0.0566] |
+| METEOR, no cues | 0.2806 | 0.2609 | -0.0197 [-0.0676, +0.0275] |
+
+**CIDEr rises ~25x and clears zero in both cue conditions.** This file has
+repeatedly called CIDEr the honest metric because its TF-IDF weighting discounts
+boilerplate; it sat at 0.006-0.06 through every Stage-2 experiment here. Most of
+that floor was the defect, not the model. METEOR falls slightly and
+insignificantly, which is expected: it rewards length and recall, and output is
+4.5x shorter.
+
+**What this does and does not invalidate.** The defect was SYMMETRIC across every
+arm ever compared, so the relative conclusions most likely stand -- arm A vs arm
+C, fine-tuned vs zero-shot, and the four cue rules were all measured under it.
+What does not stand is any **absolute** Stage-2 number, and the cue conclusions
+deserve re-measurement: "cues do not help" was established in a regime where
+78% of the output was post-completion filler drowning the signal.
+
+⚠ n=25, one previously-examined val cohort, thresholds fitted on it. ROUGE-L
+barely clears zero and BERTScore does not. The token counts are exact; the NLG
+deltas are a small mechanism probe, not a held-out evaluation. Re-generating the
+recorded results with correct stops is the work this implies, and it has not
+been done. Artifacts: `/home/phuong/stage2_stop_probe_20260909/`.
+
 ⚠⚠ **THIS CHANGES GENERATION, SO EVERY STAGE-2 NUMBER RECORDED BEFORE
 2026-09-09 WAS PRODUCED WITH THE DEFECT AND CANNOT BE REPRODUCED BY THIS CODE.**
 Unlike `--no-repeat-ngram-size`, it is not opt-in, and it should not be: the old

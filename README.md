@@ -884,6 +884,34 @@ Marginal cues chưa chứng minh cải thiện sinh báo cáo; chưa thể suy r
 mọi rule hoặc model được huấn luyện lại. Giả thuyết cues trùng thông tin ảnh
 chưa phải kết luận về cơ chế, và NLG không thay thế đánh giá độ đúng lâm sàng.
 
+#### ⚠️ CẢNH BÁO 2026-09-09: mọi số Stage-2 ở trên đo khi còn LỖI DỪNG SINH
+
+MedGemma khai báo stop token `[1, 106]` với `106 = <end_of_turn>`, nhưng code
+ghi đè bằng mỗi EOS của tokenizer (`1`). Model **không được phép dừng ở đúng
+dấu kết thúc mà target huấn luyện dùng**. Đo trên 25 case val, 4 nhánh trong
+một instance model:
+
+| nhánh | tokens | cạn cap 160 | phát `<end_of_turn>` | token viết SAU đó |
+|---|---:|---:|---:|---:|
+| stop cũ `[1]` | 4.000 | **25/25** | 25/25 | **3.112** |
+| stop đúng `[1,106]` | 888 | **0/25** | 25/25 | **0** |
+
+**78% số token sinh ra là phần thừa viết sau khi model đã báo xong**, và 100%
+output cạn cap. Đây là phép đếm, không phải ước lượng.
+
+Sửa xong, CIDEr tăng ~25 lần: **0,0065 → 0,1683**, CI95 [+0,0727; +0,2620].
+CIDEr là chỉ số chiết khấu khuôn mẫu — nó kẹt ở 0,006–0,06 suốt mọi thí nghiệm
+Stage-2 của dự án, và phần lớn cái sàn đó là hiện vật của lỗi này.
+
+⚠ Lỗi **đối xứng** giữa mọi nhánh từng so sánh, nên các kết luận **tương đối**
+ở trên nhiều khả năng vẫn đúng. Cái không còn đứng là **mọi con số tuyệt đối**.
+Kết luận "cue không giúp" cũng cần đo lại, vì nó được thiết lập trong chế độ mà
+78% output là nhiễu lấp lên tín hiệu.
+
+⚠ n=25, cùng một cohort val đã xem trước đó. Số đếm token là chính xác; các
+delta NLG là phép thử cơ chế nhỏ, không phải đánh giá held-out. **Việc sinh lại
+toàn bộ kết quả với stop đúng CHƯA được làm.**
+
 #### Giới hạn — phải đọc kèm
 
 - **n = 100 cho mục 2 và 4.** CI rộng. `marginal − conditional` ở +0,0073
