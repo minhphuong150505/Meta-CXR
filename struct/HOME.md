@@ -269,6 +269,7 @@ Meta-CXR-source/
 │   ├── vm_preflight.py             🧰 chạy TRƯỚC mọi run dài
 │   ├── train_healthcheck.sh         🧰 monitor chỉ đọc Stage 1/2; cron dùng exit code
 │   ├── calibrate_thresholds.py     ✅   evaluate_stage1.py ✅
+│   ├── calibrate_cue_precision.py  ✅ selective marginal cues, validation-only fitting
 │   ├── evaluate_explanation.py     ✅ XAI, checkpoint + autograd, không train
 │   ├── evaluate_stage2.py          ✅   check_notebook_privacy.py ✅ pre-commit
 │   ├── run_prompt_ablation.py      🧪   export_stage2_prompt_samples.py 🧪 ⚠ chứa findings
@@ -293,6 +294,8 @@ Meta-CXR-source/
 ├── tests/                          ✅ 48 file Python — enforce invariant kiến trúc
 │   ├── explainability/             ✅ 91 test CPU (namespace pkg, KHÔNG có __init__.py)
 │   ├── test_cue_contract.py          ✅ cue states, cache compatibility, train/generation parity
+│   ├── test_selective_cues.py         ✅ precision/support fitting and disabled-label guards
+│   ├── test_generation_stop_tokens.py ✅ model chat stop IDs and tokenizer fallback
 │   └── fixtures/notebooks/*.fixture
 │
 ├── utils/                          ⚠ POTENTIALLY_UNUSED — zero import toàn repo

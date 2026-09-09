@@ -39,6 +39,13 @@ cáo**. Nó sẽ được decode thành text rác trong output cuối.
 ## Returns
 `str` — báo cáo đã dọn.
 
+## Stop tokens (2026-09-09)
+Giữ `model.generation_config.eos_token_id`, kể cả danh sách nhiều ID; chỉ dùng
+tokenizer EOS khi model không cấu hình. MedGemma dùng `[1, 106]`, và target chat
+kết thúc bằng 106. Chỉ truyền tokenizer EOS 1 sẽ bỏ mất ranh giới lượt trả lời.
+Regression: `tests/test_generation_stop_tokens.py` kiểm tra list/scalar/fallback
+với chuỗi sinh tổng hợp, không tải model hay dữ liệu.
+
 ## Side effects
 Chạy generate trên GPU.
 

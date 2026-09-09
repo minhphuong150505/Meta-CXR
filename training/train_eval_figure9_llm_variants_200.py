@@ -268,6 +268,8 @@ def load_thresholds(path: str | Path | None) -> dict[str, dict[str, float]]:
             numeric = float(value)
             if not 0.0 <= numeric <= 1.0:
                 raise ValueError(f"threshold for {abnormality!r}/{class_name!r} is outside [0, 1]")
+            if class_name == POSITIVE_ENABLED_KEY and numeric not in (0.0, 1.0):
+                raise ValueError("positive_enabled must be 0 or 1")
             class_thresholds[class_name] = numeric
         calibrated[str(abnormality)] = class_thresholds
     return calibrated
@@ -362,11 +364,12 @@ def field_value(field, index: int = 0) -> str:
         return str(field)
 
 
-#: Extra per-abnormality keys a threshold JSON may carry for cue emission,
-#: beyond the P/N/U class names. Both are fitted on validation.
+#: Extra per-abnormality keys for cue emission: validation-fit thresholds and
+#: an explicit binary enable flag for selective positive cues.
 MENTION_THRESHOLD_KEY = "mention"
 MARGINAL_THRESHOLD_KEY = "marginal_positive"
-CUE_THRESHOLD_KEYS = frozenset({MENTION_THRESHOLD_KEY, MARGINAL_THRESHOLD_KEY})
+POSITIVE_ENABLED_KEY = "positive_enabled"
+CUE_THRESHOLD_KEYS = frozenset({MENTION_THRESHOLD_KEY, MARGINAL_THRESHOLD_KEY, POSITIVE_ENABLED_KEY})
 DEFAULT_MENTION_THRESHOLD = 0.5
 DEFAULT_MARGINAL_THRESHOLD = 0.5
 
@@ -391,6 +394,20 @@ def with_cue_state(record: dict, cue_rule: str) -> dict:
     else:
         state = "predicted" if any(groups.get(k) for k in ("positive", "negative", "uncertain")) else "abstained"
     return {**record, "pred_groups": groups, "cue_rule": cue_rule, "cue_state": state}
+
+
+def validate_selective_thresholds(context: Stage1Context, cue_rule: str) -> None:
+    """Selective artifacts must explicitly enable/disable every reportable label."""
+    if not any(POSITIVE_ENABLED_KEY in values for values in context.thresholds.values()):
+        return
+    if cue_rule != CUE_RULE_MARGINAL:
+        raise ValueError("selective thresholds require cue_rule=marginal_positive")
+    for name in ABNORMALITIES_14:
+        if name == "No Finding":
+            continue
+        values = context.threshold_for(name)
+        if values.get(POSITIVE_ENABLED_KEY) not in (0, 1) or MARGINAL_THRESHOLD_KEY not in values:
+            raise ValueError(f"selective thresholds need positive_enabled and marginal_positive for {name}")
 
 
 def classify_with_thresholds(
@@ -449,6 +466,7 @@ def classify_with_thresholds(
     """
     if cue_rule not in CUE_RULES:
         raise ValueError(f"cue_rule must be one of {CUE_RULES}, got {cue_rule!r}")
+    validate_selective_thresholds(context, cue_rule)
     if cue_rule == CUE_RULE_NONE:
         return {"positive": [], "negative": [], "uncertain": []}
     probs = torch.softmax(logits, dim=-1).tolist()
@@ -473,6 +491,8 @@ def classify_with_thresholds(
             continue
         thresholds = context.threshold_for(abn)
         if cue_rule == CUE_RULE_MARGINAL:
+            if not thresholds.get(POSITIVE_ENABLED_KEY, 1):
+                continue
             score = gate[index] * float(p[positive_index])
             floor = float(
                 thresholds.get(MARGINAL_THRESHOLD_KEY, DEFAULT_MARGINAL_THRESHOLD)
@@ -615,6 +635,7 @@ def build_stage1_records(
     ``MIMIC_CXR_Dataset``, so routing native mode through it would reintroduce
     exactly the Stage-1 coupling the pipeline split exists to remove.
     """
+    validate_selective_thresholds(context, cue_rule)
     cohort_id, cohort = stage1_cohort_fingerprint(
         context, checkpoint_root, split, sample_limit, cue_rule
     )
@@ -907,7 +928,10 @@ class VariantLLM:
             self.model.config.use_cache = False
         if getattr(self.model, "generation_config", None) is not None:
             self.model.generation_config.pad_token_id = self.tokenizer.pad_token_id
-            self.model.generation_config.eos_token_id = self.tokenizer.eos_token_id
+            # Chat models may stop at both EOS and end-of-turn. Replacing this
+            # list with tokenizer EOS discards the terminator used by targets.
+            if self.model.generation_config.eos_token_id is None:
+                self.model.generation_config.eos_token_id = self.tokenizer.eos_token_id
 
         if not self.quantize_4bit:
             self.model.to(self.device)
@@ -1569,13 +1593,17 @@ class VariantLLM:
                 )
             )
         try:
+            generation_config = getattr(self.model, "generation_config", None)
+            eos_token_id = getattr(generation_config, "eos_token_id", None)
+            if eos_token_id is None:
+                eos_token_id = self.tokenizer.eos_token_id
             generate_kwargs = {
                 **model_inputs,
                 "max_new_tokens": max_new_tokens,
                 "num_beams": 1,
                 "do_sample": False,
                 "pad_token_id": self.tokenizer.pad_token_id,
-                "eos_token_id": self.tokenizer.eos_token_id,
+                "eos_token_id": eos_token_id,
                 "use_cache": True,
                 "return_dict_in_generate": False,
             }
@@ -1586,8 +1614,8 @@ class VariantLLM:
             )
             if bad_words is not None:
                 generate_kwargs["bad_words_ids"] = bad_words
-            # Absent unless a caller asks, so the default kwargs dict is
-            # byte-for-byte what every recorded run used.
+            # Anti-repetition controls remain absent unless a caller asks.
+            # Model-specific stop tokens above apply independently of them.
             if no_repeat_ngram_size:
                 generate_kwargs["no_repeat_ngram_size"] = int(no_repeat_ngram_size)
             if repetition_penalty:

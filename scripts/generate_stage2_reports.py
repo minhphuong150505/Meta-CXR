@@ -376,6 +376,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 rate = (index + 1) / (time.time() - started)
                 print(f"[gen] {index + 1}/{n}  {rate:.2f} study/s", flush=True)
 
+    eos_token_id = getattr(getattr(llm.model, "generation_config", None), "eos_token_id", None)
+    if eos_token_id is None:
+        eos_token_id = llm.tokenizer.eos_token_id
     summary = {
         "mode": run_mode,
         "pipeline_mode": mode.name,
@@ -395,6 +398,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "n_written": n - failures,
         "n_failed": failures,
         "max_new_tokens": args.max_new_tokens,
+        "eos_token_id": eos_token_id,
         "no_repeat_ngram_size": args.no_repeat_ngram_size or None,
         "repetition_penalty": args.repetition_penalty or None,
         "seed": args.seed,

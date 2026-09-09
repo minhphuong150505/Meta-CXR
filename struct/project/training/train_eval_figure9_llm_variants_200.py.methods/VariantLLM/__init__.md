@@ -11,6 +11,10 @@
 Load Vicuna hoặc MedGemma, tùy chọn quantize MedGemma 4-bit, gắn/đọc LoRA và dựng
 projector cho đường Q-Former.
 
+Constructor giữ stop IDs sẵn có trong `generation_config`; chỉ điền tokenizer
+EOS khi giá trị hiện tại là `None`. Không thu gọn `[EOS, end_of_turn]` thành
+EOS, vì assistant targets dùng token kết thúc lượt.
+
 ## Execution flow
 ```text
 hf_kwargs() / hf_token()                 ← MedGemma là gated model, cần HF_TOKEN

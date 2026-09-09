@@ -146,4 +146,9 @@ Ghi adapter + JSONL + `meta.json` · Upload GCS (trừ `--no-upload`) · Cấp p
 ← [HOME](../../HOME.md)
 ## Cue rule (2026-09-08)
 
+`--cue-rule marginal_positive --threshold-path <selective artifact>` also honors
+the per-label `positive_enabled` flags through the shared record builder.
+Use a new training output: the existing Arm C was trained with conditional cues,
+and changing inference cues does not retroactively retrain that adapter.
+
 `--cue-rule` dùng cùng choices/default với engine và generation. `main` truyền nó cho mọi split, ghi summary/run_manifest; `train_mode` truyền vào fingerprint val/test. Non-default rule cần Stage-1 mode và matching guided prompt config, tránh rơi vào legacy prompt. Chạy experiment với output mới; không tái sử dụng adapter của rule khác.
