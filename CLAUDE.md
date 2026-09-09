@@ -2494,7 +2494,7 @@ gains are exactly where "was it mentioned" carries the signal — `No Finding`
 +0.2603, `Pleural Other` +0.2501, `Fracture` +0.1798, `Support Devices` +0.0948
 — and those first three are precisely the labels that are degenerate under
 `masked_polarity`. `micro_auroc` goes 0.6384 -> 0.8183, `macro_specificity`
-0.6359 -> 0.8214. Per-label table: `Test/stage1_test/mention_gate_contribution.csv`
+0.6359 -> 0.8214. Per-label table: `Eval/stage1_test/mention_gate_contribution.csv`
 (git-ignored, on the dev box).
 
 ⚠ `m` is **not** a calibrated mention probability — the gate trains with
@@ -2707,7 +2707,7 @@ are not comparable across the runs because kappa changed the loss scale — the
 comparable thing is the shape. `run_20260821_ext` below settles what that
 falling curve was worth: nothing.
 
-Full record: `Test/stage1_test_02/README.md` (git-ignored, on the dev box).
+Full record: `Eval/stage1_test_02/README.md` (git-ignored, on the dev box).
 
 **MORE EPOCHS DO NOT HELP — measured 2026-08-21, `run_20260821_ext`.** The
 sentence that used to stand here ("this model has not converged; more epochs is
@@ -2742,7 +2742,7 @@ Three transferable lessons, all cheap to reuse:
    was luck in the product `m x q`, which is not a mechanism.
 
 **Run 02 / epoch 9 stands as the final Stage-1 model.** Full record:
-`Test/stage1_test_03/README.md` (git-ignored, on the dev box).
+`Eval/stage1_test_03/README.md` (git-ignored, on the dev box).
 
 **The matched training-side lever, not yet run:
 `model.loss.lambda_mention_conditioned_cls`.** It trains the joint
