@@ -170,4 +170,14 @@ bệnh nhân — để ngoài repo.**
 ← [Về `scripts/`](_index.md)
 ## Correction: withheld is not normal (2026-09-08)
 
+Selective marginal artifacts from `calibrate_cue_precision.py` carry per-label
+`positive_enabled`. Use `--cue-rule marginal_positive --threshold-path <artifact>`
+with a matching guided prompt. The shared record builder rejects incomplete
+selective artifacts or a mismatching rule; disabled labels abstain, never become
+negative cues. Generation benefit remains unverified pending the matched probe.
+
 `none` hiện ghi cue_state=not_provided và bỏ structured block; rỗng từ marginal/gated là abstained, cũng không phát câu normal. Đây là thay đổi so với bảng metric lịch sử ở trên: none cũ vẫn phát normal summary, không tương đương probe xoá block. Non-default rule yêu cầu matching guided --prompt-config. Training cũng nhận --cue-rule và truyền cùng rule cho cả ba split.
+## Stop-token provenance
+
+`generation_summary.json` includes effective `eos_token_id` (scalar/list),
+preserving model chat terminators instead of overriding them with tokenizer EOS.

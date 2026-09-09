@@ -143,6 +143,12 @@ stringify** vào prompt thay vì fail.
 ← [HOME](../../HOME.md)
 ## Cue state and cache compatibility (2026-09-08)
 
+Selective positive artifacts add binary `positive_enabled`. `load_thresholds`
+validates the flag; [validate_selective_thresholds](train_eval_figure9_llm_variants_200.py.methods/validate_selective_thresholds.md)
+requires a complete 13-label artifact and the marginal rule before cache access.
+`classify_with_thresholds` skips disabled labels even at score 1. Producer:
+`scripts/calibrate_cue_precision.py`; callers remain training and generation.
+
 Method contract: [with_cue_state](train_eval_figure9_llm_variants_200.py.methods/with_cue_state.md).
 
 `with_cue_state(record, cue_rule)` tạo dict mới, giữ tensor, gắn cue_rule và cue_state. none xoá nhóm và ghi not_provided; rule khác có nhóm ghi predicted, rỗng ghi abstained. build_stage1_records áp dụng cho cả cache hit lẫn record mới. Cache identity vẫn phân biệt rule, default cache vẫn tái dùng được. Prompt consumer: stage2.prompts.records → PromptBuilder; caller: training entrypoint và scripts/generate_stage2_reports.py.

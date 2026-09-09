@@ -187,4 +187,12 @@ sẽ skip hoặc fail rõ ràng trên máy CPU thuần.
 ← [Về HOME](../../HOME.md)
 ## Cue contract regression
 
+`test_generation_stop_tokens.py` checks that generation honors model-specific
+list/scalar stopping IDs and tokenizer fallback using a synthetic token stream.
+
+`test_selective_cues.py` covers empirical precision/support fitting, tied-score
+handling, both missing-label sentinels, split/overwrite guards and disabled-label
+emission even at score 1. It checks complete selective artifacts before cache
+access and rejects rule mismatches and fractional enable flags.
+
 `test_cue_contract.py`: synthetic tensors → groups → state → prompt, cache-hit normalization without model load, both visual channels intact, missing/contradictory state guard, partial negative specificity and actual training main/generation record wiring. Host execution only; no model training/generation in these tests.

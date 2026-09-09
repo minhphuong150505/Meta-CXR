@@ -1921,6 +1921,80 @@ Verification and aggregate-only cache audit:
 `docs/handoff/PLAN-2026-09-08-cue-contract.md`. GPU generation was not launched
 because the card was occupied; CPU checks cannot establish better reports.
 
+**Selective marginal cues (2026-09-09, opt-in mitigation).**
+`scripts/calibrate_cue_precision.py` fits maximum recall at an empirical
+validation precision floor (0.70) with >=20 predicted cases. Infeasible labels
+are explicitly disabled via `positive_enabled=0`, not assigned a fallback 0.5
+threshold. Selective artifacts must cover all 13 reportable findings and can
+only be used with `--cue-rule marginal_positive`. Both training and generation
+honor the flag before score comparison, even for a saturated score of 1.
+
+CPU experiment, 1,808 val cases for fitting, 3,269 test cases for confirmation:
+test **micro** precision 0.1796 conditional / 0.4266 previous marginal /
+**0.6800 selective**, recall 0.7514 / 0.3089 / 0.2787, cues per study
+8.4607 / 1.4644 / 0.8287. Only Lung Opacity, Edema, Pleural Effusion and Support
+Devices qualify; the other nine abstain. The 0.70 validation floor is NOT a test
+guarantee (selective precision CI95 [0.6627, 0.6989]). This uses report-label
+presence, not image-grounded truth, and does not establish generation benefit.
+Do not compare these micro numbers directly to the older macro table.
+
+The tokenizer audit found 11/1,415 conditional validation targets truncated at
+768 (0.78%, 99.845% of target tokens retained), zero for native/marginal/none.
+This small validation finding does not justify attributing the whole generation
+gap to truncation. Removing cues left repetition 41%→40% in the fixed 100-case
+probe, so repetition is a separate unresolved problem. Zeroing soft tokens
+lowered ROUGE-L despite inconclusive BERTScore/CIDEr; they are not proven harmful.
+Full CPU suite after both fixes: 1,009 passed, 2 skipped, versus the measured
+unchanged baseline of 974 passed, 2 skipped. Ruff remains at the same 438
+pre-existing diagnostics. The real calibration CLI exactly reproduces the
+exploratory thresholds after accepting both exported -1 and dataset -100 blanks.
+Full provenance, tests and generation results:
+`docs/handoff/PLAN-2026-09-08-stage2-root-cause.md`.
+
+**Preserve chat stop tokens (2026-09-09).** Cached MedGemma GenerationConfig
+specifies `[1, 106]`; its tokenizer EOS is only 1, while assistant training
+targets end in `<end_of_turn>` (106). The old constructor and generate call
+overwrote both stops with 1. Both now retain the model's stop IDs and fall back
+to tokenizer EOS only when no model stop is configured. Generation summaries
+record the effective IDs. This fixes a shared A/C decoding defect; its effect
+on repetition and the A/C difference requires a separate matched probe.
+
+⚠⚠ **THIS CHANGES GENERATION, SO EVERY STAGE-2 NUMBER RECORDED BEFORE
+2026-09-09 WAS PRODUCED WITH THE DEFECT AND CANNOT BE REPRODUCED BY THIS CODE.**
+Unlike `--no-repeat-ngram-size`, it is not opt-in, and it should not be: the old
+behaviour ignored the model's own stop contract. Label the affected numbers --
+arm A, arm C, every probe, the zero-shot control -- as "old stop IDs", and do
+not mix them with anything generated after this commit.
+
+**The zero-shot control is what makes this defect worth chasing (2026-09-09).**
+`medgemma_direct` with NO adapter, on arm A's exact 3,102 test studies
+(3,102/3,102 by `sample_key`), same greedy 160-token decoding, old stop IDs.
+Paired per-study bootstrap, 2,000 resamples, arm A **minus** zero-shot:
+
+| metric | arm A (fine-tuned) | zero-shot | delta, CI95 |
+|---|---:|---:|:---|
+| ROUGE-L | 0.2358 | 0.2349 | +0.0010 [-0.0019, +0.0038] |
+| ROUGE-1 | 0.3288 | **0.3464** | **-0.0176 [-0.0216, -0.0134]** |
+| METEOR | 0.2546 | **0.2615** | **-0.0068 [-0.0109, -0.0029]** |
+| CIDEr | **0.0603** | 0.0537 | +0.0066 [-0.0023, +0.0160] |
+| BERTScore-F1 | 0.7957 | **0.8105** | **-0.0148 [-0.0174, -0.0123]** |
+| repetition_ratio | 0.1334 | **0.0423** | **+0.0911 [+0.0817, +0.1005]** |
+
+**Fine-tuning did not beat zero-shot; on three of six metrics it lost, and it
+repeats 3.2x more.** Only CIDEr favours it and that CI crosses zero. This
+answers the question this file previously recorded as unanswerable ("the two
+runs are on different cohorts of different size, so this is not a comparison")
+-- the answer is negative. Arm A also trained only 0.8621 of an epoch, which is
+a real caveat, but it cannot explain the model being *worse* than not training
+at all.
+
+**And it points straight at the stop defect.** Both arms share it, yet only the
+fine-tuned model repeats: its targets end in `<end_of_turn>` (106), so training
+taught it to emit 106 as the terminator, while generation did not stop there and
+carried on. The base model never learned that habit, and repeats at 4.2%. That
+mechanism predicts the observed sign and size; it is a hypothesis the paired
+stop probe is built to test, not yet a demonstrated cause.
+
 **The deliverable is `scripts/explain_stage2.py`.** One JSONL line per study
 (sentence text, `lexicon_v1` labels, map path, `mean_token_nll`,
 `spatially_meaningful`), one NPZ of maps per study at the native 16x16 grid,

@@ -146,4 +146,9 @@ Xem [CALL_GRAPH.md §3](../_meta/CALL_GRAPH.md#3-stage-2--top-down).
 ← [Về HOME](../../HOME.md)
 ## Cue rule xuyên suốt (2026-09-08)
 
+Selective marginal cues hỗ trợ `positive_enabled` theo nhãn. Calibration CLI
+`scripts/calibrate_cue_precision.py` tắt nhãn không đạt precision/support trên
+validation; engine kiểm artifact đủ 13 nhãn trước cache/model access. Không đổi
+default rule, loss, YAML hay weight. Xem handoff stage2-root-cause.
+
 `run_medgemma_qlora --cue-rule` truyền vào `build_stage1_records` cho cả ba split và fingerprint evaluation; summary/run_manifest ghi rule. Engine `with_cue_state` bổ sung state cho cache cũ và record mới, trước khi `stage2.prompts.records` dựng context. Non-default rule yêu cầu prompt guided khớp mode.

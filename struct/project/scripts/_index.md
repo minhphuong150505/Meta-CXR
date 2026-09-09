@@ -29,6 +29,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | File | Doc | Status |
 |---|---|---|
 | `calibrate_thresholds.py` | [📄](calibrate_thresholds.py.doc.md) | ✅ Calibrate — **chỉ validation** |
+| `calibrate_cue_precision.py` | [📄](calibrate_cue_precision.py.doc.md) | ✅ CPU, fit ngưỡng precision cho cues; tắt nhãn không đạt thay vì fallback |
 | `evaluate_stage1.py` (328) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz` |
 | `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |
 | `generate_stage2_reports.py` (381) | [📄](generate_stage2_reports.py.doc.md) | ✅ Sinh `.jsonl` cho dòng trên. `--pipeline-mode` chọn nguồn record: CSV (native) hay Stage-1 (soft token). ⚠ Hai cohort khác nhau — dùng `--restrict-to` mới so sánh được |

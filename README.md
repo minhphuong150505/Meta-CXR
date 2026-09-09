@@ -7,13 +7,12 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 > checkpoint — kết quả: **không có tác dụng đo được, và CAM ở mức ngẫu nhiên ở cả
 > hai nhánh**, nên hướng này đã **tắt trong production từ 2026-08-17** (chi tiết ở
 > [Explanation-aware learning](#explanation-aware-learning-đã-tắt-trong-production-từ-2026-08-17)).
-> Table 5 Stage-1 inference ablation hoàn tất. Stage 2 vẫn cần GPU validation.
+> Table 5 Stage-1 inference ablation hoàn tất. Stage 2 đã train trên GPU và có
+> so sánh NLG Arm A/C trên cùng 2.772 ca test: Arm C hiện kém hơn Arm A.
+> Chưa có metric lâm sàng; lịch training khác nhau nên chưa thể quy toàn bộ
+> chênh lệch cho kiến trúc. Xem phân tích Stage 2 và sửa contract cues bên dưới.
 >
-> Stage-1 đã có bằng chứng GPU thật (xem bảng dưới). Stage-2 thì chưa — phần
-> trạng thái của Stage 2 vẫn chỉ là tình trạng tích hợp code tại commit hiện tại,
-> không phải xác nhận đã train trên GPU hay đã tái lập metric mô hình.
->
-> **Máy train:** một host duy nhất, `phuong@phuong-b760m-pro-rs-d4-wifi` (máy cá
+> **Máy train:** một host duy nhất, `phuong@100.116.167.90` (`minhphuong`, máy cá
 > nhân của tác giả), **1× RTX 5060 Ti 16 GB**. Không còn đường chạy cloud: các
 > recipe GCP/L4/Kaggle/2×3090 đã bị gỡ ngày 2026-08-13 để tối ưu chi phí.
 >
@@ -49,7 +48,7 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 | GPU evidence | Stage-1 full run xong; A/B explanation loss bật/tắt 5 epoch xong (2026-08-16/17) kèm calibration + eval test + XAI cả hai nhánh |
 | Checkpoint cũ | **Đã xoá toàn bộ 2026-08-14** (15 file, 39 GB) — các run đó đi sai hướng và không nạp được vào recipe hiện tại (Swin tắt → 98 token thay vì 147). Số liệu Table 5 còn trong `results/` nhưng không tái lập được |
 | Full MIMIC-CXR training | ✅ **Đã chạy xong 2026-08-20** — `run_20260819_xmpoff`, 10/10 epoch, `rc=0`, 12h35m, 0.3505 s/it, 0 kernel fault. Best epoch 6 |
-| Reproduced metrics | ✅ Stage 1 đã có kết quả test split (3,269 study), chấm một lần từ `checkpoint_best`, ngưỡng calibrate chỉ trên val — xem [Kết quả và cảnh báo metric](#kết-quả-và-cảnh-báo-metric). Stage 2: arm A đã có NLG trên test (n=3.102) nhưng ⚠ **chưa tách được khỏi zero-shot** vì hai lần chạy khác cohort (300 vs 3.102); arm C chưa sinh test |
+| Reproduced metrics | ✅ Stage 1 đã có kết quả test split (3.269 study), ngưỡng calibrate trên val. Stage 2 có NLG Arm A/C trên cùng 2.772 ca test; Arm C kém hơn, nhưng lịch training khác nhau. Chưa có kết luận về độ đúng lâm sàng hay lợi ích so với zero-shot trên cùng cohort. |
 | Máy train | Lỗi kernel fault liên tục từ 17/08 đã **hết** sau khi **tắt XMP** trong BIOS (4 thanh RAM 2 hãng chạy 3200 MT/s ngoài mức Intel validate). Chi phí: **+1.3%** tốc độ |
 
 ## Những thay đổi so với META-CXR gốc
@@ -806,11 +805,11 @@ lần lấy mẫu:
 | CIDEr | 0,0584 | 0,0164 | **−0,0420 [−0,0518; −0,0334]** |
 | BERTScore-F1 | 0,7959 | 0,7587 | **−0,0372 [−0,0403; −0,0343]** |
 
-Ba trên bốn chỉ số kém hơn có ý nghĩa thống kê, METEOR hòa. Arm C được train
-nhiều hơn mà vẫn thua, nên thâm hụt **không** giải thích được bằng lượng huấn
-luyện.
+Ba trên bốn chỉ số có CI cho thấy Arm C kém hơn; METEOR chưa xác lập khác biệt.
+Hai adapter có lịch huấn luyện khác nhau, nên phép so này chưa tách riêng tác
+động kiến trúc, lượng huấn luyện và quá trình tối ưu.
 
-#### 2. Thủ phạm là cue, không phải soft token
+#### 2. Cues cũ có ảnh hưởng bất lợi; soft token chưa bị chứng minh là nguyên nhân
 
 Can thiệp lúc suy luận trên một checkpoint arm C cố định, 100 study val, Δ ghép
 cặp so với đầu vào đầy đủ:
@@ -821,7 +820,9 @@ cặp so với đầu vào đầy đủ:
 | Zero hoá soft token | +0,0042 [−0,0074; +0,0173] | −0,0020 [−0,0126; +0,0113] |
 | Bỏ cả hai | +0,0034 [−0,0084; +0,0160] | +0,0029 [−0,0104; +0,0183] |
 
-**Bỏ cue làm model TỐT LÊN.** Soft token gần như trung tính.
+**Bỏ cues cũ cải thiện BERTScore và CIDEr trong phép thử này.** Không được gọi
+soft token hoàn toàn trung tính: zero hoá làm ROUGE-L giảm 0,0098 với CI loại
+trừ 0, dù thay đổi BERTScore/CIDEr chưa xác lập.
 
 #### 3. Cue kém vì `q` trả lời sai câu hỏi
 
@@ -844,7 +845,7 @@ Với bệnh hiếm nó suy biến thành hằng số: `Fracture`, `Pleural Othe
 "luôn luôn nói có". Ngược lại `Support Devices`, bệnh phổ biến nhất (34,4%),
 **chưa từng một lần** được gắn Positive.
 
-#### 4. Nhưng cue tốt hơn cũng KHÔNG cứu được
+#### 4. Marginal cues trước sửa lỗi chưa chứng minh giúp generation
 
 Ba điều kiện, một checkpoint arm C cố định, **đúng 100 study val cùng thứ tự**
 (đã kiểm chứng `sample_key` trùng khớp), greedy 160 token:
@@ -1051,14 +1052,53 @@ META-CXR original work:
 Repository hiện không có file license riêng ở top level. Bản LAVIS vendored giữ BSD 3-Clause License tại [`model/lavis/LICENSE.txt`](model/lavis/LICENSE.txt). Điều này không tự động xác định license cho mọi phần còn lại của repository; cần kiểm tra điều khoản của từng upstream model/dataset trước khi sử dụng hoặc phân phối.
 ## Sửa contract cues (2026-09-08)
 
+**Giảm nhiễu đầu vào bằng selective marginal cues (2026-09-09, opt-in).** CLI
+`scripts/calibrate_cue_precision.py` fit trên validation, tối đa recall với
+precision thực nghiệm >=0,70 và ít nhất 20 dự đoán. Nhãn không đạt sẽ abstain;
+không ép điền P/N/U cho mọi bệnh và không dùng ngưỡng fallback.
+
+Thử nghiệm CPU trên checkpoint Stage-1 hiện có (fit 1.808 val, kiểm tra 3.269
+test), cùng cách tính **micro** và nhãn hiện diện trong báo cáo:
+
+| Cues | Precision | Recall | Positive cues/ca |
+|---|---:|---:|---:|
+| Conditional cũ | 17,96% | 75,14% | 8,46 |
+| Marginal P-fit cũ | 42,66% | 30,89% | 1,46 |
+| Selective marginal | **68,00%** | 27,87% | **0,83** |
+
+Chỉ Lung Opacity, Edema, Pleural Effusion và Support Devices đạt điều kiện fit;
+9 nhãn còn lại không cung cấp cue, **không được hiểu là âm tính**. Ảnh vẫn là
+đầu vào Stage 2 cho mọi finding. Sàn 70% trên val không bảo đảm 70% trên test
+(CI95 precision test 66,27–69,89%). Đây là cải thiện độ chính xác cues theo nhãn
+báo cáo, chưa chứng minh báo cáo sinh ra tốt hơn hay đúng lâm sàng hơn.
+
+```bash
+# Chạy trên training host, dùng validation predictions thật.
+python scripts/calibrate_cue_precision.py \
+  --predictions <private>/val_predictions_epoch_best.npz --split val \
+  --precision-floor 0.70 --min-predicted 20 --output <private>/selective.json
+# Training/generation cùng thêm:
+# --cue-rule marginal_positive --threshold-path <private>/selective.json
+# --prompt-config configs/experiment_native_qformer_guided.yaml
+```
+
+Nguyên nhân và phép thử tiếp theo: [handoff root-cause](docs/handoff/PLAN-2026-09-08-stage2-root-cause.md).
+
+**Sửa token dừng chat.** MedGemma cấu hình stop IDs `[1, 106]`, nhưng code cũ
+ghi đè thành tokenizer EOS `1`, làm mất `<end_of_turn>` (`106`) dù target
+training kết thúc bằng token này. Constructor và generation nay giữ stop IDs
+của model; chỉ fallback về tokenizer EOS nếu model không cấu hình. Summary ghi
+lại stop IDs thực tế. Đây là lỗi dùng chung cho Arm A/C; cần đối chứng riêng
+để đo ảnh hưởng đến lặp câu và không quy toàn bộ chênh lệch A/C cho nó.
+
 Cả training và generation nhận `--cue-rule conditional_positive|mention_gated|marginal_positive|none`; training truyền cùng rule cho train/val/test và ghi vào summary/manifest. Mặc định vẫn là `conditional_positive` để giữ recipe cũ. Rule khác mặc định cần `--prompt-config` guided khớp visual mode; marginal dùng `--threshold-path configs/stage2_cue_thresholds_marginal_pfit.json`.
 
 Ba trạng thái được tách rõ: `not_provided` (chủ động bỏ cues), `abstained` (không chọn được cue), `predicted` (có dự đoán P/N/U). Hai trạng thái đầu không sinh structured block hay câu normal. Âm tính cho một phần nhãn chỉ được nêu cụ thể; chỉ đủ 13 nhãn âm tính mới được tóm tắt normal. Ảnh, soft tokens và instruction được giữ nguyên. Cache cũ được bổ sung trạng thái khi đọc, không đổi embedding. Template hash thay đổi để nhận diện semantics mới.
 
-Chạy rule khác trong output directory mới. Kiểm thử và audit cache validation nằm ở [handoff](docs/handoff/PLAN-2026-09-08-cue-contract.md); chưa chạy generation mới do GPU bận.
+Chạy rule khác trong output directory mới. Kiểm thử và audit cache validation nằm ở [handoff](docs/handoff/PLAN-2026-09-08-cue-contract.md); phép so generation sau sửa được ghi riêng trong [handoff root-cause](docs/handoff/PLAN-2026-09-08-stage2-root-cause.md).
 
-Đã kiểm thử CPU trên host: **992 passed, 2 skipped**, so với revision gốc
-**974 passed, 2 skipped** — thêm 18 test pass, không có failure mới. Ruff có
+Đã kiểm thử CPU trên host sau các bản sửa: **1.012 passed, 2 skipped**, so với revision gốc
+**974 passed, 2 skipped** — thêm 18 test contract, 17 test selective cues và 3 test token dừng, không có failure mới. Ruff có
 438 lỗi ở cả hai revision, không thêm lỗi. Audit cùng 1.415 ca validation:
 `none` bỏ 1.415 câu normal không có cơ sở; marginal bỏ 654 câu (46,2%) khi
 không có cue vượt ngưỡng. Đây là xác minh prompt, chưa phải cải thiện NLG/lâm sàng.
