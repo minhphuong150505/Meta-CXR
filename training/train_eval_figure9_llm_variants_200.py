@@ -1765,6 +1765,9 @@ def evaluate_variant(
     )
     adapter_path = Path(llm.adapter) if llm.adapter else None
     adapter_manifest = file_identity(adapter_path / "manifest.json") if adapter_path else {"base": True}
+    eos_token_id = getattr(getattr(llm.model, "generation_config", None), "eos_token_id", None)
+    if eos_token_id is None:
+        eos_token_id = llm.tokenizer.eos_token_id
     eval_id = stable_fingerprint(
         {
             "schema_version": SCHEMA_VERSION,
@@ -1776,6 +1779,9 @@ def evaluate_variant(
             "adapter": adapter_manifest,
             "max_new_tokens": max_new_tokens,
             "prompt_style": prompt_style,
+            "prompt": llm._prompt_metadata(),
+            "eos_token_id": eos_token_id,
+            "section_mode": section_mode,
         }
     )
     stem = f"{family}_{variant}_{llm.image_mode}_{context.run_name}_{eval_id}"

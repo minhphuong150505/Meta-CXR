@@ -1125,8 +1125,11 @@ Ba trạng thái được tách rõ: `not_provided` (chủ động bỏ cues), `
 
 Chạy rule khác trong output directory mới. Kiểm thử và audit cache validation nằm ở [handoff](docs/handoff/PLAN-2026-09-08-cue-contract.md); phép so generation sau sửa được ghi riêng trong [handoff root-cause](docs/handoff/PLAN-2026-09-08-stage2-root-cause.md).
 
-Đã kiểm thử CPU trên host sau các bản sửa: **1.012 passed, 2 skipped**, so với revision gốc
-**974 passed, 2 skipped** — thêm 18 test contract, 17 test selective cues và 3 test token dừng, không có failure mới. Ruff có
+Cache evaluation nay phân biệt stop IDs, cấu hình/template prompt và section mode,
+để bản sửa không đọc lại báo cáo/điểm cũ. Cache Stage 1 vẫn dùng riêng như trước.
+
+Đã kiểm thử CPU trên host sau các bản sửa: **1.013 passed, 2 skipped**, so với revision gốc
+**974 passed, 2 skipped** — thêm 18 test contract, 17 test selective cues và 4 test token dừng/cache, không có failure mới. Ruff có
 438 lỗi ở cả hai revision, không thêm lỗi. Audit cùng 1.415 ca validation:
 `none` bỏ 1.415 câu normal không có cơ sở; marginal bỏ 654 câu (46,2%) khi
 không có cue vượt ngưỡng. Đây là xác minh prompt, chưa phải cải thiện NLG/lâm sàng.
