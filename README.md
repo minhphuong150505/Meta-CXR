@@ -643,7 +643,7 @@ vận hành. AUROC tăng trên **14/14 nhãn**. Trần precision nhấc từ ~0.
 Chi phí: **+37%** thời gian mỗi epoch. ⚠ kappa và mở băng đi chung một run nên **chưa
 tách được đóng góp của từng cái**; lập luận gián tiếp là kappa không đổi được AUROC.
 
-Chi tiết đầy đủ: `Test/stage1_test_02/README.md` (git-ignored).
+Chi tiết đầy đủ: `Eval/stage1_test_02/README.md` (git-ignored).
 
 #### ⚠ Train thêm epoch KHÔNG giúp — đã đo, `run_20260821_ext` (2026-08-21)
 
@@ -669,7 +669,7 @@ AUROC tăng còn micro AUROC *giảm*, tức "lợi ích" nằm ở vài nhãn h
 (3) tách nhỏ điểm số — bỏ mention gate ra thì epoch 14 **thua** epoch 9 trên `q`
 (0.7304 vs 0.7354), nên chênh lệch chỉ là may mắn ở tích `m × q`.
 
-Chi tiết đầy đủ: `Test/stage1_test_03/README.md` (git-ignored).
+Chi tiết đầy đủ: `Eval/stage1_test_03/README.md` (git-ignored).
 
 #### ❌ `run_20260821_deep` — mở băng sâu hơn KHÔNG giúp gì (đo 2026-08-22)
 
@@ -771,7 +771,7 @@ tín hiệu: No Finding +0.2603, Pleural Other +0.2501, Fracture +0.1798.
 `medgemma_direct` không ảnh hưởng.
 
 Chi tiết đầy đủ (bảng từng nhãn, so sánh 5 arm, đóng góp của gate, lệnh tái tạo) nằm ở
-`Test/stage1_test/README.md` — thư mục đó **git-ignored** vì file `.npz` chứa định danh
+`Eval/stage1_test/README.md` — thư mục đó **git-ignored** vì file `.npz` chứa định danh
 study của MIMIC-CXR.
 
 ### ❌ Stage 2 — cắm Stage 1 vào prompt KHÔNG giúp (đo 2026-09-07/08)
