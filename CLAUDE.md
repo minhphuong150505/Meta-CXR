@@ -2001,6 +2001,43 @@ What does not stand is any **absolute** Stage-2 number, and the cue conclusions
 deserve re-measurement: "cues do not help" was established in a regime where
 78% of the output was post-completion filler drowning the signal.
 
+**CONFIRMED AT n=100, AND IT REVEALS A SECOND PROBLEM (2026-09-09).** All four
+cue rules regenerated on the same 100 val studies with the model's own stop IDs.
+Against the identical old-stop run:
+
+| | old stops | fixed stops | delta, CI95 |
+|---|---:|---:|:---|
+| **repetition rate** | **0.370** | **0.000** | **-0.2646 [-0.3128, -0.2189]** |
+| **CIDEr** | 0.0107 | **0.2369** | **+0.2262 [+0.0839, +0.4700]** |
+| BERTScore-F1 | 0.7799 | 0.7998 | **+0.0200 [+0.0036, +0.0348]** |
+| METEOR | 0.2910 | 0.2403 | **-0.0507 [-0.0763, -0.0232]** |
+| ROUGE-L | 0.2352 | 0.2543 | +0.0192 [-0.0057, +0.0455] |
+| median words | 124 | **24** | **-83.1 [-90.1, -75.7]** |
+
+**Repetition is gone -- 0.000 in all four fixed-stop arms, not reduced but
+eliminated.** CIDEr rises 22x. But the reference median is **52** words, so
+generation went from 2.4x too LONG (124) to 2.2x too SHORT (24), and that is why
+METEOR falls significantly: it rewards recall, and there is now less text to
+recall with. Fixing the stop contract solved the filler and exposed a real
+brevity problem underneath it. Do not report the METEOR drop as a regression
+caused by the fix without that length context.
+
+**The cue conclusion survives the correction -- this is the fourth independent
+confirmation and the only one measured in a working generation regime.** Paired,
+n=100, same cohort, fixed stops:
+
+| vs `none` | ROUGE-L | CIDEr | BERTScore-F1 |
+|---|---|---|---|
+| `conditional` | +0.0013 [-0.0086, +0.0104] | -0.0160 [-0.0429, +0.0077] | -0.0044 [-0.0140, +0.0044] |
+| `marginal` | +0.0021 [-0.0054, +0.0110] | -0.0100 [-0.0358, +0.0148] | -0.0000 [-0.0061, +0.0060] |
+| `selective` | +0.0054 [-0.0035, +0.0158] | -0.0080 [-0.0292, +0.0132] | +0.0013 [-0.0061, +0.0090] |
+
+Every interval crosses zero, and CIDEr is *highest* for `none` (0.2369 against
+0.2209 / 0.2269 / 0.2289). The earlier objection -- that "cues do not help" was
+established while 78% of the output was filler drowning the signal -- is now
+answered: clear the filler and the answer is unchanged. Artifacts:
+`/home/phuong/cue4_fixedstop_20260909/`.
+
 ⚠ n=25, one previously-examined val cohort, thresholds fitted on it. ROUGE-L
 barely clears zero and BERTScore does not. The token counts are exact; the NLG
 deltas are a small mechanism probe, not a held-out evaluation. Re-generating the
