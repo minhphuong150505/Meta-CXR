@@ -1902,10 +1902,16 @@ with no mention gate, while 0.7643 is **test** with calibrated thresholds and
 
 **Cue contract, corrected 2026-09-08.** Both `run_medgemma_qlora.py` and
 `generate_stage2_reports.py` accept `--cue-rule`; all train/val/test records and
-training evaluation fingerprints receive it. The reproducibility default is
-still `conditional_positive` (`q` only). `marginal_positive` uses
-`sigmoid(m) * q_pos` and the validation-fit threshold JSON; `mention_gated` is
-also available. Non-default rules require a matching guided `--prompt-config`.
+training evaluation fingerprints receive it. From 2026-09-10, both CLIs default
+to `marginal_positive` for modes with `uses_mhcac_prompt=True`: emit a positive
+only when `sigmoid(mention_logits) * q_pos >= threshold`. Below it, abstain.
+Use per-label `marginal_positive` thresholds when provided, otherwise 0.5;
+never implicitly load checkpoint-specific calibration. Marginal/abstaining
+rules require a matching guided `--prompt-config`. Explicit
+`--cue-rule conditional_positive` reproduces historical q-only decisions.
+Modes without structured cues and the low-level/legacy Figure-9 API retain
+their historical defaults; current Stage-2 CLIs pass the resolved rule explicitly.
+This is a user-selected default, not a claim of measured generation benefit.
 
 `CueState` separates `not_provided` (`none`), `abstained` (no group selected),
 and `predicted` (one or more P/N/U findings). The first two emit no structured
@@ -2556,7 +2562,7 @@ asks about, since `classification_logits` is `q`, conditional on mention.
 It needs `mention_probabilities` in the `.npz`, written only by runs whose eval
 hook collected the gate (added to `image_text_pretrain.py` on 2026-08-20). Older
 files raise `ScoreUnavailableError` rather than falling back. Scoring
-`study_presence` with the default `conditional_positive` is legitimate but is a
+`study_presence` with the historical `conditional_positive` rule is legitimate but is a
 **floor**, not an estimate: it discards the gate the model was trained to
 provide (`lambda_gate: 0.5`).
 

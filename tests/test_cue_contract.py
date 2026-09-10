@@ -108,7 +108,7 @@ def test_legacy_cache_hit_gets_cue_state_without_loading_a_model(monkeypatch, tm
     assert STRUCTURED_HEADER not in render(records[0])[1].user_text()
 
 
-@pytest.mark.parametrize("rule", ["conditional_positive", "marginal_positive", "none"])
+@pytest.mark.parametrize("rule", [None, "conditional_positive", "marginal_positive", "none"])
 def test_training_and_generation_pass_same_rule_and_render_same_prompt(monkeypatch, tmp_path, rule):
     train = pytest.importorskip("training.run_medgemma_qlora")
     fig9 = pytest.importorskip("training.train_eval_figure9_llm_variants_200")
@@ -117,11 +117,13 @@ def test_training_and_generation_pass_same_rule_and_render_same_prompt(monkeypat
     checkpoint = tmp_path / "synthetic.pth"
     checkpoint.touch()
     output = tmp_path / "run"
+    rule_flags = [] if rule is None else ["--cue-rule", rule]
+    rule = rule or "marginal_positive"
     monkeypatch.setattr(sys, "argv", [
         "run_medgemma_qlora.py", "--pipeline-mode", "meta_cxr_native_qformer_guided",
         "--section-mode", "findings_only", "--prompt-config", str(PROMPT),
         "--stage1-checkpoint", str(checkpoint), "--output-dir", str(output),
-        "--cue-rule", rule, "--no-upload",
+        *rule_flags, "--no-upload",
     ])
     train_calls = []
     generation_calls = []
@@ -147,7 +149,8 @@ def test_training_and_generation_pass_same_rule_and_render_same_prompt(monkeypat
     monkeypatch.setattr(fig9, "build_stage1_records", lambda *a, **kw: records(generation_calls, *a, **kw))
     monkeypatch.setattr(fig9, "set_seed", lambda _: None)
     args = gen.parse_args([
-        "--output-dir", str(tmp_path / "gen"), "--cue-rule", rule, "--split", "val"
+        "--output-dir", str(tmp_path / "gen"), *rule_flags, "--split", "val",
+        "--pipeline-mode", "meta_cxr_native_qformer_guided",
     ])
     generated_records = gen.stage1_records(args)
     assert generation_calls == [("val", rule)]
@@ -166,3 +169,46 @@ def test_generation_rejects_nondefault_cues_on_legacy_prompt(tmp_path, rule):
     (mode,) = resolve_pipeline_modes(args.pipeline_mode)
     with pytest.raises(SystemExit, match="guided --prompt-config"):
         gen.validate_invocation(args, mode)
+
+
+@pytest.mark.parametrize("mode, expected", [
+    ("meta_cxr_native_qformer_guided", "marginal_positive"),
+    ("meta_cxr_qformer_with_mhcac_prompt", "marginal_positive"),
+    ("medgemma_direct", "conditional_positive"),
+    ("meta_cxr_qformer", "conditional_positive"),
+    ("both_for_ablation", "conditional_positive"),
+])
+def test_both_cli_defaults_follow_whether_mode_supplies_cues(monkeypatch, tmp_path, mode, expected):
+    from scripts import generate_stage2_reports as gen
+    from training import run_medgemma_qlora as train
+
+    flags = ["--pipeline-mode", mode, "--output-dir", str(tmp_path)]
+    monkeypatch.setattr(sys, "argv", ["train", *flags])
+    assert train.parse_args().cue_rule == expected
+    assert gen.parse_args(flags).cue_rule == expected
+    # Historical decisions remain reproducible even in a newly marginal mode.
+    monkeypatch.setattr(sys, "argv", ["train", *flags, "--cue-rule", "conditional_positive"])
+    assert train.parse_args().cue_rule == "conditional_positive"
+    assert gen.parse_args([*flags, "--cue-rule", "conditional_positive"]).cue_rule == "conditional_positive"
+
+
+def test_omitted_rule_abstains_on_low_mention_and_honours_marginal_threshold(tmp_path):
+    import torch
+    from scripts import generate_stage2_reports as gen
+    from training import train_eval_figure9_llm_variants_200 as fig9
+    from training.run_context import Stage1Context
+
+    args = gen.parse_args(["--output-dir", str(tmp_path), "--pipeline-mode", "meta_cxr_native_qformer_guided"])
+    logits = torch.full((14, 3), -100.0)
+    logits[:, 1] = 100.0  # Conditional head alone would emit every finding.
+    mentions = torch.full((14,), -100.0)
+    groups = fig9.classify_with_thresholds(Stage1Context(run_name="synthetic"), logits, mentions, cue_rule=args.cue_rule)
+    context, prompt = render(fig9.with_cue_state({"pred_groups": groups}, args.cue_rule))
+    assert context.cue_state is CueState.ABSTAINED
+    assert STRUCTURED_HEADER not in prompt.user_text()
+    mentions[fig9.ABNORMALITIES_14.index("Edema")] = 0.0  # marginal exactly 0.5
+    groups = fig9.classify_with_thresholds(Stage1Context(run_name="synthetic"), logits, mentions, cue_rule=args.cue_rule)
+    assert groups == {"positive": ["Edema"], "negative": [], "uncertain": []}
+    context = Stage1Context(run_name="synthetic", thresholds={"Edema": {"marginal_positive": 0.6}})
+    groups = fig9.classify_with_thresholds(context, logits, mentions, cue_rule=args.cue_rule)
+    assert groups == {"positive": [], "negative": [], "uncertain": []}

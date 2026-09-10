@@ -151,4 +151,15 @@ the per-label `positive_enabled` flags through the shared record builder.
 Use a new training output: the existing Arm C was trained with conditional cues,
 and changing inference cues does not retroactively retrain that adapter.
 
-`--cue-rule` dùng cùng choices/default với engine và generation. `main` truyền nó cho mọi split, ghi summary/run_manifest; `train_mode` truyền vào fingerprint val/test. Non-default rule cần Stage-1 mode và matching guided prompt config, tránh rơi vào legacy prompt. Chạy experiment với output mới; không tái sử dụng adapter của rule khác.
+`--cue-rule` dùng cùng choices với engine và cùng default theo pipeline với generation. `main` truyền nó cho mọi split, ghi summary/run_manifest; `train_mode` truyền vào fingerprint val/test. Marginal/abstaining rule cần Stage-1 mode và matching guided prompt config, tránh rơi vào legacy prompt. Chạy experiment với output mới; không tái sử dụng adapter của rule khác.
+
+## Default cues — 2026-09-10
+
+Omitting `--cue-rule` selects `marginal_positive` for modes with
+`uses_mhcac_prompt=True`. The effective rule is passed to record construction,
+cache identity and run metadata. Other modes retain their historical behavior.
+Only `sigmoid(mention_logits) * q_positive >= marginal_positive` emits a
+positive cue; missing thresholds use 0.5. Below threshold means no cue, never
+a negative assertion. Keep the matching guided prompt requirement. Explicit
+`conditional_positive` restores q-only behavior; no calibration file is loaded
+automatically. Low-level Figure-9 helper defaults remain historical compatibility.

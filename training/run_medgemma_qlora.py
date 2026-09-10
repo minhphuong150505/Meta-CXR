@@ -71,12 +71,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--threshold-path",
         type=Path,
-        help="Optional Stage-1 validation-calibrated thresholds; default is image-only argmax.",
+        help="Optional Stage-1 validation-calibrated thresholds; marginal cues use 0.5 without per-label marginal thresholds.",
     )
     parser.add_argument(
-        "--cue-rule", choices=fig9.CUE_RULES, default=fig9.CUE_RULE_CONDITIONAL,
+        "--cue-rule", choices=fig9.CUE_RULES, default=None,
         help="Stage-1 cue rule for all splits, identical to generation --cue-rule. "
-             "Non-default rules require a matching --prompt-config.",
+             "Defaults to marginal_positive for structured Stage-1 modes. "
+             "Marginal/abstaining rules require a matching guided --prompt-config.",
     )
     parser.add_argument(
         "--pipeline-mode",
@@ -172,6 +173,12 @@ def parse_args() -> argparse.Namespace:
             f"[deprecated] --image-mode {args.legacy_image_mode} "
             f"-> --pipeline-mode {args.pipeline_mode}",
             flush=True,
+        )
+    if args.cue_rule is None:
+        args.cue_rule = (
+            fig9.CUE_RULE_MARGINAL
+            if any(mode.uses_mhcac_prompt for mode in resolve_pipeline_modes(args.pipeline_mode))
+            else fig9.CUE_RULE_CONDITIONAL
         )
     if args.max_new_tokens <= 0:
         args.max_new_tokens = (
@@ -438,7 +445,7 @@ def main() -> None:
                 or not prompt_config.visual_mode.includes_structured
             ) for mode in modes
         ):
-            raise SystemExit("non-default --cue-rule requires a matching guided --prompt-config")
+            raise SystemExit("marginal/abstaining --cue-rule requires a matching guided --prompt-config")
     context = Stage1Context(
         run_name=args.stage1_run,
         config_path=args.stage1_config,

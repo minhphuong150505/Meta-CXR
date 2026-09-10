@@ -100,23 +100,30 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     stage1.add_argument("--stage1-checkpoint", type=Path, default=None)
     stage1.add_argument("--threshold-path", type=Path, default=None)
     stage1.add_argument("--num-workers", type=int, default=4)
-    stage1.add_argument("--cue-rule", default="conditional_positive",
+    stage1.add_argument("--cue-rule", default=None,
                         choices=("conditional_positive", "mention_gated",
                                  "marginal_positive", "none"),
                         help="How MHCAC predictions become P/N/U cues. "
-                             "conditional_positive (default, what every recorded "
-                             "run used) sorts all 13 findings on q alone. "
+                             "Default for structured Stage-1 modes: marginal_positive. "
+                             "conditional_positive reproduces the historical q-only rule. "
                              "mention_gated opens the mention gate first. "
                              "marginal_positive thresholds sigmoid(m)*q_pos per "
-                             "label and emits ONLY positives -- measured "
-                             "precision 0.407 vs 0.189, 1.46 cues/study vs 8.46. "
+                             "label and emits ONLY positives, using a 0.5 floor "
+                             "unless per-label marginal thresholds are supplied. "
                              "Changing this changes the Stage-1 cache identity, "
                              "so it rebuilds.")
     stage1.add_argument("--stage1-cache-dir", type=Path, default=None,
                         help="Where .sensitive_stage1_cache lives. Point it at the "
                              "TRAINING output dir to reuse that run's encode pass; "
                              "defaults to --output-dir, which rebuilds it.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.cue_rule is None:
+        args.cue_rule = (
+            "marginal_positive"
+            if any(mode.uses_mhcac_prompt for mode in resolve_pipeline_modes(args.pipeline_mode))
+            else "conditional_positive"
+        )
+    return args
 
 
 SPLIT_ALIASES = {"val": ("val", "validate"), "test": ("test",)}
@@ -135,12 +142,12 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
         if not mode.requires_stage1:
             raise SystemExit("--cue-rule requires a Stage-1 pipeline mode")
         if args.prompt_config is None:
-            raise SystemExit("non-default --cue-rule requires a matching guided --prompt-config")
+            raise SystemExit("marginal/abstaining --cue-rule requires a matching guided --prompt-config")
         from stage2.prompts import load_prompt_config
 
         prompt = load_prompt_config(args.prompt_config)
         if prompt.visual_mode.image_mode != mode.image_mode or not prompt.visual_mode.includes_structured:
-            raise SystemExit("non-default --cue-rule requires a matching guided --prompt-config")
+            raise SystemExit("marginal/abstaining --cue-rule requires a matching guided --prompt-config")
     if not mode.requires_stage1:
         if args.manifest is None or args.image_root is None:
             raise SystemExit(f"{mode.name} needs --manifest and --image-root")

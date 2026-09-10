@@ -65,3 +65,8 @@ Ghi adapter/JSONL/meta.json · Upload GCS · Cấp phát GPU
 ## Cue wiring (2026-09-08)
 
 Sau resolve mode và load prompt, non-default cue rule được kiểm tra trước khi tạo output/record. Rule được truyền cho build_stage1_records ở train/val/test và ghi trong summary/run_manifest. Test chạy main với model/data loader giả lập, xác minh cả ba call và prompt parity với generation.
+
+`parse_args` resolves omitted cue rules by pipeline before `main`: structured
+Stage-1 modes use marginal_positive; all splits, evaluation identities and
+summary/manifest receive that rule. Marginal/abstaining rules require a matching
+guided prompt, including when selected by default.

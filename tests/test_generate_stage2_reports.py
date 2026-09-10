@@ -170,7 +170,7 @@ class TestEarlyValidation:
             "--pipeline-mode", "meta_cxr_native_qformer_guided",
             "--adapter", str(adapter),
         ])
-        with pytest.raises(SystemExit, match="requires --prompt-config"):
+        with pytest.raises(SystemExit, match="matching guided --prompt-config"):
             gen.validate_invocation(args, self._mode("meta_cxr_native_qformer_guided"))
 
     def test_a_fully_specified_soft_token_run_is_accepted(self, tmp_path):
@@ -180,7 +180,7 @@ class TestEarlyValidation:
         args = gen.parse_args([
             "--output-dir", str(tmp_path), "--checkpoint-root", str(tmp_path),
             "--pipeline-mode", "meta_cxr_native_qformer_guided",
-            "--adapter", str(adapter), "--prompt-config", "configs/x.yaml",
+            "--adapter", str(adapter), "--prompt-config", str(_REPO_ROOT / "configs/experiment_native_qformer_guided.yaml"),
         ])
         gen.validate_invocation(args, self._mode("meta_cxr_native_qformer_guided"))
 
