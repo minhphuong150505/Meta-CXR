@@ -176,8 +176,19 @@ with a matching guided prompt. The shared record builder rejects incomplete
 selective artifacts or a mismatching rule; disabled labels abstain, never become
 negative cues. Generation benefit remains unverified pending the matched probe.
 
-`none` hiện ghi cue_state=not_provided và bỏ structured block; rỗng từ marginal/gated là abstained, cũng không phát câu normal. Đây là thay đổi so với bảng metric lịch sử ở trên: none cũ vẫn phát normal summary, không tương đương probe xoá block. Non-default rule yêu cầu matching guided --prompt-config. Training cũng nhận --cue-rule và truyền cùng rule cho cả ba split.
+`none` hiện ghi cue_state=not_provided và bỏ structured block; rỗng từ marginal/gated là abstained, cũng không phát câu normal. Đây là thay đổi so với bảng metric lịch sử ở trên: none cũ vẫn phát normal summary, không tương đương probe xoá block. Marginal/abstaining rule yêu cầu matching guided --prompt-config. Training cũng nhận --cue-rule và truyền cùng rule cho cả ba split.
 ## Stop-token provenance
 
 `generation_summary.json` includes effective `eos_token_id` (scalar/list),
 preserving model chat terminators instead of overriding them with tokenizer EOS.
+
+## Default cues — 2026-09-10
+
+Omitting `--cue-rule` selects `marginal_positive` for modes with
+`uses_mhcac_prompt=True`. The effective rule is passed to record construction,
+cache identity and run metadata. Other modes retain their historical behavior.
+Only `sigmoid(mention_logits) * q_positive >= marginal_positive` emits a
+positive cue; missing thresholds use 0.5. Below threshold means no cue, never
+a negative assertion. Keep the matching guided prompt requirement. Explicit
+`conditional_positive` restores q-only behavior; no calibration file is loaded
+automatically. Low-level Figure-9 helper defaults remain historical compatibility.

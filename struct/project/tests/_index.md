@@ -198,3 +198,7 @@ emission even at score 1. It checks complete selective artifacts before cache
 access and rejects rule mismatches and fractional enable flags.
 
 `test_cue_contract.py`: synthetic tensors → groups → state → prompt, cache-hit normalization without model load, both visual channels intact, missing/contradictory state guard, partial negative specificity and actual training main/generation record wiring. Host execution only; no model training/generation in these tests.
+
+Default-cue regression in `test_cue_contract.py` covers both omitted CLI flags
+through training/generation wiring, native/ablation compatibility, explicit
+legacy overrides, low-mention abstention and per-label threshold precedence.

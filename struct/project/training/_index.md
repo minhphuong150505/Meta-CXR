@@ -154,4 +154,15 @@ Selective marginal cues hỗ trợ `positive_enabled` theo nhãn. Calibration CL
 validation; engine kiểm artifact đủ 13 nhãn trước cache/model access. Không đổi
 default rule, loss, YAML hay weight. Xem handoff stage2-root-cause.
 
-`run_medgemma_qlora --cue-rule` truyền vào `build_stage1_records` cho cả ba split và fingerprint evaluation; summary/run_manifest ghi rule. Engine `with_cue_state` bổ sung state cho cache cũ và record mới, trước khi `stage2.prompts.records` dựng context. Non-default rule yêu cầu prompt guided khớp mode.
+`run_medgemma_qlora --cue-rule` truyền vào `build_stage1_records` cho cả ba split và fingerprint evaluation; summary/run_manifest ghi rule. Engine `with_cue_state` bổ sung state cho cache cũ và record mới, trước khi `stage2.prompts.records` dựng context. Marginal/abstaining rule yêu cầu prompt guided khớp mode.
+
+## Default cues — 2026-09-10
+
+Omitting `--cue-rule` selects `marginal_positive` for modes with
+`uses_mhcac_prompt=True`. The effective rule is passed to record construction,
+cache identity and run metadata. Other modes retain their historical behavior.
+Only `sigmoid(mention_logits) * q_positive >= marginal_positive` emits a
+positive cue; missing thresholds use 0.5. Below threshold means no cue, never
+a negative assertion. Keep the matching guided prompt requirement. Explicit
+`conditional_positive` restores q-only behavior; no calibration file is loaded
+automatically. Low-level Figure-9 helper defaults remain historical compatibility.

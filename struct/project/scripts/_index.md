@@ -127,4 +127,15 @@ Người dùng. `check_notebook_privacy.py` được `.pre-commit-config.yaml` g
 ← [Về HOME](../../HOME.md)
 ## Cue generation contract (2026-09-08)
 
-`generate_stage2_reports --cue-rule` dùng cùng semantics với training. Non-default rule yêu cầu matching guided prompt; none thực sự bỏ structured block. Xem tests/test_cue_contract.py và handoff cue-contract cho kiểm thử CPU trên host.
+`generate_stage2_reports --cue-rule` dùng cùng semantics với training. Marginal/abstaining rule yêu cầu matching guided prompt; none thực sự bỏ structured block. Xem tests/test_cue_contract.py và handoff cue-contract cho kiểm thử CPU trên host.
+
+## Default cues — 2026-09-10
+
+Omitting `--cue-rule` selects `marginal_positive` for modes with
+`uses_mhcac_prompt=True`. The effective rule is passed to record construction,
+cache identity and run metadata. Other modes retain their historical behavior.
+Only `sigmoid(mention_logits) * q_positive >= marginal_positive` emits a
+positive cue; missing thresholds use 0.5. Below threshold means no cue, never
+a negative assertion. Keep the matching guided prompt requirement. Explicit
+`conditional_positive` restores q-only behavior; no calibration file is loaded
+automatically. Low-level Figure-9 helper defaults remain historical compatibility.
