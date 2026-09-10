@@ -1988,15 +1988,44 @@ with fluent reports written around it.
 The four planned arms all share cohort, budget, seed, LoRA config, selection
 rule and decoding, and differ only in the cue channel: **A** `--cue-rule none`,
 **B** `--cue-rule marginal_positive`, **C** `none` + `q_only`, **D** `none` +
-`full`. C and D add ~0.16 M parameters (+0.5% of the 31.77 M already trainable)
-and 13 input tokens; that difference is reported beside every metric, not
-hidden. `--finding-feature-ablation {zero,shuffle_within,permute_across}` asks
+`full`. C and D add **177,609** (`full`) / **175,047** (`q_only`) parameters at
+`hidden = 2560` -- trainable 31,771,136 -> 31,948,745, **+0.56%**, and the two
+arms differ from each other by 2,562 -- plus 13 input tokens. Measured on the
+smoke, and reported beside every metric rather than hidden. `--finding-feature-ablation {zero,shuffle_within,permute_across}` asks
 whether the model reads the channel at all -- ⚠ an **out-of-distribution**
 mechanism probe, never a substitute for the trained `q_only` arm.
 
-Plan, arms, budget, adoption criteria and abort conditions:
-`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`. CPU coverage:
-`tests/test_finding_tokens.py` (38 tests). **Not run on a GPU.**
+✅ **The GPU smoke passed, 2026-09-10** -- arm D, 200 train studies, one epoch,
+`status: complete`, `val_loss` 1.68064, 0 generation failures,
+**3.29 s/it against arm C's full-run 3.37**, so the branch costs nothing
+measurable in throughput. `finding_tokens.pt` is written beside `img_proj.pt`.
+Substitution is proven by the run completing rather than by inspection: the
+wrapper raises unless it finds exactly 13 placeholder positions per row, and 81
+training iterations plus 19 generations passed through it. Gradient reaches the
+encoder -- `output_scale` moved 1.0050 -> 1.004206 and `norm.weight` moved off
+its deterministic 1.0. ⚠ Comparing `identity.weight` against a fresh module
+proves nothing (independent random draws differ by exactly the observed amount);
+only the deterministically-initialised parameters are evidence.
+
+⚠ **The smoke's n=9 / n=10 NLG numbers are a plumbing check and are recorded
+nowhere.** The branch has established that it runs. **Nothing else.** Peak VRAM
+was not captured -- the runner does not log it; sample it during the pilot.
+
+⚠ **Two regressions were introduced by this branch and caught only on the host**,
+because `tests/test_generation_stop_tokens.py` skips on the CPU dev box for want
+of `transformers`: reading the new attributes off a partial
+`object.__new__(VariantLLM)` raised `AttributeError` (fixed with class-level
+defaults), and that file stubs `_prompt_template_hash` with `lambda *args`, so
+the new keyword argument raised `TypeError` (fixed by passing it positionally).
+**Run the suite on the host before believing a Stage-2 change is clean** -- the
+dev box's 16 "baseline" failures hide real ones. Host: **1,066 passed /
+2 skipped, exit 0**, against baseline `c4d4357`'s 1,028 -- exactly the 38 new
+tests, no regression.
+
+Plan, arms, budget, adoption criteria, abort conditions and the full execution
+report: `docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`. CPU coverage:
+`tests/test_finding_tokens.py` (38 tests). **No pilot has run; there is no
+result.**
 
 **Selective marginal cues (2026-09-09, opt-in mitigation).**
 `scripts/calibrate_cue_precision.py` fits maximum recall at an empirical

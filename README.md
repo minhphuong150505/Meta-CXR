@@ -1242,8 +1242,10 @@ model. Không arm nào khởi đầu từ adapter của arm khác.
 | **C** | `none` | `q_only` | kênh token, **không** có mention |
 | **D** | `none` | `full` | kênh token, **có** mention |
 
-C và D thêm ~0,16 M tham số (+0,5% so với 31,77 M đang trainable) và 13 token
-đầu vào; chênh lệch đó được báo cáo cạnh mọi metric, không giấu đi.
+C và D thêm **177.609** (`full`) / **175.047** (`q_only`) tham số ở
+`hidden = 2560` — trainable 31.771.136 → 31.948.745, **+0,56%**, và hai arm chỉ
+lệch nhau 2.562 — cộng 13 token đầu vào. Đo trên smoke; chênh lệch đó được báo
+cáo cạnh mọi metric, không giấu đi.
 
 ### Cách chạy (khi đã được duyệt ngân sách GPU)
 
@@ -1287,6 +1289,26 @@ không xấu đi; ablation cho thấy model thật sự dùng đặc trưng; chi
 được. Loss giảm, vài báo cáo đẹp, hay một metric nhích lên **không phải** kết
 quả.
 
-Kế hoạch đầy đủ, ngân sách và điều kiện abort:
-[`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`](docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md).
+### Trạng thái: đã qua smoke GPU, CHƯA có pilot, CHƯA có kết quả
+
+| bước | trạng thái |
+|---|---|
+| CPU test trên host | ✅ **1.066 passed / 2 skipped, exit 0** (baseline `c4d4357`: 1.028) — đúng bằng 38 test mới, không regression |
+| GPU smoke (arm D, 200 study) | ✅ `status: complete`, `val_loss` 1,68064, 0 lỗi sinh, **3,29 s/it** so với 3,37 của arm C full |
+| Pilot 4 arm | ⛔ **chưa chạy** — cần duyệt ngân sách GPU |
+| Kết quả | ⛔ **chưa có gì** |
+
+Smoke chứng minh nhánh **chạy được**, không hơn. Substitution được chứng minh
+bằng việc run hoàn tất chứ không bằng quan sát: wrapper raise nếu không tìm đúng
+13 vị trí placeholder mỗi hàng, và 81 iteration train cộng 19 lần sinh đều đi qua
+nó. Gradient tới được encoder — `output_scale` đổi 1,0050 → 1,004206 và
+`norm.weight` rời khỏi 1,0 (hai tham số khởi tạo tất định; so `identity.weight`
+với một module mới **không chứng minh gì**, vì hai lần bốc ngẫu nhiên độc lập
+lệch nhau đúng bằng lượng quan sát được).
+
+⚠ Các số NLG n=9/n=10 của smoke là kiểm tra đường ống, **không được ghi ở đâu
+cả**. Peak VRAM chưa đo được — runner không log; phải lấy mẫu trong pilot.
+
+Kế hoạch đầy đủ, ngân sách, tiêu chí áp dụng, điều kiện abort và execution
+report: [`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`](docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md).
 Kiểm thử CPU: `tests/test_finding_tokens.py` (38 test).
