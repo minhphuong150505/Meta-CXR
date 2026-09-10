@@ -81,7 +81,9 @@ def contains_sensitive_eval_fields(row: Mapping[str, Any]) -> bool:
     return bool(SENSITIVE_EVAL_KEYS.intersection(row))
 
 
-def adapter_is_complete(path: str | Path, image_mode: str) -> bool:
+def adapter_is_complete(
+    path: str | Path, image_mode: str, finding_tokens: str = "off"
+) -> bool:
     """Validate a resumable/evaluable Stage-2 artifact, not one sentinel file."""
     adapter_dir = Path(path)
     adapter_weights = (
@@ -98,6 +100,11 @@ def adapter_is_complete(path: str | Path, image_mode: str) -> bool:
     # have called a combined-mode adapter complete while its bridge was missing.
     if image_mode in ("qformer", "native_qformer"):
         required.append(adapter_dir / "img_proj.pt")
+    # Same reasoning for the experimental finding-token encoder: it is trained
+    # in Stage 2, so an adapter without it would run a randomly initialised
+    # projection and produce fluent output describing noise.
+    if finding_tokens and finding_tokens != "off":
+        required.append(adapter_dir / "finding_tokens.pt")
     if not all(item.is_file() for item in required) or not any(
         item.is_file() for item in adapter_weights
     ):

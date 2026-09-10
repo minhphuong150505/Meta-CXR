@@ -112,6 +112,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "unless per-label marginal thresholds are supplied. "
                              "Changing this changes the Stage-1 cache identity, "
                              "so it rebuilds.")
+    stage1.add_argument("--finding-tokens", default="off",
+                        choices=("off", "q_only", "full"),
+                        help="EXPERIMENTAL, default off. Read Stage-1's per-finding "
+                             "mention/polarity numbers through 13 learnable tokens. "
+                             "Must match what the adapter was TRAINED with; "
+                             "finding_tokens.pt is required and its mode is checked.")
+    stage1.add_argument("--finding-feature-ablation", default=None,
+                        choices=("zero", "shuffle_within", "permute_across"),
+                        help="Inference-only intervention on the finding-token "
+                             "features, to test whether the model uses them. ⚠ "
+                             "Out of distribution: a mechanism probe, never a "
+                             "substitute for the trained q_only control arm.")
     stage1.add_argument("--stage1-cache-dir", type=Path, default=None,
                         help="Where .sensitive_stage1_cache lives. Point it at the "
                              "TRAINING output dir to reuse that run's encode pass; "
@@ -135,6 +147,9 @@ SPLIT_ALIASES = {"val": ("val", "validate"), "test": ("test",)}
 #: the heavy module can be imported.
 SOFT_TOKEN_IMAGE_MODES = frozenset({"qformer", "native_qformer"})
 
+#: Mirrored for the same reason: checked before the heavy import.
+FINDING_TOKENS_OFF = "off"
+
 
 def validate_invocation(args: argparse.Namespace, mode) -> None:
     """Reject impossible combinations before anything expensive is imported."""
@@ -148,6 +163,34 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
         prompt = load_prompt_config(args.prompt_config)
         if prompt.visual_mode.image_mode != mode.image_mode or not prompt.visual_mode.includes_structured:
             raise SystemExit("marginal/abstaining --cue-rule requires a matching guided --prompt-config")
+    if args.finding_tokens != FINDING_TOKENS_OFF:
+        if not mode.requires_stage1:
+            raise SystemExit(
+                "--finding-tokens needs a Stage-1 pipeline mode: the features are "
+                "MHCAC's mention gate and polarity head"
+            )
+        if args.prompt_config is None:
+            raise SystemExit(
+                "--finding-tokens requires a guided --prompt-config; the "
+                "placeholders come from the v2 prompt builder"
+            )
+        # Same failure mode as a missing img_proj.pt, and just as silent: a
+        # freshly initialised encoder emits 13 meaningless tokens and the model
+        # writes fluent reports around them.
+        if args.adapter is None:
+            raise SystemExit(
+                "--finding-tokens has no zero-shot form: the encoder is trained "
+                "in Stage 2. Pass --adapter."
+            )
+        encoder = Path(args.adapter) / "finding_tokens.pt"
+        if not encoder.is_file():
+            raise SystemExit(
+                f"{encoder} is missing. This adapter was not trained with finding "
+                "tokens; generating with them would substitute a randomly "
+                "initialised projection at 13 prompt positions."
+            )
+    if args.finding_feature_ablation and args.finding_tokens == FINDING_TOKENS_OFF:
+        raise SystemExit("--finding-feature-ablation needs --finding-tokens")
     if not mode.requires_stage1:
         if args.manifest is None or args.image_root is None:
             raise SystemExit(f"{mode.name} needs --manifest and --image-root")
@@ -251,11 +294,37 @@ def stage1_records(args: argparse.Namespace) -> list[dict]:
     # "all" pass; --limit is applied afterwards, on the records themselves.
     records = fig9.build_stage1_records(
         context, args.checkpoint_root, cache_dir, args.split, None, args.num_workers,
-        cue_rule=args.cue_rule,
+        cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
     )
     for record in records:
         record["view_position"] = None
+    if args.finding_feature_ablation == "permute_across":
+        records = permute_finding_features_across_studies(records, args.seed)
     return records
+
+
+def permute_finding_features_across_studies(
+    records: list[dict], seed: int
+) -> list[dict]:
+    """Give each study another study's Stage-1 numbers, keeping its own image.
+
+    A derangement, so no study keeps its own -- the point is to break the
+    image/prediction pairing entirely. Applied to the record BEFORE any feature
+    is computed, because unlike ``zero`` and ``shuffle_within`` this needs a
+    second study. ⚠ Out of distribution; a mechanism probe, not a control arm.
+    """
+    n = len(records)
+    if n < 2:
+        return records
+    shift = 1 + random.Random(seed).randrange(n - 1)
+    donors = [records[(i + shift) % n] for i in range(n)]
+    out = []
+    for record, donor in zip(records, donors, strict=True):
+        copied = dict(record)
+        copied["class_logits"] = donor.get("class_logits")
+        copied["mention_logits"] = donor.get("mention_logits")
+        out.append(copied)
+    return out
 
 
 def subsample(records: list[dict], limit: int, seed: int) -> list[dict]:
@@ -342,11 +411,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         train_adapter=False,
         quantize_4bit=False,
         prompt_config=prompt_config,
+        finding_tokens=args.finding_tokens,
     )
     # validate_invocation() has already established that img_proj.pt is there.
     if mode.image_mode in SOFT_TOKEN_IMAGE_MODES:
         llm.load_img_proj_if_present(args.adapter)
         print(f"[gen] img_proj loaded from {args.adapter}/img_proj.pt", flush=True)
+    if args.finding_tokens != FINDING_TOKENS_OFF:
+        llm.load_finding_encoder_if_present(args.adapter)
+        # `permute_across` was already applied to the records themselves.
+        llm.finding_feature_ablation = (
+            args.finding_feature_ablation
+            if args.finding_feature_ablation != "permute_across"
+            else None
+        )
+        print(
+            f"[gen] finding tokens={args.finding_tokens} "
+            f"ablation={args.finding_feature_ablation or 'none'}",
+            flush=True,
+        )
 
     # Inference only: nothing trains, so freeze everything before asserting.
     # Without this the assert fires a FALSE POSITIVE -- with no adapter applied,
@@ -398,6 +481,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             prompt_config.visual_mode.value if prompt_config else None
         ),
         "restrict_to": str(args.restrict_to) if args.restrict_to else None,
+        "finding_tokens": args.finding_tokens,
+        "finding_feature_ablation": args.finding_feature_ablation,
         "cue_rule": args.cue_rule if mode.requires_stage1 else None,
         "model_id": llm.model_id,
         "split": args.split,

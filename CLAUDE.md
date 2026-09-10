@@ -1927,6 +1927,77 @@ Verification and aggregate-only cache audit:
 `docs/handoff/PLAN-2026-09-08-cue-contract.md`. GPU generation was not launched
 because the card was occupied; CPU checks cannot establish better reports.
 
+🧪 **LEARNABLE FINDING TOKENS — EXPERIMENTAL BRANCH, DEFAULT OFF, NO RESULT
+YET (added 2026-09-10, `feat/stage2-finding-tokens`).** `--finding-tokens
+{off,q_only,full}` on both `run_medgemma_qlora.py` and
+`generate_stage2_reports.py`. **Nothing is measured. Do not quote this as a
+result, and do not change a production default on account of it.**
+
+Every recorded cue experiment passed Stage 1's two heads to Stage 2 through a
+**hard threshold and an English sentence**, and four independent measurements
+say that channel does not help. This branch tests whether the *channel* was the
+problem rather than the information: 13 learnable tokens, one per reportable
+finding, each carrying the finding's identity plus the continuous numbers, and
+substituted at `<finding_token>` placeholders the way the 32 soft tokens already
+are.
+
+| variant | numeric features | k |
+|---|---|---:|
+| `q_only` | `[q_neg, q_pos, q_unc]` | 3 |
+| `full` | `[m, m*q_pos, m*q_neg, m*q_unc]` | 4 |
+
+`m*q_pos + m*q_neg + m*q_unc == m` exactly, so `m` is linearly redundant in
+`full`; it is kept because it gives a linear projection a direct route to "was
+it mentioned". **`q_only` is the control that isolates the mention
+contribution** -- same identity, same projection, same 13 positions, only `m`
+removed. A low `m` shrinks all three polarity numbers toward zero and **never
+becomes a negative assertion**: `q` is undefined when a finding was never
+mentioned, and encoding that as a confident negative is the worst thing this
+channel could do.
+
+**Composition, not modification.**
+`FindingTokenEmbeddingWrapper(SoftTokenEmbeddingWrapper(base))` --
+`training/medgemma/soft_tokens.py` is not edited by one line, so the arms
+without finding tokens execute exactly the code that produced every recorded
+number. The tokens sit **after** the soft tokens and **before** the
+instruction; they are ordinary positions with `attention_mask = 1` and the
+decoder is causal, so **no attention-mask change is needed and none was made**.
+
+Three design choices, each of which is a way this could silently have measured
+nothing: identity comes from a **learnable embedding** (so the projection is
+shared across findings and the numbers have one consistent meaning), a
+**LayerNorm sits before the projection** (or the bounded [0,1] features become a
+vanishing fraction of a growing identity embedding and the projection learns to
+ignore them), and the output is **RMS-rescaled to the embedding table's own
+output scale** -- substitution happens inside `get_input_embeddings()`, i.e.
+AFTER Gemma's scaled-word-embedding multiplier has been applied to real tokens
+but not to substituted ones, so matching `weight`'s RMS would be off by that
+factor.
+
+⚠ `build_stage1_records` now stores `class_logits` on every record (42 floats).
+`stage1_cohort_fingerprint` adds `record_features` to the identity **only when
+the branch is on**, the same pattern `cue_rule` uses, so every existing cache
+still hits when it is off; `assert_class_logits_present` fails closed rather
+than training on partial features. `adapter_is_complete` and `resumable_adapter`
+require `finding_tokens.pt` when on, and `load_finding_encoder_if_present`
+**raises** on a missing or mode-mismatched file -- unlike
+`load_img_proj_if_present`, which returns quietly, the failure this branch would
+otherwise produce is a randomly-initialised projection at 13 prompt positions
+with fluent reports written around it.
+
+The four planned arms all share cohort, budget, seed, LoRA config, selection
+rule and decoding, and differ only in the cue channel: **A** `--cue-rule none`,
+**B** `--cue-rule marginal_positive`, **C** `none` + `q_only`, **D** `none` +
+`full`. C and D add ~0.16 M parameters (+0.5% of the 31.77 M already trainable)
+and 13 input tokens; that difference is reported beside every metric, not
+hidden. `--finding-feature-ablation {zero,shuffle_within,permute_across}` asks
+whether the model reads the channel at all -- ⚠ an **out-of-distribution**
+mechanism probe, never a substitute for the trained `q_only` arm.
+
+Plan, arms, budget, adoption criteria and abort conditions:
+`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`. CPU coverage:
+`tests/test_finding_tokens.py` (38 tests). **Not run on a GPU.**
+
 **Selective marginal cues (2026-09-09, opt-in mitigation).**
 `scripts/calibrate_cue_precision.py` fits maximum recall at an empirical
 validation precision floor (0.70) with >=20 predicted cases. Infeasible labels
@@ -2049,6 +2120,44 @@ Every interval crosses zero, and CIDEr is *highest* for `none` (0.2369 against
 established while 78% of the output was filler drowning the signal -- is now
 answered: clear the filler and the answer is unchanged. Artifacts:
 `/home/phuong/cue4_fixedstop_20260909/`.
+
+⚠⚠ **AND THE "YOU PICKED A BAD OPERATING POINT" OBJECTION IS NOW CLOSED TOO
+(2026-09-09/10).** The precision/recall trade in the table above was an artifact
+of the P-fit objective (maximise precision subject to recall >= 0.20), not of
+the model's curve. Sweeping the precision floor on val with
+`scripts/calibrate_cue_precision.py` finds points that **dominate** the
+historical rule on BOTH axes:
+
+| val floor | precision | recall | cues/study | labels on |
+|---|---:|---:|---:|---:|
+| `conditional_positive` (historical) | 0.1887 | 0.8097 | 8.46 | 13/13 |
+| **0.35 (`rec35`)** | **0.3628** | **0.7874** | 3.42 | 9/13 |
+| **0.50 (`bal50`)** | **0.5045** | 0.5471 | 1.71 | 7/13 |
+| 0.70 (`selective`) | 0.6800 | 0.2787 | 0.83 | 4/13 |
+
+`rec35` is 1.9x the precision of `conditional` at essentially the same recall.
+Both middle points were regenerated on the SAME 100 val studies, same fixed
+stops, same greedy 160 tokens (`/home/phuong/cue_mid_gen_20260909/`):
+
+| rule | ROUGE-L | METEOR | CIDEr | BERTScore-F1 | median words |
+|---|---:|---:|---:|---:|---:|
+| **`none`** | 0.2543 | 0.2403 | **0.2369** | 0.7998 | 24 |
+| `conditional` | 0.2557 | 0.2390 | 0.2209 | 0.7954 | 24 |
+| `selective` | **0.2597** | 0.2433 | 0.2289 | **0.8011** | 24 |
+| `bal50` | 0.2570 | 0.2433 | 0.2348 | 0.8009 | 24 |
+| `rec35` | 0.2526 | 0.2341 | 0.2355 | 0.7968 | 24 |
+
+Paired per-study bootstrap vs `none`, 2,000 resamples: **every one of the 16
+intervals crosses zero.** `bal50 - none` is the closest to neutral
+(CIDEr -0.0021 [-0.0204, +0.0143]); `rec35 - none` is *negative* on three of
+four metrics despite dominating `conditional` on precision and recall alike.
+
+**Five independent confirmations now, the last two under a rule strictly better
+than the one every recorded run used. Stop looking for a better cue threshold --
+the operating point is not what is wrong.** What has NOT been tested is a
+different *channel* for the same information; that is what
+`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md` exists to try, and it
+has no result yet.
 
 ⚠ n=25, one previously-examined val cohort, thresholds fitted on it. ROUGE-L
 barely clears zero and BERTScore does not. The token counts are exact; the NLG

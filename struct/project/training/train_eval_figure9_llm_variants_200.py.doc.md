@@ -157,3 +157,27 @@ requires a complete 13-label artifact and the marginal rule before cache access.
 Method contract: [with_cue_state](train_eval_figure9_llm_variants_200.py.methods/with_cue_state.md).
 
 `with_cue_state(record, cue_rule)` tạo dict mới, giữ tensor, gắn cue_rule và cue_state. none xoá nhóm và ghi not_provided; rule khác có nhóm ghi predicted, rỗng ghi abstained. build_stage1_records áp dụng cho cả cache hit lẫn record mới. Cache identity vẫn phân biệt rule, default cache vẫn tái dùng được. Prompt consumer: stage2.prompts.records → PromptBuilder; caller: training entrypoint và scripts/generate_stage2_reports.py.
+
+## 🧪 Finding tokens — 2026-09-10, mặc định TẮT
+
+`VariantLLM(..., finding_tokens={"off","q_only","full"})`. Khi bật:
+
+* đăng ký `<finding_token>` như special token thứ hai và resize embedding;
+* dựng `FindingTokenEncoder` (fp32, như `img_proj`) và calibrate `output_scale`
+  theo RMS **đầu ra** của bảng embedding;
+* `encode_train_example` thêm `finding_features` `[13,k]`; `collate_train`
+  stack sẵn mọi tensor không phải sequence nên không cần sửa;
+* `_forward_batch` và `generate` **compose** `FindingTokenEmbeddingWrapper`
+  quanh `SoftTokenEmbeddingWrapper` — `soft_tokens.py` không bị sửa;
+* `save_adapter` ghi `finding_tokens.pt`; `load_finding_encoder_if_present`
+  **raise** khi thiếu hoặc khi mode trong file không khớp;
+* `finding_features_for()` là **một** hàm dùng chung cho train, val và
+  generation, nên phân phối đầu vào không thể lệch giữa hai đường.
+
+⚠ `finding_features` đọc từ `batch` gốc chứ không từ bản đã ép dtype: bf16 chỉ
+mang ~3 chữ số thập phân và sẽ lượng tử hoá `m*q_pos` của một finding hiếm
+thành 0 trước khi encoder kịp nhìn thấy.
+
+`build_stage1_records` giờ luôn lưu `class_logits` (42 float/study).
+`stage1_cohort_fingerprint` thêm `record_features` **chỉ khi** nhánh bật, nên
+mọi cache cũ vẫn hit; `assert_class_logits_present` fail-closed nếu không.

@@ -61,3 +61,11 @@ trên. Mơ hồ ở đây làm hỏng ablation.
 ## CueState và PromptContext.__post_init__
 
 `CueState`: `not_provided`, `abstained`, `predicted`. Context không có state tự suy ra predicted khi có P/N/U, abstained khi rỗng. State lạ hoặc mâu thuẫn với nhóm nhãn raise ValueError. `is_structurally_normal` chỉ đúng với predicted không có positive/uncertain; builder kiểm thêm đủ ontology trước khi tóm tắt normal.
+
+## 🧪 `PartKind.FINDING_TOKENS` / `PromptContext.finding_token_count` — 2026-09-10
+
+Nhánh thử nghiệm, **mặc định tắt**. `finding_token_count = None`/0 nghĩa là
+không emit part nào, nên danh sách part và `user_text()` giống hệt như trước.
+Khi bật (13), `user_text(soft_token, finding_token)` bung ra 13 bản
+`<finding_token>`. Xem
+[`training/medgemma/finding_tokens.py`](../../training/medgemma/finding_tokens.py.doc.md).

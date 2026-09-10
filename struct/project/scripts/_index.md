@@ -139,3 +139,13 @@ positive cue; missing thresholds use 0.5. Below threshold means no cue, never
 a negative assertion. Keep the matching guided prompt requirement. Explicit
 `conditional_positive` restores q-only behavior; no calibration file is loaded
 automatically. Low-level Figure-9 helper defaults remain historical compatibility.
+
+## 🧪 Finding tokens — nhánh thử nghiệm 2026-09-10
+
+`generate_stage2_reports.py --finding-tokens {off,q_only,full}` (mặc định `off`)
+đọc `m` và `m*q` của Stage 1 qua 13 token học được thay vì qua cue chữ. Cần
+Stage-1 pipeline mode, guided `--prompt-config`, và `--adapter` có
+`finding_tokens.pt` — mode trong file được kiểm tra khớp, không có dạng
+zero-shot. `--finding-feature-ablation {zero,shuffle_within,permute_across}` là
+probe cơ chế **ngoài phân phối**, không thay thế arm `q_only` train riêng.
+Xem `docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`.

@@ -1031,6 +1031,9 @@ agent nằm ở [AGENTS.md](AGENTS.md) và `CLAUDE.md`.
   bị dừng, không có validation) và arm C (`meta_cxr_native_qformer_guided`, trọn
   1 epoch, `val_loss` 1,0019). Kết quả: xem
   [Stage 2 — cắm Stage 1 vào prompt KHÔNG giúp](#-stage-2--cắm-stage-1-vào-prompt-không-giúp-đo-2026-09-0708).
+- **Nhánh finding token học được (2026-09-10) là THỬ NGHIỆM, mặc định tắt, chưa
+  chạy GPU và chưa có bất kỳ số nào.** Xem
+  [Finding tokens học được](#-finding-tokens-học-được--nhánh-thử-nghiệm-2026-09-10).
   Table 5 Stage-1 inference-only encoder ablation đã hoàn tất 4/4 trên full test
   split; xem `results/table5_encoder_ablation.*`.
 - Explanation loss chưa từng chạy smoke/full training trên GPU;
@@ -1133,3 +1136,157 @@ Cache evaluation nay phân biệt stop IDs, cấu hình/template prompt và sect
 438 lỗi ở cả hai revision, không thêm lỗi. Audit cùng 1.415 ca validation:
 `none` bỏ 1.415 câu normal không có cơ sở; marginal bỏ 654 câu (46,2%) khi
 không có cue vượt ngưỡng. Đây là xác minh prompt, chưa phải cải thiện NLG/lâm sàng.
+
+## ✅ Đóng luôn phản biện "chọn điểm vận hành dở" (đo 2026-09-09/10)
+
+Bảng đánh đổi precision/recall trước đó là **hệ quả của hàm mục tiêu P-fit**
+(tối đa precision với sàn recall 0,20), **không phải** của đường cong model.
+Quét sàn precision trên validation bằng `scripts/calibrate_cue_precision.py`
+tìm được những điểm **trội hoàn toàn** rule lịch sử trên **cả hai** trục:
+
+| sàn (val) | precision | recall | cue/study | nhãn bật |
+|---|---:|---:|---:|---:|
+| `conditional_positive` (lịch sử) | 0,1887 | 0,8097 | 8,46 | 13/13 |
+| **0,35 (`rec35`)** | **0,3628** | **0,7874** | 3,42 | 9/13 |
+| **0,50 (`bal50`)** | **0,5045** | 0,5471 | 1,71 | 7/13 |
+| 0,70 (`selective`) | 0,6800 | 0,2787 | 0,83 | 4/13 |
+
+`rec35` có precision **gấp 1,9 lần** `conditional` ở gần như cùng recall. Sinh
+lại trên **đúng 100 study val đó**, cùng stop IDs đã sửa, cùng greedy 160 token:
+
+| rule | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---:|---:|---:|---:|
+| **`none`** | 0,2543 | 0,2403 | **0,2369** | 0,7998 |
+| `conditional` | 0,2557 | 0,2390 | 0,2209 | 0,7954 |
+| `selective` | **0,2597** | 0,2433 | 0,2289 | **0,8011** |
+| `bal50` | 0,2570 | 0,2433 | 0,2348 | 0,8009 |
+| `rec35` | 0,2526 | 0,2341 | 0,2355 | 0,7968 |
+
+Bootstrap ghép cặp theo study, 2.000 lần lấy mẫu, so với `none`: **cả 16 khoảng
+tin cậy đều chứa 0.** `rec35` còn *âm* trên ba trên bốn metric dù trội
+`conditional` ở cả precision lẫn recall.
+
+> **Năm lần xác nhận độc lập, hai lần cuối dưới một rule tốt hơn hẳn rule mà mọi
+> run đã ghi từng dùng. Đừng đi tìm ngưỡng cue tốt hơn nữa — điểm vận hành không
+> phải chỗ sai.** Thứ **chưa** được thử là một **kênh truyền khác** cho cùng
+> thông tin đó; xem mục dưới.
+
+Artifacts: `/home/phuong/cue_mid_gen_20260909/` (trên host, git-ignored).
+
+## 🧪 Finding tokens học được — nhánh THỬ NGHIỆM (2026-09-10)
+
+> **Chưa đo được gì. Chưa chạy trên GPU. Không được trích như một kết quả, và
+> không đổi mặc định production vì nó.** Mặc định là `--finding-tokens off`;
+> khi tắt, mọi đường Stage-2 hiện có chạy **giống hệt từng byte**.
+
+### Vì sao thử
+
+Stage 1 cho hai đại lượng mỗi finding: `m = sigmoid(mention_logits)` (báo cáo
+có **nhắc tới** finding này không) và `q = softmax(classification_logits)`
+(phân bố P/N/U, **có điều kiện đã nhắc tới**). 79,5% ma trận CheXpert để trống
+và bị mask khỏi classification loss, nên `q` chưa từng thấy "vắng mặt khỏi báo
+cáo" — `m` là thứ duy nhất mang thông tin đó.
+
+Mọi thí nghiệm cue đã ghi đều truyền cặp này sang Stage 2 qua **một ngưỡng cứng
+và một câu tiếng Anh**, và bốn phép đo độc lập nói kênh đó **không giúp** (xem
+[mục kết quả âm](#-stage-2--cắm-stage-1-vào-prompt-không-giúp-đo-2026-09-0708)).
+Nhánh này hỏi một câu khác: có phải vấn đề nằm ở **kênh truyền**, chứ không phải
+ở thông tin? Thay ngưỡng + câu chữ bằng **13 token học được**, mỗi finding một
+token, mang danh tính finding cộng các con số liên tục, chèn vào đúng cơ chế mà
+32 soft token của Q-Former đang dùng.
+
+### Thiết kế
+
+| biến thể | đặc trưng số | k |
+|---|---|---:|
+| `q_only` | `[q_neg, q_pos, q_unc]` | 3 |
+| `full` | `[m, m*q_pos, m*q_neg, m*q_unc]` | 4 |
+
+`m*q_pos + m*q_neg + m*q_unc == m` chính xác, nên `m` **thừa về mặt tuyến tính**
+trong `full`; vẫn giữ để một projection tuyến tính có đường đi thẳng tới "có
+được nhắc không". **`q_only` là đối chứng cô lập đóng góp của mention**: cùng
+identity, cùng projection, cùng 13 vị trí, chỉ khác ở chỗ `m` có nhân vào hay
+không.
+
+⚠ **"Không được nhắc đến" không phải "âm tính".** `m` thấp làm cả ba số polarity
+co về 0, không bao giờ lật thành một khẳng định âm tính.
+
+Ba lựa chọn thiết kế, mỗi cái là một cách thí nghiệm có thể **im lặng đo sai**:
+
+1. **Identity từ embedding học được**, không từ vị trí — nhờ vậy projection dùng
+   chung cho 13 finding và các con số có **một** ý nghĩa nhất quán.
+2. **LayerNorm trước projection** — `E[i]` tự do lớn lên khi train còn `f_i` bị
+   chặn trong [0,1]; không chuẩn hoá thì projection có thể học cách bỏ qua các
+   con số, rồi kết quả bị báo cáo nhầm thành "mention không giúp gì".
+3. **Rescale RMS theo đầu ra của bảng embedding** — việc thay thế xảy ra *bên
+   trong* `get_input_embeddings()`, tức sau khi Gemma nhân hệ số cho token thật
+   nhưng không cho vector thay thế.
+
+**Composition, không sửa `soft_tokens.py`:**
+`FindingTokenEmbeddingWrapper(SoftTokenEmbeddingWrapper(base))`. Nhờ vậy các arm
+không dùng finding token chạy đúng code đã tạo ra mọi số đã ghi. Token nằm
+**sau** soft token và **trước** instruction; chúng là vị trí bình thường với
+`attention_mask = 1` và decoder là causal, nên **không cần và không thêm**
+attention mask riêng.
+
+### Bốn arm đối chứng
+
+Cùng cohort, cùng ngân sách train, cùng seed, cùng LoRA config, cùng quy tắc
+chọn checkpoint, cùng decoding greedy 160 token với stop IDs `[1, 106]` của
+model. Không arm nào khởi đầu từ adapter của arm khác.
+
+| arm | cue chữ | finding token | cô lập điều gì |
+|---|---|---|---|
+| **A** | `--cue-rule none` | tắt | baseline: ảnh native + 32 soft token |
+| **B** | `--cue-rule marginal_positive` | tắt | kênh chữ hiện tại |
+| **C** | `none` | `q_only` | kênh token, **không** có mention |
+| **D** | `none` | `full` | kênh token, **có** mention |
+
+C và D thêm ~0,16 M tham số (+0,5% so với 31,77 M đang trainable) và 13 token
+đầu vào; chênh lệch đó được báo cáo cạnh mọi metric, không giấu đi.
+
+### Cách chạy (khi đã được duyệt ngân sách GPU)
+
+```bash
+# training — cần Stage-1 pipeline mode và guided --prompt-config
+python training/run_medgemma_qlora.py \
+    --pipeline-mode meta_cxr_native_qformer_guided \
+    --prompt-config configs/experiment_native_qformer_guided.yaml \
+    --section-mode findings_only --checkpoint-root ~/run_20260820_ft \
+    --cue-rule none --finding-tokens full \
+    --train-limit <N> --output-dir <dir> --no-upload
+
+# generation — bắt buộc có --adapter chứa finding_tokens.pt, không có dạng zero-shot
+python scripts/generate_stage2_reports.py \
+    --pipeline-mode meta_cxr_native_qformer_guided \
+    --prompt-config configs/experiment_native_qformer_guided.yaml \
+    --adapter <dir>/adapters/medgemma_qlora_meta_cxr_native_qformer_guided \
+    --checkpoint-root ~/run_20260820_ft --cue-rule none --finding-tokens full \
+    --restrict-to <arm_A.jsonl> --split val --output-dir <private>/arm_d
+```
+
+### Bảo vệ chống hỏng im lặng
+
+- `adapter_is_complete` / `resumable_adapter` đòi `finding_tokens.pt` khi cờ
+  bật; `load_finding_encoder_if_present` **raise** khi thiếu file hoặc mode
+  không khớp. Encoder khởi tạo ngẫu nhiên sẽ cho 13 token vô nghĩa và model viết
+  báo cáo trôi chảy quanh chúng — không lỗi ở đâu cả.
+- `build_stage1_records` nay luôn lưu `class_logits`;
+  `stage1_cohort_fingerprint` thêm khoá nhận diện **chỉ khi** cờ bật, nên mọi
+  cache cũ vẫn hit khi tắt.
+- `--finding-feature-ablation {zero,shuffle_within,permute_across}` kiểm tra
+  model có thật sự đọc kênh này không. ⚠ Đây là can thiệp **ngoài phân phối**,
+  là probe cơ chế, **không thay thế** arm `q_only` được train riêng.
+
+### Tiêu chí áp dụng
+
+Chỉ áp dụng khi **tất cả** đều đúng: `D − B` vượt 0 với CI95 không chứa 0 trên
+CIDEr hoặc BERTScore; `D − C` vượt 0 (tức lợi ích đến từ **thông tin mention**,
+không phải từ việc có thêm 13 token học được); lặp câu / độ dài / truncation
+không xấu đi; ablation cho thấy model thật sự dùng đặc trưng; chi phí chấp nhận
+được. Loss giảm, vài báo cáo đẹp, hay một metric nhích lên **không phải** kết
+quả.
+
+Kế hoạch đầy đủ, ngân sách và điều kiện abort:
+[`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`](docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md).
+Kiểm thử CPU: `tests/test_finding_tokens.py` (38 test).

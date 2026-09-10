@@ -42,7 +42,10 @@ class PromptBuilder:
         parts.extend(self._context_parts(context))
         parts.append(self._instruction_part(context))
 
-        template_hash = templates.template_hash(self.config.visual_mode)
+        template_hash = templates.template_hash(
+            self.config.visual_mode,
+            finding_token_count=int(context.finding_token_count or 0),
+        )
         config_hash = self.config.config_hash()
         prompt_hash = hashlib.sha256(
             f"{self.config.version}\x1f{template_hash}\x1f{config_hash}".encode("utf-8")
@@ -100,6 +103,19 @@ class PromptBuilder:
             parts.append(PromptPart(kind=PartKind.TEXT, text=templates.VISUAL_HEADER))
             parts.append(
                 PromptPart(kind=PartKind.SOFT_TOKENS, count=context.qformer_token_count)
+            )
+        # EXPERIMENTAL, opt-in. Placed AFTER the soft tokens and BEFORE the
+        # instruction so a causal decoder can attend to them from the
+        # instruction and from every generated token. budget_priority 0: these
+        # are visual-equivalent evidence and are never dropped by truncation.
+        if context.finding_token_count:
+            parts.append(
+                PromptPart(kind=PartKind.TEXT, text=templates.FINDING_TOKEN_HEADER)
+            )
+            parts.append(
+                PromptPart(
+                    kind=PartKind.FINDING_TOKENS, count=int(context.finding_token_count)
+                )
             )
         return parts
 

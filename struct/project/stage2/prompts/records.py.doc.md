@@ -57,3 +57,8 @@ nhánh đối chứng.
 ## Correction: empty is abstention (2026-09-08)
 
 Nhóm rỗng không phải bằng chứng bình thường. `cue_state` được truyền vào `PromptContext`; record cũ rỗng suy ra abstained. Missing prediction keys vẫn raise ở guided mode, trừ khi ghi rõ `cue_state=not_provided`. State mâu thuẫn bị schema từ chối. `build_stage1_records` / `with_cue_state` là producer, `VariantLLM` là caller dùng chung train/inference.
+
+## 🧪 `finding_token_count` — 2026-09-10
+
+Tham số keyword mới, mặc định `None` (tắt). Chỉ được truyền vào `PromptContext`,
+không đọc từ record — số lượng do runtime quyết định, không phải dữ liệu.
