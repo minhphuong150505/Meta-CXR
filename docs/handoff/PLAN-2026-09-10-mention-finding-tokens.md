@@ -174,11 +174,12 @@ decoding at 160 new tokens with the model's own stop IDs `[1, 106]`.
 - **Every arm starts from the same initialisation.** No arm resumes another
   arm's adapter. `img_proj` and the LoRA weights are freshly initialised in all
   four from the same seed; the finding-token encoder exists only in C and D.
-- **Parameter and token-count differences are reported, not hidden.** C and D add
-  `13*64 + (64+k)*hidden + hidden + 1` parameters (~0.16 M against the 31.77 M
-  already trainable, i.e. +0.5%) and 13 input tokens; B adds ~0 parameters and a
-  variable number of *text* tokens. These are stated in the results table
-  alongside every metric.
+- **Parameter and token-count differences are reported, not hidden.** Measured on
+  the GPU smoke (`hidden = 2560`): the encoder is **177,609** parameters for
+  `full` and **175,047** for `q_only`, so trainable goes 31,771,136 -> 31,948,745,
+  **+0.56%**, and C and D differ from each other by only 2,562. Plus 13 input
+  tokens. B adds ~0 parameters and a variable number of *text* tokens. These are
+  stated in the results table alongside every metric.
 - Anti-repetition (`--no-repeat-ngram-size`, `--repetition-penalty`) stays **off**
   in all four, as in every recorded run, so the only moving part is the cue
   channel.
@@ -300,8 +301,76 @@ separately, with the numbers.
 
 ## Commands
 
-Filled in as each stage is reached; nothing GPU-side runs before the CPU suite
-is green and the host is confirmed idle.
+### Stage 0 — CPU (run)
+
+```bash
+# on the host, in a detached review worktree at the branch head
+git worktree add --detach ~/ft_review_20260910 origin/feat/stage2-finding-tokens
+ln -sf ~/Meta-CXR/configs/env_config.yaml ~/ft_review_20260910/configs/env_config.yaml
+cd ~/ft_review_20260910
+CUDA_VISIBLE_DEVICES="" ~/.venvs/meta-cxr-stage1-311/bin/python -m pytest tests/ -q
+```
+
+### Stage 1 — GPU smoke, arm D (run)
+
+Guards first, in a SEPARATE command from the launch (`pgrep -f` on a pattern that
+appears in your own command line is what this repo has been bitten by twice):
+
+```bash
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
+ps -eo pid,args --no-headers | awk '$2 ~ /python/ {print $1, $2, $3}'
+test ! -e ~/ft_findingtok_smoke && echo "outdir free"
+findmnt -no FSTYPE /mnt/drive1tb          # must print ntfs3
+```
+
+```bash
+cd ~/ft_review_20260910 && setsid nohup env CUDA_VISIBLE_DEVICES=0 \
+  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+  ~/.venvs/meta-cxr-stage1-311/bin/python training/run_medgemma_qlora.py \
+  --pipeline-mode meta_cxr_native_qformer_guided --section-mode findings_only \
+  --prompt-config configs/experiment_native_qformer_guided.yaml \
+  --checkpoint-root ~/run_20260820_ft \
+  --cue-rule none --finding-tokens full \
+  --train-limit 200 --val-limit 10 --test-limit 10 \
+  --train-epochs 1 --batch-size 2 --grad-accum 8 --num-workers 4 \
+  --output-dir ~/ft_findingtok_smoke --no-upload \
+  > ~/ft_findingtok_smoke.log 2>&1 < /dev/null &
+```
+
+### Stage 2 — pilot, four arms (NOT RUN, needs budget approval)
+
+`N` is the approved `--train-limit`. Each arm gets its own output directory and
+they run **strictly one at a time**.
+
+```bash
+# A
+--cue-rule none                --finding-tokens off    --output-dir ~/ft_arm_a_<N>
+# B
+--cue-rule marginal_positive   --finding-tokens off    --output-dir ~/ft_arm_b_<N>
+# C
+--cue-rule none                --finding-tokens q_only --output-dir ~/ft_arm_c_<N>
+# D
+--cue-rule none                --finding-tokens full   --output-dir ~/ft_arm_d_<N>
+```
+
+Generation, arm A first so the later arms can be matched to its cohort:
+
+```bash
+~/.venvs/meta-cxr-stage1-311/bin/python scripts/generate_stage2_reports.py \
+  --pipeline-mode meta_cxr_native_qformer_guided \
+  --prompt-config configs/experiment_native_qformer_guided.yaml \
+  --adapter ~/ft_arm_<x>_<N>/adapters/medgemma_qlora_meta_cxr_native_qformer_guided \
+  --checkpoint-root ~/run_20260820_ft --stage1-cache-dir ~/ft_arm_<x>_<N> \
+  --cue-rule <rule> --finding-tokens <mode> \
+  --restrict-to ~/gen_arm_a/generated_val.jsonl \
+  --split val --limit 0 --max-new-tokens 160 --output-dir ~/gen_arm_<x>
+```
+
+Ablation on arm D only, three separate output directories:
+
+```bash
+--finding-feature-ablation {zero,shuffle_within,permute_across}
+```
 
 ## Abort if
 
@@ -311,6 +380,115 @@ is green and the host is confirmed idle.
 - `class_logits` is missing from a record a finding-token run needs.
 - Any artifact would carry patient data into Git.
 
-## Execution report
+## Execution report — 2026-09-10, host `minhphuong` (100.116.167.90)
 
-_(appended by the executor)_
+- **commit run:** `76797ac` (branch `feat/stage2-finding-tokens`), in a detached
+  review worktree `/home/phuong/ft_review_20260910`. Host `main` untouched.
+- **host state before launch:** uptime since 2026-09-03 11:32:55,
+  `findmnt` → `ntfs3`, GPU **170 MiB of 16,311, 0% util, zero compute apps**,
+  output directory absent. All four guards passed.
+
+### Stage 0 — CPU suite: PASS, no regression
+
+| | branch `76797ac` | baseline `c4d4357` |
+|---|---:|---:|
+| passed | **1,066** | 1,028 |
+| skipped | 2 | 2 |
+| exit status | **0** | 0 |
+
+The difference is **exactly 38** — `tests/test_finding_tokens.py`, all of which
+pass on the host (four of them skip on the CPU dev box, where `transformers` is
+absent). `ruff` diagnostics on every touched file are byte-identical to the
+baseline set; the two new files are clean.
+
+⚠ **Two regressions were introduced and caught here, both invisible on the dev
+box.** `tests/test_generation_stop_tokens.py` builds a `VariantLLM` with
+`object.__new__` and sets only the attributes it needs, so (a) reading
+`self.finding_encoder` / `self.finding_tokens` off a partial instance raised
+`AttributeError`, fixed by giving all four attributes **class-level defaults**,
+and (b) that file stubs `_prompt_template_hash` with `lambda *args`, so the new
+keyword argument raised `TypeError`, fixed by passing it positionally with the
+digest length named (`TEMPLATE_HASH_LENGTH`). Both tests pass at `c4d4357` and
+failed on the first push — the local box skips them for want of `transformers`,
+so **the host run is what found them**. Commits `138d455` and `76797ac`.
+
+### Stage 1 — GPU smoke, arm D: PASS
+
+`--finding-tokens full --cue-rule none`, 200 train / 10 val / 10 test studies
+(161 / 9 / 10 survive the `generation_mask` filter), one epoch, batch 2 ×
+accum 8.
+
+| | |
+|---|---|
+| `manifest.json` `status` | **`complete`** |
+| training | 81/81 iterations, **4m26s at 3.29 s/it** |
+| `train_loss` / `val_loss` | 1.81157 / **1.68064** (`best_val_loss` written) |
+| artifacts | `adapter_model.safetensors`, `img_proj.pt`, **`finding_tokens.pt`**, `trainer_state.pt`, `meta.json`, `manifest.json` |
+| generation | 9 val + 10 test, **0 failures** |
+| `trainable_vision_parameters` | **0** |
+| exit | clean; GPU back to 170 MiB / 0% |
+
+**3.29 s/it against arm C's full-run 3.37 s/it, so the branch costs nothing
+measurable in throughput** at this batch size and the pilot estimates in
+"Budget" stand unchanged.
+
+**Parameter counts, measured rather than estimated** (`hidden = 2560`):
+
+| | |
+|---|---:|
+| trainable, arm A/B | 31,771,136 |
+| trainable, arm D | **31,948,745** |
+| finding-token encoder | **177,609** (+0.56%) |
+| same for `q_only` (arm C) | 175,047 — C and D differ by **2,562** |
+
+`meta.json` / `manifest.json` record `finding_tokens: "full"`,
+`num_finding_tokens: 13`, and a `template_hash` (`c08252c6658218c8`) distinct
+from the branch-off hash, so an artifact from this arm cannot later be mistaken
+for one without finding tokens.
+
+**Substitution is proven by the run completing, not by inspection.**
+`FindingTokenEmbeddingWrapper` raises unless it finds **exactly 13**
+`<finding_token>` positions in every row; 81 training iterations and 19
+generations passed through it without raising, so every one of those rows
+carried exactly 13.
+
+**Gradient reaches the encoder — checked against the two deterministically
+initialised parameters:**
+
+| parameter | init | after training |
+|---|---:|---:|
+| `output_scale` | 1.0050 (calibrated from the real embedding table) | **1.004206** |
+| `norm.weight` | 1.0 | moved, mean abs delta **0.002194** |
+
+⚠ `identity.weight` and `proj.weight` also differ from a fresh module, but that
+comparison proves **nothing** — a fresh module is an independent random draw,
+and the observed 0.0235 for `identity.weight` is almost exactly the 0.0226
+expected from two independent `normal(0, 0.02)` draws. Only the two
+deterministically-initialised parameters are evidence, and both moved. The
+movement is small because this is ~10 optimizer updates on 161 studies.
+
+⚠ `torch.utils.checkpoint` warns "None of the inputs have requires_grad=True"
+at the first step. It is a pre-existing gradient-checkpointing warning for this
+QLoRA configuration, not a finding-token defect — the substitution happens in
+`get_input_embeddings()`, upstream of every checkpointed block, and the
+`output_scale` / `norm.weight` movement above is the direct evidence that the
+gradient arrives.
+
+### What was NOT done
+
+- **Peak VRAM was not captured.** `run_medgemma_qlora.py` does not log it and
+  no `nvidia-smi` sample was taken during the run. The s/it match to arm C is
+  the throughput evidence; a VRAM figure must be sampled during the pilot's
+  first minutes.
+- **No pilot, and no result of any kind.** The n=9 / n=10 NLG numbers this smoke
+  produced are a plumbing check on nine and ten studies and are deliberately not
+  recorded here — quoting them would be exactly the mistake this file warns
+  about elsewhere. **The branch has established that it runs, and nothing more.**
+- Stage 2 needs the budget approval in "Budget" before anything long starts.
+
+### Raw logs on the host (not copied here)
+
+`~/ft_findingtok_smoke.log` · `~/ft_findingtok_smoke/` (adapter, eval JSON,
+`.sensitive_stage1_cache/`) · review worktrees `~/ft_review_20260910` and
+`~/ft_base_20260910`. All git-ignored or outside the repo; nothing from them
+enters a commit.
