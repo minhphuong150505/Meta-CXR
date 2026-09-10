@@ -117,8 +117,15 @@ def join_or_none(names: tuple[str, ...]) -> str:
     return ", ".join(names) if names else NONE_TOKEN
 
 
+#: Prefix length of the SHA-256 digest. Named so callers that need to pass a
+#: later positional argument do not have to write the number themselves.
+TEMPLATE_HASH_LENGTH = 16
+
+
 def template_hash(
-    visual_mode: VisualMode, length: int = 16, finding_token_count: int = 0
+    visual_mode: VisualMode,
+    length: int = TEMPLATE_HASH_LENGTH,
+    finding_token_count: int = 0,
 ) -> str:
     """Hash of every wording fragment that can reach the model, plus the mode.
 

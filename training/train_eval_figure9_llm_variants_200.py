@@ -174,6 +174,7 @@ from stage2.prompts import (  # noqa: E402
     PromptConfig,
     context_from_record,
 )
+from stage2.prompts.templates import TEMPLATE_HASH_LENGTH as _TEMPLATE_HASH_LENGTH  # noqa: E402
 from stage2.prompts.templates import template_hash as _prompt_template_hash  # noqa: E402
 
 try:
@@ -1169,11 +1170,12 @@ class VariantLLM:
             "uncertainty_policy": config.uncertainty_policy.value,
             "temporal_target_policy": config.temporal_target_policy.value,
             "config_hash": config.config_hash(),
+            # Positional, so a test that stubs this with ``lambda *args`` still
+            # works. The middle argument is the digest length's own default.
             "template_hash": _prompt_template_hash(
                 config.visual_mode,
-                finding_token_count=(
-                    NUM_FINDING_TOKENS if self.finding_tokens != FINDING_TOKENS_OFF else 0
-                ),
+                _TEMPLATE_HASH_LENGTH,
+                NUM_FINDING_TOKENS if self.finding_tokens != FINDING_TOKENS_OFF else 0,
             ),
             "num_img_tokens": NUM_IMG_TOKENS,
             "finding_tokens": self.finding_tokens,
