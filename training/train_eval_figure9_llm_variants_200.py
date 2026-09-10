@@ -826,6 +826,16 @@ class RecordDataset(Dataset):
 
 
 class VariantLLM:
+    # Class-level defaults for the experimental finding-token branch. Tests
+    # (and any other caller) build a partial instance with
+    # ``object.__new__(VariantLLM)`` and set only the attributes they need, so
+    # reading these off the instance must mean "branch off", not
+    # AttributeError. ``__init__`` overwrites all four.
+    finding_tokens: str = FINDING_TOKENS_OFF
+    finding_encoder = None
+    finding_token_id: int | None = None
+    finding_feature_ablation: str | None = None
+
     def __init__(
         self,
         family: str,
@@ -859,7 +869,7 @@ class VariantLLM:
         # the code that produced the recorded results.
         self.finding_tokens = validate_finding_token_mode(finding_tokens)
         # Set by the generation CLI only. None in every training run.
-        self.finding_feature_ablation: str | None = None
+        self.finding_feature_ablation = None
         if self.finding_tokens != FINDING_TOKENS_OFF:
             if family != "medgemma":
                 raise ValueError("finding tokens are only supported for MedGemma")
