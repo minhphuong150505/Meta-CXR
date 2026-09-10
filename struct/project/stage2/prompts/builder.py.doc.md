@@ -54,3 +54,11 @@ Không.
 ## Cue semantics (2026-09-08)
 
 `_structured_parts` trả [] với not_provided/abstained; visual parts, context và task instruction không đổi. Negative subset không vào `_normal_parts`; chỉ đủ 13 modeled negatives mới được tóm tắt. Trạng thái cue được kiểm tra ở PromptContext. Template identity tăng để phân biệt kết quả cũ.
+
+## 🧪 Finding tokens — 2026-09-10
+
+`_visual_parts` emit `FINDING_TOKEN_HEADER` + `PartKind.FINDING_TOKENS` **sau**
+soft token và **trước** instruction, chỉ khi `context.finding_token_count` khác
+0. `budget_priority = 0` — không bao giờ bị truncation cắt. Decoder là causal
+nên vị trí đó là đủ để instruction và mọi token sinh ra nhìn thấy chúng; **không
+cần và không được** thêm attention mask riêng.

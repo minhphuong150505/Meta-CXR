@@ -31,6 +31,7 @@ def context_from_record(
     *,
     visual_mode: VisualMode,
     qformer_token_count: int | None = None,
+    finding_token_count: int | None = None,
     prompt_version: str | None = None,
 ) -> PromptContext:
     """Build a ``PromptContext``. Absent fields become None/empty, never invented.
@@ -89,5 +90,6 @@ def context_from_record(
         technique=record.get("technique"),
         has_support_devices=bool(record.get("has_support_devices", False)),
         qformer_token_count=token_count,
+        finding_token_count=finding_token_count,
         prompt_version=prompt_version,
     )

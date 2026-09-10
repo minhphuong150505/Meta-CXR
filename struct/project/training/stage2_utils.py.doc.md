@@ -75,3 +75,11 @@ Không (`file_identity` đọc metadata file).
 3. `validate_soft_token_batch` **đừng nới lỏng** để "cho nó chạy".
 
 ← [training/](_index.md) · [HOME](../../HOME.md)
+
+## 🧪 `adapter_is_complete(path, image_mode, finding_tokens="off")` — 2026-09-10
+
+Tham số thứ ba, mặc định `"off"` nên mọi lời gọi cũ không đổi hành vi. Khi khác
+`off`, `finding_tokens.pt` trở thành file bắt buộc — cùng lý do như
+`img_proj.pt`: encoder được train ở Stage 2, thiếu nó thì 13 vị trí prompt được
+thay bằng một projection khởi tạo ngẫu nhiên và model viết báo cáo trôi chảy
+quanh chúng, không lỗi ở đâu cả.

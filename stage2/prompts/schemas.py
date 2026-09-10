@@ -111,6 +111,10 @@ class PromptContext:
     technique: str | None = None
     has_support_devices: bool = False
     qformer_token_count: int | None = None
+    #: EXPERIMENTAL. Number of ``<finding_token>`` placeholders to emit (13 when
+    #: on). ``None``/0 means the branch is off and no part is emitted -- which is
+    #: the default and keeps every recorded prompt byte-identical.
+    finding_token_count: int | None = None
     prompt_version: str | None = None
     cue_state: CueState | str | None = None
 
@@ -144,6 +148,11 @@ class PartKind(str, Enum):
     TEXT = "text"
     IMAGE = "image"
     SOFT_TOKENS = "soft_tokens"
+    #: EXPERIMENTAL, opt-in. One token per reportable finding, carrying the
+    #: finding's identity plus Stage-1's continuous mention/polarity numbers.
+    #: Emitted only when ``PromptContext.finding_token_count`` is set, so the
+    #: default part list is unchanged.
+    FINDING_TOKENS = "finding_tokens"
 
 
 @dataclass(frozen=True)
@@ -175,11 +184,17 @@ class RenderedPrompt:
     config_hash: str
     prompt_hash: str
 
-    def user_text(self, soft_token: str = "<qformer_soft_token>") -> str:
+    def user_text(
+        self,
+        soft_token: str = "<qformer_soft_token>",
+        finding_token: str = "<finding_token>",
+    ) -> str:
         """Flatten to a single user string (Q-Former / Vicuna string path).
 
         Image parts render to nothing (pixels are supplied out of band); soft
-        tokens expand to ``count`` copies of ``soft_token``.
+        tokens expand to ``count`` copies of ``soft_token`` and finding tokens to
+        ``count`` copies of ``finding_token``. With the finding-token branch off
+        no such part exists, so the output is unchanged.
         """
         chunks: list[str] = []
         for part in self.parts:
@@ -187,4 +202,6 @@ class RenderedPrompt:
                 chunks.append(part.text)
             elif part.kind is PartKind.SOFT_TOKENS and part.count:
                 chunks.append(" ".join([soft_token] * part.count))
+            elif part.kind is PartKind.FINDING_TOKENS and part.count:
+                chunks.append(" ".join([finding_token] * part.count))
         return "\n\n".join(chunks)

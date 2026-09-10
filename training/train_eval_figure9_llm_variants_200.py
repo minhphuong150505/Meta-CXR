@@ -97,6 +97,19 @@ try:
         MultimodalModelLoadError,
         validate_multimodal_capability,
     )
+    from medgemma.finding_tokens import (
+        FINDING_TOKEN,
+        FINDING_TOKEN_MODES,  # noqa: F401  -- re-exported for the CLIs
+        FINDING_TOKENS_OFF,
+        NUM_FINDING_TOKENS,
+        FindingTokenEmbeddingWrapper,
+        FindingTokenEncoder,
+        apply_finding_feature_ablation,
+        finding_features,
+    )
+    from medgemma.finding_tokens import (
+        validate_mode as validate_finding_token_mode,
+    )
     from medgemma.soft_tokens import SoftTokenEmbeddingWrapper, soft_token_bad_words_ids
     from run_context import Stage1Context
     from torch_io import load_torch_checkpoint
@@ -104,6 +117,19 @@ except ImportError:  # ``python -m training...``
     from training.medgemma.capabilities import (
         MultimodalModelLoadError,
         validate_multimodal_capability,
+    )
+    from training.medgemma.finding_tokens import (
+        FINDING_TOKEN,
+        FINDING_TOKEN_MODES,  # noqa: F401  -- re-exported for the CLIs
+        FINDING_TOKENS_OFF,
+        NUM_FINDING_TOKENS,
+        FindingTokenEmbeddingWrapper,
+        FindingTokenEncoder,
+        apply_finding_feature_ablation,
+        finding_features,
+    )
+    from training.medgemma.finding_tokens import (
+        validate_mode as validate_finding_token_mode,
     )
     from training.medgemma.soft_tokens import (
         SoftTokenEmbeddingWrapper,
@@ -594,6 +620,7 @@ def stage1_cohort_fingerprint(
     split: str,
     sample_limit: int | None,
     cue_rule: str = CUE_RULE_CONDITIONAL,
+    finding_tokens: str = FINDING_TOKENS_OFF,
 ) -> tuple[str, dict[str, Any]]:
     ckpt_path = stage1_checkpoint_path(context, checkpoint_root)
     cfg_path = context.resolve_config_path(
@@ -614,7 +641,38 @@ def stage1_cohort_fingerprint(
     # Omitted when off so every cache built before the gate existed still hits.
     if cue_rule != CUE_RULE_CONDITIONAL:
         payload["cue_rule"] = cue_rule
+    # Same pattern for the experimental finding-token branch: it needs
+    # `class_logits` on every record, which older caches do not carry. Omitted
+    # when off so every existing cache still hits.
+    if finding_tokens != FINDING_TOKENS_OFF:
+        payload["record_features"] = "with_class_logits"
     return stable_fingerprint(payload), payload
+
+
+def assert_class_logits_present(records: list[dict], finding_tokens: str) -> None:
+    """Fail closed when a finding-token run is handed records without ``q``.
+
+    A cache built before this branch existed carries `mention_logits` and
+    `pred_groups` but no `class_logits`. Falling back would train the encoder on
+    whatever happened to be there; the cache identity is supposed to prevent
+    this reaching us at all, so if it does, something is wrong upstream.
+    """
+    if finding_tokens == FINDING_TOKENS_OFF or not records:
+        return
+    missing = sum(1 for record in records if record.get("class_logits") is None)
+    if missing:
+        raise RuntimeError(
+            f"--finding-tokens {finding_tokens} needs class_logits on every record, "
+            f"but {missing} of {len(records)} carry none. These records predate the "
+            "finding-token branch; delete the .sensitive_stage1_cache entry and "
+            "rebuild rather than falling back to partial features."
+        )
+    shape = tuple(records[0]["class_logits"].shape)
+    if shape != (len(ABNORMALITIES_14), len(CLASS_MAP)):
+        raise RuntimeError(
+            f"class_logits are {shape}, expected "
+            f"{(len(ABNORMALITIES_14), len(CLASS_MAP))}"
+        )
 
 
 @torch.no_grad()
@@ -626,6 +684,7 @@ def build_stage1_records(
     sample_limit: int | None,
     num_workers: int,
     cue_rule: str = CUE_RULE_CONDITIONAL,
+    finding_tokens: str = FINDING_TOKENS_OFF,
 ) -> list[dict]:
     """Build Q-Former records. Stage-1 only -- native MedGemma must not call this.
 
@@ -636,8 +695,9 @@ def build_stage1_records(
     exactly the Stage-1 coupling the pipeline split exists to remove.
     """
     validate_selective_thresholds(context, cue_rule)
+    validate_finding_token_mode(finding_tokens)
     cohort_id, cohort = stage1_cohort_fingerprint(
-        context, checkpoint_root, split, sample_limit, cue_rule
+        context, checkpoint_root, split, sample_limit, cue_rule, finding_tokens
     )
     limit_name = str(sample_limit) if sample_limit and sample_limit > 0 else "all"
     # This local-only cache necessarily contains target report text and image
@@ -649,7 +709,9 @@ def build_stage1_records(
         print(f"[stage1] reusing {cache_path}")
         cached = load_torch_checkpoint(cache_path)
         if cached.get("cohort_id") == cohort_id:
-            return [with_cue_state(record, cue_rule) for record in cached["records"]]
+            records = [with_cue_state(record, cue_rule) for record in cached["records"]]
+            assert_class_logits_present(records, finding_tokens)
+            return records
         print("[stage1] cache manifest mismatch; rebuilding")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -704,6 +766,9 @@ def build_stage1_records(
         # Stored raw and always, so a later analysis can re-derive cues under a
         # different rule without another encode pass. 14 floats per study.
         record["mention_logits"] = mention_cpu
+        # Stored raw and always, so the experimental finding-token branch and any
+        # later analysis can read `q` without a second encode pass. 42 floats.
+        record["class_logits"] = logits[0].detach().cpu().float()
         record["pred_groups"] = classify_with_thresholds(
             context,
             logits[0].detach().cpu(),
@@ -730,6 +795,7 @@ def build_stage1_records(
     )
     del model
     clear_memory()
+    assert_class_logits_present(records, finding_tokens)
     return records
 
 
@@ -771,6 +837,7 @@ class VariantLLM:
         lora_alpha: int = 16,
         gradient_checkpointing: bool = True,
         prompt_config: PromptConfig | None = None,
+        finding_tokens: str = FINDING_TOKENS_OFF,
     ):
         if image_mode not in ALL_IMAGE_MODES:
             raise ValueError(f"image_mode must be one of {sorted(ALL_IMAGE_MODES)}")
@@ -787,6 +854,23 @@ class VariantLLM:
                 "placeholders come from the v2 prompt builder, and the legacy "
                 "instruction emits none"
             )
+        # EXPERIMENTAL, opt-in. `off` is the default and leaves every branch
+        # below untouched, so the arms without finding tokens execute exactly
+        # the code that produced the recorded results.
+        self.finding_tokens = validate_finding_token_mode(finding_tokens)
+        # Set by the generation CLI only. None in every training run.
+        self.finding_feature_ablation: str | None = None
+        if self.finding_tokens != FINDING_TOKENS_OFF:
+            if family != "medgemma":
+                raise ValueError("finding tokens are only supported for MedGemma")
+            if prompt_config is None:
+                # Same trap as native_qformer: the placeholders come from the v2
+                # builder, so without it the substitution would find zero
+                # positions and the run would silently be the unguided arm.
+                raise ValueError(
+                    "--finding-tokens requires --prompt-config: the "
+                    f"{FINDING_TOKEN} placeholders come from the v2 prompt builder"
+                )
         # Opt-in v2 prompt builder. None keeps the exact legacy prompt strings.
         if prompt_config is not None:
             if family != "medgemma":
@@ -889,8 +973,16 @@ class VariantLLM:
                     revision=load_kwargs.get("revision"),
                     transformers_version=getattr(transformers, "__version__", None),
                 )
+            new_specials = []
             if self.image_mode in SOFT_TOKEN_MODES and self.img_token not in self.tokenizer.get_vocab():
-                self.tokenizer.add_special_tokens({"additional_special_tokens": [self.img_token]})
+                new_specials.append(self.img_token)
+            if (
+                self.finding_tokens != FINDING_TOKENS_OFF
+                and FINDING_TOKEN not in self.tokenizer.get_vocab()
+            ):
+                new_specials.append(FINDING_TOKEN)
+            if new_specials:
+                self.tokenizer.add_special_tokens({"additional_special_tokens": new_specials})
                 self.model.resize_token_embeddings(len(self.tokenizer))
             if self.quantize_4bit:
                 self.model = prepare_model_for_kbit_training(
@@ -910,6 +1002,27 @@ class VariantLLM:
             # Keep the newly initialized bridge in fp32; it is much smaller than
             # the LLM and benefits from stable updates at its higher learning rate.
             self.img_proj = nn.Linear(768, hidden).to(self.device, dtype=torch.float32)
+        self.finding_token_id = None
+        self.finding_encoder = None
+        if self.finding_tokens != FINDING_TOKENS_OFF:
+            self.finding_token_id = self.tokenizer.convert_tokens_to_ids(FINDING_TOKEN)
+            if self.finding_token_id is None or self.finding_token_id < 0:
+                raise RuntimeError(f"could not register finding token {FINDING_TOKEN}")
+            hidden = int(self.model.get_input_embeddings().weight.shape[-1])
+            # fp32 like img_proj: small, newly initialised, higher LR.
+            self.finding_encoder = FindingTokenEncoder(self.finding_tokens, hidden).to(
+                self.device, dtype=torch.float32
+            )
+            # Match the embedding table's OUTPUT scale so the substituted vectors
+            # are in distribution at step 0 -- see FindingTokenEncoder's docstring
+            # for why the weight's own RMS is the wrong target on Gemma.
+            sample_ids = torch.arange(
+                0, min(4096, int(self.model.get_input_embeddings().weight.shape[0]))
+            )
+            rms = self.finding_encoder.calibrate_output_scale(
+                self.model.get_input_embeddings(), sample_ids
+            )
+            print(f"[finding-tokens] mode={self.finding_tokens} output_scale={rms:.4f}", flush=True)
         if adapter:
             self.model = PeftModel.from_pretrained(self.model, str(adapter), is_trainable=train_adapter)
         elif train_adapter:
@@ -990,11 +1103,21 @@ class VariantLLM:
             if self.img_proj is not None
             else 0
         )
+        # Reported separately so the arms can be compared on parameter count
+        # rather than the difference being buried in "projector".
+        finding = (
+            sum(p.numel() for p in self.finding_encoder.parameters())
+            if self.finding_encoder is not None
+            else 0
+        )
+        projector += finding
         return {
             "total_parameters": total + projector,
             "trainable_parameters": trainable + projector,
             "lora_parameters": lora,
             "projector_parameters": projector,
+            "finding_token_parameters": finding,
+            "finding_tokens": self.finding_tokens,
             "vision_parameters": vision,
             "trainable_vision_parameters": trainable_vision,
             "trainable_fraction": round(
@@ -1036,8 +1159,17 @@ class VariantLLM:
             "uncertainty_policy": config.uncertainty_policy.value,
             "temporal_target_policy": config.temporal_target_policy.value,
             "config_hash": config.config_hash(),
-            "template_hash": _prompt_template_hash(config.visual_mode),
+            "template_hash": _prompt_template_hash(
+                config.visual_mode,
+                finding_token_count=(
+                    NUM_FINDING_TOKENS if self.finding_tokens != FINDING_TOKENS_OFF else 0
+                ),
+            ),
             "num_img_tokens": NUM_IMG_TOKENS,
+            "finding_tokens": self.finding_tokens,
+            "num_finding_tokens": (
+                NUM_FINDING_TOKENS if self.finding_tokens != FINDING_TOKENS_OFF else 0
+            ),
             "tokenizer": self.model_id,
             "processor": self.model_id,
         }
@@ -1054,6 +1186,15 @@ class VariantLLM:
         self.model.save_pretrained(out_dir)
         if self.img_proj is not None:
             torch.save(self.img_proj.state_dict(), out_dir / "img_proj.pt")
+        if self.finding_encoder is not None:
+            torch.save(
+                {
+                    "mode": self.finding_tokens,
+                    "num_finding_tokens": NUM_FINDING_TOKENS,
+                    "state_dict": self.finding_encoder.state_dict(),
+                },
+                out_dir / "finding_tokens.pt",
+            )
         prompt_meta = self._prompt_metadata()
         meta = {
             "family": self.family,
@@ -1062,6 +1203,9 @@ class VariantLLM:
             "img_token_id": self.img_token_id,
             "num_img_tokens": NUM_IMG_TOKENS,
             "image_mode": self.image_mode,
+            "finding_tokens": self.finding_tokens,
+            "finding_token": FINDING_TOKEN if self.finding_tokens != FINDING_TOKENS_OFF else None,
+            "finding_token_id": self.finding_token_id,
             "prompt": prompt_meta,
             # Recorded so a checkpoint can never be mistaken later for a vision
             # run when it was in fact the language-prior ablation.
@@ -1092,6 +1236,34 @@ class VariantLLM:
         if p.exists() and self.img_proj is not None:
             self.img_proj.load_state_dict(load_torch_checkpoint(p))
 
+    def load_finding_encoder_if_present(self, adapter_dir: Path | str | None) -> None:
+        """Restore the finding-token encoder, refusing a mode mismatch.
+
+        Unlike ``load_img_proj_if_present`` this RAISES when the file is missing
+        while the branch is on. A silently un-restored encoder is the same class
+        of failure as a missing ``img_proj.pt``: fluent output describing a
+        randomly-initialised readout, with no error anywhere.
+        """
+        if self.finding_encoder is None:
+            return
+        if not adapter_dir:
+            raise RuntimeError(
+                "--finding-tokens needs an adapter directory carrying finding_tokens.pt"
+            )
+        path = Path(adapter_dir) / "finding_tokens.pt"
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"{path} is missing. The finding-token encoder is trained in Stage 2; "
+                "without it the tokens carry a randomly initialised projection."
+            )
+        payload = load_torch_checkpoint(path)
+        if payload.get("mode") != self.finding_tokens:
+            raise RuntimeError(
+                f"{path} was trained with finding_tokens={payload.get('mode')!r}, "
+                f"this run is {self.finding_tokens!r}"
+            )
+        self.finding_encoder.load_state_dict(payload["state_dict"])
+
     def _render_prompt_text(self, record: dict) -> str:
         """User-turn text from the shared v2 builder (opt-in via prompt_config).
 
@@ -1104,9 +1276,16 @@ class VariantLLM:
             record,
             visual_mode=self.prompt_config.visual_mode,
             qformer_token_count=NUM_IMG_TOKENS,
+            finding_token_count=(
+                NUM_FINDING_TOKENS if self.finding_tokens != FINDING_TOKENS_OFF else None
+            ),
             prompt_version=self.prompt_config.version,
         )
-        return PromptBuilder(self.prompt_config).build(context).user_text(self.img_token)
+        return (
+            PromptBuilder(self.prompt_config)
+            .build(context)
+            .user_text(self.img_token, FINDING_TOKEN)
+        )
 
     def _chat_texts(self, record: dict, prompt_style: str) -> tuple[str, str]:
         target = str(record["ref"]).strip()
@@ -1235,7 +1414,27 @@ class VariantLLM:
         item["labels"] = torch.tensor(labels, dtype=torch.long)
         if self.image_mode in SOFT_TOKEN_MODES:
             item["qformer_embs"] = record["qformer_embs"].float()
+        if self.finding_tokens != FINDING_TOKENS_OFF:
+            item["finding_features"] = self.finding_features_for(record)
         return item
+
+    def finding_features_for(self, record: dict) -> torch.Tensor:
+        """``[13, k]`` Stage-1 features for one record, or raise saying why not.
+
+        The same function serves training, validation and generation, which is
+        what keeps the input distribution identical across the three -- the
+        train/inference skew this branch could most easily introduce.
+        """
+        class_logits = record.get("class_logits")
+        if class_logits is None:
+            raise RuntimeError(
+                "--finding-tokens needs class_logits on the record; this one "
+                "predates the branch. Rebuild the Stage-1 records."
+            )
+        features = finding_features(
+            class_logits, record.get("mention_logits"), self.finding_tokens
+        )
+        return apply_finding_feature_ablation(features, self.finding_feature_ablation)
 
     def collate_train(self, records: list[dict], max_length: int = 768) -> dict[str, torch.Tensor]:
         items = [self.encode_train_example(record, "fine", max_length) for record in records]
@@ -1270,15 +1469,34 @@ class VariantLLM:
             for key, value in batch.items()
         }
         qformer = moved.pop("qformer_embs", None)
+        # Read the ORIGINAL tensor, not the dtype-converted copy: the features
+        # are probabilities and products of probabilities, and bf16 carries ~3
+        # decimal digits. The comprehension above would quantise m*q_pos for a
+        # rare finding to zero before the encoder ever saw it.
+        moved.pop("finding_features", None)
+        features = batch.get("finding_features")
         old_embedding = None
+        wrapped = None
         if self.image_mode in SOFT_TOKEN_MODES:
             projected = self.img_proj(qformer.float())
             old_embedding = self.model.get_input_embeddings()
-            self.model.set_input_embeddings(
-                SoftTokenEmbeddingWrapper(
-                    old_embedding, self.img_token_id, projected, NUM_IMG_TOKENS
-                )
+            wrapped = SoftTokenEmbeddingWrapper(
+                old_embedding, self.img_token_id, projected, NUM_IMG_TOKENS
             )
+        if self.finding_encoder is not None:
+            # Composed on top of the soft-token wrapper rather than merged into
+            # it, so the arms without finding tokens run untouched code.
+            if old_embedding is None:
+                old_embedding = self.model.get_input_embeddings()
+                wrapped = old_embedding
+            wrapped = FindingTokenEmbeddingWrapper(
+                wrapped,
+                self.finding_token_id,
+                self.finding_encoder(features.to(self.device, dtype=torch.float32)),
+                NUM_FINDING_TOKENS,
+            )
+        if wrapped is not None and old_embedding is not None:
+            self.model.set_input_embeddings(wrapped)
         try:
             return self.model(**moved)
         finally:
@@ -1292,6 +1510,8 @@ class VariantLLM:
         self.model.eval()
         if self.img_proj is not None:
             self.img_proj.eval()
+        if self.finding_encoder is not None:
+            self.finding_encoder.eval()
         loader = DataLoader(
             RecordDataset(records),
             batch_size=batch_size,
@@ -1337,6 +1557,16 @@ class VariantLLM:
         if self.img_proj is not None:
             param_groups.append(
                 {"params": list(self.img_proj.parameters()), "lr": projector_lr, "weight_decay": weight_decay}
+            )
+        if self.finding_encoder is not None:
+            # Same LR as the projector: both are small, freshly initialised
+            # bridges into the same embedding space.
+            param_groups.append(
+                {
+                    "params": list(self.finding_encoder.parameters()),
+                    "lr": projector_lr,
+                    "weight_decay": weight_decay,
+                }
             )
         params = [param for group in param_groups for param in group["params"]]
         optimizer = torch.optim.AdamW(param_groups, betas=(0.9, 0.999))
@@ -1392,6 +1622,7 @@ class VariantLLM:
             "effective_batch_size": batch_size * grad_accum,
             "lora_lr": lora_lr,
             "projector_lr": projector_lr if self.img_proj is not None else None,
+            "finding_tokens": self.finding_tokens,
             "weight_decay": weight_decay,
             "warmup_ratio": warmup_ratio,
             "max_grad_norm": max_grad_norm,
@@ -1404,6 +1635,8 @@ class VariantLLM:
             self.model.train()
             if self.img_proj is not None:
                 self.img_proj.train()
+            if self.finding_encoder is not None:
+                self.finding_encoder.train()
             optimizer.zero_grad(set_to_none=True)
             running_loss = 0.0
             progress = tqdm(loader, desc=f"{self.family} {self.image_mode} train {epoch + 1}/{epochs}")
@@ -1556,6 +1789,8 @@ class VariantLLM:
         self.model.eval()
         if self.img_proj is not None:
             self.img_proj.eval()
+        if self.finding_encoder is not None:
+            self.finding_encoder.eval()
         if self.image_mode in NATIVE_PIXEL_MODES:
             encoded = self._native_chat_inputs(
                 record,
@@ -1583,15 +1818,33 @@ class VariantLLM:
             if torch.is_tensor(value)
         }
         old_embedding = None
+        wrapped = None
         if self.image_mode in SOFT_TOKEN_MODES:
             qformer = record["qformer_embs"].unsqueeze(0).to(self.device, dtype=torch.float32)
             projected = self.img_proj(qformer)
             old_embedding = self.model.get_input_embeddings()
-            self.model.set_input_embeddings(
-                SoftTokenEmbeddingWrapper(
-                    old_embedding, self.img_token_id, projected, NUM_IMG_TOKENS
-                )
+            wrapped = SoftTokenEmbeddingWrapper(
+                old_embedding, self.img_token_id, projected, NUM_IMG_TOKENS
             )
+        if self.finding_encoder is not None:
+            # Identical construction to _forward_batch, from the same
+            # finding_features_for(): train and generation cannot drift.
+            features = (
+                self.finding_features_for(record)
+                .unsqueeze(0)
+                .to(self.device, dtype=torch.float32)
+            )
+            if old_embedding is None:
+                old_embedding = self.model.get_input_embeddings()
+                wrapped = old_embedding
+            wrapped = FindingTokenEmbeddingWrapper(
+                wrapped,
+                self.finding_token_id,
+                self.finding_encoder(features),
+                NUM_FINDING_TOKENS,
+            )
+        if wrapped is not None and old_embedding is not None:
+            self.model.set_input_embeddings(wrapped)
         try:
             generation_config = getattr(self.model, "generation_config", None)
             eos_token_id = getattr(generation_config, "eos_token_id", None)
@@ -1612,6 +1865,9 @@ class VariantLLM:
             bad_words = soft_token_bad_words_ids(
                 self.img_token_id if self.image_mode in SOFT_TOKEN_MODES else None
             )
+            if self.finding_token_id is not None:
+                finding_bad = soft_token_bad_words_ids(self.finding_token_id)
+                bad_words = (bad_words or []) + (finding_bad or []) or None
             if bad_words is not None:
                 generate_kwargs["bad_words_ids"] = bad_words
             # Anti-repetition controls remain absent unless a caller asks.

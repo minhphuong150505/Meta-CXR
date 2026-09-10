@@ -74,6 +74,14 @@ def parse_args() -> argparse.Namespace:
         help="Optional Stage-1 validation-calibrated thresholds; marginal cues use 0.5 without per-label marginal thresholds.",
     )
     parser.add_argument(
+        "--finding-tokens", choices=fig9.FINDING_TOKEN_MODES, default=fig9.FINDING_TOKENS_OFF,
+        help="EXPERIMENTAL, default off. Feed Stage-1's per-finding mention/polarity "
+             "numbers to Stage 2 as 13 learnable tokens instead of (or alongside) "
+             "text cues. 'q_only' carries the polarity distribution alone and is the "
+             "control that isolates the mention contribution in 'full'. Requires a "
+             "Stage-1 pipeline mode and a guided --prompt-config.",
+    )
+    parser.add_argument(
         "--cue-rule", choices=fig9.CUE_RULES, default=None,
         help="Stage-1 cue rule for all splits, identical to generation --cue-rule. "
              "Defaults to marginal_positive for structured Stage-1 modes. "
@@ -195,12 +203,19 @@ def deterministic_subset(records: list[dict], limit: int, seed: int) -> list[dic
     return [records[index] for index in indices]
 
 
-def resumable_adapter(path: Path, image_mode: str) -> bool:
+def resumable_adapter(path: Path, image_mode: str, finding_tokens: str = "off") -> bool:
     weights = (path / "adapter_model.safetensors").is_file() or (path / "adapter_model.bin").is_file()
     # Any mode that carries soft tokens owns a trained img_proj; resuming
     # without it would silently restart the bridge from a fresh nn.Linear.
     projector_ok = image_mode not in fig9.SOFT_TOKEN_MODES or (path / "img_proj.pt").is_file()
-    return weights and projector_ok and (path / "adapter_config.json").is_file() and (path / "trainer_state.pt").is_file()
+    findings_ok = finding_tokens in (None, "off") or (path / "finding_tokens.pt").is_file()
+    return (
+        weights
+        and projector_ok
+        and findings_ok
+        and (path / "adapter_config.json").is_file()
+        and (path / "trainer_state.pt").is_file()
+    )
 
 
 def upload_safe_run(root: Path, adapter_dirs: list[Path], gcs_output: str) -> None:
@@ -256,16 +271,18 @@ def train_mode(
     adapter_dir = root / "adapters" / f"medgemma_qlora_{mode.name}"
     last_dir = adapter_dir / "checkpoints" / "last"
     training_summary: dict = {}
-    complete = fig9.adapter_is_complete(adapter_dir, image_mode)
+    complete = fig9.adapter_is_complete(adapter_dir, image_mode, args.finding_tokens)
     if args.force_retrain or not complete:
         resume_dir = args.resume_from
         if (
             resume_dir is None
             and not args.force_retrain
-            and resumable_adapter(last_dir, image_mode)
+            and resumable_adapter(last_dir, image_mode, args.finding_tokens)
         ):
             resume_dir = last_dir
-        if resume_dir is not None and not resumable_adapter(Path(resume_dir), image_mode):
+        if resume_dir is not None and not resumable_adapter(
+            Path(resume_dir), image_mode, args.finding_tokens
+        ):
             raise RuntimeError(f"incomplete --resume-from checkpoint: {resume_dir}")
         print(f"[train:{mode.name}] adapter -> {adapter_dir}", flush=True)
         llm = fig9.VariantLLM(
@@ -277,8 +294,11 @@ def train_mode(
             lora_rank=args.lora_rank,
             lora_alpha=args.lora_alpha,
             prompt_config=mode_prompt_config,
+            finding_tokens=args.finding_tokens,
         )
         llm.load_img_proj_if_present(resume_dir)
+        if resume_dir is not None:
+            llm.load_finding_encoder_if_present(resume_dir)
         training_summary = llm.train_fine(
             train_records,
             adapter_dir,
@@ -303,7 +323,7 @@ def train_mode(
         training_summary = json.loads(
             (adapter_dir / "manifest.json").read_text(encoding="utf-8")
         ).get("training_config", {})
-    if not fig9.adapter_is_complete(adapter_dir, image_mode):
+    if not fig9.adapter_is_complete(adapter_dir, image_mode, args.finding_tokens):
         raise RuntimeError(f"training did not produce a complete adapter: {adapter_dir}")
 
     llm = fig9.VariantLLM(
@@ -312,11 +332,14 @@ def train_mode(
         quantize_4bit=True,
         image_mode=image_mode,
         prompt_config=mode_prompt_config,
+        finding_tokens=args.finding_tokens,
     )
     llm.load_img_proj_if_present(adapter_dir)
+    llm.load_finding_encoder_if_present(adapter_dir)
     val_eval_records = deterministic_subset(val_records, args.val_generation_limit, fig9.SEED + 1)
     val_cohort, _ = fig9.stage1_cohort_fingerprint(
-        context, Path(args.checkpoint_root), "val", args.val_limit, cue_rule=args.cue_rule
+        context, Path(args.checkpoint_root), "val", args.val_limit,
+        cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
     )
     val_metrics = fig9.evaluate_variant(
         "medgemma",
@@ -335,7 +358,8 @@ def train_mode(
     test_metrics = None
     if not args.skip_test:
         test_cohort, _ = fig9.stage1_cohort_fingerprint(
-            context, Path(args.checkpoint_root), "test", args.test_limit, cue_rule=args.cue_rule
+            context, Path(args.checkpoint_root), "test", args.test_limit,
+            cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
         )
         test_metrics = fig9.evaluate_variant(
             "medgemma",
@@ -446,6 +470,17 @@ def main() -> None:
             ) for mode in modes
         ):
             raise SystemExit("marginal/abstaining --cue-rule requires a matching guided --prompt-config")
+    if args.finding_tokens != fig9.FINDING_TOKENS_OFF:
+        if not needs_stage1:
+            raise SystemExit(
+                "--finding-tokens needs a Stage-1 pipeline mode: the features are "
+                "MHCAC's mention gate and polarity head"
+            )
+        if prompt_config is None:
+            raise SystemExit(
+                "--finding-tokens requires a guided --prompt-config; the "
+                "placeholders come from the v2 prompt builder"
+            )
     context = Stage1Context(
         run_name=args.stage1_run,
         config_path=args.stage1_config,
@@ -484,17 +519,17 @@ def main() -> None:
         print(f"[stage1] train limit={args.train_limit or 'all'}", flush=True)
         train_records = fig9.build_stage1_records(
             context, checkpoint_root, root, "train", args.train_limit, args.num_workers,
-            cue_rule=args.cue_rule,
+            cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
         )
         print(f"[stage1] validation limit={args.val_limit or 'all'}", flush=True)
         val_records = fig9.build_stage1_records(
             context, checkpoint_root, root, "val", args.val_limit, args.num_workers,
-            cue_rule=args.cue_rule,
+            cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
         )
         print(f"[stage1] held-out test limit={args.test_limit or 'all'}", flush=True)
         test_records = fig9.build_stage1_records(
             context, checkpoint_root, root, "test", args.test_limit, args.num_workers,
-            cue_rule=args.cue_rule,
+            cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
         )
     else:
         print(
@@ -527,6 +562,7 @@ def main() -> None:
         "prompt_version": prompt_config.version if prompt_config else "legacy_build_instruction",
         "stage1_checkpoint": context.run_name if needs_stage1 else None,
         "cue_rule": args.cue_rule if needs_stage1 else None,
+        "finding_tokens": args.finding_tokens,
         "section_mode": args.section_mode,
         "target_section": args.section_mode.replace("_", " ").upper(),
         "max_new_tokens": args.max_new_tokens,
@@ -549,6 +585,7 @@ def main() -> None:
         "section_mode": args.section_mode,
         "stage1_required": needs_stage1,
         "cue_rule": args.cue_rule if needs_stage1 else None,
+        "finding_tokens": args.finding_tokens,
     }
     (root / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2), encoding="utf-8")
     print("[done]", json.dumps(summary, indent=2), flush=True)

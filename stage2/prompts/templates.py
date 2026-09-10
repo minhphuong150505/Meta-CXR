@@ -19,6 +19,12 @@ NONE_TOKEN = "none"
 VISUAL_HEADER = "Visual study features:"
 STRUCTURED_HEADER = "Auxiliary Stage-1 predictions, which may be imperfect:"
 CONTEXT_HEADER = "Study context:"
+#: EXPERIMENTAL, opt-in. Header for the learnable finding-token block. It is
+#: deliberately NOT in ``_HASH_FRAGMENTS``: adding it there would change
+#: ``template_hash`` for every mode, including the arms that must keep executing
+#: exactly what produced the recorded numbers. It is folded into the hash by
+#: ``template_hash(..., finding_token_count=N)`` only when the branch is on.
+FINDING_TOKEN_HEADER = "Per-finding Stage-1 signals, which may be imperfect:"
 PRESENT_LABEL = "Present"
 POSSIBLE_LABEL = "Possible or uncertain"
 ABSENT_LABEL = "Clinically relevant absent"
@@ -111,6 +117,17 @@ def join_or_none(names: tuple[str, ...]) -> str:
     return ", ".join(names) if names else NONE_TOKEN
 
 
-def template_hash(visual_mode: VisualMode, length: int = 16) -> str:
-    payload = "\x1f".join((*_HASH_FRAGMENTS, visual_mode.value))
+def template_hash(
+    visual_mode: VisualMode, length: int = 16, finding_token_count: int = 0
+) -> str:
+    """Hash of every wording fragment that can reach the model, plus the mode.
+
+    ``finding_token_count`` extends the payload only when the experimental
+    finding-token branch is on, so with it off the hash is bit-identical to what
+    every recorded run wrote.
+    """
+    fragments = (*_HASH_FRAGMENTS, visual_mode.value)
+    if finding_token_count:
+        fragments = (*fragments, FINDING_TOKEN_HEADER, f"finding_tokens={int(finding_token_count)}")
+    payload = "\x1f".join(fragments)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:length]

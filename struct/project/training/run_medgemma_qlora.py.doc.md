@@ -163,3 +163,13 @@ positive cue; missing thresholds use 0.5. Below threshold means no cue, never
 a negative assertion. Keep the matching guided prompt requirement. Explicit
 `conditional_positive` restores q-only behavior; no calibration file is loaded
 automatically. Low-level Figure-9 helper defaults remain historical compatibility.
+
+## 🧪 `--finding-tokens` — 2026-09-10, mặc định `off`
+
+Yêu cầu Stage-1 pipeline mode và guided `--prompt-config` (placeholder đến từ
+prompt builder v2; thiếu nó thì substitution tìm thấy 0 vị trí và run âm thầm
+trở thành arm không có cue). Được truyền vào cả ba lần
+`build_stage1_records`, vào `VariantLLM`, vào `adapter_is_complete` /
+`resumable_adapter`, và vào `stage1_cohort_fingerprint` khi chấm val/test — nếu
+bỏ sót chỗ cuối, `cohort_id` của evaluation sẽ không khớp cohort của records.
+Ghi vào `run_manifest.json` và `training_config`.
