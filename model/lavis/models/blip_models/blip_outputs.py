@@ -97,6 +97,15 @@ class BlipOutput(ModelOutput):
     loss_gate: Optional[torch.FloatTensor] = None
 
     loss_mpc: Optional[torch.FloatTensor] = None
+
+    # The hierarchical objective (model.loss.lambda_mention_conditioned_cls).
+    # It MUST be reported: when it is on, lambda_cls and lambda_gate are both
+    # forced to 0.0, so `loss_cls` and `loss_gate` print exactly 0.0000 and the
+    # total is otherwise made up of auxiliary terms. Without this field a run
+    # whose --options failed to take would look completely healthy while
+    # training no classification objective at all -- the same silent no-op that
+    # cost this project a 70-hour Stage-2 arm.
+    loss_mention_conditioned: Optional[torch.FloatTensor] = None
     # Four-state joint log-probabilities when the mention-conditioned hierarchy
     # is on: P(blank)=1-m, P(Neg)=m*q_neg, P(Pos)=m*q_pos, P(Unc)=m*q_unc.
     # classification_logits stays the CONDITIONAL polarity distribution q, which

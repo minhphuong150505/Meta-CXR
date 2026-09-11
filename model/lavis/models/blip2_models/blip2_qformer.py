@@ -1339,10 +1339,12 @@ class Blip2Qformer(Blip2Base):
                     + (self.lambda_explanation_strong / peak)
                     * loss_explanation_strong
                 )
-        # Hierarchy, when enabled: the gate multiplies into the classifier and
-        # `student_logits` becomes the LOG MARGINAL distribution, so everything
-        # downstream (argmax, softmax, the saved .npz) keeps working unchanged
-        # while silence can finally veto a positive.
+        # Hierarchy, when enabled: the gate and the classifier become ONE
+        # likelihood. `student_logits` still leaves this function as `q`, the
+        # polarity CONDITIONAL on mention -- the four-state joint is exported
+        # beside it as `mention_marginal_log_probs`, never in place of it. See
+        # the note below the loss call for why substituting the marginal here
+        # pinned validation F1 at exactly 0.000.
         loss_mention_conditioned = student_logits.sum() * 0.0
         if self.mention_conditioned_loss_fn is not None:
             mention_targets = samples.get("mention_targets")
@@ -1509,6 +1511,7 @@ class Blip2Qformer(Blip2Base):
             loss_sparsity=sparsity_loss,
             loss_explanation=loss_explanation,
             loss_gate=loss_gate,
+            loss_mention_conditioned=loss_mention_conditioned,
             loss_mpc=loss_mpc,
             loss_view_consistency=loss_view_consistency,
             classification_logits=student_logits,
