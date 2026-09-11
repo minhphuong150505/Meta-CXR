@@ -486,9 +486,124 @@ gradient arrives.
   about elsewhere. **The branch has established that it runs, and nothing more.**
 - Stage 2 needs the budget approval in "Budget" before anything long starts.
 
+### Stage 2 — pilot, four arms: RAN IN FULL, and the answer is NO
+
+Approved budget: 10,000 train studies per arm. Launched 2026-09-10 15:39:46,
+finished 2026-09-11 09:36:30 — **17h57m**, four arms strictly serial, then four
+cohort-matched generation passes and three ablations. Driver
+`~/ftok_pilot.sh`, artifacts `~/ftok_pilot_20260910/`. 0 failures, 0 OOM, 0
+restarts.
+
+10,000 studies filter to ~7,854 with a usable FINDINGS target, i.e. 3,927
+iterations at batch 2 / accum 8 = ~491 optimizer updates per arm.
+
+| arm | cue channel | wall | train_loss | val_loss |
+|---|---|---:|---:|---:|
+| **A** | none | 4h05m | 1.25403 | 1.19214 |
+| **B** | text, `marginal_positive` | 4h06m | 1.25432 | 1.19206 |
+| **C** | 13 tokens, `q_only` | 4h14m | 1.25453 | 1.19209 |
+| **D** | 13 tokens, `full` | 4h14m | 1.25385 | **1.19197** |
+
+All four `val_loss` values lie within **0.00017** of each other. ⚠ That is
+teacher-forced and this file already records that it cannot see free-running
+generation quality; it is reported as a fact about the four arms, not as the
+answer.
+
+C and D cost **~9 minutes more per arm (+3.7%)** than A and B — the 13 extra
+tokens plus the encoder.
+
+**Generation: 300 validation studies, identical `sample_key` list in identical
+order across all seven runs (verified before scoring), fixed stop IDs `[1,106]`,
+greedy 160 tokens, ~11 min per pass.**
+
+| arm | ROUGE-L | METEOR | CIDEr | BERTScore-F1 | median words |
+|---|---:|---:|---:|---:|---:|
+| **A** none | **0.2552** | 0.2354 | 0.2000 | **0.7847** | 24 |
+| **B** text cues | **0.2561** | **0.2366** | **0.2101** | 0.7823 | 24 |
+| **C** tokens `q_only` | 0.2515 | 0.2307 | 0.1876 | 0.7805 | 24 |
+| **D** tokens `full` | 0.2489 | 0.2282 | 0.1916 | 0.7772 | 24 |
+
+Paired per-study bootstrap, 2,000 resamples, seed 16:
+
+| comparison | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---|---|---|---|
+| **D − B** | -0.0072 [-0.0147, +0.0002] | **-0.0084 [-0.0168, -0.0001]** | -0.0185 [-0.0474, +0.0053] | -0.0051 [-0.0108, +0.0002] |
+| **D − C** | -0.0026 [-0.0085, +0.0027] | -0.0025 [-0.0101, +0.0046] | +0.0040 [-0.0193, +0.0314] | -0.0033 [-0.0074, +0.0001] |
+| **D − A** | -0.0063 [-0.0135, +0.0008] | -0.0072 [-0.0156, +0.0017] | -0.0083 [-0.0361, +0.0157] | **-0.0075 [-0.0133, -0.0021]** |
+| C − A | -0.0036 [-0.0105, +0.0035] | -0.0047 [-0.0132, +0.0035] | -0.0123 [-0.0467, +0.0189] | -0.0042 [-0.0095, +0.0006] |
+| B − A | +0.0010 [-0.0050, +0.0067] | +0.0012 [-0.0055, +0.0080] | +0.0102 [-0.0081, +0.0312] | -0.0024 [-0.0065, +0.0012] |
+
+### Against the adoption criteria
+
+| # | criterion | result |
+|---|---|---|
+| 1 | `D − B` clears zero upward on CIDEr or BERTScore | ❌ **fails, and fails the other way** — every metric is negative and METEOR's CI excludes zero |
+| 2 | `D − C` clears zero | ❌ no — all four cross zero; adding `m` to the tokens changes nothing |
+| 3 | no degradation in repetition/length/truncation | ✅ median 24 words in every arm, no empty reports, no failures |
+| 4 | the ablation shows the model uses the features | ❌ **no** — see below |
+| 5 | acceptable cost | ✅ +3.7% wall, +0.56% parameters |
+
+**Two of the five fail, and criterion 1 fails in the wrong direction with a CI
+that excludes zero. DO NOT ADOPT.**
+
+### The ablation explains why, and it is the most informative part
+
+Arm D's own checkpoint, three inference-time interventions on the same 300
+studies:
+
+| intervention | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---|---|---|---|
+| zero the features | +0.0015 | +0.0036 | **+0.0356** [-0.0020, +0.0966] | +0.0030 |
+| shuffle rows within a study | +0.0037 | +0.0030 | +0.0113 | +0.0012 |
+| permute features across studies | -0.0000 | +0.0036 | +0.0029 | +0.0017 |
+
+**Every intervention is neutral-to-slightly-positive, and not one CI excludes
+zero.** Destroying the Stage-1 numbers entirely, attaching them to the wrong
+finding, or handing a study another patient's predictions all leave the output
+statistically unchanged — and zeroing them moves CIDEr *up* by the largest
+margin of the three. **The trained model is not reading the channel.**
+
+That is also the most economical explanation for `D − A` being significantly
+negative on BERTScore: the 13 tokens are not carrying harmful information, they
+are carrying none, and occupy 13 prompt positions as a mild distractor. It is
+**not** evidence that mention information is harmful.
+
+⚠ These are out-of-distribution interventions at inference and a mechanism
+probe, exactly as this plan said in advance. They do not replace arm C, which is
+the properly trained control — and arm C agrees with them: `D − C` is flat.
+
+### Limitations, stated rather than buried
+
+- **One seed, one run per arm.** No variance estimate across initialisations.
+- **~491 optimizer updates per arm** (4.5% of the train split). The finding
+  encoder is freshly initialised; a longer run could in principle let it become
+  useful. Nothing here rules that out — it rules out the 10,000-study regime.
+- **n=300 validation studies.** The `D − B` METEOR interval reaches -0.0001, so
+  it is "just" significant; treat it as a direction, not a precise effect size.
+- Absolute values are **not** comparable to the n=100 fixed-stop numbers recorded
+  in `CLAUDE.md` (CIDEr 0.2369): different cohort size and a far shorter train.
+- Lexical NLG only. No validated clinical scorer exists in this repo, so
+  finding-level accuracy, false-positive claims and omitted findings are
+  **unavailable**, not zero.
+
+### Recommendation
+
+**Keep the branch experimental with the flag off; do not adopt, and do not
+change any production default.** The channel hypothesis — "the textual threshold
+was the problem, not the information" — is **not supported**: a continuous,
+learnable channel carrying strictly more information than the text cues did
+worse than the text cues and worse than no cues, and the model demonstrably
+ignores it.
+
+`B − A` is also worth recording on its own: it crosses zero on all four metrics
+at n=300 with an arm **trained** on the cues rather than merely decoded with
+them. That is a sixth confirmation of the cue conclusion, and the first from a
+trained arm.
+
 ### Raw logs on the host (not copied here)
 
-`~/ft_findingtok_smoke.log` · `~/ft_findingtok_smoke/` (adapter, eval JSON,
-`.sensitive_stage1_cache/`) · review worktrees `~/ft_review_20260910` and
-`~/ft_base_20260910`. All git-ignored or outside the repo; nothing from them
-enters a commit.
+`~/ft_findingtok_smoke.log` · `~/ft_findingtok_smoke/` · `~/ftok_pilot.sh` ·
+`~/ftok_pilot_20260910/` (`status.log`, `{a,b,c,d}.log`, four adapters, seven
+`gen_*/generated_val.jsonl`, seven `eval_*/`) · `~/ftok_evalall.sh` ·
+`/tmp/ftres.py` · review worktree `~/ft_review_20260910`. All outside the repo
+or git-ignored; nothing from them enters a commit.

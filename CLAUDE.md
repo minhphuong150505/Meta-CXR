@@ -1995,6 +1995,61 @@ smoke, and reported beside every metric rather than hidden. `--finding-feature-a
 whether the model reads the channel at all -- ⚠ an **out-of-distribution**
 mechanism probe, never a substitute for the trained `q_only` arm.
 
+❌❌ **THE PILOT RAN IN FULL AND THE ANSWER IS NO (2026-09-11). DO NOT ADOPT.**
+Four matched arms x 10,000 train studies, strictly serial, 17h57m total, then
+300 cohort-matched val studies per arm (identical `sample_key` list in identical
+order, verified before scoring), fixed stop IDs, greedy 160 tokens:
+
+| arm | cue channel | ROUGE-L | METEOR | CIDEr | BERTScore-F1 | val_loss |
+|---|---|---:|---:|---:|---:|---:|
+| **A** | none | **0.2552** | 0.2354 | 0.2000 | **0.7847** | 1.19214 |
+| **B** | text `marginal_positive` | **0.2561** | **0.2366** | **0.2101** | 0.7823 | 1.19206 |
+| **C** | 13 tokens `q_only` | 0.2515 | 0.2307 | 0.1876 | 0.7805 | 1.19209 |
+| **D** | 13 tokens `full` | 0.2489 | 0.2282 | 0.1916 | 0.7772 | 1.19197 |
+
+Paired per-study bootstrap, 2,000 resamples, seed 16, n=300:
+
+| | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---|---|---|---|
+| **D - B** | -0.0072 [-0.0147, +0.0002] | **-0.0084 [-0.0168, -0.0001]** | -0.0185 [-0.0474, +0.0053] | -0.0051 [-0.0108, +0.0002] |
+| **D - C** | -0.0026 [-0.0085, +0.0027] | -0.0025 [-0.0101, +0.0046] | +0.0040 [-0.0193, +0.0314] | -0.0033 [-0.0074, +0.0001] |
+| **D - A** | -0.0063 [-0.0135, +0.0008] | -0.0072 [-0.0156, +0.0017] | -0.0083 [-0.0361, +0.0157] | **-0.0075 [-0.0133, -0.0021]** |
+| C - A | -0.0036 [-0.0105, +0.0035] | -0.0047 [-0.0132, +0.0035] | -0.0123 [-0.0467, +0.0189] | -0.0042 [-0.0095, +0.0006] |
+| B - A | +0.0010 [-0.0050, +0.0067] | +0.0012 [-0.0055, +0.0080] | +0.0102 [-0.0081, +0.0312] | -0.0024 [-0.0065, +0.0012] |
+
+**Two of the five adoption criteria fail, and the first fails in the WRONG
+direction with a CI that excludes zero.** The learnable channel, carrying
+strictly more information than the text cues, did worse than the text cues and
+worse than no cues at all. `D - C` is flat, so `m` adds nothing on top of `q`.
+
+⚠⚠ **AND THE ABLATION SAYS WHY: THE TRAINED MODEL DOES NOT READ THE CHANNEL.**
+Arm D's own checkpoint, same 300 studies -- zeroing the features, shuffling
+them across findings within a study, and handing each study another patient's
+predictions are ALL neutral-to-slightly-positive, and **not one CI excludes
+zero**; zeroing moves CIDEr *up* the most (+0.0356 [-0.0020, +0.0966]). Destroy
+the Stage-1 numbers completely and the output does not change. That is also the
+cheapest explanation for `D - A` being significantly negative on BERTScore: the
+13 tokens carry nothing and occupy 13 prompt positions as a mild distractor. It
+is **not** evidence that mention information is harmful. ⚠ Out-of-distribution
+mechanism probe, not a control -- but arm C, which IS the trained control,
+agrees with it.
+
+**`B - A` is a sixth confirmation of the cue conclusion, and the first from an
+arm TRAINED on the cues** rather than merely decoded with them: all four
+intervals cross zero at n=300.
+
+⚠ Limitations: one seed, one run per arm; **~491 optimizer updates** per arm
+(4.5% of the train split), so this rules out the 10,000-study regime and not a
+longer one; n=300 val, with `D - B` METEOR reaching -0.0001, i.e. only just
+significant. Absolute values are NOT comparable to the n=100 fixed-stop numbers
+above (different cohort size, far shorter training). Lexical metrics only --
+finding-level accuracy is **unavailable**, not zero.
+
+**Recommendation: keep the branch experimental with the flag off. Do not adopt,
+do not merge it into any default, and do not retry the same design at this
+budget.** Full record, including the ablation table and every limitation:
+`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`.
+
 ✅ **The GPU smoke passed, 2026-09-10** -- arm D, 200 train studies, one epoch,
 `status: complete`, `val_loss` 1.68064, 0 generation failures,
 **3.29 s/it against arm C's full-run 3.37**, so the branch costs nothing

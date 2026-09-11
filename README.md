@@ -1289,25 +1289,75 @@ không xấu đi; ablation cho thấy model thật sự dùng đặc trưng; chi
 được. Loss giảm, vài báo cáo đẹp, hay một metric nhích lên **không phải** kết
 quả.
 
-### Trạng thái: đã qua smoke GPU, CHƯA có pilot, CHƯA có kết quả
+### ❌ Kết quả: KHÔNG giúp. Đã chạy đủ pilot, không áp dụng.
 
-| bước | trạng thái |
-|---|---|
-| CPU test trên host | ✅ **1.066 passed / 2 skipped, exit 0** (baseline `c4d4357`: 1.028) — đúng bằng 38 test mới, không regression |
-| GPU smoke (arm D, 200 study) | ✅ `status: complete`, `val_loss` 1,68064, 0 lỗi sinh, **3,29 s/it** so với 3,37 của arm C full |
-| Pilot 4 arm | ⛔ **chưa chạy** — cần duyệt ngân sách GPU |
-| Kết quả | ⛔ **chưa có gì** |
+Pilot 4 arm × 10.000 study, tuần tự, **17h57m** (2026-09-10 15:39 → 09-11 09:36),
+rồi sinh 300 study val khớp cohort cho từng arm (**cùng danh sách `sample_key`,
+cùng thứ tự** — đã kiểm tra trước khi chấm), stop IDs đã sửa, greedy 160 token:
 
-Smoke chứng minh nhánh **chạy được**, không hơn. Substitution được chứng minh
-bằng việc run hoàn tất chứ không bằng quan sát: wrapper raise nếu không tìm đúng
-13 vị trí placeholder mỗi hàng, và 81 iteration train cộng 19 lần sinh đều đi qua
-nó. Gradient tới được encoder — `output_scale` đổi 1,0050 → 1,004206 và
-`norm.weight` rời khỏi 1,0 (hai tham số khởi tạo tất định; so `identity.weight`
-với một module mới **không chứng minh gì**, vì hai lần bốc ngẫu nhiên độc lập
-lệch nhau đúng bằng lượng quan sát được).
+| arm | kênh cue | ROUGE-L | METEOR | CIDEr | BERTScore-F1 | val_loss |
+|---|---|---:|---:|---:|---:|---:|
+| **A** | không cue | **0,2552** | 0,2354 | 0,2000 | **0,7847** | 1,19214 |
+| **B** | cue chữ `marginal_positive` | **0,2561** | **0,2366** | **0,2101** | 0,7823 | 1,19206 |
+| **C** | 13 token `q_only` | 0,2515 | 0,2307 | 0,1876 | 0,7805 | 1,19209 |
+| **D** | 13 token `full` | 0,2489 | 0,2282 | 0,1916 | 0,7772 | 1,19197 |
 
-⚠ Các số NLG n=9/n=10 của smoke là kiểm tra đường ống, **không được ghi ở đâu
-cả**. Peak VRAM chưa đo được — runner không log; phải lấy mẫu trong pilot.
+Bootstrap ghép cặp theo study, 2.000 lần, seed 16, n=300:
+
+| | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---|---|---|---|
+| **D − B** | −0,0072 [−0,0147, +0,0002] | **−0,0084 [−0,0168, −0,0001]** | −0,0185 [−0,0474, +0,0053] | −0,0051 [−0,0108, +0,0002] |
+| **D − C** | −0,0026 [−0,0085, +0,0027] | −0,0025 [−0,0101, +0,0046] | +0,0040 [−0,0193, +0,0314] | −0,0033 [−0,0074, +0,0001] |
+| **D − A** | −0,0063 [−0,0135, +0,0008] | −0,0072 [−0,0156, +0,0017] | −0,0083 [−0,0361, +0,0157] | **−0,0075 [−0,0133, −0,0021]** |
+| C − A | −0,0036 [−0,0105, +0,0035] | −0,0047 [−0,0132, +0,0035] | −0,0123 [−0,0467, +0,0189] | −0,0042 [−0,0095, +0,0006] |
+| B − A | +0,0010 [−0,0050, +0,0067] | +0,0012 [−0,0055, +0,0080] | +0,0102 [−0,0081, +0,0312] | −0,0024 [−0,0065, +0,0012] |
+
+**Hai trên năm tiêu chí áp dụng trượt, và tiêu chí đầu trượt theo chiều NGƯỢC
+với CI không chứa 0.** Kênh token học được — mang **nhiều** thông tin hơn cue
+chữ — lại kém hơn cue chữ và kém hơn không cue. `D − C` phẳng, nghĩa là thêm `m`
+vào token **không thêm gì** so với chỉ có `q`.
+
+### Vì sao: model không hề đọc kênh này
+
+Ablation trên chính checkpoint arm D, cùng 300 study đó:
+
+| can thiệp | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---|---|---|---|
+| xoá sạch các số (zero) | +0,0015 | +0,0036 | **+0,0356** [−0,0020, +0,0966] | +0,0030 |
+| đảo hàng trong cùng study | +0,0037 | +0,0030 | +0,0113 | +0,0012 |
+| tráo số giữa các study | −0,0000 | +0,0036 | +0,0029 | +0,0017 |
+
+**Cả ba đều trung tính hoặc hơi dương, không CI nào loại trừ 0.** Xoá sạch số
+Stage-1, gắn số sai finding, hay đưa cho study này dự đoán của bệnh nhân khác —
+đầu ra không đổi về mặt thống kê; xoá sạch còn làm CIDEr **tăng** nhiều nhất.
+Đó cũng là cách giải thích rẻ nhất cho việc `D − A` âm có ý nghĩa trên
+BERTScore: 13 token **không mang gì** và chiếm 13 vị trí prompt như một thứ gây
+nhiễu nhẹ. Đây **không phải** bằng chứng rằng thông tin mention có hại.
+
+⚠ Đây là can thiệp ngoài phân phối, là probe cơ chế — nhưng arm C, vốn **là**
+đối chứng được train đàng hoàng, nói cùng một điều: `D − C` phẳng.
+
+**`B − A` là lần xác nhận thứ SÁU cho kết luận cue, và là lần đầu từ một arm
+được TRAIN với cue** chứ không chỉ đổi rule lúc decode: cả bốn khoảng đều chứa 0.
+
+### Hạn chế
+
+Một seed, một run mỗi arm; **~491 optimizer update** mỗi arm (4,5% train split),
+nên kết quả này loại trừ chế độ 10.000 study chứ **không** loại trừ một run dài
+hơn; n=300, `D − B` METEOR chạm −0,0001 nên chỉ vừa đủ có ý nghĩa. Các giá trị
+tuyệt đối **không** so được với bảng n=100 stop-fixed ở trên (khác cohort, train
+ngắn hơn nhiều). Chỉ là metric từ vựng — độ đúng finding là **không đo được**,
+không phải bằng 0.
+
+### Khuyến nghị
+
+**Giữ nhánh ở trạng thái experimental, cờ mặc định tắt. Không áp dụng, không đưa
+vào mặc định nào, và không thử lại đúng thiết kế này ở mức ngân sách này.**
+
+Trước đó: CPU test trên host **1.066 passed / 2 skipped, exit 0** (baseline
+`c4d4357`: 1.028 — đúng bằng 38 test mới); smoke GPU arm D `status: complete`,
+3,29 s/it so với 3,37 của arm C full; C/D chậm hơn A/B **+3,7%** và thêm 0,56%
+tham số.
 
 Kế hoạch đầy đủ, ngân sách, tiêu chí áp dụng, điều kiện abort và execution
 report: [`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`](docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md).
