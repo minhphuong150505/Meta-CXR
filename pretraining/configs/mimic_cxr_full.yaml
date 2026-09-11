@@ -567,11 +567,16 @@ model:
     #   mentioned, class y ->  -log(m) - log(q[y])
     #   P(Neg) = (1-m) + m*q_neg   P(Pos) = m*q_pos   P(Unc) = m*q_unc
     #
-    # so silence multiplies the positive down instead of sitting beside it, and
-    # `classification_logits` becomes the LOG MARGINAL distribution (softmax of
-    # it recovers the marginals, so the evaluator and the saved .npz are
-    # unaffected). The raw heads stay available as
-    # `conditional_classification_logits` and `mention_logits`.
+    # so silence multiplies the positive down inside the LOSS.
+    #
+    # ⚠ CORRECTED 2026-09-11: an earlier version of this comment said
+    # `classification_logits` becomes the log marginal. IT DOES NOT, and the
+    # code has never done that (blip2_qformer.py, the note beside the loss
+    # call). `classification_logits` stays `q`; the four-state joint is exported
+    # ALONGSIDE as `mention_marginal_log_probs`. Substituting the marginal there
+    # aliases blank onto Negative, makes Positive unwinnable under the
+    # validation argmax, and pinned val F1 at exactly 0.000000 for every epoch
+    # of the smoke. There is no `conditional_classification_logits` key.
     #
     # It deliberately carries NO inverse-frequency or clinical-kappa weights:
     # an operating point belongs in the thresholds this project already
