@@ -291,6 +291,81 @@ plus the threshold spread; it is consistent and mechanistic but was not tested
 by a dedicated calibration metric (ECE per label would settle it cheaply and was
 not run).
 
+## Follow-up: the SHALLOW-unfreeze run — `run_20260912_mc_shallow`
+
+Launched 2026-09-12 11:49:35. The point is to compare against
+**`run_20260820_ft`**, the Stage-1 model this project actually reports, instead
+of going through the deep configuration.
+
+### The one-variable claim is checked, not asserted
+
+Both runs dump their full resolved config to their log. Diffing
+`run_20260820_ft.log` against `run_20260911_mentioncond.log` key by key:
+
+| block | differing keys |
+|---|---|
+| `Model Attributes` | **4**: `encoder_finetune.patterns`, `loss.lambda_cls`, `loss.lambda_gate`, `loss.lambda_mention_conditioned_cls` |
+| `Running Parameters` | **3**: `output_dir`, `wandb_run_id`, `wandb_resume` — all irrelevant |
+
+LR, epochs, batch, accum, warmup, `eval_start_epoch`, patience, every other loss
+weight and every kappa are **identical**. So reverting `encoder_finetune.patterns`
+to `run_20260820_ft`'s five makes this a genuine one-variable change.
+⚠ Do not take that from the YAML comments — they were the thing being checked.
+
+### The override is verified at launch, not assumed
+
+`--options` has to set a *list* here, which is the part that could silently do
+nothing and cost 14 hours. The log line settles it two minutes in:
+
+```
+encoder fine-tuning: unfroze 69 parameters (31.85M) across 5 patterns; batchnorm_eval=True
+```
+
+Byte-identical to `run_20260820_ft`'s own line (the deep configuration prints
+53.12M across 8). The exact option string is saved to `~/mc_shallow.opts` and
+the supervisor is attached with it as `EXTRA_OPTS`, so a restart re-applies it.
+
+### Commands
+
+`~/launch_mc_shallow.sh` (guards: output dir absent, `ntfs3`, GPU idle — it
+refuses rather than proceeding), then `~/attach_mc.sh`, which finds the main pid
+by `ppid == 1` and adopts it.
+
+### Comparator
+
+| `run_20260820_ft`, test, `study_presence` + `marginal_presence` | |
+|---|---:|
+| `macro_auroc` | 0.7643 |
+| `micro_auroc` | 0.8166 |
+| `positive_macro_f1` | 0.3542 |
+| `positive_macro_precision` | 0.2931 |
+| `positive_macro_recall` | 0.5373 |
+| `macro_specificity` | 0.8020 |
+
+Thresholds at `~/eval_deep/ft/thresholds.json`; predictions under
+`~/run_20260820_ft/mimic_cxr_full_blip2/result/`.
+
+### What it decides
+
+The deep-configuration result was: `macro_auroc` flat, `micro_auroc`
++0.0247, per-label AUROC a coin flip — i.e. **calibration across labels, not
+discrimination**. This run asks whether that survives on the configuration the
+project reports. Expect the same shape; a *different* shape would mean the
+effect interacts with unfreeze depth, which nothing predicts.
+
+⚠ `run_20260820_ft`'s recall is 0.5373 against the deep run's 0.4436, so the
+two comparators sit at quite different operating points. Read F1 / recall /
+specificity against **this** run's own comparator, never across the two tables.
+
+### Status
+
+**RUNNING.** ETA ~13.5 h from 11:49:35 -> approximately 2026-09-13 01:20.
+Scoring afterwards is the same two commands as above, then
+`paired_bootstrap.py --a-name ft --a-predictions <run_20260820_ft test npz>
+--a-thresholds ~/eval_deep/ft/thresholds.json --b-name mc_shallow ...`.
+Remember `PYTHONPATH=~/ft_review_20260910` — the script lives in `$HOME`, so
+Python puts `$HOME` on `sys.path`, not the checkout.
+
 ### Artifacts on the host (not copied here)
 
 `~/run_20260911_mentioncond/` (checkpoints, `result/*.npz`) ·
