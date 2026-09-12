@@ -182,6 +182,119 @@ retracted marginal substitution is genuinely absent. (That F1 is on 200
 truncated val studies after one tiny epoch and is a plumbing check, not a
 result.)
 
-## Execution report
+## Execution report — 2026-09-12, host `minhphuong`
 
-_(appended when the run finishes)_
+- **revision:** `b49ac68`, detached worktree `~/ft_review_20260910`.
+- **run:** `~/run_20260911_mentioncond`, launched 2026-09-11 10:59:50,
+  `Training time 13:31:06`, supervisor `exited rc=0 / TRAINING COMPLETED`
+  at 2026-09-12 00:33:18. **10/10 epochs, 0 restarts, 0 OOM, 0 fallbacks.**
+- `max mem` **9,838 MiB** — the deep run's 9,839 to within a MiB, so the
+  objective swap cost no memory. Epochs 1h16m-1h27m, 0.328-0.372 s/it.
+- `checkpoint_best` = **epoch 9**, the last epoch, val loss **1.914257**, still
+  falling (5-9: 1.932411, 1.919923, —, 1.918942, 1.914257). ⚠ The same shape as
+  `run_20260820_ft`, and `run_20260821_ext` already falsified the inference that
+  a falling val loss means more epochs would help. Do not read it as headroom.
+
+### The monitoring fix earned its keep
+
+Every training line showed `loss_cls: -0.0000` and `loss_gate: -0.0000`, as the
+design requires, with `loss_mention_conditioned` **1.4560 (epoch 0) -> 1.3685
+(epoch 1)** beside them. Without the `BlipOutput` field added in `b49ac68` this
+log would have been indistinguishable from a 13.5-hour run training **no
+classification objective at all**.
+
+### Test result, 3,269 studies, `study_presence` + `marginal_presence`
+
+Thresholds calibrated on each run's **own** validation split with the plateau
+rule. Paired per-study bootstrap, 2,000 resamples, seed 16, against
+`run_20260821_deep` — identical config but for the three loss weights:
+
+| metric | deep | mention-conditioned | delta, 95% CI | |
+|---|---:|---:|:---|---|
+| `macro_auroc` | 0.7692 | 0.7693 | +0.0002 [-0.0045, +0.0046] | |
+| `micro_auroc` | 0.8187 | **0.8434** | **+0.0247 [+0.0222, +0.0273]** | ✅ |
+| `positive_macro_f1` | 0.3518 | 0.3617 | +0.0099 [-0.0013, +0.0203] | |
+| `positive_macro_precision` | 0.3008 | 0.3082 | +0.0074 [-0.0049, +0.0183] | |
+| `positive_macro_recall` | 0.4436 | **0.4781** | **+0.0345 [+0.0181, +0.0498]** | ✅ |
+| `macro_specificity` | 0.8395 | 0.8294 | **-0.0101 [-0.0129, -0.0073]** | ❌ |
+
+`macro_auprc` 0.3269 -> 0.3286.
+
+### ⚠ The decomposition inverts how that table reads
+
+`micro_auroc` +0.0247 with a very tight interval looks like the headline. It is
+not, and this repo's own rule — "check macro against micro", "decompose the
+score" — is what catches it. **Per-label AUROC, the same 3,269 studies:**
+
+| | |
+|---|---:|
+| mean delta over 14 labels | **+0.0003** |
+| labels where mention-conditioned wins | **8 of 14** — a coin flip |
+| largest gain / largest loss | Atelectasis +0.0116 / Fracture -0.0118 |
+
+**Not one finding got better.** The encoder unfreeze, by contrast, improved
+AUROC on **14 of 14**. So the micro gain cannot be discrimination.
+
+It is **cross-label score comparability**. `micro_auroc` pools every
+label x study cell into one ranking and is therefore sensitive to whether the
+scores mean the same thing across findings; per-label AUROC is invariant to any
+per-label monotone rescaling and so cannot see it. Training `m·q` as one
+likelihood makes `P(present)` commensurable across the 14 findings without
+changing the ranking inside any of them.
+
+The calibrated thresholds confirm the mechanism independently — scores that
+agree across labels need less idiosyncratic cut points:
+
+| | min | max | spread | stdev |
+|---|---:|---:|---:|---:|
+| deep | 0.101 | 0.648 | 0.548 | 0.1399 |
+| mention-conditioned | 0.244 | 0.625 | **0.382** | **0.0922** |
+
+34% tighter.
+
+And the F1/recall/specificity pattern is the signature this file has named
+before: **recall up and specificity down, both significant, with F1 and
+precision not clearing zero** is an operating point moving, not a better model
+— the mirror image of what `run_20260821_deep` and `run_20260821_ext` showed.
+
+### Verdict
+
+**The 2026-08-16 "did not work" verdict genuinely did not carry over** — it was
+reached under `masked_polarity`, which masks blank cells and cannot see the
+joint, and under the matching framing the objective produces a real, tightly
+significant effect. **But the correct verdict is much narrower than "it
+works": the hierarchical objective does not produce a better model, it
+produces better-calibrated cross-label scores.**
+
+That is worth having — it is the quantity this project actually scores, and one
+global operating point now means something across all 14 findings — but it does
+not move `macro_auroc`, which is the headline this project quotes, by anything
+distinguishable from zero.
+
+**Do not switch the reported Stage-1 model on this.** `run_20260820_ft` remains
+it. This run is not even comparable to it (deep vs shallow unfreeze), and the
+deep unfreeze itself never cleared zero on `macro_auroc` either.
+
+### What would come next, if anything
+
+The one clean follow-up is a **shallow**-unfreeze + mention-conditioned run, to
+compare against `run_20260820_ft` directly rather than through the deep
+configuration. ~14 h. It would answer whether the calibration gain survives on
+the configuration this project actually reports. Nothing here requires it.
+
+### Limitations
+
+One seed, one run. `selection_metric: loss` under a different objective picks a
+different epoch by construction, so "epoch 9 for both" is a coincidence, not a
+controlled match. The micro/macro story is an inference from two measurements
+plus the threshold spread; it is consistent and mechanistic but was not tested
+by a dedicated calibration metric (ECE per label would settle it cheaply and was
+not run).
+
+### Artifacts on the host (not copied here)
+
+`~/run_20260911_mentioncond/` (checkpoints, `result/*.npz`) ·
+`~/run_20260911_mentioncond.log` · `~/run_20260911_mentioncond.supervise.log` ·
+`~/eval_mentioncond/` (`thresholds.json`, `test/`, `paired.log`,
+`paired_mentcond_vs_deep.json`) · `/tmp/perlabel_mc.py`. All outside the repo;
+nothing from them enters a commit.
