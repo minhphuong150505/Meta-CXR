@@ -1231,10 +1231,38 @@ Phán quyết "không hiệu quả" ngày 2026-08-16 **thật sự không còn �
 joint. Nhưng kết luận đúng **hẹp hơn nhiều** so với "nó hiệu quả": loss phân cấp
 không làm model tốt hơn, nó làm điểm số hiệu chuẩn tốt hơn giữa các nhãn.
 
-**Không đổi model Stage-1 đang báo cáo vì kết quả này.** `run_20260820_ft` vẫn
-là nó. Bước tiếp theo sạch duy nhất (nếu muốn) là một run phân cấp với unfreeze
-**shallow** để so trực tiếp với `run_20260820_ft`, ~14h — không có gì ở đây bắt
-buộc phải làm.
+### ✅ Đã xác nhận lại trên đúng cấu hình dự án báo cáo (2026-09-13)
+
+`run_20260912_mc_shallow` — cùng ba trọng số loss, nhưng `patterns` đảo về 5
+pattern của `run_20260820_ft` (kiểm tại lúc phóng: log in `unfroze 69
+parameters (31.85M) across 5 patterns`, trùng từng chữ). `Training time`
+13h40m08s, `checkpoint_best` epoch 9. Ghép cặp với `run_20260820_ft`, 3.269 study:
+
+| | ft | mc_shallow | delta, CI95 |
+|---|---:|---:|:---|
+| `macro_auroc` | 0,7643 | 0,7690 | +0,0047 [−0,0002, +0,0096] |
+| `micro_auroc` | 0,8166 | **0,8440** | **+0,0273 [+0,0247, +0,0299]** |
+| `positive_macro_f1` | 0,3542 | 0,3536 | −0,0006 [−0,0100, +0,0093] |
+| `positive_macro_precision` | 0,2931 | 0,3075 | **+0,0145 [+0,0036, +0,0265]** |
+| `positive_macro_recall` | 0,5373 | 0,4614 | **−0,0759 [−0,0898, −0,0616]** |
+| `macro_specificity` | 0,8020 | 0,8325 | **+0,0305 [+0,0277, +0,0336]** |
+
+**Hai cặp độc lập cho kết quả gần trùng nhau**, và đó mới là thứ biến nó thành
+một phát hiện chứ không phải nhiễu của một run: `micro_auroc` +0,0247 vs
+**+0,0273**; AUROC theo nhãn trung bình +0,0003 vs +0,0047 và **8/14 ở cả hai
+lần**; spread ngưỡng 0,548→0,382 vs **0,555→0,336**.
+
+⚠ `macro_auroc` +0,0047 [−0,0002, +0,0096] **vừa đúng không loại trừ được 0**,
+và 8/14 là tung đồng xu (so với 14/14 của encoder unfreeze). Theo đúng chuẩn dự
+án tự đặt, một CI vừa vượt 0 là "chưa thiết lập được" — thì một CI vừa trượt
+cũng vậy. **Không có cải thiện khả năng phân biệt ở cặp nào.**
+
+⚠ Điểm vận hành lần này dịch **ngược chiều** so với cặp deep (precision và
+specificity tăng, recall giảm), vì `run_20260820_ft` nằm ở recall 0,5373 còn
+deep là 0,4436. Chiều của đánh đổi đó **không mang thông tin** về objective.
+
+**Không đổi model Stage-1 đang báo cáo.** `run_20260820_ft` vẫn là nó. Tính chất
+hiệu chuẩn thuộc về mục Hạn chế, không phải một con số để trích như model tốt hơn.
 
 Hạn chế: một seed, một run; `selection_metric: loss` dưới objective khác chọn
 epoch theo cách khác nên "cả hai đều epoch 9" là trùng hợp; câu chuyện
