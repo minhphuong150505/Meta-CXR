@@ -3030,11 +3030,46 @@ twice (`run_20260821_deep`, `run_20260821_ext`) — not a better model.
 
 **So the 2026-08-16 "did not work" verdict genuinely did not carry over** (it
 was reached under `masked_polarity`, which masks blank cells and cannot see the
-joint) — **but the correct verdict is far narrower than "it works".** Do not
-switch the reported Stage-1 model on this: `run_20260820_ft` remains it, this
-run is not comparable to it, and the deep unfreeze never cleared zero on
-`macro_auroc` either. The one clean follow-up would be a SHALLOW-unfreeze
-mention-conditioned run (~14 h), which nothing here requires.
+joint) — **but the correct verdict is far narrower than "it works".**
+
+✅ **CONFIRMED ON THE REPORTED CONFIGURATION — `run_20260912_mc_shallow`,
+2026-09-13.** The follow-up ran: same three loss weights, but
+`encoder_finetune.patterns` reverted to `run_20260820_ft`'s five, verified at
+launch by the log printing `unfroze 69 parameters (31.85M) across 5 patterns`,
+byte-identical to that run's own line. Both runs' logged configs were diffed key
+by key first: 4 differing keys in the model block (the three weights plus the
+patterns) and 3 irrelevant ones in the run block, so this is a genuine
+one-variable change. `Training time 13:40:08`, `checkpoint_best` epoch 9, val
+loss 1.908186. Paired against `run_20260820_ft`, 3,269 studies:
+
+| metric | ft | mc_shallow | delta, 95% CI |
+|---|---:|---:|:---|
+| `macro_auroc` | 0.7643 | 0.7690 | +0.0047 [-0.0002, +0.0096] |
+| `micro_auroc` | 0.8166 | **0.8440** | **+0.0273 [+0.0247, +0.0299]** |
+| `positive_macro_f1` | 0.3542 | 0.3536 | -0.0006 [-0.0100, +0.0093] |
+| `positive_macro_precision` | 0.2931 | 0.3075 | **+0.0145 [+0.0036, +0.0265]** |
+| `positive_macro_recall` | 0.5373 | 0.4614 | **-0.0759 [-0.0898, -0.0616]** |
+| `macro_specificity` | 0.8020 | 0.8325 | **+0.0305 [+0.0277, +0.0336]** |
+
+**The two independent pairs agree closely**, which is what makes this a finding
+rather than one run's noise: `micro_auroc` +0.0247 vs **+0.0273**; per-label
+AUROC mean +0.0003 vs +0.0047 and **8 of 14 wins in both**; threshold spread
+0.548 -> 0.382 vs **0.555 -> 0.336** (stdev 0.1648 -> 0.0941, 39% tighter).
+
+⚠ `macro_auroc` +0.0047 [-0.0002, +0.0096] **just fails to exclude zero**, and
+8 of 14 is a coin flip against 14 of 14 for the encoder unfreeze. By this file's
+own standard a barely-clearing CI is "not established"; a barely-failing one is
+too. **There is no per-finding discrimination gain in either pair.**
+
+⚠ **The operating point moved the OPPOSITE way here** — precision and
+specificity up, recall down — because `run_20260820_ft` sits at recall 0.5373
+against the deep run's 0.4436. The direction of that trade carries no
+information about the objective; read it only against a run's own comparator.
+
+**Verdict, now on two independent pairs: the hierarchical objective buys
+cross-label calibration, not discrimination.** `run_20260820_ft` remains the
+reported Stage-1 model. State the calibration property in Limitations; do not
+quote it as a better model.
 
 ⚠ Two defects were fixed before launching, both of which would have wasted the
 run. (1) `loss_mention_conditioned` was on no `BlipOutput` field, and enabling

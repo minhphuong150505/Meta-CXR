@@ -357,7 +357,65 @@ effect interacts with unfreeze depth, which nothing predicts.
 two comparators sit at quite different operating points. Read F1 / recall /
 specificity against **this** run's own comparator, never across the two tables.
 
-### Status
+### Result — 2026-09-13. IT REPRODUCES. Same shape, on the reported configuration.
+
+`Training time 13:40:08`, `checkpoint_best` = **epoch 9**, val loss **1.908186**.
+Scored by `~/autoeval_mc_shallow.sh`, which waited for the run and then ran all
+four steps unattended. Paired per-study bootstrap against **`run_20260820_ft`**,
+3,269 test studies, 2,000 resamples, seed 16, each run using its own
+val-calibrated thresholds:
+
+| metric | ft | mc_shallow | delta, 95% CI | |
+|---|---:|---:|:---|---|
+| `macro_auroc` | 0.7643 | 0.7690 | +0.0047 [-0.0002, +0.0096] | |
+| `micro_auroc` | 0.8166 | **0.8440** | **+0.0273 [+0.0247, +0.0299]** | ✅ |
+| `positive_macro_f1` | 0.3542 | 0.3536 | -0.0006 [-0.0100, +0.0093] | |
+| `positive_macro_precision` | 0.2931 | **0.3075** | **+0.0145 [+0.0036, +0.0265]** | ✅ |
+| `positive_macro_recall` | 0.5373 | 0.4614 | **-0.0759 [-0.0898, -0.0616]** | ❌ |
+| `macro_specificity` | 0.8020 | **0.8325** | **+0.0305 [+0.0277, +0.0336]** | ✅ |
+
+**Side by side with the deep configuration, the two runs agree closely:**
+
+| | deep pair | shallow pair |
+|---|---:|---:|
+| `micro_auroc` delta | +0.0247 | **+0.0273** |
+| `macro_auroc` delta | +0.0002 | +0.0047 |
+| per-label AUROC, mean delta | +0.0003 | **+0.0047** |
+| per-label wins | **8 / 14** | **8 / 14** |
+| threshold spread, before -> after | 0.548 -> 0.382 | **0.555 -> 0.336** |
+| threshold stdev, before -> after | 0.1399 -> 0.0922 | **0.1648 -> 0.0941** |
+
+⚠ `macro_auroc` +0.0047 [-0.0002, +0.0096] **just fails to exclude zero**, and
+per-label wins are **8 of 14** — a coin flip, against 14 of 14 for the encoder
+unfreeze. By this file's own standard ("a CI that barely clears zero is not
+established"), a CI that barely *fails* to clear it is likewise not a result.
+There is no per-finding discrimination gain.
+
+**The conclusion therefore holds on the configuration this project actually
+reports: the hierarchical objective buys cross-label calibration, not
+discrimination.** `micro_auroc` pools every label x study cell into one ranking
+and is sensitive to whether scores mean the same thing across findings;
+per-label AUROC is invariant to per-label monotone rescaling and cannot see it.
+The thresholds tighten 39%, which is the mechanism showing up a second time on
+an independent pair of runs.
+
+⚠ **The operating point moved the OPPOSITE way from the deep comparison** —
+precision and specificity up, recall down, F1 flat — because the two
+comparators sit at different operating points (`run_20260820_ft` recall 0.5373
+vs the deep run's 0.4436). The plan warned about this in advance. Read F1 /
+recall / specificity only against the run's own comparator; the direction of
+that trade carries no information about the objective.
+
+### What it does NOT change
+
+`run_20260820_ft` remains the reported Stage-1 model. Nothing here establishes a
+better model: `macro_auroc` is not established, `positive_macro_f1` is flat, and
+per-label AUROC is a coin flip. What is established, twice and tightly, is that
+`P(present)` becomes comparable across findings — which makes a single global
+operating point meaningful, and is a genuine property to state in Limitations
+rather than a headline number.
+
+### Previous status (superseded)
 
 **RUNNING.** ETA ~13.5 h from 11:49:35 -> approximately 2026-09-13 01:20.
 Scoring afterwards is the same two commands as above, then
