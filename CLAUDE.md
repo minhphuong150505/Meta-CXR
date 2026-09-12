@@ -2986,16 +2986,66 @@ Three transferable lessons, all cheap to reuse:
 **Run 02 / epoch 9 stands as the final Stage-1 model.** Full record:
 `Eval/stage1_test_03/README.md` (git-ignored, on the dev box).
 
-**The matched training-side lever, not yet run:
-`model.loss.lambda_mention_conditioned_cls`.** It trains the joint
-`-log(1-m)` / `-log(m) - log(q[y])`, which is *exactly* the quantity
-`study_presence` + `marginal_presence` scores; the shipped
+**THE MATCHED TRAINING-SIDE LEVER HAS NOW RUN — `run_20260911_mentioncond`,
+2026-09-12. It does NOT produce a better model; it produces better-calibrated
+cross-label scores.** `model.loss.lambda_mention_conditioned_cls: 1.0` (with
+`lambda_cls: 0.0` and `lambda_gate: 0.0`, which the constructor requires) trains
+the joint `-log(1-m)` / `-log(m) - log(q[y])` — exactly the quantity
+`study_presence` + `marginal_presence` scores, where the shipped
 `lambda_cls` + `lambda_gate` pair trains the two factors separately and nothing
-reconciles them. The 2026-08-16 verdict that it "did not work" was reached under
-`masked_polarity`, whose metric masks blank cells and therefore cannot see the
-joint at all — that judgment does not carry over and should be re-tested. It
-requires `lambda_cls: 0.0` and `lambda_gate: 0.0` (the constructor raises
-otherwise) and a full ~12.5 h run.
+reconciles them. 10/10 epochs, `rc=0`, **13h31m06s**, 0 restarts, 0 OOM,
+`max mem` 9,838 MiB.
+
+⚠ **The comparator is `run_20260821_deep`, NOT `run_20260820_ft`.** The shipped
+`mimic_cxr_full.yaml` is the DEEP unfreeze, so a run launched from it and
+compared against the shallow `run_20260820_ft` would move the loss formulation
+and the unfreeze depth together — the same confound that already made kappa and
+the unfreeze inseparable. Against the deep run, paired over the same 3,269 test
+studies, 2,000 resamples, each using its own val-calibrated thresholds:
+
+| | deep | mention-conditioned | delta, 95% CI |
+|---|---:|---:|:---|
+| `macro_auroc` | 0.7692 | 0.7693 | +0.0002 [-0.0045, +0.0046] |
+| `micro_auroc` | 0.8187 | **0.8434** | **+0.0247 [+0.0222, +0.0273]** |
+| `positive_macro_f1` | 0.3518 | 0.3617 | +0.0099 [-0.0013, +0.0203] |
+| `positive_macro_precision` | 0.3008 | 0.3082 | +0.0074 [-0.0049, +0.0183] |
+| `positive_macro_recall` | 0.4436 | **0.4781** | **+0.0345 [+0.0181, +0.0498]** |
+| `macro_specificity` | 0.8395 | 0.8294 | **-0.0101 [-0.0129, -0.0073]** |
+
+⚠⚠ **DECOMPOSE BEFORE BELIEVING THE micro_auroc GAIN — it is NOT
+discrimination.** Per-label AUROC over the same studies: **mean delta +0.0003,
+and mention-conditioned wins 8 of 14**, i.e. a coin flip (best Atelectasis
++0.0116, worst Fracture -0.0118). **Not one finding got better** — against
+14 of 14 for the encoder unfreeze. `micro_auroc` pools every label x study cell
+into one ranking and is therefore sensitive to whether scores mean the same
+thing ACROSS findings; per-label AUROC is invariant to any per-label monotone
+rescaling and cannot see it. Training `m·q` as one likelihood makes
+`P(present)` commensurable across the 14 findings without changing the ranking
+inside any of them. The calibrated thresholds confirm it independently: spread
+0.548 -> **0.382**, stdev 0.1399 -> **0.0922**, 34% tighter.
+
+And recall up + specificity down, both significant, with F1 and precision not
+clearing zero, is the operating-point signature this file has already named
+twice (`run_20260821_deep`, `run_20260821_ext`) — not a better model.
+
+**So the 2026-08-16 "did not work" verdict genuinely did not carry over** (it
+was reached under `masked_polarity`, which masks blank cells and cannot see the
+joint) — **but the correct verdict is far narrower than "it works".** Do not
+switch the reported Stage-1 model on this: `run_20260820_ft` remains it, this
+run is not comparable to it, and the deep unfreeze never cleared zero on
+`macro_auroc` either. The one clean follow-up would be a SHALLOW-unfreeze
+mention-conditioned run (~14 h), which nothing here requires.
+
+⚠ Two defects were fixed before launching, both of which would have wasted the
+run. (1) `loss_mention_conditioned` was on no `BlipOutput` field, and enabling
+the mode forces `loss_cls` and `loss_gate` to print exactly `0.0000` — so a run
+whose `--options` silently failed would have looked healthy for 13.5 hours while
+training no classification objective at all. (2) The comment above the loss call
+and its copy in the YAML both claimed `classification_logits` becomes the log
+marginal in this mode. **It does not and must not** — that aliases blank onto
+Negative, makes Positive unwinnable under the validation argmax, and once pinned
+val F1 at exactly 0.000000. Both corrected in `b49ac68`. Full record:
+`docs/handoff/PLAN-2026-09-11-mention-conditioned-stage1.md`.
 
 **A blank CheXpert cell is masked, not negative.** The export leaves a cell blank
 when the labeler found no mention of the finding, which is not the radiologist

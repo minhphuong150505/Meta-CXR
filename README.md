@@ -1173,6 +1173,75 @@ tin cậy đều chứa 0.** `rec35` còn *âm* trên ba trên bốn metric dù 
 
 Artifacts: `/home/phuong/cue_mid_gen_20260909/` (trên host, git-ignored).
 
+## ⚖️ Loss phân cấp cho Stage 1 — `run_20260911_mentioncond` (2026-09-12)
+
+Stage 1 xưa nay train **hai đầu không gặp nhau**: `lambda_cls` khớp `q` trên
+20,5% ô CheXpert không trống, `lambda_gate` khớp `m` trên tất cả, và không gì
+hoà giải chúng. Nhưng mọi số Stage-1 lại được chấm trên
+`P(present) = sigmoid(m) × q_pos` — **một đại lượng chưa từng được train**.
+
+`lambda_mention_conditioned_cls` train đúng đại lượng đó thành **một** likelihood:
+`-log(1-m)` khi không được nhắc, `-log(m) - log(q[y])` khi được nhắc.
+
+**Kết quả: KHÔNG cho model tốt hơn, mà cho điểm số hiệu chuẩn tốt hơn giữa các
+nhãn.** 10/10 epoch, `rc=0`, **13h31m06s**, 0 restart/OOM.
+
+⚠ Mốc so sánh là **`run_20260821_deep`**, không phải `run_20260820_ft`: YAML
+đang ship là bản unfreeze **sâu**, nên so với bản shallow sẽ đổi hai thứ cùng
+lúc. Bootstrap ghép cặp trên đúng 3.269 study test, mỗi run dùng ngưỡng hiệu
+chuẩn trên validation **của chính nó**:
+
+| | deep | phân cấp | delta, CI95 |
+|---|---:|---:|:---|
+| `macro_auroc` | 0,7692 | 0,7693 | +0,0002 [−0,0045, +0,0046] |
+| `micro_auroc` | 0,8187 | **0,8434** | **+0,0247 [+0,0222, +0,0273]** |
+| `positive_macro_f1` | 0,3518 | 0,3617 | +0,0099 [−0,0013, +0,0203] |
+| `positive_macro_recall` | 0,4436 | **0,4781** | **+0,0345 [+0,0181, +0,0498]** |
+| `macro_specificity` | 0,8395 | 0,8294 | **−0,0101 [−0,0129, −0,0073]** |
+
+### ⚠ Phân rã làm đảo ngược cách đọc bảng trên
+
+`micro_auroc` +0,0247 với CI rất hẹp trông như tiêu đề. Nó không phải.
+**AUROC theo từng nhãn: delta trung bình +0,0003, thắng 8/14 — tức tung đồng
+xu.** Không một finding nào tốt lên (so với **14/14** của encoder unfreeze).
+
+Vậy mức tăng micro **không phải** khả năng phân biệt. Nó là **tính so sánh được
+của điểm số giữa các nhãn**: `micro_auroc` gộp mọi ô nhãn×study vào một bảng xếp
+hạng duy nhất nên nhạy với việc điểm số có cùng ý nghĩa giữa các finding hay
+không; AUROC theo nhãn bất biến với mọi phép co giãn đơn điệu riêng từng nhãn
+nên **không thể** nhìn thấy điều đó. Train `m·q` thành một likelihood làm
+`P(present)` so sánh được giữa 14 finding mà không đổi thứ hạng bên trong nhãn nào.
+
+Ngưỡng hiệu chuẩn xác nhận cơ chế một cách độc lập — điểm số nhất quán giữa các
+nhãn thì cần điểm cắt bớt dị biệt:
+
+| | min | max | spread | stdev |
+|---|---:|---:|---:|---:|
+| deep | 0,101 | 0,648 | 0,548 | 0,1399 |
+| phân cấp | 0,244 | 0,625 | **0,382** | **0,0922** |
+
+Và recall tăng + specificity giảm, cả hai có ý nghĩa, còn F1 và precision không
+vượt 0 — đúng chữ ký "**điểm vận hành dịch chuyển**" mà README/CLAUDE.md đã gọi
+tên hai lần trước (`run_20260821_deep`, `run_20260821_ext`).
+
+### Kết luận
+
+Phán quyết "không hiệu quả" ngày 2026-08-16 **thật sự không còn áp dụng** — nó
+được đưa ra dưới `masked_polarity`, vốn mask ô trống nên không thể nhìn thấy
+joint. Nhưng kết luận đúng **hẹp hơn nhiều** so với "nó hiệu quả": loss phân cấp
+không làm model tốt hơn, nó làm điểm số hiệu chuẩn tốt hơn giữa các nhãn.
+
+**Không đổi model Stage-1 đang báo cáo vì kết quả này.** `run_20260820_ft` vẫn
+là nó. Bước tiếp theo sạch duy nhất (nếu muốn) là một run phân cấp với unfreeze
+**shallow** để so trực tiếp với `run_20260820_ft`, ~14h — không có gì ở đây bắt
+buộc phải làm.
+
+Hạn chế: một seed, một run; `selection_metric: loss` dưới objective khác chọn
+epoch theo cách khác nên "cả hai đều epoch 9" là trùng hợp; câu chuyện
+micro/macro là suy luận từ hai phép đo cộng độ hẹp ngưỡng — nhất quán và có cơ
+chế, nhưng chưa được kiểm bằng một metric hiệu chuẩn chuyên dụng (ECE theo nhãn
+sẽ chốt được, và chưa chạy).
+
 ## 🧪 Finding tokens học được — nhánh THỬ NGHIỆM (2026-09-10)
 
 > **Chưa đo được gì. Chưa chạy trên GPU. Không được trích như một kết quả, và
