@@ -537,7 +537,7 @@ Paired per-study bootstrap, 2,000 resamples, seed 16:
 
 | # | criterion | result |
 |---|---|---|
-| 1 | `D − B` clears zero upward on CIDEr or BERTScore | ❌ **fails, and fails the other way** — every metric is negative and METEOR's CI excludes zero |
+| 1 | `D − B` clears zero upward on CIDEr or BERTScore | ❌ **fails** — every metric's delta is negative. ⚠ Corrected 2026-09-13: METEOR's CI upper bound is -0.0001 and ROUGE-L's flips between +0.0002 and -0.0002 with the bootstrap resample stream; three of four `D − B` intervals are at the zero boundary, so "fails the other way" is not established. The verdict does not depend on it. |
 | 2 | `D − C` clears zero | ❌ no — all four cross zero; adding `m` to the tokens changes nothing |
 | 3 | no degradation in repetition/length/truncation | ✅ median 24 words in every arm, no empty reports, no failures |
 | 4 | the ablation shows the model uses the features | ❌ **no** — see below |

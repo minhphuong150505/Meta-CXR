@@ -47,3 +47,13 @@ field là scalar graph-connected, kể cả batch thiếu mask hợp lệ.
 - **Caller:** [`blip2_qformer.py`](../blip2_models/blip2_qformer.py.doc.md)
 
 ← [HOME](../../../../../HOME.md)
+
+## `loss_mention_conditioned` — thêm 2026-09-11
+
+Field mới trên `BlipOutput`, mặc định `None`. **Bắt buộc phải có** khi bật
+`model.loss.lambda_mention_conditioned_cls`: chế độ đó ép `lambda_cls` và
+`lambda_gate` về 0,0, nên `loss_cls` và `loss_gate` in đúng `0.0000`. Không có
+field này thì term thay thế chúng không hiện ở đâu, và một run có `--options`
+không ăn sẽ trông hoàn toàn khỏe mạnh trong khi không train objective phân loại
+nào. `base_task.train_step` tự thu mọi key chứa `loss`, nên thêm field là đủ để
+nó vào MetricLogger — không phải sửa gì ở task.
