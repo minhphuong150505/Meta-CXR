@@ -255,3 +255,17 @@ Pattern `zero = tensor.sum() * 0.0` xuất hiện nhiều lần — nó tạo m�
 - **Related:** [`Qformer.py`](Qformer.py.doc.md) · [`ReportDataset.py`](../../data/ReportDataset.py.doc.md) · [`runner_base.py`](../../runners/runner_base.py.doc.md)
 
 ← [HOME](../../../../../HOME.md)
+
+## `loss_mention_conditioned` được xuất ra — 2026-09-11
+
+`forward()` truyền `loss_mention_conditioned` vào `BlipOutput` (xem
+`blip_outputs.py.doc.md`). Đồng thời sửa comment phía trên lời gọi loss:
+bản cũ nói `student_logits` trở thành log marginal ở chế độ phân cấp. **Code
+chưa bao giờ làm thế và không được làm** — `classification_logits` vẫn là `q`,
+joint bốn trạng thái xuất **kèm theo** dưới tên `mention_marginal_log_probs`.
+Thay marginal vào đó gộp blank vào Negative, làm Positive không thể thắng dưới
+argmax validation, và từng ghim val F1 ở đúng 0.000000.
+
+Kết quả đo của chế độ này (hai cặp run độc lập): hiệu chuẩn giữa các nhãn tốt
+hơn, **không** cải thiện khả năng phân biệt, không có lợi ích Stage-2. Xem
+`docs/handoff/PLAN-2026-09-11-mention-conditioned-stage1.md`.

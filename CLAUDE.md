@@ -1927,11 +1927,11 @@ Verification and aggregate-only cache audit:
 `docs/handoff/PLAN-2026-09-08-cue-contract.md`. GPU generation was not launched
 because the card was occupied; CPU checks cannot establish better reports.
 
-🧪 **LEARNABLE FINDING TOKENS — EXPERIMENTAL BRANCH, DEFAULT OFF, NO RESULT
-YET (added 2026-09-10, `feat/stage2-finding-tokens`).** `--finding-tokens
-{off,q_only,full}` on both `run_medgemma_qlora.py` and
-`generate_stage2_reports.py`. **Nothing is measured. Do not quote this as a
-result, and do not change a production default on account of it.**
+🧪 **LEARNABLE FINDING TOKENS — EXPERIMENTAL BRANCH, DEFAULT OFF, RESULT
+NEGATIVE (added 2026-09-10, pilot 2026-09-11, `feat/stage2-finding-tokens`).**
+`--finding-tokens {off,q_only,full}` on both `run_medgemma_qlora.py` and
+`generate_stage2_reports.py`. The pilot has run and the answer is no — see the
+❌❌ block below. Do not change a production default on account of it.
 
 Every recorded cue experiment passed Stage 1's two heads to Stage 2 through a
 **hard threshold and an English sentence**, and four independent measurements
@@ -2017,10 +2017,25 @@ Paired per-study bootstrap, 2,000 resamples, seed 16, n=300:
 | C - A | -0.0036 [-0.0105, +0.0035] | -0.0047 [-0.0132, +0.0035] | -0.0123 [-0.0467, +0.0189] | -0.0042 [-0.0095, +0.0006] |
 | B - A | +0.0010 [-0.0050, +0.0067] | +0.0012 [-0.0055, +0.0080] | +0.0102 [-0.0081, +0.0312] | -0.0024 [-0.0065, +0.0012] |
 
-**Two of the five adoption criteria fail, and the first fails in the WRONG
-direction with a CI that excludes zero.** The learnable channel, carrying
-strictly more information than the text cues, did worse than the text cues and
-worse than no cues at all. `D - C` is flat, so `m` adds nothing on top of `q`.
+**Two of the five adoption criteria fail.** Criterion 1 needs `D - B` to clear
+zero *upward*; every one of its four deltas is negative instead. The learnable
+channel, carrying strictly more information than the text cues, did worse than
+the text cues and worse than no cues at all. `D - C` is flat, so `m` adds
+nothing on top of `q`.
+
+⚠ **CORRECTED 2026-09-13: an earlier version of this paragraph said criterion 1
+fails "with a CI that excludes zero", citing `D - B` METEOR. That overstated
+it.** Recomputing every Stage-2 comparison into one CSV with a different
+bootstrap resample stream gave the **same deltas** but flipped a bound:
+`D - B` ROUGE-L went from [-0.0147, **+0.0002**] to [-0.0147, **-0.0002**], and
+`D - B` METEOR sits at [-0.0174, **-0.0001**]. A bound within 0.0005 of zero
+changes sign with Monte-Carlo noise, so **three of `D - B`'s four intervals are
+at the zero boundary — not established either way.** The one finding-token
+result well clear of zero is **`D - A` BERTScore -0.0075 [-0.0133, -0.0021]**.
+The verdict does not change: it never rested on significance in the wrong
+direction, only on `D - B` failing to clear zero upward, which it plainly does.
+`Eval/eval_bundle_20260913/stage2_paired_bootstrap.csv` carries an
+`at_zero_boundary` column for exactly this.
 
 ⚠⚠ **AND THE ABLATION SAYS WHY: THE TRAINED MODEL DOES NOT READ THE CHANNEL.**
 Arm D's own checkpoint, same 300 studies -- zeroing the features, shuffling
@@ -2079,8 +2094,8 @@ tests, no regression.
 
 Plan, arms, budget, adoption criteria, abort conditions and the full execution
 report: `docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`. CPU coverage:
-`tests/test_finding_tokens.py` (38 tests). **No pilot has run; there is no
-result.**
+`tests/test_finding_tokens.py` (38 tests). The pilot and its result are
+recorded in the ❌❌ block above.
 
 **Selective marginal cues (2026-09-09, opt-in mitigation).**
 `scripts/calibrate_cue_precision.py` fits maximum recall at an empirical
@@ -2239,9 +2254,9 @@ four metrics despite dominating `conditional` on precision and recall alike.
 **Five independent confirmations now, the last two under a rule strictly better
 than the one every recorded run used. Stop looking for a better cue threshold --
 the operating point is not what is wrong.** What has NOT been tested is a
-different *channel* for the same information; that is what
-`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md` exists to try, and it
-has no result yet.
+different *channel* for the same information. That was tried next, in
+`docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`, and it did not help
+either — see the ❌❌ finding-token block.
 
 ⚠ n=25, one previously-examined val cohort, thresholds fitted on it. ROUGE-L
 barely clears zero and BERTScore does not. The token counts are exact; the NLG

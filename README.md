@@ -1264,6 +1264,43 @@ deep là 0,4436. Chiều của đánh đổi đó **không mang thông tin** v�
 **Không đổi model Stage-1 đang báo cáo.** `run_20260820_ft` vẫn là nó. Tính chất
 hiệu chuẩn thuộc về mục Hạn chế, không phải một con số để trích như model tốt hơn.
 
+### ❌ Và Stage 2 cũng không được lợi gì (2026-09-13)
+
+Hai arm Stage-2 train lại trên `run_20260912_mc_shallow`, khớp một-đối-một với
+arm A và arm B của pilot finding-token: cùng recipe, cùng ngân sách 10.000 study,
+cùng cohort 300 study val (đã kiểm `sample_key` giống hệt, cùng thứ tự). Nên thứ
+duy nhất dịch chuyển là **Stage-1 nào sinh soft token và cue**. B' **không** dùng
+`--threshold-path`, vì arm B cũng không — cấp ngưỡng cho riêng B' là đổi biến thứ hai.
+
+| arm | Stage-1 | cue | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---|---|---:|---:|---:|---:|
+| A | ft | không | **0,2552** | 0,2354 | 0,2000 | **0,7847** |
+| B | ft | marginal | **0,2561** | **0,2366** | 0,2101 | 0,7823 |
+| A' | mc_shallow | không | 0,2527 | 0,2352 | **0,2428** | 0,7814 |
+| B' | mc_shallow | marginal | 0,2555 | 0,2335 | 0,2333 | 0,7817 |
+
+Bootstrap ghép cặp, 2.000 lần, seed 16 — **cả 16 khoảng tin cậy đều chứa 0**.
+`A' − A` CIDEr +0,0428 [−0,0073, +0,1112]; `B' − B` CIDEr +0,0231
+[−0,0125, +0,0631]; `B' − A'` CIDEr **−0,0095** [−0,0778, +0,0424].
+
+⚠ Điểm ước lượng CIDEr dương ở cả hai cặp chéo checkpoint, nhưng CI rộng, CIDEr
+phương sai lớn ở n=300, và **ba metric còn lại đi ngược chiều ở cả hai cặp**.
+Chưa thiết lập được, và không nhất quán.
+
+**`B' − A'` là lần xác nhận thứ bảy rằng cue không giúp, và sắc nhất**: nó kiểm
+đúng giả thuyết `m·q` hiệu chuẩn tốt hơn thì cue tốt hơn. Sàn 0,5 đặt trên một
+điểm số giờ đã so sánh được giữa các nhãn là trạng thái chính đáng nhất sàn đó
+từng có — mà CIDEr vẫn âm.
+
+**Vì sao tính chất hiệu chuẩn thật lại không mang lại gì:** pipeline này vốn đã
+hiệu chuẩn ngưỡng riêng cho từng nhãn trên validation, và việc đó hấp thụ đúng
+loại sai lệch mà loss phân cấp sửa. `macro_auroc` không đổi nghĩa là đường cong
+precision/recall từng nhãn không đổi, nên mọi điểm vận hành `mc_shallow` đạt được
+thì `run_20260820_ft` cũng đạt được chỉ bằng cách chỉnh ngưỡng.
+
+⚠ Một seed mỗi arm, n=300, ngân sách 10.000 study, chỉ metric từ vựng. Loại trừ
+chế độ đã thử, **không** loại trừ một Stage-2 full epoch.
+
 Hạn chế: một seed, một run; `selection_metric: loss` dưới objective khác chọn
 epoch theo cách khác nên "cả hai đều epoch 9" là trùng hợp; câu chuyện
 micro/macro là suy luận từ hai phép đo cộng độ hẹp ngưỡng — nhất quán và có cơ
@@ -1409,10 +1446,21 @@ Bootstrap ghép cặp theo study, 2.000 lần, seed 16, n=300:
 | C − A | −0,0036 [−0,0105, +0,0035] | −0,0047 [−0,0132, +0,0035] | −0,0123 [−0,0467, +0,0189] | −0,0042 [−0,0095, +0,0006] |
 | B − A | +0,0010 [−0,0050, +0,0067] | +0,0012 [−0,0055, +0,0080] | +0,0102 [−0,0081, +0,0312] | −0,0024 [−0,0065, +0,0012] |
 
-**Hai trên năm tiêu chí áp dụng trượt, và tiêu chí đầu trượt theo chiều NGƯỢC
-với CI không chứa 0.** Kênh token học được — mang **nhiều** thông tin hơn cue
-chữ — lại kém hơn cue chữ và kém hơn không cue. `D − C` phẳng, nghĩa là thêm `m`
-vào token **không thêm gì** so với chỉ có `q`.
+**Hai trên năm tiêu chí áp dụng trượt.** Tiêu chí 1 đòi `D − B` vượt 0 **đi
+lên**; thay vào đó cả bốn delta của nó đều âm. Kênh token học được — mang
+**nhiều** thông tin hơn cue chữ — lại kém hơn cue chữ và kém hơn không cue.
+`D − C` phẳng, nghĩa là thêm `m` vào token **không thêm gì** so với chỉ có `q`.
+
+⚠ **ĐÍNH CHÍNH 2026-09-13:** bản trước viết tiêu chí 1 trượt "với CI không chứa
+0", dẫn `D − B` METEOR. **Đó là nói quá.** Khi tính lại toàn bộ phép so Stage-2
+vào một CSV với luồng resample bootstrap khác, **delta giữ nguyên** nhưng một cận
+đổi dấu: `D − B` ROUGE-L từ [−0,0147, **+0,0002**] thành [−0,0147, **−0,0002**],
+và `D − B` METEOR nằm ở [−0,0174, **−0,0001**]. Cận cách 0 dưới 0,0005 đổi dấu
+theo nhiễu Monte-Carlo, nên **ba trên bốn khoảng của `D − B` nằm đúng trên biên
+0 — chưa thiết lập được theo chiều nào.** Kết quả finding-token duy nhất thật sự
+xa biên là **`D − A` BERTScore −0,0075 [−0,0133, −0,0021]**. Kết luận không đổi:
+nó chưa bao giờ dựa vào ý nghĩa thống kê theo chiều ngược, mà dựa vào việc
+`D − B` không vượt 0 đi lên — điều này rõ ràng.
 
 ### Vì sao: model không hề đọc kênh này
 
