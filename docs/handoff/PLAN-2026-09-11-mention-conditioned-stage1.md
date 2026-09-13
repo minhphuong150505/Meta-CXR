@@ -424,6 +424,63 @@ Scoring afterwards is the same two commands as above, then
 Remember `PYTHONPATH=~/ft_review_20260910` — the script lives in `$HOME`, so
 Python puts `$HOME` on `sys.path`, not the checkout.
 
+## Stage 2 on the mention-conditioned checkpoint — 2026-09-13. NO GAIN.
+
+The calibration finding raised an obvious question: `P(present)` is now
+comparable across findings, and the cues are a threshold on exactly that
+quantity, so if the gain is worth anything downstream it should show in the cue
+channel. It does not.
+
+Two arms trained on `run_20260912_mc_shallow`, matched one-for-one against the
+finding-token pilot's arm A and arm B (same recipe, same 10,000-study budget,
+same 300-study val cohort by `--restrict-to`, `sample_key` lists verified
+identical and in the same order). Neither used `--threshold-path`, because
+pilot arm B had none either — supplying calibrated thresholds to B' alone would
+have moved a second variable. 17h55m start to finish, 0 failures.
+
+| arm | Stage-1 | cue rule | ROUGE-L | METEOR | CIDEr | BERTScore-F1 | median words |
+|---|---|---|---:|---:|---:|---:|---:|
+| A | `run_20260820_ft` | none | **0.2552** | 0.2354 | 0.2000 | **0.7847** | 24 |
+| B | `run_20260820_ft` | marginal | **0.2561** | **0.2366** | 0.2101 | 0.7823 | 24 |
+| A' | `mc_shallow` | none | 0.2527 | 0.2352 | **0.2428** | 0.7814 | 25 |
+| B' | `mc_shallow` | marginal | 0.2555 | 0.2335 | 0.2333 | 0.7817 | 26 |
+
+Paired per-study bootstrap, 2,000 resamples, seed 16. **All sixteen intervals
+cross zero:**
+
+| comparison | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---|---|---|---|
+| **A' − A** (soft-token channel) | -0.0024 [-0.0124, +0.0075] | -0.0002 [-0.0111, +0.0112] | +0.0428 [-0.0073, +0.1112] | -0.0033 [-0.0083, +0.0015] |
+| **B' − B** (cue channel) | -0.0006 [-0.0081, +0.0065] | -0.0031 [-0.0114, +0.0054] | +0.0231 [-0.0125, +0.0631] | -0.0007 [-0.0046, +0.0035] |
+| B − A (cues, old Stage 1) | +0.0010 [-0.0049, +0.0071] | +0.0012 [-0.0053, +0.0084] | +0.0102 [-0.0089, +0.0306] | -0.0024 [-0.0062, +0.0013] |
+| B' − A' (cues, new Stage 1) | +0.0027 [-0.0055, +0.0115] | -0.0018 [-0.0120, +0.0085] | -0.0095 [-0.0778, +0.0424] | +0.0003 [-0.0041, +0.0051] |
+
+### Reading it honestly
+
+⚠ **CIDEr is positive in both A'−A and B'−B**, and a point estimate of +0.0428
+is not nothing. But both intervals cross zero, they are wide (CIDEr has high
+variance at n=300), and **the other three metrics move the other way in both
+pairs**. A real gain usually drags at least one companion metric with it. The
+supported statement is **not established, and not coherent** — not "it helped a
+bit".
+
+**`B' − A'` is a seventh confirmation that the cues do not help, and the most
+pointed one yet**: it tests the specific hypothesis that better-calibrated
+`m·q` would make better cues. With a flat 0.5 floor now sitting on a
+cross-label-comparable score — which is the most defensible that floor has ever
+been — CIDEr goes *negative* (-0.0095) and every interval crosses zero.
+
+### Verdict
+
+**The mention-conditioned Stage-1 checkpoint does not feed Stage 2 better,
+through either channel.** Combined with the Stage-1 result, the whole picture
+is: the hierarchical objective makes `P(present)` comparable across findings,
+that property is real and reproduces on two independent pairs, and it buys
+nothing measurable in per-finding discrimination or in downstream generation.
+
+⚠ One seed per arm, n=300, 10,000-study training budget, lexical metrics only.
+This rules out the regime tested; it does not rule out a full-epoch Stage 2.
+
 ### Artifacts on the host (not copied here)
 
 `~/run_20260911_mentioncond/` (checkpoints, `result/*.npz`) ·
