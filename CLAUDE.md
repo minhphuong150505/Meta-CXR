@@ -3071,6 +3071,39 @@ cross-label calibration, not discrimination.** `run_20260820_ft` remains the
 reported Stage-1 model. State the calibration property in Limitations; do not
 quote it as a better model.
 
+❌ **AND IT BUYS NOTHING IN STAGE 2 EITHER (2026-09-13).** Two Stage-2 arms
+trained on `run_20260912_mc_shallow`, matched one-for-one against the
+finding-token pilot's arm A and arm B — same recipe, same 10,000-study budget,
+same 300-study val cohort verified identical by `sample_key` — so the only thing
+that moves is which Stage-1 fed the soft tokens and the cues.
+
+| arm | Stage-1 | cues | ROUGE-L | METEOR | CIDEr | BERTScore-F1 |
+|---|---|---|---:|---:|---:|---:|
+| A | ft | none | **0.2552** | 0.2354 | 0.2000 | **0.7847** |
+| B | ft | marginal | **0.2561** | **0.2366** | 0.2101 | 0.7823 |
+| A' | mc_shallow | none | 0.2527 | 0.2352 | **0.2428** | 0.7814 |
+| B' | mc_shallow | marginal | 0.2555 | 0.2335 | 0.2333 | 0.7817 |
+
+Paired bootstrap, 2,000 resamples, seed 16 — **all sixteen intervals cross
+zero.** `A' - A` CIDEr +0.0428 [-0.0073, +0.1112]; `B' - B` CIDEr
++0.0231 [-0.0125, +0.0631]; `B' - A'` CIDEr **-0.0095** [-0.0778, +0.0424].
+
+⚠ CIDEr's point estimate is positive in both cross-checkpoint pairs and that is
+worth noting — but both intervals cross zero, CIDEr is high-variance at n=300,
+and **the other three metrics move the other way in both pairs**. Not
+established, and not coherent.
+
+**`B' - A'` is a seventh confirmation that the cues do not help, and the
+sharpest one**: it tests precisely the hypothesis that a better-calibrated
+`m·q` makes better cues. A flat 0.5 floor on a now cross-label-comparable score
+is the most defensible that floor has ever been, and CIDEr still goes negative.
+
+So the complete picture: the hierarchical objective gives a real, reproducible
+cross-label calibration property, and that property buys **nothing measurable**
+in per-finding discrimination or in downstream generation. ⚠ One seed per arm,
+n=300, 10,000-study budget, lexical metrics only — this rules out the regime
+tested, not a full-epoch Stage 2.
+
 ⚠ Two defects were fixed before launching, both of which would have wasted the
 run. (1) `loss_mention_conditioned` was on no `BlipOutput` field, and enabling
 the mode forces `loss_cls` and `loss_gate` to print exactly `0.0000` — so a run
