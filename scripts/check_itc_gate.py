@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -50,8 +49,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-DEFAULT_PAIRS = 256
-MIN_DELTA_NATS = 0.10
+from pretraining.itc_gate import (  # noqa: E402
+    DEFAULT_PAIRS,
+    MIN_DELTA_NATS,
+    collect_pairs,
+    model_temperature,
+    score_itc,
+)
 
 
 def parse_args(argv=None):
@@ -163,158 +167,39 @@ def _build(args):
     return cfg, model, loader, device
 
 
-def _features(model, samples, device):
-    """Return the (image, text) features ITC compares, exactly as forward() does."""
-    import torch
-    import torch.nn.functional as F
-
-    image = samples["image"].to(device)
-    aux_image = samples.get("aux_image")
-    if aux_image is not None:
-        aux_image = aux_image.to(device)
-
-    # Same entry point and same arguments forward() uses, so the features this
-    # gate scores are the features training would have produced.
-    shared_visual = model._encode_image_streams(
-        image,
-        apply_aug=False,
-        aux_image=aux_image,
-        aux_mask=samples.get("aux_mask"),
-        anchor_view_id=samples.get("anchor_view_id"),
-        aux_view_ids=samples.get("aux_view_ids"),
-    )
-    # SharedVisualTokens carries the per-encoder spans MHCAC needs; the Q-Former
-    # takes the concatenated sequence, exactly as forward() does at `:1088`.
-    image_embeds = shared_visual.tokens
-    image_atts = torch.ones(
-        image_embeds.shape[:-1], dtype=torch.long, device=device
-    )
-    query_tokens = model.query_tokens.expand(image_embeds.shape[0], -1, -1)
-    query_output = model.Qformer.bert(
-        query_embeds=query_tokens,
-        encoder_hidden_states=image_embeds,
-        encoder_attention_mask=image_atts,
-        use_cache=True,
-        return_dict=True,
-    )
-    image_features = F.normalize(
-        model.vision_proj(query_output.last_hidden_state), dim=-1
-    )
-
-    text_tokens = model.tokenizer(
-        samples["text_output"],   # the dataset emits text_output; text_input is commented out
-        padding="max_length",
-        truncation=True,
-        max_length=model.max_txt_len,
-        return_tensors="pt",
-    ).to(device)
-    text_output = model.Qformer.bert(
-        text_tokens.input_ids,
-        attention_mask=text_tokens.attention_mask,
-        return_dict=True,
-    )
-    text_features = F.normalize(
-        model.text_proj(text_output.last_hidden_state[:, 0]), dim=-1
-    )
-    return image_features, text_features
-
-
 def main(argv=None):
     args = parse_args(argv)
-    import torch
-    import torch.nn.functional as F
 
     cfg, model, loader, device = _build(args)
 
-    # Score ONLY the pairs training scores. `generation_mask` is False for a
+    # Score ONLY the pairs training scores: `generation_mask` is False for a
     # study whose report has no usable FINDINGS, and `_image_text_contrastive`
-    # both drops those rows from the loss and masks them out of the candidate
-    # set. The gate used to ignore the mask entirely, which on val meant 29.3%
-    # of pairs were an image against an EMPTY string -- unanswerable as queries,
-    # and as candidates a block of identical text vectors sitting in every other
-    # row's softmax. Both arms of a comparison are contaminated equally, but the
-    # signal is diluted by whatever fraction is invalid.
-    image_chunks, text_chunks = [], []
-    scanned = kept = 0
-    with torch.no_grad():
-        for samples in loader:
-            img, txt = _features(model, samples, device)
-            scanned += img.shape[0]
-            keep = samples.get("generation_mask")
-            if keep is None:
-                raise KeyError(
-                    "the dataset emitted no generation_mask; refusing to score "
-                    "pairs whose validity is unknown"
-                )
-            keep = keep.to(torch.bool).cpu()
-            img, txt = img.float().cpu()[keep], txt.float().cpu()[keep]
-            if kept + img.shape[0] > args.pairs:
-                room = args.pairs - kept
-                img, txt = img[:room], txt[:room]
-            image_chunks.append(img)
-            text_chunks.append(txt)
-            kept += img.shape[0]
-            if kept >= args.pairs:
-                break
-
-    image_features = torch.cat(image_chunks)      # [N, Q, D]
-    text_features = torch.cat(text_chunks)        # [N, D]
+    # drops those rows from the loss and masks them out of the candidate set.
+    # The gate once ignored the mask; on val 29.3% of pairs were then an image
+    # against an EMPTY string. The shared implementation lives in
+    # pretraining/itc_gate.py so the runner's per-epoch gate is identical.
+    image_features, text_features, scanned = collect_pairs(
+        model, loader, args.pairs, device
+    )
     n = image_features.shape[0]
     if n < args.pairs:
         raise ValueError(
             f"only {n} of {scanned} scanned studies have usable FINDINGS, "
             f"needed {args.pairs}; raise --oversample"
         )
-    if n < 2:
-        raise ValueError(f"need at least 2 pairs to contrast, got {n}")
-
-    # Same reduction as training: max over the 32 query tokens, learned
-    # temperature. No queue -- this is a clean all-to-all over the subset, so
-    # chance is exactly ln(n) and needs no correction for queue occupancy.
-    # Mirror the model's effective temperature. When it is pinned
-    # (model.loss.itc_temp_learnable=False) the loss reads the config value, and
-    # model.temp still carries whatever the loaded checkpoint stored -- reading
-    # the parameter here would report a temperature the model never used.
-    temp_learnable = bool(getattr(model, "itc_temp_learnable", True))
-    if temp_learnable:
-        temperature = float(model.temp.detach().clamp(min=1e-3, max=0.5).cpu())
-    else:
-        temperature = float(model.itc_temp_fixed.detach().cpu())
-    sim_i2t = torch.einsum("bqd,nd->bnq", image_features, text_features).amax(-1)
-    sim_t2i = torch.einsum("bd,nqd->bnq", text_features, image_features).amax(-1)
-    targets = torch.arange(n)
-    loss_itc = 0.5 * (
-        F.cross_entropy(sim_i2t / temperature, targets)
-        + F.cross_entropy(sim_t2i / temperature, targets)
-    )
-
-    chance = math.log(n)
-    delta = chance - float(loss_itc)
-    # Rank of the true pair, averaged over both directions: a scale-free read
-    # that does not depend on the learned temperature at all.
-    rank_i2t = (sim_i2t > sim_i2t.diagonal()[:, None]).sum(dim=1).float().mean()
-    rank_t2i = (sim_t2i > sim_t2i.diagonal()[:, None]).sum(dim=1).float().mean()
-
-    passed = delta >= args.min_delta
+    # Mirror the model's effective temperature (pinned or learned).
+    temperature, temp_learnable = model_temperature(model)
     report = {
-        "pairs": n,
         "split": args.split,
         "checkpoint": str(args.checkpoint) if args.checkpoint else "(untrained)",
-        "temperature": round(temperature, 6),
-        # delta_nats scales with 1/temperature, so two measurements are only
-        # comparable when this pair matches. The rank fields are scale-free.
         "temp_learnable": temp_learnable,
         "studies_scanned": scanned,
         "valid_fraction": round(n / scanned, 4) if scanned else None,
-        "loss_itc": round(float(loss_itc), 4),
-        "chance_ln_n": round(chance, 4),
-        "delta_nats": round(delta, 4),
-        "min_delta": args.min_delta,
-        "mean_rank_of_true_pair_i2t": round(float(rank_i2t), 2),
-        "mean_rank_of_true_pair_t2i": round(float(rank_t2i), 2),
-        "chance_rank": round((n - 1) / 2, 2),
-        "meets_threshold": bool(passed),
+        **score_itc(image_features, text_features, temperature, args.min_delta),
     }
+    chance = report["chance_ln_n"]
+    delta = report["delta_nats"]
+    passed = report["meets_threshold"]
 
     print(json.dumps(report, indent=2))
     print()
@@ -323,6 +208,12 @@ def main(argv=None):
     print(
         f"  true pair ranks {report['mean_rank_of_true_pair_i2t']:.1f} / "
         f"{report['mean_rank_of_true_pair_t2i']:.1f}  vs {report['chance_rank']} at chance"
+    )
+    print(
+        f"  R@1 {report['R@1_i2t']:.4f} / {report['R@1_t2i']:.4f}   "
+        f"R@5 {report['R@5_i2t']:.4f} / {report['R@5_t2i']:.4f}   "
+        f"(chance {report['R@1_chance']:.4f} / {report['R@5_chance']:.4f}; "
+        f"R@5 needs >= {report['R@5_significant_hits']} hits of {n})"
     )
     print()
     if passed:

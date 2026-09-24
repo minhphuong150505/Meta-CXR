@@ -8,6 +8,7 @@
 import datetime
 import json
 import logging
+import math
 import os
 import time
 from pathlib import Path
@@ -36,6 +37,13 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.data.dataset import ChainDataset
 
 from torchinfo import summary
+
+from pretraining.phases import (
+    checkpoint_keep,
+    matches_any,
+    param_role,
+    transition_multipliers,
+)
 
 
 def _state_dict_has_non_finite(state_dict):
@@ -116,6 +124,12 @@ class RunnerBase:
         self._lr_sched = None
 
         self.start_epoch = 0
+        # Three-phase schedule (pretraining/phases.py). None = one phase, as
+        # every run before 2026-09-24.
+        self.phase = getattr(model, "phase_spec", None)
+        self._phase_updates = 0
+        self._phase_transition_done = False
+        self._phase_gate_failed = False
         # Carried into mid-epoch checkpoints so a resume from one does not
         # reset best-tracking and overwrite checkpoint_best with a worse score.
         self._mid_epoch_best_agg_metric = None
@@ -199,10 +213,14 @@ class RunnerBase:
                     frozenset(),
                 )
             )
+            transition = None if self.phase is None else self.phase.transition
+            if transition is not None and self._phase_transition_done:
+                transition = None  # hand-over already finished; frozen side is gone
             for n, p in self.model.named_parameters():
                 if not p.requires_grad:
                     continue  # frozen weights
                 bare = n[len("module.") :] if n.startswith("module.") else n
+                role = param_role(bare, transition)
                 is_encoder = bare in encoder_names
                 is_classifier = not is_encoder and any(
                     token in n
@@ -215,7 +233,10 @@ class RunnerBase:
                     "encoder" if is_encoder else "classifier" if is_classifier else "qformer"
                 )
                 suffix = "no_decay" if no_decay else "decay"
-                grouped_params[f"{prefix}_{suffix}"].append(p)
+                key = f"{prefix}_{suffix}"
+                if role != "steady":
+                    key = f"{key}@{role}"
+                grouped_params.setdefault(key, []).append(p)
                 num_parameters += p.data.nelement()
             if encoder_names and not (
                 grouped_params["encoder_decay"] or grouped_params["encoder_no_decay"]
@@ -226,6 +247,8 @@ class RunnerBase:
                     "encoder would train at the wrong learning rate"
                 )
             logging.info("number of trainable parameters: %d" % num_parameters)
+            if self.phase is not None:
+                self._log_trainable(f"Phase {self.phase.name}")
             for _name, _params in grouped_params.items():
                 if _params:
                     logging.info(
@@ -251,13 +274,19 @@ class RunnerBase:
                     group_lr = encoder_lr
                 else:
                     group_lr = qformer_lr
+                base_name, _, role = name.partition("@")
+                role = role or "steady"
                 optim_params.append(
                     {
                         "name": name,
                         "params": params,
-                        "weight_decay": 0.0 if name.endswith("no_decay") else weight_decay,
+                        "weight_decay": 0.0 if base_name.endswith("no_decay") else weight_decay,
                         "lr": group_lr,
                         "lr_scale": group_lr / base_lr,
+                        "phase_role": role,
+                        "phase_lr_mult": transition_multipliers(
+                            self._phase_updates, self._phase_transition_steps()
+                        )[role] if role != "steady" else 1.0,
                     }
                 )
             beta2 = self.config.run_cfg.get("beta2", 0.999)
@@ -573,6 +602,240 @@ class RunnerBase:
 
         return train_dataloader
 
+    # ---- three-phase schedule ---------------------------------------------
+
+    def _updates_per_epoch(self):
+        return max(1, math.ceil(len(self.train_loader) / self.accum_grad_iters))
+
+    def _phase_transition_steps(self):
+        if self.phase is None or self.phase.transition is None:
+            return 1
+        return self.phase.transition.steps(self.phase.epochs * self._updates_per_epoch())
+
+    def _log_trainable(self, header):
+        counts = {}
+        for name, param in self.unwrap_dist_model(self.model).named_parameters():
+            if param.requires_grad:
+                top = name.split(".", 1)[0]
+                counts[top] = counts.get(top, 0) + param.numel()
+        logging.info(
+            "%s: %.2fM trainable -- %s",
+            header,
+            sum(counts.values()) / 1e6,
+            ", ".join(f"{k} {v / 1e6:.2f}M" for k, v in sorted(counts.items())),
+        )
+        return counts
+
+    def _finish_transition(self):
+        """End of the 1b hand-over: freeze fade_out and drop it from the optimizer."""
+        optimizer = self.optimizer
+        kept, dropped = [], 0
+        for group in optimizer.param_groups:
+            if group.get("phase_role") == "fade_out":
+                for param in group["params"]:
+                    param.requires_grad_(False)
+                    param.grad = None
+                    optimizer.state.pop(param, None)
+                    dropped += param.numel()
+            else:
+                kept.append(group)
+        optimizer.param_groups[:] = kept
+        self._phase_transition_done = True
+        logging.info(
+            "Phase %s: hand-over finished after %d updates; froze %.2fM parameters "
+            "(%s) and removed them from the optimizer",
+            self.phase.name,
+            self._phase_updates,
+            dropped / 1e6,
+            ", ".join(self.phase.transition.fade_out),
+        )
+        self._log_trainable(f"Phase {self.phase.name} after hand-over")
+
+    def _on_phase_update(self, epoch, iters_done):
+        """Called after every optimizer step while a transition is pending."""
+        self._phase_updates = (
+            epoch * self._updates_per_epoch()
+            + math.ceil(iters_done / self.accum_grad_iters)
+        )
+        if self._phase_transition_done or self.phase.transition is None:
+            return
+        steps = self._phase_transition_steps()
+        if self._phase_updates >= steps:
+            self._finish_transition()
+            return
+        mults = transition_multipliers(self._phase_updates, steps)
+        for group in self.optimizer.param_groups:
+            group["phase_lr_mult"] = mults.get(group.get("phase_role", "steady"), 1.0)
+
+    def _grad_interference_hook(self, update_in_epoch, loss_dict, model):
+        """Phase 1c: cosine and norm ratio of classification vs alignment grads.
+
+        Measurement only. torch.autograd.grad(retain_graph=True) writes no .grad,
+        so the optimizer step that follows is exactly the one training takes.
+        """
+        cfg = self.phase.grad_interference or {}
+        every = int(cfg.get("every_updates", 200))
+        update = self._phase_updates_at_epoch_start + update_in_epoch
+        if every <= 0 or update % every:
+            return
+        m = self.unwrap_dist_model(model)
+
+        def term(key, weight):
+            value = loss_dict.get(key)
+            if value is None or not torch.is_tensor(value) or not value.requires_grad:
+                return None
+            return weight * value
+
+        mpc_weight = m.lambda_mpc
+        if getattr(m, "mpc_warmup_steps", 0) > 0:
+            mpc_weight = m.lambda_mpc * min(
+                1.0, float(m.mpc_step.item()) / float(m.mpc_warmup_steps)
+            )
+        cls_terms = [
+            term("loss_cls", m.lambda_cls),
+            term("loss_contrastive", m.lambda_mhcac_contrastive),
+            term("loss_orthagonal", m.lambda_orthogonality),
+            term("loss_sparsity", m.lambda_sparsity),
+            term("loss_view_consistency", m.lambda_view_consistency),
+            term("loss_mpc", mpc_weight),
+        ]
+        align_terms = [
+            term("loss_itc", m.lambda_itc),
+            term("loss_itm", m.lambda_itm),
+            term("loss_lm", m.lambda_lm),
+        ]
+        cls_terms = [t for t in cls_terms if t is not None]
+        align_terms = [t for t in align_terms if t is not None]
+        if not cls_terms or not align_terms:
+            return
+        loss_a = torch.stack([t.float() for t in cls_terms]).sum()
+        loss_b = torch.stack([t.float() for t in align_terms]).sum()
+        row = {"phase": self.phase.name, "update": int(update)}
+        for group_name, group_cfg in (cfg.get("groups") or {}).items():
+            prefixes = tuple(group_cfg.get("prefixes", []))
+            exclude = tuple(group_cfg.get("exclude_substrings", []))
+            params = [
+                p for n, p in m.named_parameters()
+                if p.requires_grad and matches_any(n, prefixes)
+                and not any(x in n for x in exclude)
+            ]
+            if not params:
+                row[group_name] = None
+                continue
+            # Accumulated per tensor rather than concatenated: the Q-Former
+            # text tower alone is ~85M parameters, and two flattened fp32
+            # copies of its gradients were enough to OOM phase 1c at batch 8.
+            ga = torch.autograd.grad(loss_a, params, retain_graph=True, allow_unused=True)
+            dot = sq_a = 0.0
+            gb_list = torch.autograd.grad(loss_b, params, retain_graph=True, allow_unused=True)
+            for g_a, g_b in zip(ga, gb_list):
+                if g_a is not None:
+                    sq_a += float(g_a.float().pow(2).sum())
+                if g_a is not None and g_b is not None:
+                    dot += float((g_a.float() * g_b.float()).sum())
+            sq_b = sum(float(g.float().pow(2).sum()) for g in gb_list if g is not None)
+            del ga, gb_list
+            na, nb = sq_a ** 0.5, sq_b ** 0.5
+            row[group_name] = {
+                "cosine": dot / max(na * nb, 1e-12),
+                "norm_ratio_align_over_cls": nb / max(na, 1e-12),
+                "norm_cls": na,
+                "norm_align": nb,
+                "numel": int(sum(p.numel() for p in params)),
+            }
+        with open(self.output_dir / "grad_interference.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+        logging.info("grad interference %s", json.dumps(row))
+
+    def _run_phase_itc_gate(self, cur_epoch):
+        """Per-epoch ITC gate on val (pretraining/itc_gate.py)."""
+        from pretraining.itc_gate import DEFAULT_PAIRS, MIN_DELTA_NATS, run_gate
+
+        cfg = self.phase.itc_gate or {}
+        loader = self.dataloaders.get("val")
+        if loader is None:
+            logging.warning("ITC gate requested but there is no val loader")
+            return None
+        model = self.unwrap_dist_model(self.model)
+        was_training = model.training
+        model.eval()
+        try:
+            report = run_gate(
+                model,
+                loader,
+                self.device,
+                pairs=int(cfg.get("pairs", DEFAULT_PAIRS)),
+                min_delta=float(cfg.get("min_delta", MIN_DELTA_NATS)),
+            )
+        finally:
+            model.train(was_training)
+        report.update({"phase": self.phase.name, "epoch": cur_epoch})
+        path = self.output_dir / f"itc_gate_epoch{cur_epoch}.json"
+        path.write_text(json.dumps(report, indent=2) + "\n")
+        logging.info("ITC gate epoch %s: %s", cur_epoch, json.dumps(report))
+        stop_after = cfg.get("stop_after_epochs")
+        if (
+            stop_after is not None
+            and cur_epoch + 1 >= int(stop_after)
+            and not report["meets_threshold"]
+        ):
+            self._phase_gate_failed = True
+            (self.output_dir / "PHASE_GATE_FAILED").write_text(json.dumps(report, indent=2))
+            logging.error(
+                "Phase %s ITC gate FAILED after %d epoch(s): delta_nats %s, R@5 %s/%s. "
+                "Stopping the whole schedule.",
+                self.phase.name,
+                cur_epoch + 1,
+                report["delta_nats"],
+                report["R@5_i2t"],
+                report["R@5_t2i"],
+            )
+        return report
+
+    def _append_phase_metrics(self, cur_epoch, split_name, stats):
+        if self.phase is None:
+            return
+        row = {"phase": self.phase.name, "epoch": cur_epoch, "split": split_name}
+        row.update({k: v for k, v in stats.items() if isinstance(v, (int, float))})
+        with open(self.output_dir / "phase_metrics.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+
+    @main_process
+    def _save_phase_checkpoint(self, cur_epoch):
+        """``checkpoint_<phase>.pth``: what the next phase initialises from.
+
+        Written to output_dir and to run.phase_root, where
+        pretraining.phases.resolve_init_checkpoint looks.
+        """
+        model_no_ddp = self.unwrap_dist_model(self.model)
+        grads = {k: v.requires_grad for k, v in model_no_ddp.named_parameters()}
+        state_dict = {
+            k: v for k, v in model_no_ddp.state_dict().items()
+            if k not in grads or checkpoint_keep(k, grads[k], self.phase)
+        }
+        bad, count = _state_dict_has_non_finite(state_dict)
+        if bad:
+            raise RuntimeError(
+                f"refusing to write checkpoint_{self.phase.name}: {count} non-finite tensors"
+            )
+        obj = {
+            "model": state_dict,
+            "config": self.config.to_dict(),
+            "epoch": cur_epoch,
+            "phase": self.phase.name,
+            "phase_updates": self._phase_updates,
+        }
+        targets = [self.output_dir / f"checkpoint_{self.phase.name}.pth"]
+        root = self.config.run_cfg.get("phase_root", None)
+        if root:
+            Path(root).mkdir(parents=True, exist_ok=True)
+            targets.append(Path(root) / f"checkpoint_{self.phase.name}.pth")
+        for target in targets:
+            tmp = str(target) + ".tmp"
+            torch.save(obj, tmp)
+            os.replace(tmp, target)
+            logging.info("Saved phase checkpoint %s (%d tensors)", target, len(state_dict))
+
     def setup_output_dir(self):
         base_dir = Path(self.config.run_cfg.get("output_dir", "pretraining/outputs"))
 
@@ -711,6 +974,7 @@ class RunnerBase:
                     eval_stats = self._reduce_eval_stats(eval_stats)
 
                     self.log_stats(eval_stats, split_name)
+                    self._append_phase_metrics(cur_epoch, split_name, eval_stats)
 
                     selection_value = eval_stats.get(self.selection_metric)
                     if not self.evaluate_only:
@@ -808,6 +1072,16 @@ class RunnerBase:
                 best_agg_metric, best_epoch = self.validate(cur_epoch, best_agg_metric, best_epoch, wandb_run)
 
                 if (
+                    self.phase is not None
+                    and not self.evaluate_only
+                    and (self.phase.itc_gate or {}).get("every_epoch", False)
+                ):
+                    self._run_phase_itc_gate(cur_epoch)
+                    if self._phase_gate_failed:
+                        stop_training = True
+                        break
+
+                if (
                     not self.evaluate_only
                     and self.early_stop_patience > 0
                     and len(self.valid_splits) > 0
@@ -858,6 +1132,17 @@ class RunnerBase:
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         logging.info("Training time {}".format(total_time_str))
+
+        if self.phase is not None and not self.evaluate_only:
+            if self._phase_gate_failed:
+                logging.error(
+                    "Phase %s stopped by its ITC gate; no checkpoint_%s is written, "
+                    "so the next phase cannot start from it.",
+                    self.phase.name,
+                    self.phase.name,
+                )
+                return
+            self._save_phase_checkpoint(self.max_epoch - 1)
 
         # Re-evaluate validation once with checkpoint_best. This produces the
         # exact prediction artifact used for post-hoc threshold calibration;
@@ -913,9 +1198,9 @@ class RunnerBase:
         self.model.train()
 
         every = self.save_every_iters
-        on_sync_step = None
+        save_hook = None
         if every > 0 and not self.evaluate_only:
-            def on_sync_step(iters_done, _epoch=epoch, _every=every):
+            def save_hook(iters_done, _epoch=epoch, _every=every):
                 if iters_done % _every:
                     return
                 self._save_checkpoint(
@@ -924,6 +1209,23 @@ class RunnerBase:
                     best_epoch=self._mid_epoch_best_epoch,
                     mid_epoch=True, iters_done=iters_done,
                 )
+
+        phase_hook = None
+        if self.phase is not None and not self.evaluate_only:
+            def phase_hook(iters_done, _epoch=epoch):
+                self._on_phase_update(_epoch, iters_done)
+
+        hooks = [h for h in (phase_hook, save_hook) if h is not None]
+        on_sync_step = None
+        if hooks:
+            def on_sync_step(iters_done, _hooks=tuple(hooks)):
+                for hook in _hooks:
+                    hook(iters_done)
+
+        pre_backward = None
+        if self.phase is not None and self.phase.grad_interference and not self.evaluate_only:
+            self._phase_updates_at_epoch_start = epoch * self._updates_per_epoch()
+            pre_backward = self._grad_interference_hook
 
         return self.task.train_epoch(
             epoch=epoch,
@@ -938,6 +1240,7 @@ class RunnerBase:
             accum_grad_iters=self.accum_grad_iters,
             max_grad_norm=self.max_grad_norm,
             on_sync_step=on_sync_step,
+            pre_backward=pre_backward,
         )
 
     @torch.no_grad()
@@ -1085,8 +1388,11 @@ class RunnerBase:
         }
         state_dict = model_no_ddp.state_dict()
         for k in list(state_dict.keys()):
-            if k in param_grad_dic.keys() and not param_grad_dic[k]:
-                # delete parameters that do not require gradient
+            if k in param_grad_dic.keys() and not checkpoint_keep(
+                k, param_grad_dic[k], self.phase
+            ):
+                # delete parameters that do not require gradient -- except, in a
+                # phased run, those some phase trains (see pretraining/phases.py)
                 del state_dict[k]
         include_training_state = not is_best
         optimizer_state = self.optimizer.state_dict() if include_training_state else None
@@ -1120,6 +1426,10 @@ class RunnerBase:
             "best_epoch": best_epoch,
             "mid_epoch": bool(mid_epoch),
         }
+        if self.phase is not None:
+            save_obj["phase"] = self.phase.name
+            save_obj["phase_transition_done"] = bool(self._phase_transition_done)
+            save_obj["phase_updates"] = int(self._phase_updates)
         if iters_done is not None:
             save_obj["iters_done"] = int(iters_done)
         if include_training_state:
@@ -1310,6 +1620,16 @@ class RunnerBase:
             # # Unfreeze QueryAggregator module
             # for param in self.model.aggregator.parameters():
             #     param.requires_grad = True
+
+        if self.phase is not None and checkpoint.get("phase_transition_done"):
+            # The saved optimizer no longer holds the frozen side; rebuild the
+            # same group layout before loading its state.
+            for name, param in self.unwrap_dist_model(self.model).named_parameters():
+                if matches_any(name, self.phase.transition.fade_out):
+                    param.requires_grad_(False)
+            self._phase_transition_done = True
+        if self.phase is not None:
+            self._phase_updates = int(checkpoint.get("phase_updates", 0))
 
         # Initialize the optimizer using the property
         optimizer = self.optimizer

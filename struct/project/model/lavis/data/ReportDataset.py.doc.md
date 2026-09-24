@@ -2,6 +2,11 @@
 > Status: ✅ ACTIVE — ★
 > Last verified against source: 2026-08-13
 
+⚠ **Cập nhật 2026-09-24 (D-020):** khi `encoders.swin` bật với backend
+`medclip`, `_row_visual` thêm `swin_image` = `medclip_preprocess(ảnh gốc)`
+(không augmentation, không lấy từ tensor BioViL); view phụ thành
+`aux_swin_image`; collater pad mọi khóa `aux_*_image` / `aux_*_feat`.
+
 # `ReportDataset.py`
 
 ## Purpose

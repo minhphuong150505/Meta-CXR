@@ -2,6 +2,12 @@
 > Status: 🟡 CONDITIONAL
 > Last verified against source: 2026-08-12
 
+⚠ **Cập nhật 2026-09-24 (D-020):** `--anchor-only` (giữ study sampling: đúng
+các anchor mà run `multi_view: false` đọc — cache pha 1a, ~158 GB cho train+val),
+`--truncate N` (smoke), `--min-free-gb` (ước tính dung lượng từ batch đầu và
+DỪNG trước khi ghi nếu không đủ chỗ), Swin MedCLIP đọc `swin_image` qua
+`model._swin_input`, `device` cấu hình được.
+
 # `pretraining/precompute_features.py`
 
 ## Purpose

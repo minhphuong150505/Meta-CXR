@@ -142,6 +142,7 @@ class BaseTask:
         accum_grad_iters=1,
         max_grad_norm=1.0,
         on_sync_step=None,
+        pre_backward=None,
     ):
         return self._train_inner_loop(
             epoch=epoch,
@@ -157,6 +158,7 @@ class BaseTask:
             accum_grad_iters=accum_grad_iters,
             max_grad_norm=max_grad_norm,
             on_sync_step=on_sync_step,
+            pre_backward=pre_backward,
         )
 
     def train_iters(
@@ -207,6 +209,7 @@ class BaseTask:
         accum_grad_iters=1,
         max_grad_norm=1.0,
         on_sync_step=None,
+        pre_backward=None,
     ):
         """
         An inner training loop compatible with both epoch-based and iter-based training.
@@ -336,6 +339,15 @@ class BaseTask:
                         optimizer.zero_grad(set_to_none=True)
                         window_had_nonfinite = False
                     continue
+
+                # Measurement-only hook (phase 1c gradient interference): it may
+                # call torch.autograd.grad with retain_graph=True, which leaves
+                # .grad untouched, so the real update below is unaffected.
+                if pre_backward is not None and i == window_start:
+                    try:
+                        pre_backward(i // accum_grad_iters, loss_dict, model)
+                    except Exception:
+                        logging.exception("pre_backward hook failed at iter %d", i)
 
                 if use_grad_scaler:
                     scaler.scale(scaled_loss).backward()

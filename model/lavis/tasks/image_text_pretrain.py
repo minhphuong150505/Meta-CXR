@@ -65,7 +65,16 @@ class ImageTextPretrainTask(BaseTask):
             else "f1_positive_macro"
         )
         probability_metrics = {"macro_auprc", "macro_auroc"}
-        collect_predictions = save_predictions or selection_metric in probability_metrics
+        # Phase schedules also ask for study_presence metrics every scored epoch
+        # (13- and 14-label macros), which need the collected predictions.
+        report_study_presence = bool(
+            run_cfg.get("report_study_presence", False) if run_cfg is not None else False
+        )
+        collect_predictions = (
+            save_predictions
+            or selection_metric in probability_metrics
+            or report_study_presence
+        )
         collected_logits = []
         collected_labels = []
         collected_keys = []
@@ -287,10 +296,41 @@ class ImageTextPretrainTask(BaseTask):
                 ):
                     stats[key] = float(report.aggregates[key])
 
+            if report_study_presence:
+                stats.update(self._study_presence_stats(predictions, run_cfg))
+
             if save_predictions:
                 self._save_predictions(predictions)
 
         return stats
+
+    @staticmethod
+    def _study_presence_stats(predictions, run_cfg):
+        """``sp_*``: study_presence framing, q_pos score, thresholds at 0.5.
+
+        Reported for the 12-label primary macro and the 13-/14-label views, so a
+        phase's classification can be followed epoch by epoch without an offline
+        pass. Threshold-free AUROC/AUPRC are the numbers to compare; F1 at a flat
+        0.5 is indicative only.
+        """
+        from training.evaluation.classification_metrics import evaluate_classification
+        from training.evaluation.label_framing import apply_framing
+
+        framed = apply_framing(predictions, "study_presence", "conditional_positive")
+        report = evaluate_classification(
+            framed,
+            uncertain_policy=str(run_cfg.get("uncertain_policy", "three_class")),
+            include_meta_labels=False,
+        )
+        out = {}
+        for key, value in report.aggregates.items():
+            base = key.rsplit("_", 1)[0] if key.endswith(("_13labels", "_14labels")) else key
+            if base in {
+                "macro_auroc", "macro_auprc", "positive_macro_f1",
+                "positive_macro_precision", "positive_macro_recall", "macro_specificity",
+            }:
+                out[f"sp_{key}"] = float(value)
+        return out
 
     @staticmethod
     def _build_predictions(logits_chunks, label_chunks, keys, mention_chunks=None):

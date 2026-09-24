@@ -58,6 +58,22 @@ def parse_args():
     parser.add_argument("--splits", nargs="+", default=["train", "val"],
                         help="dataset splits to precompute (default: train val).")
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument(
+        "--anchor-only", action="store_true",
+        help="cache one anchor image per study instead of every image row. "
+             "Enough for a run with model.multi_view=false (phase 1a); about 60%% "
+             "of the full size.",
+    )
+    parser.add_argument(
+        "--truncate", type=int, default=None,
+        help="smoke only: cache the first N samples of each split, in dataset "
+             "order -- the same studies a run with run.truncate_*=N reads.",
+    )
+    parser.add_argument(
+        "--min-free-gb", type=float, default=10.0,
+        help="refuse to start a split unless the estimated size plus this much "
+             "stays free on the output filesystem.",
+    )
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument(
         "--options", nargs="+", default=[],
@@ -67,7 +83,7 @@ def parse_args():
 
 
 @torch.no_grad()
-def extract_raw_features(model, image, enabled):
+def extract_raw_features(model, image, enabled, swin_image=None):
     """Return {encoder: raw frozen output} for the enabled encoders.
 
     Matches blip2_qformer._encode_image_streams exactly, but stops BEFORE the
@@ -83,14 +99,40 @@ def extract_raw_features(model, image, enabled):
     if enabled.get("pubmedclip"):
         out["pubmedclip"] = model.pubmedclip(image, apply_aug=False)[0]
     if enabled.get("swin"):
-        out["swin"] = model.swin(image)
+        # MedCLIP Swin reads its own 224x224 input, never the BioViL tensor.
+        out["swin"] = model.swin(model._swin_input(image, swin_image))
     if enabled.get("raddino"):
         out["raddino"] = model.raddino(image)
     return out
 
 
-def precompute_split(model, dataset, split, output_dir, enabled, batch_size, num_workers):
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+def estimate_bytes(num_rows, shapes):
+    """float16 bytes for ``num_rows`` rows of every ``(P, D)`` in ``shapes``."""
+    return int(num_rows) * sum(int(p) * int(d) * 2 for p, d in shapes.values())
+
+
+def check_free_space(output_dir, needed_bytes, min_free_gb):
+    """Raise before writing anything if the cache would not fit."""
+    import shutil
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    free = shutil.disk_usage(output_dir).free
+    margin = int(min_free_gb * 1e9)
+    print(f"cache estimate {needed_bytes / 1e9:.1f} GB, free {free / 1e9:.1f} GB "
+          f"on {output_dir} (keeping {min_free_gb:.0f} GB spare)")
+    if needed_bytes + margin > free:
+        raise SystemExit(
+            f"ABORT: cache needs {needed_bytes / 1e9:.1f} GB + {min_free_gb:.0f} GB "
+            f"spare but only {free / 1e9:.1f} GB is free on {output_dir}"
+        )
+
+
+def precompute_split(model, dataset, split, output_dir, enabled, batch_size, num_workers,
+                     min_free_gb=10.0, device="cuda"):
+    loader = DataLoader(
+        dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers,
+        collate_fn=getattr(dataset, "collater", None),
+    )
     n = len(dataset)
 
     memmaps = {}      # encoder -> np.memmap, allocated lazily on the first batch
@@ -98,10 +140,16 @@ def precompute_split(model, dataset, split, output_dir, enabled, batch_size, num
     cursor = 0
 
     for batch in tqdm(loader, total=len(loader), desc=f"precompute {split}"):
-        feats = extract_raw_features(model, batch["image"].cuda(), enabled)
+        swin_image = batch.get("swin_image")
+        feats = extract_raw_features(
+            model, batch["image"].to(device), enabled,
+            swin_image=None if swin_image is None else swin_image.to(device),
+        )
         b = len(batch["dicom_id"])
 
         if not memmaps:  # first batch: now we know (P, D) for each encoder
+            shapes = {enc: tuple(f.shape[1:]) for enc, f in feats.items()}
+            check_free_space(output_dir, estimate_bytes(n, shapes), min_free_gb)
             for enc, feat in feats.items():
                 p, d = feat.shape[1], feat.shape[2]
                 enc_dir = Path(output_dir) / enc
@@ -155,7 +203,10 @@ def main():
     # Training samples one anchor per study, but its auxiliary DICOM must also
     # be present in every cache. Switch only dataset construction to image-row
     # mode after the model has consumed its multi-view configuration.
-    OmegaConf.update(cfg.config, "model.data.study_sampling", False, merge=False)
+    # --anchor-only keeps study sampling, i.e. exactly the anchors a
+    # multi_view=false run reads.
+    if not args.anchor_only:
+        OmegaConf.update(cfg.config, "model.data.study_sampling", False, merge=False)
     OmegaConf.update(cfg.config, "model.multi_view", False, merge=False)
     OmegaConf.update(
         cfg.config,
@@ -167,11 +218,11 @@ def main():
     for split in args.splits:
         dataset = MIMIC_CXR_Dataset(
             vis_processor=None, text_processor=None,
-            vis_root=VIS_ROOT, split=split, cfg=cfg, truncate=None,
+            vis_root=VIS_ROOT, split=split, cfg=cfg, truncate=args.truncate,
         )
         precompute_split(
             model, dataset, split, args.output_dir, enabled,
-            args.batch_size, args.num_workers,
+            args.batch_size, args.num_workers, min_free_gb=args.min_free_gb,
         )
 
     print(f"All features written to {args.output_dir}")

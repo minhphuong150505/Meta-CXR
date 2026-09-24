@@ -50,6 +50,7 @@ from model.lavis.data.mimic_cxr_utils import (
 # ClassificationLoss keeps only ``labels_i >= 0`` and the eval confusion matrix
 # keeps only ``labels >= 0``. -100 matches the torch ignore_index convention and
 # still fits int8.
+from vision_encoders.swin.medclip_swin import medclip_preprocess  # noqa: E402
 from model.lavis.data.chexpert_labels import (  # noqa: E402
     IGNORE_LABEL,
     attach_chexpert_labels,
@@ -529,6 +530,17 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         # Optional explanation masks.  The JSON index is cheap to load here;
         # the .npy memmap itself is opened lazily after DataLoader workers fork.
         self._init_explanation_mask_cache(cfg)
+
+        # MedCLIP Swin reads its OWN input: the raw radiograph padded to square,
+        # 224x224, MedCLIP-normalised (vision_encoders/swin/medclip_swin.py).
+        # It is never derived from the BioViL tensor, and it is not augmented:
+        # the paper preprocesses each frozen encoder its own way.
+        model_cfg = cfg.model_cfg
+        swin_cfg = model_cfg.get("swin", {}) or {}
+        encoders_cfg = model_cfg.get("encoders", {}) or {}
+        self.emit_swin_image = bool(encoders_cfg.get("swin", False)) and (
+            str(swin_cfg.get("backend", "hf")).lower() == "medclip"
+        )
 
         # Optional precomputed frozen-encoder feature cache.
         self._init_feature_cache(cfg)
@@ -1011,6 +1023,8 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         out = {"image_path": str(image_path)}
         if self.feature_cache is None:
             image = self.load_image(Path(image_path))
+            if self.emit_swin_image:
+                out["swin_image"] = medclip_preprocess(image)
             if explanation_mask is None:
                 out["image"] = self.optical_trans(self.geometric_trans(image))
             else:
@@ -1189,6 +1203,8 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             sample["aux_view_ids"] = list(study["aux_view_ids"])
             if self.feature_cache is None:
                 sample["aux_image"] = [a["image"] for a in aux_visuals]
+                if self.emit_swin_image:
+                    sample["aux_swin_image"] = [a["swin_image"] for a in aux_visuals]
             else:
                 for enc in self.feature_cache:
                     sample[f"aux_{enc}_feat"] = [a[f"{enc}_feat"] for a in aux_visuals]
@@ -1208,7 +1224,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
 
         aux_keys = [
             k for k in samples[0]
-            if k == "aux_image" or (k.startswith("aux_") and k.endswith("_feat"))
+            if k.startswith("aux_") and (k.endswith("_image") or k.endswith("_feat"))
         ]
         skip = set(aux_keys) | {"aux_view_ids"}
         batch = super().collater(
@@ -1230,7 +1246,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         batch["aux_view_ids"] = aux_view_ids
 
         for key in aux_keys:
-            anchor_key = "image" if key == "aux_image" else key[len("aux_"):]
+            anchor_key = key[len("aux_"):]  # aux_image -> image, aux_swin_image -> swin_image
             template = samples[0][anchor_key]
             if n_max == 0:
                 batch[key] = torch.zeros(

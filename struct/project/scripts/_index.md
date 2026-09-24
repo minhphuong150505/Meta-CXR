@@ -22,6 +22,9 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `vm_preflight.py` (202) | [📄](vm_preflight.py.doc.md) | 🧰 | Kiểm tra CUDA, RAM, disk, shm, path, HF auth. **Không tải weight, không download** |
 | `train_healthcheck.sh` | [📄](train_healthcheck.sh.doc.md) | 🧰 | Monitor chỉ đọc Stage 1/2; exit 0/2/3/4 cho OK/WARN/ALERT/IDLE |
 | `check_notebook_privacy.py` (363) | [📄](check_notebook_privacy.py.doc.md) | ✅ ★ | Pre-commit hook chặn notebook mang dữ liệu MIMIC vào Git |
+| `run_stage1_phases.sh` | [📄](run_stage1_phases.sh.doc.md) | ✅ | Chạy nối pha 1a → 1b → 1c (D-020): dựng cache anchor, dừng ở gate ITC |
+| `phase_report.py` | [📄](phase_report.py.doc.md) | ✅ CPU | Bảng gate/phân loại/nhiễu gradient của một run 3 pha (mục H) |
+| `make_medclip_preprocess_reference.py` | — | 🔬 | Sinh fixture tiền xử lý MedCLIP dưới transformers 4.24 (venv riêng; ảnh tổng hợp) |
 | `check_itc_gate.py` (305) | [📄](check_itc_gate.py.doc.md) | 🔬 | Cổng ITC: ITC đã thoát chance chưa, trước khi đốt ~33 h GPU. Exit 1 khi trượt |
 
 ### Evaluation

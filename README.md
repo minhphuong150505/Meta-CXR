@@ -478,6 +478,39 @@ cp configs/env_config.yaml.example configs/env_config.yaml
 
 `image_path` trong processed CSV là đường dẫn tương đối dạng `files/p1X/.../<dicom>.jpg` và được nối với `mimic_cxr_jpg_root`; không đổi nó thành đường dẫn tuyệt đối.
 
+### META-Former 3 pha theo bài báo (2026-09-24)
+
+Stage 1 nay học biểu diễn theo **3 pha như bài báo META-CXR** (nguồn là bài
+báo, không phải code gốc vốn comment toàn bộ ITC/ITM/ITG):
+
+| pha | train | loss | độ dài |
+|---|---|---|---|
+| 1a | Q-Former (query, image + text tower), `vision_proj`, `text_proj`, `itm_head`, `temp`, projection chung | ITC + ITM + LM (ITG) | ≤ 4 epoch, trên cache đặc trưng; cổng ITC sau 2 epoch |
+| 1b | MHCAC mở dần, META-Former đóng dần (10% đầu pha) + adapter/fusion | CE + 0.3·contrastive + 0.7·orth + 0.3·sparsity + MPC + view-consistency | 5 epoch, LR 5e-5→2e-4→1e-5 |
+| 1c | tất cả + projection head của encoder | loss 1b + 1.0·(ITC + ITM + LM) | 1 epoch; đo nhiễu gradient mỗi 200 update |
+
+Cách chạy: `ROOT=$HOME/<run> bash scripts/run_stage1_phases.sh` (mỗi pha một
+lần `pretraining.train --options run.phase=<pha>`). Tổng hợp:
+`python scripts/phase_report.py --root <ROOT>`.
+
+Đi kèm, theo bài báo: **Swin là MedCLIP Swin-Tiny** (50 token, tiền xử lý
+riêng: pad vuông → 224 → mean/std MedCLIP; `ChayanM/SwinV2-GPT2_Mimic` chỉ còn
+cho ablation vì không rõ dữ liệu train), **mask 10% token mỗi encoder**,
+**MHCAC một nhánh** (bỏ teacher/student; text có mask Bernoulli từng phần tử ở
+2/6 layer đầu, chỉ lúc train), ITC label smoothing 0.1, bỏ queue ITC.
+
+⚠ **Trạng thái:** mới smoke (2.000 study, 1 epoch mỗi pha). Trên card 16 GB,
+pha 1a **OOM ngay iteration đầu ở batch 32, 24 và 16**; chạy được ở batch 8
+(`max mem` 12.456 MiB, 0,366 s/it). Pha 1c OOM ở batch 16 × 4; chạy được ở
+batch 8 × 8 nhưng chạm **15.043 MiB (97% card)**. Pha 1b ở 16 × 4: 8.888 MiB.
+Chưa có run đầy đủ — chờ người dùng quyết cách xử lý batch (ITC ở batch 8 là
+đúng điều từng cho kết quả ngẫu nhiên). Xem
+`docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
+
+⚠ **Hạn chế:** MedCLIP được pretrain trên MIMIC-CXR + CheXpert; bài MedCLIP nói
+dùng "training split" nhưng bảng dữ liệu của họ ghi 377.111 ảnh (cả bộ) — không
+kiểm chứng được split test đã bị loại. Bài META-CXR gốc dùng đúng encoder này.
+
 ### Ngữ nghĩa ô CheXpert trống — `model.mhcac.blank_label_policy` (2026-09-24)
 
 ⚠ **Đảo ngược quyết định 2026-08-14.** `mimic_cxr_full.yaml` nay đặt

@@ -42,11 +42,13 @@ from mhcac.loss import (
     MultiPositiveContrastiveLoss,
     build_classification_losses,
     mention_gate_is_trained,
+    smoothed_cross_entropy,
     mention_marginal_log_probs,
     soft_target_kl_loss,
     view_consistency_loss,
 )
 from mhcac.view_fusion import ViewFusionModule, real_aux_rows, scatter_aux_rows
+from vision_encoders.feature_mask import mask_aux_tokens, mask_encoder_tokens
 
 chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
                               "Cardiomegaly", "Lung Opacity",
@@ -162,6 +164,7 @@ class Blip2Qformer(Blip2Base):
         swin_pretrained=True,
         swin_frozen=True,
         swin_normalize=None,
+        swin_weights_path=None,
         use_raddino=False,
         raddino_model_name="microsoft/rad-dino",
         raddino_frozen=True,
@@ -196,6 +199,11 @@ class Blip2Qformer(Blip2Base):
         itc_queue_size=1024,
         itc_temp=0.07,
         itc_temp_learnable=True,
+        itc_label_smoothing=0.0,
+        feature_mask_ratio=0.0,
+        mhcac_text_guidance="teacher_student",
+        mhcac_layer_order="text_first",
+        mhcac_text_mask_mode="report",
     ):
         super().__init__()
 
@@ -265,6 +273,35 @@ class Blip2Qformer(Blip2Base):
         )
 
         self.max_txt_len = max_txt_len
+        # ITC label smoothing, spread over the VALID candidates only (see
+        # mhcac.loss.smoothed_cross_entropy). 0 reproduces every earlier run.
+        self.itc_label_smoothing = float(itc_label_smoothing)
+        if not 0.0 <= self.itc_label_smoothing < 1.0:
+            raise ValueError("itc_label_smoothing must be in [0, 1)")
+        # Paper: "we randomly mask 10% of the features from each encoder".
+        # Training only, per encoder, per sample. 0 disables it.
+        self.feature_mask_ratio = float(feature_mask_ratio)
+        if not 0.0 <= self.feature_mask_ratio < 1.0:
+            raise ValueError("feature_mask_ratio must be in [0, 1)")
+        # How report text reaches MHCAC during training:
+        #   teacher_student  a text-reading teacher distilled into an image-only
+        #                    student (this repo, 2026-08 .. 2026-09-24)
+        #   single_path      the paper: ONE MHCAC whose first layers attend the
+        #                    masked report while training, and nothing at
+        #                    inference
+        if mhcac_text_guidance not in ("teacher_student", "single_path"):
+            raise ValueError(
+                "mhcac_text_guidance must be 'teacher_student' or 'single_path', "
+                f"got {mhcac_text_guidance!r}"
+            )
+        self.mhcac_text_guidance = mhcac_text_guidance
+        if mhcac_text_guidance == "single_path" and (
+            float(lambda_teacher_cls) > 0 or float(lambda_distill) > 0
+        ):
+            raise ValueError(
+                "mhcac_text_guidance 'single_path' has no teacher; set "
+                "lambda_teacher_cls and lambda_distill to 0"
+            )
         self.lambda_itc = float(lambda_itc)
         self.lambda_itm = float(lambda_itm)
         self.lambda_lm = float(lambda_lm)
@@ -359,6 +396,7 @@ class Blip2Qformer(Blip2Base):
                 frozen=swin_frozen,
                 backend=swin_backend,
                 normalize=swin_normalize,
+                weights_path=swin_weights_path,
             ).eval()
             if self.use_swin
             else None
@@ -489,6 +527,8 @@ class Blip2Qformer(Blip2Base):
             use_cnn=self.use_biovil,
             uncertain_policy=uncertain_policy,
             stream_layouts=self._native_stream_layouts(img_size),
+            layer_order=mhcac_layer_order,
+            text_mask_mode=mhcac_text_mask_mode,
         )
 
         # sqrt(negative prevalence / class prevalence), capped at 10, computed
@@ -553,21 +593,25 @@ class Blip2Qformer(Blip2Base):
         self.current_epoch = int(epoch)
 
 
-    def _create_mask(self, embeddings, mask_ratio=0.1):
-        num_patches = embeddings.size(1)
-        num_masked = int(mask_ratio * num_patches)
-        
-        # Create a mask of ones, then set a subset to zero
-        mask = torch.ones(num_patches, device=embeddings.device)
-        mask[:num_masked] = 0
-        mask = mask[torch.randperm(num_patches)]  # Shuffle to randomize masked positions
-        
-        # Expand mask to match embeddings' dimensions and apply
-        mask = mask.unsqueeze(0).expand(embeddings.size(0), -1)
-        mask = mask.unsqueeze(-1)  # Add dimension for broadcasting
-        return embeddings * mask  # Apply mask by element-wise multiplication
+    def _swin_input(self, image, swin_image, what="image"):
+        """The tensor the Swin stream reads: its own input for 'medclip'."""
+        if getattr(self.swin, "backend", None) == "medclip":
+            if swin_image is None:
+                raise ValueError(
+                    f"Swin backend 'medclip' needs the dataset's swin_{what} "
+                    "(MedCLIP-preprocessed 224x224); it must not read the "
+                    "BioViL tensor"
+                )
+            return swin_image
+        return image
 
-    def _encode_aux_streams(self, aux_image, cached=None, aux_mask=None):
+    def _mask_stream(self, tokens):
+        if self.training and self.feature_mask_ratio > 0:
+            return mask_encoder_tokens(tokens, self.feature_mask_ratio)
+        return tokens
+
+    def _encode_aux_streams(self, aux_image, cached=None, aux_mask=None,
+                            aux_swin_image=None):
         """[B, N, 3, H, W] -> dict[name, [B, N, P, D]] of raw frozen-encoder output.
 
         Batched (one encoder call over the real auxiliary images, not a per-image
@@ -607,6 +651,9 @@ class Blip2Qformer(Blip2Base):
             )
 
         flat = aux_image.flatten(0, 1)
+        swin_flat = (
+            aux_swin_image.flatten(0, 1) if aux_swin_image is not None else None
+        )
         keep = real_aux_rows(aux_mask, flat.shape[0], flat.device)
         if keep is not None and not bool(keep.any()):
             # No study in the batch has an auxiliary view. Returning without the
@@ -615,6 +662,9 @@ class Blip2Qformer(Blip2Base):
             # fewer encoder forward and one fewer fusion block, same result.
             return streams
         real = flat if keep is None else flat[keep]
+        swin_real = (
+            None if swin_flat is None else (swin_flat if keep is None else swin_flat[keep])
+        )
 
         def scatter(x):
             return scatter_aux_rows(x, keep, B, N)
@@ -633,7 +683,9 @@ class Blip2Qformer(Blip2Base):
                     self.pubmedclip(real, apply_aug=False)[0]
                 )
             if "swin" in need:
-                streams["swin"] = scatter(self.swin(real))
+                streams["swin"] = scatter(
+                    self.swin(self._swin_input(real, swin_real, "aux_image"))
+                )
             if "raddino" in need:
                 streams["raddino"] = scatter(self.raddino(real))
         return streams
@@ -692,7 +744,10 @@ class Blip2Qformer(Blip2Base):
         encoding. Swin and RadDINO do not expose their token count here, so
         those recipes keep the historical behaviour unchanged.
         """
-        if self.use_swin or self.use_raddino:
+        swin_layout_known = (
+            not self.use_swin or getattr(self.swin, "num_tokens", None) is not None
+        )
+        if not swin_layout_known or self.use_raddino:
             return None
         layouts = {}
         if self.use_biovil:
@@ -718,6 +773,12 @@ class Blip2Qformer(Blip2Base):
             layouts["pubmedclip"] = StreamLayout(
                 grid * grid + 1, num_global_tokens=1
             )
+        if self.use_swin:
+            # MedCLIP Swin: pooled vector + 7x7 patches, pooled first.
+            layouts["swin"] = StreamLayout(
+                int(self.swin.num_tokens),
+                num_global_tokens=1 if self.swin.has_global_token else 0,
+            )
         return layouts or None
 
     def _apply_encoder_ablation(self, shared):
@@ -728,9 +789,39 @@ class Blip2Qformer(Blip2Base):
             raise RuntimeError("active_encoders is inference-only; call model.eval()")
         return shared.without(*self.ablate_encoders)
 
+    def encode_samples(self, samples):
+        """The one call from a batch dict to SharedVisualTokens.
+
+        forward() and scripts/check_itc_gate.py both go through here, so the
+        gate scores exactly the tokens training produces.
+        """
+        cached = {
+            k: samples[f"{k}_feat"]
+            for k in ("biovil", "pubmedclip", "swin", "raddino")
+            if f"{k}_feat" in samples
+        }
+        aux_cached = {
+            k: samples[f"aux_{k}_feat"]
+            for k in ("biovil", "pubmedclip", "swin", "raddino")
+            if f"aux_{k}_feat" in samples
+        }
+        return self._encode_image_streams(
+            samples.get("image"),
+            apply_aug=False,
+            cached=cached,
+            aux_image=samples.get("aux_image"),
+            aux_cached=aux_cached,
+            aux_mask=samples.get("aux_mask"),
+            anchor_view_id=samples.get("anchor_view_id"),
+            aux_view_ids=samples.get("aux_view_ids"),
+            swin_image=samples.get("swin_image"),
+            aux_swin_image=samples.get("aux_swin_image"),
+        )
+
     def _encode_image_streams(self, image, apply_aug=False, cached=None,
                               aux_image=None, aux_cached=None, aux_mask=None,
-                              anchor_view_id=None, aux_view_ids=None):
+                              anchor_view_id=None, aux_view_ids=None,
+                              swin_image=None, aux_swin_image=None):
         # ``cached`` holds raw frozen-encoder outputs (before ln_vision /
         # *_qformer_proj) precomputed by pretraining/precompute_features.py. When
         # present we skip the frozen encoder forward; the trainable projection
@@ -752,10 +843,18 @@ class Blip2Qformer(Blip2Base):
         ) or any(v is not None and v.shape[1] > 0 for v in (aux_cached or {}).values())
         fuse_on = self.multi_view and self.view_fusion is not None
         aux_streams = (
-            self._encode_aux_streams(aux_image, cached=aux_cached, aux_mask=aux_mask)
+            self._encode_aux_streams(
+                aux_image, cached=aux_cached, aux_mask=aux_mask,
+                aux_swin_image=aux_swin_image,
+            )
             if fuse_on and has_aux_input
             else {}
         )
+        if self.training and self.feature_mask_ratio > 0:
+            aux_streams = {
+                name: mask_aux_tokens(tokens, self.feature_mask_ratio)
+                for name, tokens in aux_streams.items()
+            }
         # The encoder forward above runs under torch.no_grad(); the adapter must
         # not. Applying it here is what lets the auxiliary side carry gradient.
         aux_streams = {
@@ -769,7 +868,7 @@ class Blip2Qformer(Blip2Base):
                     image.shape[0], -1, VISUAL_DIM
                 )
             )
-            cnn_raw = self._adapt("biovil", cnn_raw)
+            cnn_raw = self._adapt("biovil", self._mask_stream(cnn_raw))
             self._stash_prefusion("biovil", cnn_raw, aux_streams)
             cnn_raw = self._fuse("biovil", cnn_raw, aux_streams, aux_mask,
                                  anchor_view_id, aux_view_ids)
@@ -782,7 +881,7 @@ class Blip2Qformer(Blip2Base):
                 vit_patches = cached["pubmedclip"]
             else:
                 vit_patches, _ = self.pubmedclip(image, apply_aug=apply_aug)
-            vit_patches = self._adapt("pubmedclip", vit_patches)
+            vit_patches = self._adapt("pubmedclip", self._mask_stream(vit_patches))
             self._stash_prefusion("pubmedclip", vit_patches, aux_streams)
             vit_patches = self._fuse("pubmedclip", vit_patches, aux_streams,
                                      aux_mask, anchor_view_id, aux_view_ids)
@@ -791,8 +890,12 @@ class Blip2Qformer(Blip2Base):
             raw_streams["pubmedclip"] = vit_patches
 
         if self.use_swin:
-            swin_patches = cached["swin"] if "swin" in cached else self.swin(image)
-            swin_patches = self._adapt("swin", swin_patches)
+            swin_patches = (
+                cached["swin"]
+                if "swin" in cached
+                else self.swin(self._swin_input(image, swin_image))
+            )
+            swin_patches = self._adapt("swin", self._mask_stream(swin_patches))
             self._stash_prefusion("swin", swin_patches, aux_streams)
             raw_streams["swin"] = self._fuse(
                 "swin", swin_patches, aux_streams, aux_mask, anchor_view_id, aux_view_ids
@@ -800,7 +903,7 @@ class Blip2Qformer(Blip2Base):
 
         if self.use_raddino:
             raddino_patches = cached["raddino"] if "raddino" in cached else self.raddino(image)
-            raddino_patches = self._adapt("raddino", raddino_patches)
+            raddino_patches = self._adapt("raddino", self._mask_stream(raddino_patches))
             self._stash_prefusion("raddino", raddino_patches, aux_streams)
             raddino_patches = self._fuse("raddino", raddino_patches, aux_streams,
                                          aux_mask, anchor_view_id, aux_view_ids)
@@ -981,8 +1084,12 @@ class Blip2Qformer(Blip2Base):
             image_features.shape[0], device=image_features.device
         )
         loss_itc = 0.5 * (
-            F.cross_entropy(sim_i2t[valid_mask], targets[valid_mask])
-            + F.cross_entropy(sim_t2i[valid_mask], targets[valid_mask])
+            smoothed_cross_entropy(
+                sim_i2t[valid_mask], targets[valid_mask], self.itc_label_smoothing
+            )
+            + smoothed_cross_entropy(
+                sim_t2i[valid_mask], targets[valid_mask], self.itc_label_smoothing
+            )
         )
         # ITM needs raw images/token ids, which the lightweight ITC queue does
         # not retain, so hard-negative mining uses the current global batch.
@@ -1094,29 +1201,28 @@ class Blip2Qformer(Blip2Base):
             return zero
         return output.loss.sum() / token_count
 
-    def forward(self, samples):
-        image = samples.get("image")
-        text = samples["text_output"]
-        cached = {
-            k: samples[f"{k}_feat"]
-            for k in ("biovil", "pubmedclip", "swin", "raddino")
-            if f"{k}_feat" in samples
-        }
-        aux_cached = {
-            k: samples[f"aux_{k}_feat"]
-            for k in ("biovil", "pubmedclip", "swin", "raddino")
-            if f"aux_{k}_feat" in samples
-        }
-        shared_visual = self._encode_image_streams(
-            image,
-            apply_aug=False,
-            cached=cached,
-            aux_image=samples.get("aux_image"),
-            aux_cached=aux_cached,
-            aux_mask=samples.get("aux_mask"),
-            anchor_view_id=samples.get("anchor_view_id"),
-            aux_view_ids=samples.get("aux_view_ids"),
+    def needs_mhcac(self):
+        """True when any objective reads the MHCAC classifier."""
+        return any(
+            weight > 0
+            for weight in (
+                self.lambda_cls,
+                self.lambda_teacher_cls,
+                self.lambda_distill,
+                self.lambda_mhcac_contrastive,
+                self.lambda_orthogonality,
+                self.lambda_sparsity,
+                self.lambda_gate,
+                self.lambda_mention_conditioned_cls,
+                self.lambda_view_consistency,
+                self.lambda_explanation,
+                self.lambda_explanation_strong,
+            )
         )
+
+    def forward(self, samples):
+        text = samples["text_output"]
+        shared_visual = self.encode_samples(samples)
         image_embeds = shared_visual.tokens
         device = image_embeds.device
         batch_size = image_embeds.shape[0]
@@ -1145,7 +1251,18 @@ class Blip2Qformer(Blip2Base):
         needs_vision_language = (
             self.lambda_itc > 0 or self.lambda_itm > 0 or self.lambda_lm > 0
         )
-        needs_text_encoder = needs_vision_language or (
+        # MHCAC runs only when something reads it. Phase 1a trains the
+        # META-Former alone, so the classifier is skipped outright there
+        # instead of being run and multiplied by zero.
+        needs_mhcac = self.needs_mhcac()
+        # Paper, single path: MHCAC's first layers attend the report while
+        # training. Evaluation and inference never see text.
+        text_guided = (
+            needs_mhcac
+            and self.training
+            and self.mhcac_text_guidance == "single_path"
+        )
+        needs_text_encoder = needs_vision_language or text_guided or (
             self.lambda_teacher_cls > 0 or self.lambda_distill > 0
         )
 
@@ -1273,23 +1390,36 @@ class Blip2Qformer(Blip2Base):
                 )
 
         cam_streams = None
-        self.mhcac.capture_streams = capture_explanation
-        try:
-            student_logits, _, contrastive_loss, orth_loss, sparsity_loss, mention_logits = self.mhcac(
-                shared_visual,
-                text_embeddings=None,
-                labels=cls_labels,
-                sample_mask=classification_mask,
-            )
-        finally:
-            if capture_explanation:
-                cam_streams = self.mhcac._last_cam_streams
-            self.mhcac.capture_streams = False
-            self.mhcac._last_cam_streams = None
+        student_logits = mention_logits = None
+        contrastive_loss = orth_loss = sparsity_loss = zero
+        if needs_mhcac:
+            self.mhcac.capture_streams = capture_explanation
+            try:
+                (
+                    student_logits, _, contrastive_loss, orth_loss, sparsity_loss,
+                    mention_logits,
+                ) = self.mhcac(
+                    shared_visual,
+                    text_embeddings=(
+                        text_output.last_hidden_state if text_guided else None
+                    ),
+                    text_attention_mask=(
+                        text_tokens.attention_mask if text_guided else None
+                    ),
+                    labels=cls_labels,
+                    sample_mask=classification_mask,
+                    # Only studies with usable FINDINGS have a report to read.
+                    text_row_mask=generation_mask if text_guided else None,
+                )
+            finally:
+                if capture_explanation:
+                    cam_streams = self.mhcac._last_cam_streams
+                self.mhcac.capture_streams = False
+                self.mhcac._last_cam_streams = None
 
         loss_explanation = None
         if self.explanation_loss_fn is not None:
-            loss_explanation = student_logits.sum() * 0.0
+            loss_explanation = zero
             if capture_explanation and cam_streams:
                 selected_streams = {
                     name: value
@@ -1337,7 +1467,7 @@ class Blip2Qformer(Blip2Base):
         # beside it as `mention_marginal_log_probs`, never in place of it. See
         # the note below the loss call for why substituting the marginal here
         # pinned validation F1 at exactly 0.000.
-        loss_mention_conditioned = student_logits.sum() * 0.0
+        loss_mention_conditioned = zero
         if self.mention_conditioned_loss_fn is not None:
             mention_targets = samples.get("mention_targets")
             if mention_targets is None:
@@ -1379,13 +1509,13 @@ class Blip2Qformer(Blip2Base):
 
         cls_loss = self.cls_loss_fn(
             student_logits, cls_labels, sample_mask=classification_mask
-        ) if self.lambda_cls > 0 else student_logits.sum() * 0.0
+        ) if self.lambda_cls > 0 else zero
 
         # The teacher may read only a valid FINDINGS target.  The image-only
         # student remains the sole classification path exported at inference.
         teacher_mask = classification_mask & generation_mask
-        loss_teacher_cls = student_logits.sum() * 0.0
-        loss_distill = student_logits.sum() * 0.0
+        loss_teacher_cls = zero
+        loss_distill = zero
         if teacher_mask.any() and (
             self.lambda_teacher_cls > 0 or self.lambda_distill > 0
         ):
@@ -1472,7 +1602,7 @@ class Blip2Qformer(Blip2Base):
             + self.lambda_view_consistency * loss_view_consistency
             + self.lambda_mention_conditioned_cls * loss_mention_conditioned
         )
-        loss_gate = student_logits.sum() * 0.0
+        loss_gate = zero
         if self.lambda_gate > 0:
             mention_targets = samples.get("mention_targets")
             if mention_targets is None:
@@ -1885,6 +2015,7 @@ class Blip2Qformer(Blip2Base):
             else cfg_bool(swin_normalize_raw, default=True)
         )
 
+        swin_weights_path = swin_cfg.get("weights_path", None)
         use_raddino = cfg_bool(encoders.get("raddino", cfg.get("use_raddino", False)))
         raddino_cfg = cfg.get("raddino", {}) or {}
         raddino_model_name = cfg.get(
@@ -1939,6 +2070,8 @@ class Blip2Qformer(Blip2Base):
         itc_queue_size = int(loss_cfg.get("itc_queue_size", 1024))
         itc_temp = float(loss_cfg.get("itc_temp", 0.07))
         itc_temp_learnable = bool(loss_cfg.get("itc_temp_learnable", True))
+        itc_label_smoothing = float(loss_cfg.get("itc_label_smoothing", 0.0))
+        feature_mask_ratio = float(cfg.get("feature_mask_ratio", 0.0))
 
         explanation_cfg_raw = cfg.get("explanation", {}) or {}
         explanation_streams = explanation_cfg_raw.get("streams", None)
@@ -1969,6 +2102,10 @@ class Blip2Qformer(Blip2Base):
             class_weights = [list(weights) for weights in class_weights]
         cls_label_smoothing = float(mhcac_cfg.get("label_smoothing", 0.05))
         uncertain_policy = str(mhcac_cfg.get("uncertain_policy", "three_class"))
+        # Absent keys reproduce the historical MHCAC exactly.
+        mhcac_text_guidance = str(mhcac_cfg.get("text_guidance", "teacher_student"))
+        mhcac_layer_order = str(mhcac_cfg.get("layer_order", "text_first"))
+        mhcac_text_mask_mode = str(mhcac_cfg.get("text_mask", "report"))
 
         model = cls(
             vit_model=vit_model,
@@ -1988,6 +2125,7 @@ class Blip2Qformer(Blip2Base):
             swin_pretrained=swin_pretrained,
             swin_frozen=swin_frozen,
             swin_normalize=swin_normalize,
+            swin_weights_path=swin_weights_path,
             use_raddino=use_raddino,
             raddino_model_name=raddino_model_name,
             raddino_frozen=raddino_frozen,
@@ -2022,6 +2160,11 @@ class Blip2Qformer(Blip2Base):
             itc_queue_size=itc_queue_size,
             itc_temp=itc_temp,
             itc_temp_learnable=itc_temp_learnable,
+            itc_label_smoothing=itc_label_smoothing,
+            feature_mask_ratio=feature_mask_ratio,
+            mhcac_text_guidance=mhcac_text_guidance,
+            mhcac_layer_order=mhcac_layer_order,
+            mhcac_text_mask_mode=mhcac_text_mask_mode,
         )
 
         # Optional inference-only ablation. ``active_encoders`` names streams

@@ -27,6 +27,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-017](#d-017--dừng-explanation-aware-loss-trong-production) | Dừng explanation-aware loss | ✅ Confirmed | 2026-08-17 |
 | [D-018](#d-018--ô-chexpert-trống-là-âm-tính-đảo-ngược-quyết-định-2026-08-14) | Ô CheXpert trống → âm tính (`blank_label_policy`) | ✅ Confirmed (quyết định của user) | 2026-09-24 |
 | [D-019](#d-019--tắt-mention-gate-phương-án-a) | Tắt mention gate; No Finding vào head P/N/U | ✅ Confirmed (quyết định của user) | 2026-09-24 |
+| [D-020](#d-020--meta-former-3-pha-theo-bài-báo-medclip-swin-mhcac-một-nhánh) | META-Former 3 pha theo bài báo; MedCLIP Swin; MHCAC một nhánh; bật lại ITC/ITM/LM | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
 
 ---
 
@@ -1011,4 +1012,77 @@ Với checkpoint Stage-1 train dưới D-019, các đường này đọc head **
 `blip2_models/blip2_qformer.py.doc.md`, `tasks/image_text_pretrain.py.doc.md`,
 `training/evaluation/label_framing.py.doc.md`,
 `training/evaluation/classification_metrics.py.doc.md`.
+
+---
+
+## D-020 — META-Former 3 pha theo bài báo; MedCLIP Swin; MHCAC một nhánh
+
+**Ngày:** 2026-09-24 · **Status:** ✅ Confirmed (quyết định của user). **Chỉ
+mới smoke trên GPU, chưa có run đầy đủ.** Plan và báo cáo:
+`docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
+
+**Nguồn sự thật là BÀI BÁO** (Edirisinghe et al., IEEE Access 2025, mục
+"Model pre-training and fine tuning"), không phải code
+`DasithEdirisinghe/META-CXR` (đã comment toàn bộ ITC/ITM/ITG ở mọi commit và
+có thể đã đổi trong lúc train).
+
+**Bật lại ITC/ITM/LM — ở pha 1a và 1c.** Lịch sử bật/tắt 4 lần trước (mọi lần
+ra mức ngẫu nhiên) ghi trong `CLAUDE.md`. Lý do mới để thử lại, của user: tách
+pha + encoder đóng băng → cache đặc trưng → batch 32 ở pha 1a (trước là 8–16),
+và queue 256 phần tử (lấy từ encoder đang train) bị bỏ như BLIP-2. Cổng dừng:
+sau 2 epoch pha 1a, `delta_nats >= 0.10` **và** R@5 vượt ngẫu nhiên theo kiểm
+định nhị thức (alpha 0.01) cả hai chiều; không đạt → dừng cả lịch.
+
+**Các lựa chọn của user trong quyết định này:**
+
+| mục | chọn |
+|---|---|
+| Swin | MedCLIP Swin-Tiny (`microsoft/swin-tiny-patch4-window7-224` + weights MedCLIP), 50 token (pooled + 7x7), đóng băng mọi pha. `ChayanM/SwinV2-GPT2_Mimic` chỉ giữ cho ablation: model card ghi "unknown dataset", ~500 bước captioning |
+| Projection chung (trước Q-Former) | train ở pha 1a |
+| Độ dài | theo epoch: 1a ≤ 4, 1b 5, 1c 1. "20.000 bước" của bài báo KHÔNG giữ được ở các con số này |
+| ITC | label smoothing 0.1 (chỉ trải trên ứng viên hợp lệ), tắt queue |
+| Tiền xử lý MedCLIP | theo `MedCLIPProcessor`/bài báo: pad vuông → 224 → mean/std MedCLIP |
+| Dropout pha 1b | 0.2 — MHCAC vốn đã dựng layer với 0.2 (báo cáo trước ghi 0.1 là SAI) |
+| Cổng dừng | R@1/R@5 + `delta_nats` |
+| MHCAC | một nhánh như bài báo; bỏ teacher/student; mask text Bernoulli từng phần tử, không nhân bù (Eq. 3); thứ tự self → text → image (Eq. 2, 4, 5); text ở 2/6 layer đầu, chỉ lúc train |
+| Chuyển pha 1b | LR MHCAC 0→1, META-Former 1→0 trong 10% đầu pha, rồi đóng băng META-Former |
+
+**Cài đặt.** `pretraining/phases.py` (lịch pha, thuần Python), runner
+(`param group` theo vai trò, hook chuyển pha, gate mỗi epoch, đo nhiễu gradient
+pha 1c, `checkpoint_<phase>.pth` giữ mọi tham số từng được train),
+`scripts/run_stage1_phases.sh` (mỗi pha một lần chạy, nối bằng checkpoint).
+Mỗi pha là một lần chạy riêng vì pha 1a đọc cache anchor, batch 32, không
+augmentation, còn 1b/1c đọc ảnh, multi-view — đổi dataset giữa chừng trong
+runner LAVIS quá rủi ro.
+
+**Lỗi kế thừa từ repo gốc:** `vision_encoders/medclip/medclip.py` unpack đầu
+ra của `MedCLIPVisionModelViT.forward` (MỘT tensor [B, 512]) thành
+`(pool, patches)` — tức là tách theo chiều batch; batch 2 lỗi ở bước concat,
+batch 3 lỗi ngay ở unpack. Không bao giờ ra được 49 token patch. Ghim bởi
+`tests/test_medclip_swin.py`. Backend `medclip` mới đọc thẳng HF `SwinModel`.
+
+**Hạn chế — rò rỉ dữ liệu của MedCLIP.** Bài MedCLIP (arXiv 2210.10163) viết
+"We use the training split" của MIMIC-CXR, nhưng Bảng 3 của chính bài liệt kê
+377.111 ảnh — cỡ TOÀN BỘ MIMIC-CXR, không phải split train; file
+`mimic-cxr-train-meta.csv` của họ không công bố. Không kiểm chứng được split
+test có bị loại hay không. Bài META-CXR gốc dùng đúng encoder này nên điều kiện
+so sánh như nhau.
+
+**Hạn chế — package `medclip` không chạy được với transformers 4.53.**
+`MedCLIPFeatureExtractor` truyền tham số theo vị trí, đã lệch (đo được:
+`rescale_factor` nhận mean, `image_mean` nhận `False`). Tiền xử lý được viết lại
+(`vision_encoders/swin/medclip_swin.py`) và ghim với đầu ra processor thật chạy
+dưới transformers 4.24.0 (fixture tổng hợp). `from_pretrained()` strict fail ở
+đúng 1 key text (`position_ids`); nhánh vision 231/231 key, 0 thiếu, 0 thừa,
+219/219 tensor khác bản ImageNet.
+
+**Evidence.** Test CPU trên host: 1164 passed, 2 skipped (snapshot có git).
+Smoke GPU: xem handoff.
+
+**Documentation impact.** Trang mới: `pretraining/phases.py`,
+`pretraining/itc_gate.py`, `vision_encoders/feature_mask.py`,
+`vision_encoders/swin/medclip_swin.py`, `scripts/run_stage1_phases.sh`,
+`scripts/phase_report.py`, `scripts/make_medclip_preprocess_reference.py`.
+Cập nhật: runner, `blip2_qformer`, `mhcac_12`, `ReportDataset`, `swin_encoder`,
+`precompute_features`, `check_itc_gate`, `image_text_pretrain`, `train.py`.
 

@@ -16,6 +16,11 @@ import wandb
 from omegaconf import OmegaConf
 import model.lavis.tasks as tasks
 from model.lavis.common.config import Config
+from pretraining.phases import (
+    apply_phase_to_config,
+    apply_trainable,
+    resolve_init_checkpoint,
+)
 from model.lavis.common.dist_utils import get_rank, is_main_process, init_distributed_mode
 from model.lavis.common.logger import setup_logger
 
@@ -68,6 +73,48 @@ def setup_seeds(config):
     cudnn.deterministic = True
 
 
+def prepare_phase_model(model, spec, cfg):
+    """Initialise from the previous phase and set requires_grad for this one."""
+    import logging
+
+    init_path = resolve_init_checkpoint(spec, cfg.run_cfg.get("phase_root", ""))
+    if init_path is not None:
+        if not init_path.is_file():
+            raise FileNotFoundError(
+                f"phase {spec.name} starts from {init_path}, which does not exist; "
+                "run the previous phase first"
+            )
+        state = torch.load(init_path, map_location="cpu")["model"]
+        result = model.load_state_dict(state, strict=False)
+        if result.unexpected_keys:
+            raise ValueError(
+                f"{init_path} holds {len(result.unexpected_keys)} tensors this model "
+                f"does not have, e.g. {result.unexpected_keys[:5]}; the phases were "
+                "built with different architectures"
+            )
+        logging.info(
+            "Phase %s initialised from %s: %d tensors loaded, %d left at their "
+            "own initialisation (e.g. %s)",
+            spec.name, init_path, len(state), len(result.missing_keys),
+            result.missing_keys[:5],
+        )
+    never = () if getattr(model, "itc_temp_learnable", True) else ("temp",)
+    extra = tuple(sorted(getattr(model, "encoder_finetune_param_names", ()) or ()))
+    if extra and not spec.unfreeze_encoder_blocks:
+        raise ValueError("encoder_finetune is on but this phase does not unfreeze encoder blocks")
+    if extra:
+        from dataclasses import replace
+
+        spec = replace(spec, trainable=spec.trainable + extra)
+    counts = apply_trainable(model, spec, never_train=never)
+    logging.info(
+        "Phase %s trainable: %s",
+        spec.name,
+        ", ".join(f"{k} {v / 1e6:.2f}M" for k, v in sorted(counts.items())),
+    )
+    model.phase_spec = spec
+
+
 def get_runner_class(cfg):
     runner_cls = registry.get_runner_class(cfg.run_cfg.get("runner", "runner_base"))
     return runner_cls
@@ -76,6 +123,9 @@ def get_runner_class(cfg):
 def main():
     registry.mapping['paths']['cache_root'] = '.'
     cfg = Config(parse_args())
+    # Three-phase schedule: merge run.phases.<run.phase> into the config before
+    # anything reads it. None for an unphased YAML (the historical recipe).
+    phase_spec = apply_phase_to_config(cfg.config, cfg.run_cfg.get("phase", None))
 
     job_id = now()
 
@@ -165,6 +215,8 @@ def main():
             )
 
     model = task.build_model(cfg)
+    if phase_spec is not None:
+        prepare_phase_model(model, phase_spec, cfg)
     runner = RunnerBase(
         cfg=cfg, job_id=job_id, task=task, model=model, datasets=datasets
     )

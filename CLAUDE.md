@@ -683,6 +683,47 @@ Stage 1 (representation + classification) and Stage 2 (report generation) are
 **deliberately decoupled**, and preserving that decoupling is the single most
 load-bearing design constraint in the repo.
 
+### ⚠⚠ Stage 1 is now THREE PHASES, as the paper trains it (2026-09-24, D-020)
+
+Source of truth: the paper's "Model pre-training and fine tuning" section, NOT
+the upstream code (which comments out ITC/ITM/ITG in every commit). Plan and
+record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
+
+- `run.phases` in `mimic_cxr_full.yaml`: **phase1a** (Q-Former + shared
+  projection, ITC+ITM+LM, MHCAC not run, anchor-only feature cache, batch 32,
+  ≤ 4 epochs, ITC gate every epoch and STOP after 2 if `delta_nats < 0.10` or
+  R@5 not above chance both ways), **phase1b** (MHCAC LR 0→1 and META-Former
+  1→0 over the first 10% of updates, then META-Former frozen; paper LR 5e-5 →
+  2e-4 → 1e-5, 5 epochs), **phase1c** (everything + projection heads,
+  `w_align = 1.0`, 1 epoch, gradient-interference measurement every 200
+  updates). One launch per phase: `scripts/run_stage1_phases.sh`.
+  `pretraining.train` on this YAML WITHOUT `run.phase` refuses to start.
+  Lengths are epochs (user decision): the paper's "20,000 steps" does not hold.
+- Checkpoints in a phased run keep every parameter any phase trains
+  (`pretraining.phases.checkpoint_keep`); the old rule dropped anything frozen,
+  which would have lost the Q-Former at the end of 1b.
+- **Swin is MedCLIP Swin-Tiny** (`model.swin.backend: medclip`,
+  `weights_path`), 50 tokens (pooled first), fed its own `swin_image` (pad to
+  square, 224, MedCLIP mean/std) from the dataset. With it BioViL and
+  PubMedCLIP keep their native layouts: **296 tokens** into both branches.
+  `ChayanM/SwinV2-GPT2_Mimic` (model card: "unknown dataset", ~500 captioning
+  steps) is an ablation path only. The `medclip` pip package cannot preprocess
+  under transformers 4.53 (positional args shifted); do not use it at runtime.
+- **MHCAC is one path** (`mhcac.text_guidance: single_path`,
+  `layer_order: self_first`, `text_mask: element`): teacher/student REMOVED,
+  `lambda_teacher_cls`/`lambda_distill` must be 0 (the model raises otherwise).
+- `feature_mask_ratio: 0.1`, `itc_label_smoothing: 0.1`, `itc_queue_size: 0`.
+- ⚠ **Smoke result (2,000 studies, 1 epoch per phase): phase 1a OOMs at
+  iteration 0 at batch 32, 24 AND 16** on the 16 GB card (inside ITM: 3×batch
+  sequences of 32 queries + 256 text tokens through the 12-layer Q-Former); it
+  runs at batch 8 (12,456 MiB, 0.366 s/it). Phase 1b at 16×4: 8,888 MiB,
+  0.274 s/it. Phase 1c OOMs at 16×4 and runs at 8×8 at **15,043 MiB -- 97% of
+  the card**, 0.454 s/it. No full run exists; the batch decision is the
+  user's (ITC at batch 8 is exactly what measured chance four times).
+- ⚠ MedCLIP was pretrained on MIMIC-CXR + CheXpert with a split that cannot be
+  verified (paper says "training split", its own table counts all 377,111
+  images). State it as a limitation.
+
 ### Stage 1 — `pretraining/train.py`
 
 Entrypoint registers LAVIS components via star imports, then hands off to the

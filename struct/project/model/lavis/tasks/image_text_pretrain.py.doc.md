@@ -2,6 +2,10 @@
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-20
 
+⚠ **Cập nhật 2026-09-24:** `run.report_study_presence` thêm các chỉ số
+`sp_*` (framing `study_presence`, điểm `q_pos`, ngưỡng 0.5) cho macro 12 nhãn,
+`_13labels`, `_14labels` mỗi epoch được chấm — dùng bởi lịch 3 pha (mục H).
+
 # `image_text_pretrain.py`
 
 ## Purpose
