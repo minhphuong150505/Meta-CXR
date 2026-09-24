@@ -2,6 +2,11 @@
 > Status: ✅ ACTIVE — ★ ENTRYPOINT
 > Last verified against source: 2026-08-12
 
+⚠ **Cập nhật 2026-09-24 (D-020):** `main()` gọi
+`phases.apply_phase_to_config` ngay sau khi đọc config, và `prepare_phase_model`
+sau khi dựng model: nạp `checkpoint_<pha trước>.pth` (strict=False; tensor lạ →
+lỗi), rồi `apply_trainable`; gắn `model.phase_spec` cho runner.
+
 # `pretraining/train.py`
 
 ## Purpose

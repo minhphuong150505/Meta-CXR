@@ -2,6 +2,22 @@
 > Status: ✅ ACTIVE — ★
 > Last verified against source: 2026-08-20
 
+⚠ **Cập nhật 2026-09-24 (D-020) — lịch 3 pha.** Khi model mang `phase_spec`
+(`pretraining/phases.py`): `optimizer` chỉ nhận tham số `requires_grad`, và ở
+pha có `transition` tách group theo vai trò (`...@fade_in` / `...@fade_out`)
+với `phase_lr_mult`; `_on_phase_update` (sau mỗi optimizer step) đặt hệ số
+0→1 / 1→0, hết `transition_steps` thì `_finish_transition` đóng băng
+`fade_out`, xóa group và state Adam của nó. `_save_checkpoint` giữ cả tham số
+mà pha nào đó train (`checkpoint_keep`); cuối pha ghi
+`checkpoint_<pha>.pth` vào output_dir và `run.phase_root`.
+`_run_phase_itc_gate` chạy gate ITC trên val mỗi epoch (`itc_gate.every_epoch`),
+ghi `itc_gate_epoch<N>.json`; trượt ở `stop_after_epochs` → `PHASE_GATE_FAILED`,
+dừng, KHÔNG ghi checkpoint pha. `_grad_interference_hook` (pha 1c, qua hook
+`pre_backward` của vòng train) ghi `grad_interference.jsonl`: cosine và
+‖g_align‖/‖g_cls‖ theo nhóm tham số, bằng `torch.autograd.grad(retain_graph=True)`
+— không đụng `.grad`. `validate` ghi thêm `phase_metrics.jsonl`. Resume sau
+khi chuyển pha xong: đóng băng lại `fade_out` trước khi dựng optimizer.
+
 # `runner_base.py`
 
 ## Purpose

@@ -2,6 +2,22 @@
 > Status: ✅ ACTIVE — ★ TRUNG TÂM STAGE 1
 > Last verified against source: 2026-08-13
 
+⚠ **Cập nhật 2026-09-24 (D-020):**
+- `encode_samples(samples)` — MỘT lệnh từ batch dict ra `SharedVisualTokens`,
+  dùng bởi `forward()` và gate ITC. Q-Former nhận `shared.tokens`, MHCAC nhận
+  `shared` — cùng một tensor (296 token khi Swin MedCLIP bật).
+- Swin backend `medclip`: đọc `swin_image` riêng (`_swin_input`, từ chối tensor
+  BioViL), `_native_stream_layouts` thêm `StreamLayout(50, global 1)` cho Swin,
+  nên BioViL/PubMedCLIP cũng giữ layout gốc.
+- `feature_mask_ratio`: mask 10% token mỗi encoder lúc train
+  (`vision_encoders/feature_mask.py`); `_create_mask` (chết) đã xóa.
+- `mhcac_text_guidance`: `single_path` (bài báo) truyền text Q-Former vào MHCAC
+  lúc train, `text_row_mask = generation_mask`; từ chối teacher đi kèm.
+  `teacher_student` giữ đường cũ.
+- `needs_mhcac()`: pha 1a bỏ qua MHCAC hoàn toàn (`classification_logits=None`).
+- ITC: `itc_label_smoothing` qua `mhcac.loss.smoothed_cross_entropy` (smoothing
+  chỉ trên ứng viên hữu hạn); queue 0 trong production.
+
 # `blip2_qformer.py`
 
 ## Purpose

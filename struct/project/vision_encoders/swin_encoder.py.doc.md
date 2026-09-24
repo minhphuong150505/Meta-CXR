@@ -2,6 +2,12 @@
 > Status: 🟡 CONDITIONAL — `encoders.swin: false` từ 2026-08-14
 > Last verified against source: 2026-08-12
 
+⚠ **Cập nhật 2026-09-24 (D-020):** backend `medclip` — MedCLIP Swin-Tiny,
+`forward([B,3,224,224])` → `[B,50,768]` (pooled + 49 patch), đặt `num_tokens=50`,
+`has_global_token=True` để `Blip2Qformer._native_stream_layouts` mô tả được
+stream này. Từ chối input không phải 224×224 (tức tensor BioViL 448) và từ
+chối `normalize: true`. Xem [medclip_swin.py](medclip_swin.py.doc.md).
+
 # `vision_encoders/swin/swin_encoder.py`
 
 ## Purpose

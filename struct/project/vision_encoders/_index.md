@@ -47,10 +47,12 @@ và có thể trôi dạt sang hai biểu diễn khác nhau.
 | `shared_visual_tokens.py` | [📄](shared_visual_tokens.py.doc.md) | ✅ ★ | → 1408 | `SharedVisualTokens`, `SharedVisualTokenProjector` |
 | `stream_adapter.py` | [📄](stream_adapter.py.doc.md) | 🟡 | giữ `D` | `StreamAdapter` (đường chính, identity ở init), `ContrastiveProjectionHead`, `pool_stream`. Lý do tồn tại: MPC từng có **gradient bằng 0** |
 | `pubmedclip/pubmed_clip.py` | [📄](pubmedclip.py.doc.md) | ✅ | 768 | Dựng với `project=False` — projector sở hữu phép chiếu |
-| `swin/swin_encoder.py` | [📄](swin_encoder.py.doc.md) | ✅ | `embed_dim` ⚠ runtime | `ChayanM/SwinV2-GPT2_Mimic` |
+| `swin/swin_encoder.py` | [📄](swin_encoder.py.doc.md) | ✅ | 768 (medclip) | Backend `medclip` (production, D-020) — MedCLIP Swin-Tiny, 50 token; backend `hf` + `ChayanM/SwinV2-GPT2_Mimic` chỉ còn cho ablation |
+| `swin/medclip_swin.py` | [📄](medclip_swin.py.doc.md) | ✅ | 768 | Tiền xử lý MedCLIP, nạp weights strict, ghép pooled + 49 patch |
+| `feature_mask.py` | [📄](feature_mask.py.doc.md) | ✅ | giữ `D` | Mask 10% token mỗi encoder lúc train (bài báo) |
 | `rad_dino/rad_dino_encoder.py` | [📄](rad_dino_encoder.py.doc.md) | 🟡 | `embed_dim` ⚠ runtime | `microsoft/rad-dino`; `raddino: false` ở **mọi** config |
 | `biovil_t/` (8 file) | — | 🕰 | — | **Bản sao.** Xem cảnh báo trên |
-| `medclip/medclip.py` | — | 🕰 | — | Import bị comment `blip2_qformer.py:30`, `:286` |
+| `medclip/medclip.py` | — | 🕰 ⚠ lỗi | — | Kế thừa từ repo gốc, KHÔNG dùng: unpack một tensor [B,512] thành (pool, patches). Ghim bởi `tests/test_medclip_swin.py` (D-020) |
 | `__init__.py` | — | ✅ | — | |
 
 ## Main responsibilities

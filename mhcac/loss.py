@@ -1010,3 +1010,21 @@ def build_classification_losses(
         else None
     )
     return cls_loss_fn, gate_loss_fn, mention_conditioned_loss_fn
+
+
+def smoothed_cross_entropy(logits, targets, label_smoothing):
+    """Cross entropy whose smoothing mass goes to the finite logits only.
+
+    ``F.cross_entropy(label_smoothing=eps)`` spreads eps over EVERY column, and
+    ITC masks invalid candidates (studies without usable FINDINGS) with -inf, so
+    the built-in turns the loss into inf. With every column finite this equals
+    ``F.cross_entropy(logits, targets, label_smoothing=eps)``.
+    """
+    if label_smoothing <= 0:
+        return F.cross_entropy(logits, targets)
+    log_probs = F.log_softmax(logits.float(), dim=-1)
+    finite = torch.isfinite(logits)
+    nll = -log_probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+    safe = log_probs.masked_fill(~finite, 0.0)
+    smooth = -safe.sum(dim=1) / finite.sum(dim=1).clamp_min(1)
+    return ((1.0 - label_smoothing) * nll + label_smoothing * smooth).mean()

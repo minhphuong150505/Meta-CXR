@@ -31,8 +31,10 @@ def _needs_vision_language(w):
     return w["lambda_itc"] > 0 or w["lambda_itm"] > 0 or w["lambda_lm"] > 0
 
 
-def _needs_text_encoder(w):
-    return _needs_vision_language(w) or (
+def _needs_text_encoder(w, single_path_training=False):
+    # single_path_training: mhcac.text_guidance == "single_path", the model in
+    # train mode and MHCAC read by some objective (D-020, 2026-09-24).
+    return _needs_vision_language(w) or single_path_training or (
         w["lambda_teacher_cls"] > 0 or w["lambda_distill"] > 0
     )
 
@@ -96,12 +98,19 @@ class TestShippedRecipe:
         it puts vision-language gradient onto the shared projector and adapters
         that MHCAC reads. Use scripts/check_itc_gate.py first.
         """
+        # The BASE block. Since 2026-09-24 phases 1a and 1c turn them on through
+        # run.phases.<phase>.model.loss (tests/test_phases.py pins those).
         assert loss_cfg["lambda_itc"] == 0.0
         assert loss_cfg["lambda_itm"] == 0.0
         assert loss_cfg["lambda_lm"] == 0.0
 
-    def test_teacher_and_distillation_are_on(self, loss_cfg):
-        """Back on at 0.5 each as of 2026-08-18, at the user's request.
+    def test_teacher_and_distillation_are_removed(self, loss_cfg):
+        """REMOVED 2026-09-24 (D-020), replaced by the paper's single MHCAC.
+
+        The model refuses a teacher alongside mhcac.text_guidance: single_path,
+        so these must be 0. History, kept for the record:
+
+        Back on at 0.5 each as of 2026-08-18, at the user's request.
 
         They were switched off because the term was degenerate, not because the
         idea was rejected: loss_distill measured **1.4e-08**, with teacher and
@@ -116,8 +125,11 @@ class TestShippedRecipe:
         and the teacher is not free (it forces the text-encoder pass, see
         test_shipped_recipe_runs_the_text_encoder).
         """
-        assert loss_cfg["lambda_teacher_cls"] == 0.5
-        assert loss_cfg["lambda_distill"] == 0.5
+        yaml = pytest.importorskip("yaml")
+        mhcac = yaml.safe_load(_CONFIG.read_text())["model"]["mhcac"]
+        assert mhcac["text_guidance"] == "single_path"
+        assert loss_cfg["lambda_teacher_cls"] == 0.0
+        assert loss_cfg["lambda_distill"] == 0.0
 
     def test_auxiliary_weights_match_upstream_meta_cxr(self, loss_cfg):
         """DasithEdirisinghe/META-CXR @ e97d709, blip2_qformer.py:477:
@@ -152,7 +164,11 @@ class TestShippedRecipe:
         assert _needs_vision_language(loss_cfg) is False
 
     def test_shipped_recipe_runs_the_text_encoder(self, loss_cfg):
-        """The teacher's price, stated so it is not rediscovered as a surprise.
+        """Still true after D-020, for a different reason: the paper's single
+        MHCAC reads the report in its first layers while training. At eval and
+        inference the pass is skipped (no text). History:
+
+        The teacher's price, stated so it is not rediscovered as a surprise.
 
         The Q-Former stays skipped -- that is governed by itc/itm/lm alone --
         but a non-zero teacher weight forces the text-encoder pass back on, so
@@ -162,7 +178,8 @@ class TestShippedRecipe:
         1.0364 s/it, ~4.0 h/epoch, against the 0.2347 s/it two-encoder
         no-teacher baseline.
         """
-        assert _needs_text_encoder(loss_cfg) is True
+        assert _needs_text_encoder(loss_cfg) is False, "no teacher any more"
+        assert _needs_text_encoder(loss_cfg, single_path_training=True) is True
 
     def test_learning_rate_floor_matches_upstream(self):
         yaml = pytest.importorskip("yaml")

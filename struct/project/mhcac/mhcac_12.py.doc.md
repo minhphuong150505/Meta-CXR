@@ -2,6 +2,13 @@
 > Status: ✅ ACTIVE — ★ bản DUY NHẤT được wire
 > Last verified against source: 2026-08-14
 
+⚠ **Cập nhật 2026-09-24 (D-020):** `ExpertTokenCrossAttention` có
+`layer_order` (`text_first` cũ | `self_first` = Eq. 2→4→5 của bài báo) và
+`text_mask_mode` (`report` cũ: bỏ cả báo cáo | `element` = Eq. 3: Bernoulli từng
+phần tử, không nhân bù). `text_row_mask` [B]: study không có FINDINGS đi đường
+chỉ-ảnh trong layer text. Mặc định (khóa vắng) = hành vi cũ, ghim bởi
+`tests/test_paper_mode.py::test_the_historical_layer_is_unchanged`.
+
 # `mhcac/mhcac_12.py`
 
 ## Purpose

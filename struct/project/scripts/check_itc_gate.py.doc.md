@@ -2,6 +2,11 @@
 > Status: 🔬 DIAGNOSTIC — read-only, không train, không ghi checkpoint
 > Last verified against source: 2026-08-19
 
+⚠ **Cập nhật 2026-09-24 (D-020):** lõi chuyển sang `pretraining/itc_gate.py`
+(runner dùng cùng hàm mỗi epoch). Thêm R@1/R@5 hai chiều và kiểm định nhị thức;
+`meets_threshold` = `delta_nats >= 0.10` **và** R@5 vượt ngẫu nhiên hai chiều.
+Features qua `model.encode_samples` (đọc được `swin_image` của MedCLIP).
+
 # `scripts/check_itc_gate.py`
 
 ## Purpose

@@ -24,7 +24,13 @@ def _set_lr(optimizer, base_lr):
     silently discarding the configured group-specific learning rates.
     """
     for param_group in optimizer.param_groups:
-        param_group["lr"] = base_lr * float(param_group.get("lr_scale", 1.0))
+        # ``phase_lr_mult`` is the phase-1b hand-over factor (pretraining/phases.py):
+        # 0 -> 1 for the module being unfrozen, 1 -> 0 for the one being frozen.
+        param_group["lr"] = (
+            base_lr
+            * float(param_group.get("lr_scale", 1.0))
+            * float(param_group.get("phase_lr_mult", 1.0))
+        )
 
 
 @registry.register_lr_scheduler("linear_warmup_step_lr")

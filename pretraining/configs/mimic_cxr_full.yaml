@@ -122,15 +122,33 @@ model:
     # concession: at two streams _native_stream_layouts describes the batch
     # again, so PubMedCLIP keeps its CLS token and each encoder keeps its own
     # scale -- the configuration this repo measured to be the better one.
-    swin: false
+    #
+    # ⚠ SWIN BACK ON, 2026-09-24 (user decision, D-020): the MedCLIP Swin-Tiny
+    # the META-CXR paper uses, NOT ChayanM/SwinV2-GPT2_Mimic (no model card,
+    # "fine-tuned on an unknown dataset", ~500 captioning steps; kept only as an
+    # ablation path: backend hf + that model_name). Everything above about the
+    # SwinV2-448 OOM described that other encoder. MedCLIP Swin emits 50 tokens
+    # (pooled + 7x7) with a native StreamLayout, so BioViL and PubMedCLIP keep
+    # their native layouts too: 196 + 50 + 50 = 296 tokens into both branches.
+    swin: true
     raddino: false
-  # Inert while encoders.swin is false; kept so re-enabling needs one flag.
   swin:
-    backend: hf
-    model_name: "ChayanM/SwinV2-GPT2_Mimic"
+    # MedCLIP (Wang et al., EMNLP 2022). Weights: the zip named in
+    # github.com/RyanWangZf/MedCLIP/raw/main/medclip/medclip_vit_weight.txt,
+    # unzipped; only vision_model.model.* is loaded, strictly (231/231 keys).
+    # Input is the dataset's swin_image (pad to square, 224, MedCLIP mean/std),
+    # never the BioViL tensor, so normalize must stay false.
+    backend: medclip
+    model_name: "microsoft/swin-tiny-patch4-window7-224"
+    weights_path: "~/medclip_work/pretrained/medclip-vit/pytorch_model.bin"
     pretrained: true
     frozen: true
-    normalize: true
+    normalize: false
+
+  # Paper, Implementation: "we randomly mask 10% of the features from each
+  # encoder". Training only, per encoder, per sample (vision_encoders/
+  # feature_mask.py). Absent = 0 = off, which is every run before 2026-09-24.
+  feature_mask_ratio: 0.1
 
   num_query_token: 32
   cross_attention_freq: 2
@@ -366,6 +384,16 @@ model:
       - [1.0, 10.000, 10.000]  # Fracture                    raw pos 50.33 CAPPED
       - [1.0,  2.394, 10.000]  # Support Devices
     distill_temperature: 2.0
+    # ⚠ PAPER MHCAC, 2026-09-24 (user decision, D-020). One MHCAC, no
+    # teacher/student: during training its first num_text_teacher_layers (2 of
+    # 6) cross-attend the report masked element-wise, T_drop = T * M,
+    # M ~ Bernoulli(1 - text_dropout), no rescale (Eq. 3); the deeper layers read
+    # the image only; evaluation and inference never see text. Layer order is
+    # the paper's self-attention -> text -> image (Eqs. 2, 4, 5). Absent keys =
+    # teacher_student / text_first / report, i.e. the recipe before this date.
+    text_guidance: single_path
+    layer_order: self_first
+    text_mask: element
     text_dropout: 0.2
     # Ambiguous pairs are not reliable positive/negative targets.
     uncertain_policy: ignore_uncertain
@@ -522,8 +550,11 @@ model:
     # teaching and the extra forward is pure cost -- the bug to find then is why
     # the teacher's privileged text is not moving its logits away from the
     # student's, not the weight on this line.
-    lambda_teacher_cls: 0.5
-    lambda_distill: 0.5
+    #
+    # ⚠ REMOVED 2026-09-24 (D-020): mhcac.text_guidance is single_path, the
+    # paper's one-MHCAC design, and the model refuses a teacher alongside it.
+    lambda_teacher_cls: 0.0
+    lambda_distill: 0.0
     # Weights for the three MHCAC auxiliary terms now match the upstream
     # META-CXR reference (DasithEdirisinghe/META-CXR @ e97d709,
     # blip2_qformer.py:477):
@@ -674,7 +705,13 @@ model:
     # 1024 -> 256 on 2026-08-16. The queue did not cause the collapse, but at
     # batch 16 a 1024 queue holds 64 microbatches of increasingly stale
     # embeddings; 256 still supplies plenty of negatives and refreshes every 16.
-    itc_queue_size: 256
+    #
+    # ⚠ 0 as of 2026-09-24 (D-020): BLIP-2 has no queue, and phase 1a trains on
+    # a feature cache at batch 32, so negatives come from the batch itself.
+    itc_queue_size: 0
+    # ITC label smoothing 0.1 (BLIP-2/RaDialog), spread over valid candidates
+    # only. Absent = 0.
+    itc_label_smoothing: 0.1
 
   view_consistency:
     # Soft/conditional agreement between the fused and anchor-only predictions.
@@ -1047,3 +1084,186 @@ run:
   dist_url: "env://"
   find_unused_parameters: false
   use_dist_eval_sampler: false
+
+  # ---------------------------------------------------------------------------
+  # THREE-PHASE REPRESENTATION LEARNING (META-CXR paper; D-020, 2026-09-24).
+  # Source of truth: the paper, not the upstream code (which comments out
+  # ITC/ITM/ITG in every commit). One launch per phase, run.phase=<name>;
+  # scripts/run_stage1_phases.sh chains them and sets phase_root /
+  # output_dir / feature_cache_dir. A launch WITHOUT run.phase refuses to
+  # start, so this YAML is never silently trained as one phase.
+  #
+  # Lengths are epochs (user decision). The paper's "20,000 steps" for the
+  # whole representation phase does NOT hold at these epoch counts: 1a at
+  # batch 32 is ~6,960 updates/epoch, 1b/1c at effective batch 64 ~3,480.
+  # Warm-up/LR values the paper does not give (1a, 1c) are this repo's
+  # choices and are marked as such.
+  # ---------------------------------------------------------------------------
+  phase: null
+  phase_root: null
+  phases:
+    phase1a:
+      description: META-Former alignment only (ITC + ITM + ITG/LM); MHCAC frozen and not run
+      epochs: 4
+      # The shared per-encoder projection and ln_vision sit BEFORE the Q-Former
+      # and are trained here (user decision 2026-09-24): frozen, the Q-Former
+      # would read PubMedCLIP and Swin through random linear maps all phase.
+      trainable: [query_tokens, Qformer, vision_proj, text_proj, itm_head, temp,
+                  shared_visual_projector, ln_vision]
+      itc_gate:
+        every_epoch: true
+        # STOP the whole schedule if the gate fails after 2 epochs:
+        # delta_nats >= 0.10 AND R@5 above chance (binomial, alpha 0.01) both ways.
+        stop_after_epochs: 2
+        pairs: 256
+        min_delta: 0.10
+      model:
+        # Anchor-only feature cache: fusion would be identity anyway (zero-init,
+        # frozen), so no auxiliary view is read or cached in this phase.
+        multi_view: false
+        loss:
+          lambda_itc: 1.0
+          lambda_itm: 1.0
+          lambda_lm: 1.0
+          lambda_cls: 0.0
+          lambda_teacher_cls: 0.0
+          lambda_distill: 0.0
+          lambda_mhcac_contrastive: 0.0
+          lambda_orthogonality: 0.0
+          lambda_sparsity: 0.0
+          lambda_mpc: 0.0
+          lambda_view_consistency: 0.0
+      datasets:
+        mimic_cxr:
+          vis_processor:
+            train:
+              augmentation:
+                enabled: false   # the cache holds deterministic features
+      run:
+        batch_size_train: 32
+        batch_size_eval: 32
+        accum_grad_iters: 1
+        # repo choice: BLIP-2 stage-1 scale LR, 1,000-update warm-up
+        init_lr: 1.0e-4
+        init_lr_q: 1.0e-4
+        init_lr_cls: 1.0e-4
+        min_lr: 1.0e-5
+        warmup_lr: 1.0e-6
+        warmup_steps: 1000
+        eval_start_epoch: 0
+        early_stop_patience: 0
+        selection_metric: loss
+        save_predictions: false
+        report_study_presence: false
+        test_splits: []
+    phase1b:
+      description: hand-over to MHCAC; META-Former faded out and frozen
+      epochs: 5
+      init_from: {phase: phase1a}
+      trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp,
+                  shared_visual_projector, ln_vision, stream_adapters, view_fusion,
+                  mpc_heads]
+      # Paper: "progressively unfreeze the MHCAC module while gradually freezing
+      # the META-Former". Formula not given; implemented as LR x (0 -> 1) for
+      # MHCAC and x (1 -> 0) for META-Former over the first 10% of the phase's
+      # updates, then META-Former requires_grad=False and leaves the optimizer.
+      # The repo's multi-view additions (adapters, fusion, MPC heads) are steady.
+      transition:
+        fade_in: [mhcac]
+        fade_out: [query_tokens, Qformer, vision_proj, text_proj, itm_head, temp,
+                   shared_visual_projector, ln_vision]
+        fraction: 0.1
+      model:
+        multi_view: true
+        loss:
+          lambda_itc: 0.0
+          lambda_itm: 0.0
+          lambda_lm: 0.0
+          lambda_cls: 1.0
+          lambda_teacher_cls: 0.0
+          lambda_distill: 0.0
+          lambda_mhcac_contrastive: 0.3
+          lambda_orthogonality: 0.7
+          lambda_sparsity: 0.3
+          lambda_mpc: 0.02
+          lambda_view_consistency: 0.05
+      run:
+        feature_cache_dir: null
+        batch_size_train: 16
+        batch_size_eval: 16
+        accum_grad_iters: 4
+        # Paper: warm-up 5e-5 -> 2e-4, cosine 2e-4 -> 1e-5 over five epochs, L2
+        # (weight_decay 0.02 as above), dropout 0.2 (MHCAC already builds its
+        # layers at 0.2). Warm-up length is not given: 500 updates.
+        init_lr: 2.0e-4
+        init_lr_q: 2.0e-4
+        init_lr_cls: 2.0e-4
+        warmup_lr: 5.0e-5
+        warmup_steps: 500
+        min_lr: 1.0e-5
+        eval_start_epoch: 0
+        early_stop_patience: 0
+        selection_metric: loss
+        save_predictions: true
+        report_study_presence: true
+        test_splits: []
+    phase1c:
+      description: joint classification + alignment (w_align = 1.0)
+      epochs: 1
+      init_from: {phase: phase1b}
+      # Paper unfreezes META-Former and the encoders' projection heads, not the
+      # encoder blocks; set true to also reopen model.encoder_finetune's
+      # BioViL layer4 / CLIP blocks (user decision pending).
+      unfreeze_encoder_blocks: false
+      trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp,
+                  shared_visual_projector, ln_vision, visual_encoder.projector,
+                  stream_adapters, view_fusion, mpc_heads]
+      itc_gate:
+        every_epoch: true     # logged, never stops 1c
+        pairs: 256
+        min_delta: 0.10
+      # Measurement only (section H): every 200 updates, cosine and norm ratio of
+      # the classification-loss gradient vs the w_align*(ITC+ITM+LM) gradient on
+      # the parameters both read. Nothing is stopped, clipped or reweighted.
+      grad_interference:
+        every_updates: 200
+        groups:
+          shared_visual_projector: {prefixes: [shared_visual_projector, ln_vision]}
+          biovil_projection_head: {prefixes: [visual_encoder.projector]}
+          stream_adapters: {prefixes: [stream_adapters]}
+          qformer_text_tower:
+            prefixes: [Qformer.bert]
+            exclude_substrings: [_query, crossattention]
+      model:
+        multi_view: true
+        loss:
+          # w_align = 1.0 on each of ITC / ITM / LM
+          lambda_itc: 1.0
+          lambda_itm: 1.0
+          lambda_lm: 1.0
+          lambda_cls: 1.0
+          lambda_teacher_cls: 0.0
+          lambda_distill: 0.0
+          lambda_mhcac_contrastive: 0.3
+          lambda_orthogonality: 0.7
+          lambda_sparsity: 0.3
+          lambda_mpc: 0.02
+          lambda_view_consistency: 0.05
+      run:
+        feature_cache_dir: null
+        batch_size_train: 16
+        batch_size_eval: 16
+        accum_grad_iters: 4
+        # repo choice: joint fine-tune from 1b's end, lower peak LR
+        init_lr: 5.0e-5
+        init_lr_q: 5.0e-5
+        init_lr_cls: 5.0e-5
+        warmup_lr: 1.0e-6
+        warmup_steps: 200
+        min_lr: 1.0e-5
+        eval_start_epoch: 0
+        early_stop_patience: 0
+        selection_metric: loss
+        save_predictions: true
+        report_study_presence: true
+        test_splits: [test]

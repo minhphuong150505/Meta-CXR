@@ -81,7 +81,34 @@ Kèm theo đó, ba thứ chỉ tồn tại ở repo này:
   head phân loại chỉ học được hằng số; nó bị loại khỏi macro metric qua
   `include_meta_labels: false` thay vì được báo cáo với F1 miễn phí 1.0000.
 
+## 1b. META-Former 3 pha theo bài báo (2026-09-24, D-020)
+
+**Nguồn là BÀI BÁO, không phải code gốc.** Code `DasithEdirisinghe/META-CXR`
+comment toàn bộ ITC/ITM/ITG ở mọi commit và chỉ phản ánh bước train MHCAC; có
+thể họ đã đổi code trong lúc train. Repo này nay cài theo mục "Model
+pre-training and fine tuning" của bài:
+
+| | bài báo | repo này (2026-09-24) |
+|---|---|---|
+| Pha 1a | đóng băng MHCAC, chỉ ITC + ITG + ITM | như vậy; MHCAC không chạy; projection chung được train (quyết định của user); cache đặc trưng anchor, không augmentation |
+| Pha 1b | mở băng dần MHCAC, đóng băng dần META-Former; warm-up 5e-5→2e-4, L2, dropout 0.2, cosine →1e-5 trong 5 epoch | như vậy; "dần" = LR 0→1 / 1→0 trong 10% đầu pha rồi đóng băng (bài không nêu công thức) |
+| Pha 1c | mở META-Former + projection head của encoder, loss có trọng số | như vậy, `w_align = 1.0`; khối encoder vẫn đóng băng (`unfreeze_encoder_blocks: false`) |
+| Tổng | 20.000 bước | theo epoch (1a ≤ 4, 1b 5, 1c 1) — KHÔNG khớp 20.000 bước |
+| Swin | MedCLIP Swin, 50 token | MedCLIP Swin-Tiny, pooled + 7x7 = 50 token |
+| Mask | 10% đặc trưng mỗi encoder | 10% token mỗi encoder, mỗi mẫu, lúc train |
+| MHCAC | một nhánh; text có mask Bernoulli ở layer đầu, chỉ lúc train | như vậy — teacher/student của repo đã bỏ |
+| Chiếu | "tuyến tính lên 1408" (code gốc: MLP 768→1024→1408) | một `nn.Linear(768, 1408)` cho PubMedCLIP và Swin |
+
+⚠ Chưa có run đầy đủ. Smoke GPU: pha 1a OOM ở batch 32/24/16 — xem
+`docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
+
+⚠ Lỗi kế thừa: `vision_encoders/medclip/medclip.py` của code gốc unpack một
+tensor [B, 512] thành (pool, patches) — không bao giờ ra token patch.
+
 ## 2. Teacher/student cho text đặc quyền
+
+⚠ **Đã bỏ trong cấu hình production từ 2026-09-24 (D-020)** — thay bằng MHCAC
+một nhánh như bài báo. Phần dưới là lịch sử.
 
 Gốc: MHCAC được gọi **một lần**, luôn kèm `text_embeddings` khi train
 (`blip2_qformer.py:299`), và kèm `None` khi inference (`:581`). Hai layer đầu của

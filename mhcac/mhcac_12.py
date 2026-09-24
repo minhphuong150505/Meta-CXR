@@ -134,6 +134,14 @@ class StreamLayout(NamedTuple):
     num_tokens: int
     num_global_tokens: int = 0
     
+#: ``text_first`` (historical: text -> self -> image) or ``self_first`` (the
+#: META-CXR paper, Eqs. 2/4/5: self -> text -> image).
+LAYER_ORDERS = ("text_first", "self_first")
+#: ``report`` (historical: drop a sample's whole report) or ``element`` (the
+#: paper's Eq. 3: Bernoulli mask per element, no rescale).
+TEXT_MASK_MODES = ("report", "element")
+
+
 # ExpertTokenCrossAttention layer that performs both image and query cross-attention in a single pass
 class ExpertTokenCrossAttention(nn.Module):
     def __init__(
@@ -144,8 +152,18 @@ class ExpertTokenCrossAttention(nn.Module):
         dropout=0.1,
         text_dropout_rate=0.2,
         use_text_attention=True,
+        layer_order="text_first",
+        text_mask_mode="report",
     ):
         super(ExpertTokenCrossAttention, self).__init__()
+        if layer_order not in LAYER_ORDERS:
+            raise ValueError(f"layer_order must be one of {LAYER_ORDERS}, got {layer_order!r}")
+        if text_mask_mode not in TEXT_MASK_MODES:
+            raise ValueError(
+                f"text_mask_mode must be one of {TEXT_MASK_MODES}, got {text_mask_mode!r}"
+            )
+        self.layer_order = layer_order
+        self.text_mask_mode = text_mask_mode
         
         # Expert-to-image cross-attention
         self.expert_to_image_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
@@ -179,13 +197,80 @@ class ExpertTokenCrossAttention(nn.Module):
         
         self.text_dropout_rate = text_dropout_rate
 
+    def _mask_text(self, text_embeddings):
+        """Training-time text mask.
+
+        ``element`` is the paper's Eq. (3): T_drop = T_proj * M with
+        M ~ Bernoulli(1 - p_text) per element and NO 1/(1-p) rescale.
+        ``report`` is the historical rule: drop a sample's whole report.
+        """
+        if not self.training or self.text_dropout_rate <= 0:
+            return text_embeddings
+        if self.text_mask_mode == "element":
+            keep = torch.rand_like(text_embeddings, dtype=torch.float32) >= self.text_dropout_rate
+        else:
+            keep = torch.rand(
+                text_embeddings.size(0), 1, 1, device=text_embeddings.device
+            ) >= self.text_dropout_rate
+        return text_embeddings * keep.to(text_embeddings.dtype)
+
+    def _attend_text(self, query, text_embeddings, text_attention_mask, text_row_mask):
+        """LN(query + MHA(query, T_drop, T_drop)); rows without text keep ``query``."""
+        text_embeddings = self._mask_text(text_embeddings)
+        attended, _ = self.expert_to_text_attention(
+            query=query,
+            key=text_embeddings,
+            value=text_embeddings,
+            # PyTorch MHA expects True for positions to ignore.  Without this,
+            # the text branch attended BERT padding and learnt a length-dependent
+            # shortcut instead of report content.
+            key_padding_mask=(
+                ~text_attention_mask.to(dtype=torch.bool)
+                if text_attention_mask is not None
+                else None
+            ),
+        )
+        out = self.norm_expert_text(attended + query)
+        if text_row_mask is not None:
+            # A study with no usable FINDINGS has no text to be guided by: its
+            # tokens pass through unchanged, exactly as at inference.
+            keep = text_row_mask.to(device=out.device, dtype=torch.bool).view(-1, 1, 1)
+            out = torch.where(keep, out, query)
+        return out
+
     def forward(
         self,
         expert_tokens,
         image_patches,
         text_embeddings=None,
         text_attention_mask=None,
+        text_row_mask=None,
     ):
+        use_text = text_embeddings is not None and self.expert_to_text_attention is not None
+        if self.layer_order == "self_first":
+            # Paper, Eqs. (2), (4), (5): self-attention among expert tokens,
+            # then the (masked) text, then the image.
+            expert_self, _ = self.self_attention(
+                query=expert_tokens, key=expert_tokens, value=expert_tokens
+            )
+            expert_refined = self.norm_self_attention(expert_tokens + expert_self)
+            if use_text:
+                expert_refined = self._attend_text(
+                    expert_refined, text_embeddings, text_attention_mask, text_row_mask
+                )
+            expert_image, attention_weights = self.expert_to_image_attention(
+                query=expert_refined, key=image_patches, value=image_patches
+            )
+            expert_image = self.norm_expert_image(expert_image + expert_refined)
+            expert_image = self.norm_ff(self.ffn_expert(expert_image) + expert_image)
+            return expert_image, attention_weights
+
+        if use_text and (self.text_mask_mode == "element" or text_row_mask is not None):
+            expert_text = self._attend_text(
+                expert_tokens, text_embeddings, text_attention_mask, text_row_mask
+            )
+            return self._self_then_image(expert_text, image_patches)
+
         if text_embeddings is not None and self.expert_to_text_attention is not None:
             # Report text is privileged teacher information.  Whole-report
             # dropout prevents that branch from ignoring the image entirely.
@@ -215,6 +300,10 @@ class ExpertTokenCrossAttention(nn.Module):
             # In inference mode or when text_embeddings is unavailable, rely on image patches alone
             expert_text = expert_tokens
         
+        return self._self_then_image(expert_text, image_patches)
+
+    def _self_then_image(self, expert_text, image_patches):
+        """Historical order, after the text step: self-attention, then image."""
         # Self-attention among expert tokens
         expert_refined, _ = self.self_attention(
             query=expert_text, key=expert_text, value=expert_text
@@ -249,6 +338,8 @@ class AbnormalityClassificationModel(nn.Module):
         use_cnn=True,
         uncertain_policy="three_class",
         stream_layouts=None,
+        layer_order="text_first",
+        text_mask_mode="report",
     ):
         """``stream_layouts`` maps encoder name -> :class:`StreamLayout`.
 
@@ -302,6 +393,8 @@ class AbnormalityClassificationModel(nn.Module):
                     dropout,
                     text_dropout_rate=text_dropout_rate,
                     use_text_attention=layer_idx < num_text_teacher_layers,
+                    layer_order=layer_order,
+                    text_mask_mode=text_mask_mode,
                 )
                 for layer_idx in range(num_layers)
             ]
@@ -433,8 +526,12 @@ class AbnormalityClassificationModel(nn.Module):
         text_attention_mask=None,
         labels=None,
         sample_mask=None,
+        text_row_mask=None,
     ):
         """Classify from the shared visual tokens produced upstream.
+
+        ``text_row_mask`` [B] marks the studies whose report may guide the text
+        layers; the others take the image-only path inside those layers.
 
         ``shared_visual_tokens`` is a ``SharedVisualTokens``: one ``[B, N, visual_dim]``
         tensor plus the span each encoder occupies. Spans are used only to give each
@@ -539,6 +636,7 @@ class AbnormalityClassificationModel(nn.Module):
                     image_patches,
                     txt_proj,
                     text_attention_mask=text_attention_mask,
+                    text_row_mask=text_row_mask,
                 )
             elif i == self.num_layers - 2: #last before layer
                 normalized_expert_tokens = self.expert_token_norm(self.expert_tokens)
