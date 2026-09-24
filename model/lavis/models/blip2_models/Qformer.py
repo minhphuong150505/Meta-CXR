@@ -543,7 +543,7 @@ class BertEncoder(nn.Module):
 
                     return custom_forward
 
-                # use_reentrant=False (2026-09-25): the reentrant variant drops
+                # use_reentrant=False (2026-09-24): the reentrant variant drops
                 # gradients to inputs that do not require grad and warns under
                 # torch 2.9; the non-reentrant one is the supported path.
                 layer_outputs = torch.utils.checkpoint.checkpoint(

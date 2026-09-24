@@ -13,14 +13,14 @@ mà pha nào đó train (`checkpoint_keep`); cuối pha ghi
 `_run_phase_itc_gate` chạy gate ITC trên val mỗi epoch (`itc_gate.every_epoch`),
 ghi `itc_gate_epoch<N>.json`; trượt ở `stop_after_epochs` → `PHASE_GATE_FAILED`,
 dừng, KHÔNG ghi checkpoint pha. Cổng quyết định ĐÚNG MỘT LẦN, ở cuối epoch
-`stop_after_epochs` (`==`, sửa 2026-09-25; trước đó `>=` sẽ dừng cả khi pass ở
+`stop_after_epochs` (`==`, sửa 2026-09-24; trước đó `>=` sẽ dừng cả khi pass ở
 epoch 2 rồi tụt ở epoch sau). `_grad_interference_hook` (pha 1c, qua hook
 `pre_backward` của vòng train) ghi `grad_interference.jsonl`: cosine và
 ‖g_align‖/‖g_cls‖ theo nhóm tham số, bằng `torch.autograd.grad(retain_graph=True)`
 — không đụng `.grad`. `validate` ghi thêm `phase_metrics.jsonl`. Resume sau
 khi chuyển pha xong: đóng băng lại `fade_out` trước khi dựng optimizer.
 
-⚠ **Cập nhật 2026-09-25 (D-021):** hook đo nhiễu gradient cộng dồn tích vô
+⚠ **Cập nhật 2026-09-24 (D-021):** hook đo nhiễu gradient cộng dồn tích vô
 hướng/chuẩn theo từng tensor (không nối gradient) — bản nối từng làm pha 1c OOM.
 Vòng train (`base_task._train_inner_loop`) gọi `forward_gradcache` khi model có
 `gradcache_chunk_size > 0` và bỏ `backward` ngoài; tắt cache của autocast khi

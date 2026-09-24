@@ -312,7 +312,7 @@ class Blip2Qformer(Blip2Base):
         self.itc_label_smoothing = float(itc_label_smoothing)
         if not 0.0 <= self.itc_label_smoothing < 1.0:
             raise ValueError("itc_label_smoothing must be in [0, 1)")
-        # ITC objective: "softmax" (BLIP-2 InfoNCE, every run before 2026-09-25)
+        # ITC objective: "softmax" (BLIP-2 InfoNCE, every run before 2026-09-24)
         # or "sigmoid" (SigLIP: pairwise, no batch normalisation). SigLIP owns
         # its scale and bias; `temp` is then unused.
         if itc_loss not in ("softmax", "sigmoid"):

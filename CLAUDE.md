@@ -713,7 +713,7 @@ record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
   `layer_order: self_first`, `text_mask: element`): teacher/student REMOVED,
   `lambda_teacher_cls`/`lambda_distill` must be 0 (the model raises otherwise).
 - `feature_mask_ratio: 0.1`, `itc_label_smoothing: 0.1`, `itc_queue_size: 0`.
-- ✅ **Memory, 2026-09-25 (D-021): Q-Former gradient checkpointing (all
+- ✅ **Memory, 2026-09-24 (D-021): Q-Former gradient checkpointing (all
   phases), SigLIP ITC (`itc_loss: sigmoid`), GradCache in phase 1a (batch 128,
   chunk 16, `Blip2Qformer.forward_gradcache` runs its own backward), phase 1c at
   8 x 8 with the SHALLOW encoder unfreeze reopened.** Smoke: 1a 7,221 MiB at

@@ -499,7 +499,7 @@ cho ablation vì không rõ dữ liệu train), **mask 10% token mỗi encoder**
 **MHCAC một nhánh** (bỏ teacher/student; text có mask Bernoulli từng phần tử ở
 2/6 layer đầu, chỉ lúc train), ITC label smoothing 0.1, bỏ queue ITC.
 
-**Bộ nhớ (2026-09-25, D-021):** không có gì dưới đây thì pha 1a OOM ở batch
+**Bộ nhớ (2026-09-24, D-021):** không có gì dưới đây thì pha 1a OOM ở batch
 32/24/16 và pha 1c chạm 97% card. Nay: **gradient checkpointing Q-Former** mọi
 pha, **SigLIP** thay InfoNCE cho ITC, **GradCache** ở pha 1a (ITC trên cả batch
 128, bộ nhớ của chunk 16), pha 1c batch 8 × 8 và **mở lại khối encoder nông**

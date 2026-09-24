@@ -150,7 +150,7 @@ model:
   # feature_mask.py). Absent = 0 = off, which is every run before 2026-09-24.
   feature_mask_ratio: 0.1
 
-  # ⚠ 2026-09-25 (user decision, D-021): Q-Former gradient checkpointing, in
+  # ⚠ 2026-09-24 (user decision, D-021): Q-Former gradient checkpointing, in
   # every phase. Each BERT layer is recomputed in backward instead of stored.
   # It forces the query KV cache off, so the LM (ITG) term re-feeds the query
   # tokens and the image instead of reading the cache -- the same computation,
@@ -721,7 +721,7 @@ model:
     # ITC label smoothing 0.1 (BLIP-2/RaDialog), spread over valid candidates
     # only. Absent = 0.
     itc_label_smoothing: 0.1
-    # ⚠ 2026-09-25 (user decision, D-021): SigLIP pairwise sigmoid loss for ITC
+    # ⚠ 2026-09-24 (user decision, D-021): SigLIP pairwise sigmoid loss for ITC
     # (arXiv 2303.15343) instead of softmax InfoNCE: no batch normalisation, so
     # it degrades far less at small batch. It owns a learnable scale (init
     # log 10) and bias (init -10); `temp` and itc_label_smoothing above apply
@@ -1141,7 +1141,7 @@ run:
         # without it at iteration 0 (2026-09-24 smoke). The chunk only splits
         # the computation -- ITC scores the full 128 x 128 matrix, ITM draws
         # negatives from the whole batch, LM is normalised by the whole batch's
-        # tokens -- so 16 -> 32 (2026-09-25) changes speed and memory, not the
+        # tokens -- so 16 -> 32 (2026-09-24) changes speed and memory, not the
         # objective (tests/test_gradcache_siglip.py: chunk 2 == chunk 6).
         gradcache_chunk_size: 32
         loss:
@@ -1236,7 +1236,7 @@ run:
       epochs: 1
       init_from: {phase: phase1b}
       # Paper unfreezes META-Former and the encoders' projection heads. ALSO
-      # reopening the encoder blocks is the user's decision (2026-09-25, D-021):
+      # reopening the encoder blocks is the user's decision (2026-09-24, D-021):
       # the SHALLOW set of run_20260820_ft (BioViL layer4 + projector, CLIP
       # blocks 10-11 + post_layernorm), the only unfreeze measured to improve
       # this model; the deeper set in model.encoder_finetune did not.
@@ -1286,7 +1286,7 @@ run:
           lambda_view_consistency: 0.05
       run:
         feature_cache_dir: null
-        # 8 x 8 (user decision 2026-09-25): 16 x 4 OOMed at iteration 0; 8 x 8
+        # 8 x 8 (user decision 2026-09-24): 16 x 4 OOMed at iteration 0; 8 x 8
         # ran at 15,043 MiB before encoder blocks were reopened.
         batch_size_train: 8
         batch_size_eval: 8
