@@ -133,6 +133,15 @@ def collect_pairs(model, loader, pairs, device):
 
 
 def model_temperature(model):
+    """The temperature the model's own ITC uses.
+
+    SigLIP (``itc_loss: sigmoid``) scales by exp(logit_scale), so the
+    equivalent temperature is its inverse. ``delta_nats`` is a softmax
+    diagnostic either way; ranks and R@k are scale-free.
+    """
+    if getattr(model, "itc_loss", "softmax") == "sigmoid":
+        scale = float(model.siglip_logit_scale.detach().exp().cpu())
+        return 1.0 / scale, True
     if bool(getattr(model, "itc_temp_learnable", True)):
         return float(model.temp.detach().clamp(min=1e-3, max=0.5).cpu()), True
     return float(model.itc_temp_fixed.detach().cpu()), False

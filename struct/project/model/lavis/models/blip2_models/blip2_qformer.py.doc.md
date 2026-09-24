@@ -18,6 +18,13 @@
 - ITC: `itc_label_smoothing` qua `mhcac.loss.smoothed_cross_entropy` (smoothing
   chỉ trên ứng viên hữu hạn); queue 0 trong production.
 
+⚠ **Cập nhật 2026-09-25 (D-021):** `qformer_grad_checkpointing`, `itc_loss`
+(`softmax` | `sigmoid` = SigLIP, tham số `siglip_logit_scale`/`siglip_bias`),
+`gradcache_chunk_size` + `forward_gradcache(samples, loss_scale)` (tự backward;
+chỉ mục tiêu căn chỉnh). `_alignment_features` = text rồi ảnh như `forward()`.
+`_language_modeling(image_embeds=, token_normalizer=)`: không có KV cache (tuple
+rỗng dưới checkpointing) thì đưa lại query + ảnh.
+
 # `blip2_qformer.py`
 
 ## Purpose

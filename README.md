@@ -499,12 +499,15 @@ cho ablation vì không rõ dữ liệu train), **mask 10% token mỗi encoder**
 **MHCAC một nhánh** (bỏ teacher/student; text có mask Bernoulli từng phần tử ở
 2/6 layer đầu, chỉ lúc train), ITC label smoothing 0.1, bỏ queue ITC.
 
-⚠ **Trạng thái:** mới smoke (2.000 study, 1 epoch mỗi pha). Trên card 16 GB,
-pha 1a **OOM ngay iteration đầu ở batch 32, 24 và 16**; chạy được ở batch 8
-(`max mem` 12.456 MiB, 0,366 s/it). Pha 1c OOM ở batch 16 × 4; chạy được ở
-batch 8 × 8 nhưng chạm **15.043 MiB (97% card)**. Pha 1b ở 16 × 4: 8.888 MiB.
-Chưa có run đầy đủ — chờ người dùng quyết cách xử lý batch (ITC ở batch 8 là
-đúng điều từng cho kết quả ngẫu nhiên). Xem
+**Bộ nhớ (2026-09-25, D-021):** không có gì dưới đây thì pha 1a OOM ở batch
+32/24/16 và pha 1c chạm 97% card. Nay: **gradient checkpointing Q-Former** mọi
+pha, **SigLIP** thay InfoNCE cho ITC, **GradCache** ở pha 1a (ITC trên cả batch
+128, bộ nhớ của chunk 16), pha 1c batch 8 × 8 và **mở lại khối encoder nông**
+(layer4 BioViL, block 10–11 CLIP). Smoke (2.000 study, 1 epoch mỗi pha): 1a
+7.221 MiB, 8,0 s/it ở batch 128 (≈3,9 h/epoch toàn bộ); 1b 6.466 MiB; 1c 9.337
+MiB, 0,63 s/it. Tính đúng của GradCache/checkpointing/SigLIP được ghim bằng test.
+
+⚠ **Trạng thái:** mới smoke; chưa có run đầy đủ. Xem
 `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
 
 ⚠ **Hạn chế:** MedCLIP được pretrain trên MIMIC-CXR + CheXpert; bài MedCLIP nói

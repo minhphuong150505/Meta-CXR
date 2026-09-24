@@ -150,6 +150,15 @@ model:
   # feature_mask.py). Absent = 0 = off, which is every run before 2026-09-24.
   feature_mask_ratio: 0.1
 
+  # ⚠ 2026-09-25 (user decision, D-021): Q-Former gradient checkpointing, in
+  # every phase. Each BERT layer is recomputed in backward instead of stored.
+  # It forces the query KV cache off, so the LM (ITG) term re-feeds the query
+  # tokens and the image instead of reading the cache -- the same computation,
+  # pinned by tests; without that the LM would silently train blind.
+  qformer_grad_checkpointing: true
+  # Phase-1a GradCache chunk size lives in run.phases.phase1a.model; 0 = off.
+  gradcache_chunk_size: 0
+
   num_query_token: 32
   cross_attention_freq: 2
   max_txt_len: 256
@@ -712,6 +721,12 @@ model:
     # ITC label smoothing 0.1 (BLIP-2/RaDialog), spread over valid candidates
     # only. Absent = 0.
     itc_label_smoothing: 0.1
+    # ⚠ 2026-09-25 (user decision, D-021): SigLIP pairwise sigmoid loss for ITC
+    # (arXiv 2303.15343) instead of softmax InfoNCE: no batch normalisation, so
+    # it degrades far less at small batch. It owns a learnable scale (init
+    # log 10) and bias (init -10); `temp` and itc_label_smoothing above apply
+    # only to itc_loss: softmax. Absent key = softmax, every run before this.
+    itc_loss: sigmoid
 
   view_consistency:
     # Soft/conditional agreement between the fused and anchor-only predictions.
@@ -1108,7 +1123,7 @@ run:
       # The shared per-encoder projection and ln_vision sit BEFORE the Q-Former
       # and are trained here (user decision 2026-09-24): frozen, the Q-Former
       # would read PubMedCLIP and Swin through random linear maps all phase.
-      trainable: [query_tokens, Qformer, vision_proj, text_proj, itm_head, temp,
+      trainable: [query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias,
                   shared_visual_projector, ln_vision]
       itc_gate:
         every_epoch: true
@@ -1121,6 +1136,10 @@ run:
         # Anchor-only feature cache: fusion would be identity anyway (zero-init,
         # frozen), so no auxiliary view is read or cached in this phase.
         multi_view: false
+        # GradCache (D-021): the contrastive loss sees the whole batch of 128,
+        # activations are held for 16 studies at a time. Batch 32/24/16 OOMed
+        # without it at iteration 0 (2026-09-24 smoke).
+        gradcache_chunk_size: 16
         loss:
           lambda_itc: 1.0
           lambda_itm: 1.0
@@ -1140,16 +1159,17 @@ run:
               augmentation:
                 enabled: false   # the cache holds deterministic features
       run:
-        batch_size_train: 32
+        # 128 per update via GradCache (~1,740 updates per epoch).
+        batch_size_train: 128
         batch_size_eval: 32
         accum_grad_iters: 1
-        # repo choice: BLIP-2 stage-1 scale LR, 1,000-update warm-up
+        # repo choice: BLIP-2 stage-1 scale LR, 500-update warm-up (~30% of an epoch)
         init_lr: 1.0e-4
         init_lr_q: 1.0e-4
         init_lr_cls: 1.0e-4
         min_lr: 1.0e-5
         warmup_lr: 1.0e-6
-        warmup_steps: 1000
+        warmup_steps: 500
         eval_start_epoch: 0
         early_stop_patience: 0
         selection_metric: loss
@@ -1160,7 +1180,7 @@ run:
       description: hand-over to MHCAC; META-Former faded out and frozen
       epochs: 5
       init_from: {phase: phase1a}
-      trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp,
+      trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias,
                   shared_visual_projector, ln_vision, stream_adapters, view_fusion,
                   mpc_heads]
       # Paper: "progressively unfreeze the MHCAC module while gradually freezing
@@ -1170,7 +1190,7 @@ run:
       # The repo's multi-view additions (adapters, fusion, MPC heads) are steady.
       transition:
         fade_in: [mhcac]
-        fade_out: [query_tokens, Qformer, vision_proj, text_proj, itm_head, temp,
+        fade_out: [query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias,
                    shared_visual_projector, ln_vision]
         fraction: 0.1
       model:
@@ -1211,11 +1231,13 @@ run:
       description: joint classification + alignment (w_align = 1.0)
       epochs: 1
       init_from: {phase: phase1b}
-      # Paper unfreezes META-Former and the encoders' projection heads, not the
-      # encoder blocks; set true to also reopen model.encoder_finetune's
-      # BioViL layer4 / CLIP blocks (user decision pending).
-      unfreeze_encoder_blocks: false
-      trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp,
+      # Paper unfreezes META-Former and the encoders' projection heads. ALSO
+      # reopening the encoder blocks is the user's decision (2026-09-25, D-021):
+      # the SHALLOW set of run_20260820_ft (BioViL layer4 + projector, CLIP
+      # blocks 10-11 + post_layernorm), the only unfreeze measured to improve
+      # this model; the deeper set in model.encoder_finetune did not.
+      unfreeze_encoder_blocks: true
+      trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias,
                   shared_visual_projector, ln_vision, visual_encoder.projector,
                   stream_adapters, view_fusion, mpc_heads]
       itc_gate:
@@ -1236,6 +1258,15 @@ run:
             exclude_substrings: [_query, crossattention]
       model:
         multi_view: true
+        encoder_finetune:
+          enabled: true
+          patterns:
+            - visual_encoder.encoder.encoder.layer4
+            - visual_encoder.projector
+            - pubmedclip.model.vision_model.encoder.layers.10
+            - pubmedclip.model.vision_model.encoder.layers.11
+            - pubmedclip.model.vision_model.post_layernorm
+          keep_batchnorm_eval: true
         loss:
           # w_align = 1.0 on each of ITC / ITM / LM
           lambda_itc: 1.0
@@ -1251,9 +1282,11 @@ run:
           lambda_view_consistency: 0.05
       run:
         feature_cache_dir: null
-        batch_size_train: 16
-        batch_size_eval: 16
-        accum_grad_iters: 4
+        # 8 x 8 (user decision 2026-09-25): 16 x 4 OOMed at iteration 0; 8 x 8
+        # ran at 15,043 MiB before encoder blocks were reopened.
+        batch_size_train: 8
+        batch_size_eval: 8
+        accum_grad_iters: 8
         # repo choice: joint fine-tune from 1b's end, lower peak LR
         init_lr: 5.0e-5
         init_lr_q: 5.0e-5

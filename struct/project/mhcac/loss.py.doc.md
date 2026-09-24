@@ -2,6 +2,9 @@
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-12
 
+⚠ **Cập nhật 2026-09-25:** `smoothed_cross_entropy` (smoothing chỉ trên logit
+hữu hạn) và `siglip_loss` (SigLIP, chỉ trên cặp hợp lệ) — cả hai dùng bởi ITC.
+
 # `mhcac/loss.py`
 
 ## Purpose

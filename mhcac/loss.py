@@ -1028,3 +1028,30 @@ def smoothed_cross_entropy(logits, targets, label_smoothing):
     safe = log_probs.masked_fill(~finite, 0.0)
     smooth = -safe.sum(dim=1) / finite.sum(dim=1).clamp_min(1)
     return ((1.0 - label_smoothing) * nll + label_smoothing * smooth).mean()
+
+
+def siglip_loss(sim, logit_scale, bias, valid=None):
+    """SigLIP pairwise sigmoid loss (Zhai et al., arXiv 2303.15343).
+
+    ``sim`` [N, N] holds raw image-text similarities (here the max over the
+    Q-Former query tokens), true pairs on the diagonal. Every pair is scored on
+    its own -- no softmax normalisation over the batch -- which is what makes
+    small batches degrade far less than InfoNCE:
+
+        L = -1/n * sum_ij log sigmoid(z_ij * (exp(logit_scale) * s_ij + bias)),
+        z_ij = +1 on the diagonal, -1 elsewhere,
+
+    over the ``valid`` rows AND columns only (studies without usable FINDINGS
+    are neither queries nor candidates).
+    """
+    if sim.ndim != 2 or sim.shape[0] != sim.shape[1]:
+        raise ValueError(f"siglip_loss needs a square [N, N] similarity, got {tuple(sim.shape)}")
+    if valid is not None:
+        keep = torch.as_tensor(valid, dtype=torch.bool, device=sim.device).reshape(-1)
+        sim = sim[keep][:, keep]
+    n = sim.shape[0]
+    if n == 0:
+        return sim.sum() * 0.0
+    logits = sim.float() * logit_scale.float().exp() + bias.float()
+    signs = 2.0 * torch.eye(n, device=sim.device, dtype=logits.dtype) - 1.0
+    return -F.logsigmoid(signs * logits).sum() / n

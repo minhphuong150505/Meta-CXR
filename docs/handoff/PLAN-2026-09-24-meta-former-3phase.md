@@ -477,3 +477,81 @@ because of it. Classification deltas 1c vs end of 1b on 400 val studies are
 - No full run of any phase (as instructed). The full anchor-only cache is not
   built yet (~158 GB, ~1 h) — it waits for the batch decision.
 - Nothing pushed.
+
+---
+
+## Decision update (user, 2026-09-25) — D-021
+
+1. For the batch: Q-Former **gradient checkpointing**, **GradCache** and
+   **SigLIP**, all three.
+2. Phase 1c at batch 8 × 8: ok.
+3. `phase1c.unfreeze_encoder_blocks`: **true** — try it.
+4. Push.
+
+## Execution report — 2026-09-25 (continued session), planning checkout + host
+
+Pushed `08592d3` and `9350440` to `origin/feat/stage2-finding-tokens` first.
+
+### What was built
+
+- **Checkpointing** (`model.qformer_grad_checkpointing: true`): the LAVIS
+  `BertEncoder` branch, switched to `use_reentrant=False`. Two defects found
+  and fixed on the way: (a) checkpointing turns off the query KV cache, and
+  `BertEncoder` then returns an **empty tuple**, not `None` — the LM term now
+  re-feeds the queries and the image when the cache is empty, instead of
+  crashing (or, had the check been `is None` on another code path, training the
+  LM without the image); (b) autocast's weight-cast cache made the backward
+  recompute record extra casts and `torch.utils.checkpoint` aborted with
+  "Recomputed values ... different metadata" — the train loop now disables the
+  cache when checkpointing is on.
+- **SigLIP** (`model.loss.itc_loss: sigmoid`): pairwise sigmoid over valid
+  pairs, learnable scale (init log 10) and bias (init −10). `temp` and ITC label
+  smoothing apply only to `softmax`. ITM hard negatives use the SigLIP logits.
+- **GradCache** (phase 1a, `gradcache_chunk_size: 16`, batch 128): no-grad
+  features for the whole batch → ITC over 128 → gradients cached on the
+  features → per chunk, RNG replayed, features recomputed with grad, cached
+  gradient + ITM/LM (normalised by the whole batch) backpropagated. Negatives
+  for ITM drawn from the whole batch; out-of-chunk negative images re-encoded.
+  Refuses MHCAC objectives and fp16 GradScaler.
+- **Phase 1c** batch 8 × 8, `unfreeze_encoder_blocks: true` with the shallow
+  set (BioViL layer4 + projector, CLIP blocks 10–11 + post_layernorm).
+
+### Tests
+
+- `tests/test_gradcache_siglip.py` (10; 6 need transformers → host only), on a
+  tiny real LAVIS Q-Former: chunk 2 vs chunk 6 gradients equal to < 1e-4 of each
+  tensor's scale (both SigLIP and softmax); GradCache == ordinary backward on
+  ITC + LM; LM without the cache == LM with it; checkpointing does not change
+  gradients; SigLIP matches the published formula, masks invalid pairs, trains
+  its scale and bias.
+- Host (git snapshot): **1174 passed, 2 skipped, 0 failed**
+  (`~/d021_pytest.log`). CPU box: unchanged baseline failures only.
+
+### GPU smoke (2,000 train studies, 1 epoch per phase, one guarded launch;
+log `~/smoke_3phase_d021b.log`)
+
+| phase | setting | max mem | s/it | trainable |
+|---|---|---:|---:|---:|
+| 1a | batch 128 = 8 × chunk 16, GradCache + checkpointing + SigLIP | **7,221 MiB** | 8.03 (0.063 s/study) | 188.87M |
+| 1b | 16 × 4 | 6,466 MiB | 0.23 | 310.93M → hand-over after 3 updates |
+| 1c | 8 × 8, checkpointing, shallow encoder unfreeze | **9,337 MiB** | 0.63 | **342.78M** (+ visual_encoder 17.67M, pubmedclip 14.18M) |
+
+Before D-021 the same phases OOMed (1a at 32/24/16; 1c at 16 × 4) or used
+15,043 MiB (1c at 8 × 8 without checkpointing or unfreeze). Full-data estimate
+for 1a: 1,740 updates/epoch × 8.0 s ≈ **3.9 h/epoch**, ≤ 4 epochs.
+
+Losses, first → last: 1a (15 updates) SigLIP `loss_itc` 8.72 → 7.26,
+`loss_itm` 1.47 → 0.79, `loss_lm` 7.19 → 7.05; 1b `loss_cls` 1.333 → 1.050;
+1c `loss_itc` 6.89 → 2.70, `loss_itm` 1.20 → 0.63, `loss_lm` 6.87 → 5.47,
+`loss_cls` 1.051 → 1.046. No NaN/inf, no traceback.
+
+ITC gate (128 val pairs): 1a ranks 62.6 / 63.2 (chance 63.5), R@5 0.063 /
+0.055 — at chance, expected after 15 updates still inside the 500-update
+warm-up; 1c ranks 51.1 / 47.1, R@5 0.047 / 0.055, not above chance. Smoke only.
+
+### Open
+
+- The full run: build the 158 GB anchor cache, then
+  `ROOT=$HOME/run_<date>_3phase bash scripts/run_stage1_phases.sh`. Not started.
+- Phase 1a now has headroom (7.2 of 15.5 GB): chunk 32 would be faster; not
+  changed without a decision.
