@@ -53,6 +53,7 @@ Quyết định phạm vi: [D-007](../../_meta/DECISIONS.md#d-007--độ-sâu-do
 | `models/blip_models/blip_outputs.py` | 146 | [📄](models/blip_models/blip_outputs.py.doc.md) — `BlipOutput` có `loss_explanation` conditional | ⚠ có |
 | `models/__init__.py` | 201 | Đăng ký model qua registry | ⚠ có |
 | `data/mimic_cxr_utils.py` | 80 | `view_id()`, `build_study_index()` | ⚠ mới |
+| `data/chexpert_labels.py` | 170 | [📄](data/chexpert_labels.py.doc.md) `blank_label_policy`, ánh xạ nhãn CheXpert, join + cờ hợp lệ | ⚠ mới 2026-09-24; git-ignored dir → `git add -f` |
 | `datasets/builders/base_dataset_builder.py` | 234 | Dựng dataset từ config | upstream |
 | `datasets/datasets/base_dataset.py` | — | `BaseDataset`, `collater` mặc định | upstream |
 | `datasets/datasets/caption_datasets.py` | 84 | Dataset caption | upstream |

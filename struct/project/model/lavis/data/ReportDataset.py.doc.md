@@ -180,7 +180,27 @@ geometry và no-cache regression)
 ← [HOME](../../../../HOME.md)
 
 
-## Nhãn CheXpert: ô trống bị mask, không phải âm tính
+## Nhãn CheXpert: `blank_label_policy` (2026-09-24)
+
+⚠ **Đảo ngược 2026-09-24 ([D-018](../../../_meta/DECISIONS.md#d-018--ô-chexpert-trống-là-âm-tính-đảo-ngược-quyết-định-2026-08-14)).**
+Ánh xạ nhãn, cờ theo dòng và phép join nay nằm trong
+[`chexpert_labels.py`](chexpert_labels.py.doc.md); `__init__` chỉ gọi
+`prepare_chexpert_labels` rồi `attach_chexpert_labels`.
+`model.mhcac.blank_label_policy`:
+
+| policy | ô trống của study có bản ghi | study không có thông tin CheXpert |
+|---|---|---|
+| `negative` (production, `mimic_cxr_full.yaml`) | `0` | `-100` mọi ô, `classification_valid=False` |
+| `ignore` (mặc định khi thiếu khoá) | `-100` | `-100` mọi ô, `classification_valid=False` |
+
+"Không có thông tin" = không khớp bản ghi nào, **hoặc** bản ghi trống cả 14 ô.
+Mention target lấy **trước** bước fill (giống nhau dưới cả hai policy);
+`excluded_labels` áp **sau**. Giá trị policy lạ → `ValueError`. `__init__` in
+`CheXpert blank_label_policy: <policy>` để xác nhận trong log.
+
+Phần dưới mô tả policy `ignore`, dùng từ 2026-08-13 đến 2026-09-24 — giữ làm lịch sử.
+
+### Lịch sử: ô trống bị mask, không phải âm tính
 
 `__init__` ánh xạ export CheXpert thành `0=âm, 1=dương, 2=không chắc,
 IGNORE_LABEL(-100)=ô trống`. Ô trống nghĩa là labeler không thấy nhắc tới, chứ
@@ -195,8 +215,9 @@ Hệ quả đã đo trên `processed/full_allviews_v2` (222.758 study train):
 
 Không consumer nào phải sửa: `ClassificationLoss` giữ `labels_i >= 0` và ma trận
 nhầm lẫn lúc eval giữ `labels >= 0`, cả hai đã có sẵn từ trước.
-`preporcessing/preprocess_mimic_cxr.py::clean_chexpert` áp đúng ánh xạ này để hai
-đường không lệch nhau, dù cột nhãn của nó không được ghi vào split CSV.
+`preporcessing/preprocess_mimic_cxr.py::clean_chexpert` áp đúng ánh xạ này
+(`--blank-label-policy`, mặc định `negative`) để hai đường không lệch nhau, dù
+cột nhãn của nó không được ghi vào split CSV.
 
 Ghim bởi `tests/test_blank_label_masking.py`.
 

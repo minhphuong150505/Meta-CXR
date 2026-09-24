@@ -478,6 +478,40 @@ cp configs/env_config.yaml.example configs/env_config.yaml
 
 `image_path` trong processed CSV là đường dẫn tương đối dạng `files/p1X/.../<dicom>.jpg` và được nối với `mimic_cxr_jpg_root`; không đổi nó thành đường dẫn tuyệt đối.
 
+### Ngữ nghĩa ô CheXpert trống — `model.mhcac.blank_label_policy` (2026-09-24)
+
+⚠ **Đảo ngược quyết định 2026-08-14.** `mimic_cxr_full.yaml` nay đặt
+`blank_label_policy: negative`: ô trống của một study **có** bản ghi CheXpert
+được coi là âm tính (lớp 0), giống bài META-CXR gốc (*"missing (NaN) values were
+treated as the negative class"*, code gốc `fillna(0.0)`) và giống framing đánh giá
+`study_presence`. Trước đó (2026-08-13 → 2026-09-24) ô trống bị mask
+(`IGNORE_LABEL = -100`) — đó là policy `ignore`, và là giá trị mặc định khi config
+không có khoá, nên config cũ tái lập đúng. Giá trị lạ → `ValueError`.
+
+| | `negative` (production) | `ignore` (lịch sử / ablation) |
+|---|---|---|
+| ô trống, study có bản ghi | `0` | `-100` |
+| study không có thông tin CheXpert (không bản ghi, hoặc trống cả 14 ô) | `-100` mọi ô, bị loại khỏi classification | như bên trái |
+| mention gate target | lấy từ export thô, **không đổi** | như bên trái |
+| `excluded_labels` | áp sau bước fill | như bên trái |
+
+Class weight đã được tính lại cho `negative` bằng
+`scripts/count_chexpert_blank_policy.py` trên máy train (train, mức study,
+công thức cũ `[1.0, n_neg/n_pos, n_neg/n_unc]`, kappa 1, cap 10): âm tính nay
+là đa số ở mọi nhãn, 7/14 `w_pos` chạm cap 10. `No Finding` lần đầu có âm tính
+thật: **74.305 dương / 146.074 âm** (train). 2.379 study train không có thông tin
+CheXpert (8 không có bản ghi, 2.371 bản ghi trống toàn bộ) vẫn là -100.
+Smoke GPU 1 epoch (2.000 study) sạch ngày 2026-09-24: 0,36 s/it, `max mem`
+9.839 MiB, không NaN/inf. **Chưa có run đầy đủ nào dưới `negative`** — mọi số
+Stage-1 trong README đều đo dưới `ignore`. Chi tiết:
+`docs/handoff/PLAN-2026-09-24-blank-as-negative.md`.
+
+Hệ quả cho evaluator (đọc code, chưa đo): `study_presence` cho ra cùng ma trận
+ground truth dưới cả hai policy; `masked_polarity` dưới `negative` không còn
+phân biệt được ô trống với âm tính tường minh, vì `.npz` không mang mask ô trống.
+Caveat cần nêu trong luận văn: ô trống là *không được nhắc tới*, không phải bác sĩ
+loại trừ — nên một phần "âm tính" là thiếu bằng chứng.
+
 ## Dữ liệu
 
 MIMIC-CXR là dữ liệu hạn chế truy cập theo DUA. Người dùng phải tự có quyền truy cập hợp lệ; ảnh, report text, processed splits, credentials và model artifacts không được phân phối trong repository. Pipeline hiện nhắm tới full p10–p19 splits, không phải notebook p10 cũ. Cấu trúc mount chi tiết nằm trong `configs/env_config.yaml.example`.

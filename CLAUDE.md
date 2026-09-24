@@ -3130,7 +3130,41 @@ Negative, makes Positive unwinnable under the validation argmax, and once pinned
 val F1 at exactly 0.000000. Both corrected in `b49ac68`. Full record:
 `docs/handoff/PLAN-2026-09-11-mention-conditioned-stage1.md`.
 
-**A blank CheXpert cell is masked, not negative.** The export leaves a cell blank
+⚠⚠ **REVERSED 2026-09-24: `mimic_cxr_full.yaml` now trains a blank as NEGATIVE
+(`model.mhcac.blank_label_policy: negative`), at the user's request** — matching
+the original paper ("missing (NaN) values were treated as the negative class",
+upstream `fillna(0.0)`) and the `study_presence` framing. D-018. The mapping,
+the row flags and the join now live in `model/lavis/data/chexpert_labels.py`
+(numpy + pandas only; **git-ignored dir, add it with `git add -f`**). Invariants,
+pinned by `tests/test_blank_label_masking.py`:
+- a config **without** the key gets `ignore`, i.e. the paragraph below, so old
+  configs reproduce; an unknown value raises;
+- under BOTH policies a study with no CheXpert information — no record, or a
+  record with all fourteen cells blank — stays `-100` everywhere and out of
+  `classification_valid` (upstream's `fillna(0.0)` would make it fully normal;
+  this repo does not);
+- mention targets come from the raw export before the fill, so the gate is
+  unchanged; `excluded_labels` applies after the fill;
+- `preprocess_mimic_cxr.py --blank-label-policy` mirrors it but writes no label
+  column, so no manifest rebuild is needed.
+
+`class_weights` were recomputed for `negative` on the host 2026-09-24 with
+`scripts/count_chexpert_blank_policy.py` (train, study level, same formula,
+kappa 1, cap 10): negatives are now the majority for every label and 7 of 14
+`w_pos` sit at the cap; the masked-policy table is kept, commented, as
+SUPERSEDED. No Finding under `negative`: 74,305 pos / 146,074 neg. 2,379 train
+studies carry no CheXpert information (8 no record, 2,371 all-blank record) and
+stay `-100`. 1-epoch smoke (2,000 studies) clean: 0.36 s/it, `max mem` 9,839 MiB,
+no NaN/inf. **No full run exists under `negative`**; every Stage-1 number in this
+file was measured under `ignore`. `default_class_weights` in
+`blip2_qformer.py:526` is still the masked-policy sqrt table and is what a
+config without `class_weights` gets. ⚠ Under `negative` the `.npz` labels carry `0` where they carried
+`-1`: `study_presence` is unaffected, but `masked_polarity` silently becomes
+"blank = negative" — never quote it from a `negative` run. Plan and status:
+`docs/handoff/PLAN-2026-09-24-blank-as-negative.md`.
+
+**Historical (the `ignore` policy, 2026-08-13 → 2026-09-24): a blank CheXpert
+cell is masked, not negative.** The export leaves a cell blank
 when the labeler found no mention of the finding, which is not the radiologist
 ruling it out. 79.4% of the label matrix is blank, so the old `.fillna(0)` made
 roughly nine in ten "negatives" an absence of evidence. Blanks now carry

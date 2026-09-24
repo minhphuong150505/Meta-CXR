@@ -27,7 +27,28 @@ có test nào.
 
 ## 1. Ngữ nghĩa nhãn — khác biệt lớn nhất, và là khác biệt khoa học chứ không phải kỹ thuật
 
-**Ô CheXpert trống: gốc coi là ÂM TÍNH, ở đây coi là KHÔNG BIẾT.**
+⚠ **ĐẢO NGƯỢC 2026-09-24 — config production nay coi ô trống là ÂM TÍNH, giống
+bản gốc.** `model.mhcac.blank_label_policy: negative` trong
+`pretraining/configs/mimic_cxr_full.yaml`. Lý do, theo yêu cầu người dùng: bài
+gốc ghi *"missing (NaN) values were treated as the negative class"* và code gốc
+dùng `fillna(0.0)`; framing đánh giá `study_presence` (framing duy nhất repo này
+báo F1) vốn đã coi ô trống là "không có". Hai điểm vẫn khác bản gốc:
+
+- một study **không có thông tin CheXpert nào** (không có bản ghi, hoặc bản ghi
+  trống cả 14 ô) vẫn mang `-100` ở mọi ô và bị `classification_valid` loại, thay
+  vì thành 14 số 0 như `fillna(0.0)` của gốc sẽ làm;
+- mention target vẫn lấy từ export thô **trước** bước fill, nên mention gate
+  không đổi dưới cả hai policy.
+
+`blank_label_policy: ignore` tái lập đúng hành vi mô tả dưới đây, và là giá trị
+mặc định khi config không có khoá này. Mọi số đo trong phần còn lại của mục này
+được đo dưới `ignore`. Class weight cho `negative` đã tính lại bằng
+`scripts/count_chexpert_blank_policy.py` (2026-09-24): âm tính là đa số ở mọi
+nhãn, 7/14 `w_pos` chạm cap 10; mới có smoke 1 epoch, chưa có run đầy đủ. Xem
+`docs/handoff/PLAN-2026-09-24-blank-as-negative.md`.
+
+**Lịch sử (2026-08-13 → 2026-09-24): ô CheXpert trống — gốc coi là ÂM TÍNH, ở
+đây coi là KHÔNG BIẾT.**
 
 Gốc, `ReportDataset.py:253`:
 

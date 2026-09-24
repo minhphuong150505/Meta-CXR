@@ -50,8 +50,14 @@ except ImportError:  # Direct execution: python preporcessing/preprocess_mimic_c
 SPLIT_TO_FILENAME = {"train": "train", "validate": "val", "test": "test"}
 FRONTAL_VIEWS = ["PA", "AP"]
 MIN_IMAGE_SIZE = 100
-# Must match model/lavis/data/ReportDataset.py::IGNORE_LABEL.
+# Must match model/lavis/data/chexpert_labels.py, which ReportDataset uses. That
+# module is not imported here because importing anything under model.lavis runs
+# model/lavis/__init__.py and drags in the whole training stack;
+# tests/test_blank_label_masking.py pins the two against each other instead.
 IGNORE_LABEL = -100
+BLANK_AS_NEGATIVE = "negative"
+BLANK_IGNORED = "ignore"
+BLANK_LABEL_POLICIES = (BLANK_AS_NEGATIVE, BLANK_IGNORED)
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,11 +78,26 @@ def parse_args() -> argparse.Namespace:
                    help="drop rows above this quantile of findings length")
     p.add_argument("--limit-studies", type=int, default=None,
                    help="debug: only process this many studies")
+    p.add_argument("--blank-label-policy", choices=BLANK_LABEL_POLICIES,
+                   default=BLANK_AS_NEGATIVE,
+                   help="how a blank CheXpert cell is mapped in memory: 'negative' "
+                        "(0, the original META-CXR paper and the shipped "
+                        "model.mhcac.blank_label_policy) or 'ignore' "
+                        "(IGNORE_LABEL, the 2026-08-13..2026-09-24 policy). "
+                        "Label columns are NOT written to the split CSVs, so this "
+                        "changes no output file.")
     return p.parse_args()
 
 
-def clean_chexpert(chexpert_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+def clean_chexpert(
+    chexpert_df: pd.DataFrame, blank_label_policy: str = BLANK_AS_NEGATIVE
+) -> tuple[pd.DataFrame, list[str]]:
     """Notebook cell 12. Keeps label-less studies, flags them via has_chexpert_label."""
+    if blank_label_policy not in BLANK_LABEL_POLICIES:
+        raise ValueError(
+            f"unknown blank_label_policy {blank_label_policy!r}; expected one of "
+            f"{', '.join(BLANK_LABEL_POLICIES)}"
+        )
     chexpert_df = chexpert_df.copy()
     chexpert_df["subject_id"] = chexpert_df["subject_id"].astype(int)
     chexpert_df["study_id"] = chexpert_df["study_id"].astype(int)
@@ -99,23 +120,35 @@ def clean_chexpert(chexpert_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     out = chexpert_df.copy()
     out["has_chexpert_label"] = ~no_label_mask
 
-    # 3-class mapping: 0=negative, 1=positive, 2=uncertain, IGNORE_LABEL=blank.
+    # 3-class mapping: 0=negative, 1=positive, 2=uncertain; a blank cell maps
+    # according to blank_label_policy.
     #
-    # A blank means the labeler found no mention of the finding, which is not
-    # the radiologist ruling it out; 79.4% of this matrix is blank, so mapping
-    # blanks to 0 turned absence of evidence into evidence of absence. Consumers
-    # drop labels < 0 per cell.
+    #   negative  blank -> 0. The original META-CXR paper ("missing (NaN) values
+    #             were treated as the negative class") and the study_presence
+    #             evaluation framing. The shipped policy from 2026-09-24.
+    #   ignore    blank -> IGNORE_LABEL, dropped per cell by every consumer. The
+    #             policy from 2026-08-13 to 2026-09-24: a blank means the
+    #             labeler found no mention, which is not a radiologist ruling
+    #             the finding out.
+    #
+    # Under both, a study whose cells are ALL blank keeps IGNORE_LABEL
+    # everywhere; it is flagged has_chexpert_label=False above and must not
+    # become a fully-normal study.
     #
     # These columns are NOT written to the split CSVs -- final_cols keeps only
     # has_chexpert_label -- so the live label path is ReportDataset, which reads
-    # this same CheXpert export and applies the identical mapping. Both are kept
-    # in step so that fixing one and not the other cannot silently diverge.
+    # this same CheXpert export and applies the identical mapping through
+    # model/lavis/data/chexpert_labels.py. Both are kept in step so that fixing
+    # one and not the other cannot silently diverge.
+    blank_value = 0 if blank_label_policy == BLANK_AS_NEGATIVE else IGNORE_LABEL
     for col in label_cols:
         mapped = pd.Series(IGNORE_LABEL, index=out.index, dtype="int8")
+        mapped[out[col].isna() & ~no_label_mask] = blank_value
         mapped[out[col] == 0.0] = 0
         mapped[out[col] == 1.0] = 1
         mapped[out[col] == -1.0] = 2
         out[col] = mapped
+    print(f"[chexpert] blank_label_policy: {blank_label_policy}")
 
     return out, label_cols
 
@@ -289,7 +322,7 @@ def main() -> None:
     print(f"chexpert={chexpert_df.shape} split={split_df.shape} metadata={metadata_df.shape}")
 
     print("\n=== clean chexpert ===")
-    chexpert_clean, label_cols = clean_chexpert(chexpert_df)
+    chexpert_clean, label_cols = clean_chexpert(chexpert_df, args.blank_label_policy)
     del chexpert_df
 
     print("\n=== clean metadata ===")

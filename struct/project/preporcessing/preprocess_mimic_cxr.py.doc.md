@@ -20,7 +20,7 @@ python preporcessing/preprocess_mimic_cxr.py \
 |---|---|---|
 | `main()` | 258 | ★ |
 | `parse_args()` | 55 | |
-| `clean_chexpert(df)` | 76 | 14 nhãn; trả cả danh sách cột |
+| `clean_chexpert(df, blank_label_policy="negative")` | 92 | 14 nhãn; trả cả danh sách cột. Ô trống → 0 (`negative`) hoặc -100 (`ignore`); bản ghi trống toàn bộ luôn -100. CLI `--blank-label-policy`. **Không ảnh hưởng file output** (cột nhãn không được ghi ra); bản sao của `model/lavis/data/chexpert_labels.py`, ghim bởi `tests/test_blank_label_masking.py` |
 | `clean_metadata(df, views)` | 111 | Lọc view, giữ `ViewPosition` |
 | `clean_split(df)` | 150 | Split gốc PhysioNet |
 | `build_study_text(studies, reports_root, workers)` | 194 | ★ Đọc + parse report song song |

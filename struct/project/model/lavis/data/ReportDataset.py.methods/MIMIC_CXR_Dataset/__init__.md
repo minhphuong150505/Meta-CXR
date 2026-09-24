@@ -32,6 +32,13 @@ def __init__(self, vis_processor, text_processor, vis_root, split, cfg,
    ↓
 _coerce_bool cho classification_valid / target_valid
    ↓
+đọc CHEXPERT_CSV → chexpert_labels.prepare_chexpert_labels(
+   blank_policy = model.mhcac.blank_label_policy (thiếu → "ignore"),
+   excluded_labels = model.mhcac.excluded_labels)
+   ↓
+chexpert_labels.attach_chexpert_labels → classification_valid, mention_valid,
+   -100 cho study không khớp bản ghi; mention target → self._mention_matrix
+   ↓
 dựng transform: resize 512 → CenterCrop 448 → ExpandChannels
    geometric_trans: Resize → CenterCrop → RandomAffine (train)
    optical_trans: ColorJitter (train) → ToTensor → ExpandChannels
@@ -67,7 +74,7 @@ Nếu `model.explanation.mask_cache_dir` vắng/rỗng, dataset không đọc ca
 
 ## Config dependencies
 `datasets.mimic_cxr.vis_processor.{train,eval}.{image_size,resize_size,augmentation.*}` ·
-`model.data.*` · `model.explanation.mask_cache_dir` · `run.feature_cache_dir` ·
+`model.data.*` · `model.mhcac.{blank_label_policy,excluded_labels}` · `model.explanation.mask_cache_dir` · `run.feature_cache_dir` ·
 `run.truncate_*`
 
 ## Side effects
