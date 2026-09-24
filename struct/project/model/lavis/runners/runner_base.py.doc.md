@@ -18,6 +18,12 @@ dừng, KHÔNG ghi checkpoint pha. `_grad_interference_hook` (pha 1c, qua hook
 — không đụng `.grad`. `validate` ghi thêm `phase_metrics.jsonl`. Resume sau
 khi chuyển pha xong: đóng băng lại `fade_out` trước khi dựng optimizer.
 
+⚠ **Cập nhật 2026-09-25 (D-021):** hook đo nhiễu gradient cộng dồn tích vô
+hướng/chuẩn theo từng tensor (không nối gradient) — bản nối từng làm pha 1c OOM.
+Vòng train (`base_task._train_inner_loop`) gọi `forward_gradcache` khi model có
+`gradcache_chunk_size > 0` và bỏ `backward` ngoài; tắt cache của autocast khi
+`qformer_grad_checkpointing` bật.
+
 # `runner_base.py`
 
 ## Purpose

@@ -28,6 +28,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-018](#d-018--ô-chexpert-trống-là-âm-tính-đảo-ngược-quyết-định-2026-08-14) | Ô CheXpert trống → âm tính (`blank_label_policy`) | ✅ Confirmed (quyết định của user) | 2026-09-24 |
 | [D-019](#d-019--tắt-mention-gate-phương-án-a) | Tắt mention gate; No Finding vào head P/N/U | ✅ Confirmed (quyết định của user) | 2026-09-24 |
 | [D-020](#d-020--meta-former-3-pha-theo-bài-báo-medclip-swin-mhcac-một-nhánh) | META-Former 3 pha theo bài báo; MedCLIP Swin; MHCAC một nhánh; bật lại ITC/ITM/LM | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
+| [D-021](#d-021--gradient-checkpointing-q-former-gradcache-pha-1a-siglip-mở-lại-khối-encoder-ở-1c) | Checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-25 |
 
 ---
 
@@ -1085,4 +1086,41 @@ Smoke GPU: xem handoff.
 `scripts/phase_report.py`, `scripts/make_medclip_preprocess_reference.py`.
 Cập nhật: runner, `blip2_qformer`, `mhcac_12`, `ReportDataset`, `swin_encoder`,
 `precompute_features`, `check_itc_gate`, `image_text_pretrain`, `train.py`.
+
+---
+
+## D-021 — Gradient checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c
+
+**Ngày:** 2026-09-25 · **Status:** ✅ Confirmed (quyết định của user). **Chỉ smoke.**
+Đi kèm [D-020](#d-020--meta-former-3-pha-theo-bài-báo-medclip-swin-mhcac-một-nhánh).
+
+**Vì sao.** Smoke D-020: pha 1a OOM ở batch 32/24/16 (chạy được ở 8 — đúng
+batch từng cho ITC ngẫu nhiên 4 lần); pha 1c OOM ở 16 × 4, chạy ở 8 × 8 với 97%
+card. User chọn cả ba công cụ, và batch 8 × 8 cho 1c.
+
+**Cài đặt.**
+- `model.qformer_grad_checkpointing: true` — nhánh sẵn có của `BertEncoder`,
+  chuyển sang `use_reentrant=False`. Hai bẫy đã xử lý: (1) checkpointing tắt KV
+  cache nên LM phải đưa lại query + ảnh (`_language_modeling(image_embeds=...)`);
+  và `BertEncoder` trả **tuple rỗng**, không phải `None` → kiểm tra "rỗng";
+  (2) cache ép kiểu weight của autocast làm recompute lệch metadata → vòng train
+  tắt `cache_enabled` khi checkpointing bật.
+- `model.loss.itc_loss: sigmoid` — SigLIP (`mhcac.loss.siglip_loss`), scale
+  học được khởi tạo log 10, bias −10, chỉ trên cặp hợp lệ. `temp` và
+  `itc_label_smoothing` chỉ áp cho `softmax`. Gate lấy nhiệt độ = 1/exp(scale).
+- GradCache pha 1a (`Blip2Qformer.forward_gradcache`, `gradcache_chunk_size: 16`,
+  batch 128): features cả batch không grad → ITC trên cả batch → backward vào
+  features → mỗi chunk phát lại RNG, tính lại có grad, backward gradient đã
+  cache cùng ITM/LM của chunk (chuẩn hóa theo cả batch). Negative ITM rút từ
+  similarity cả batch, ảnh negative ngoài chunk được encode lại trong chunk.
+  Chỉ cho mục tiêu căn chỉnh (MHCAC bật → lỗi); không đi cùng GradScaler fp16.
+- Pha 1c: `unfreeze_encoder_blocks: true` với bộ **nông** của `run_20260820_ft`
+  (BioViL layer4 + projector, CLIP block 10–11 + post_layernorm) — bộ duy nhất
+  từng đo được cải thiện; bộ sâu trong `model.encoder_finetune` thì không.
+
+**Evidence.** `tests/test_gradcache_siglip.py` (host): chia chunk ≡ không chia
+(< 1e-4 so với độ lớn tensor), GradCache ≡ backward thường, LM không cache ≡ LM
+có cache, checkpointing không đổi gradient, SigLIP đúng công thức. Host 1174
+passed / 2 skipped. Smoke: 1a 7.221 MiB, 8,03 s/it (batch 128); 1b 6.466 MiB;
+1c 9.337 MiB, 0,634 s/it với 342,78M tham số trainable.
 

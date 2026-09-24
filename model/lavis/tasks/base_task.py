@@ -219,6 +219,16 @@ class BaseTask:
         """
         use_autocast = cuda_enabled and amp_dtype is not None
         use_grad_scaler = scaler is not None
+        bare_model = model.module if hasattr(model, "module") else model
+        # Phase-1a GradCache: the model runs its own chunked backward
+        # (Blip2Qformer.forward_gradcache); the loop must not call backward.
+        gradcache = int(getattr(bare_model, "gradcache_chunk_size", 0) or 0) > 0
+        checkpointing = bool(getattr(bare_model, "qformer_grad_checkpointing", False))
+        if gradcache and use_grad_scaler:
+            raise ValueError(
+                "gradcache runs backward inside the model and cannot be combined "
+                "with an fp16 GradScaler; use amp_dtype: bfloat16"
+            )
 
         if not hasattr(data_loader, "__next__"):
             # convert to iterator if not already
@@ -299,13 +309,27 @@ class BaseTask:
                         device_type="cuda",
                         enabled=use_autocast,
                         dtype=amp_dtype,
+                        # Q-Former gradient checkpointing recomputes layers in
+                        # backward, outside this region, where autocast's
+                        # weight-cast cache is gone; with the cache on, the
+                        # recompute records extra casts and checkpoint aborts
+                        # ("Recomputed values ... different metadata").
+                        cache_enabled=not checkpointing,
                     )
                 elif use_autocast:
                     amp_context = torch.cuda.amp.autocast(dtype=amp_dtype)
                 else:
                     amp_context = contextlib.nullcontext()
                 with amp_context:
-                    loss, loss_dict = self.train_step(model=model, samples=samples)
+                    if gradcache:
+                        # Backward already done inside, scaled by 1/window_size.
+                        output = bare_model.forward_gradcache(
+                            samples, loss_scale=1.0 / window_size
+                        )
+                        loss = output["loss"]
+                        loss_dict = {k: v for k, v in output.items() if "loss" in k and v is not None}
+                    else:
+                        loss, loss_dict = self.train_step(model=model, samples=samples)
                     # The final accumulation window is often shorter on the full
                     # dataset. Divide by its actual size so its update has the same
                     # scale as every complete window.
@@ -343,13 +367,15 @@ class BaseTask:
                 # Measurement-only hook (phase 1c gradient interference): it may
                 # call torch.autograd.grad with retain_graph=True, which leaves
                 # .grad untouched, so the real update below is unaffected.
-                if pre_backward is not None and i == window_start:
+                if pre_backward is not None and i == window_start and not gradcache:
                     try:
                         pre_backward(i // accum_grad_iters, loss_dict, model)
                     except Exception:
                         logging.exception("pre_backward hook failed at iter %d", i)
 
-                if use_grad_scaler:
+                if gradcache:
+                    pass  # forward_gradcache has already backpropagated
+                elif use_grad_scaler:
                     scaler.scale(scaled_loss).backward()
                 else:
                     scaled_loss.backward()

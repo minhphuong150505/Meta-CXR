@@ -713,7 +713,18 @@ record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
   `layer_order: self_first`, `text_mask: element`): teacher/student REMOVED,
   `lambda_teacher_cls`/`lambda_distill` must be 0 (the model raises otherwise).
 - `feature_mask_ratio: 0.1`, `itc_label_smoothing: 0.1`, `itc_queue_size: 0`.
-- ⚠ **Smoke result (2,000 studies, 1 epoch per phase): phase 1a OOMs at
+- ✅ **Memory, 2026-09-25 (D-021): Q-Former gradient checkpointing (all
+  phases), SigLIP ITC (`itc_loss: sigmoid`), GradCache in phase 1a (batch 128,
+  chunk 16, `Blip2Qformer.forward_gradcache` runs its own backward), phase 1c at
+  8 x 8 with the SHALLOW encoder unfreeze reopened.** Smoke: 1a 7,221 MiB at
+  8.0 s/it (batch 128), 1b 6,466 MiB, 1c 9,337 MiB at 0.63 s/it. Traps fixed on
+  the way, each of which failed or would have failed silently: checkpointing
+  turns the query KV cache into an EMPTY TUPLE (not None), so the LM re-feeds
+  queries + image; autocast's weight-cast cache must be off with checkpointing
+  or recompute aborts on metadata. `tests/test_gradcache_siglip.py` pins
+  chunked == unchunked gradients, GradCache == plain backward, no-cache LM ==
+  cached LM, checkpointing == no checkpointing.
+- ⚠ Historical smoke before D-021 (2,000 studies, 1 epoch per phase): phase 1a OOMs at
   iteration 0 at batch 32, 24 AND 16** on the 16 GB card (inside ITM: 3×batch
   sequences of 32 queries + 256 text tokens through the 12-layer Q-Former); it
   runs at batch 8 (12,456 MiB, 0.366 s/it). Phase 1b at 16×4: 8,888 MiB,

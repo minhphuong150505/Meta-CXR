@@ -5,6 +5,8 @@
  For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
 """
 import logging
+import math
+from types import SimpleNamespace
 
 import torch
 import torch.distributed as dist
@@ -42,6 +44,7 @@ from mhcac.loss import (
     MultiPositiveContrastiveLoss,
     build_classification_losses,
     mention_gate_is_trained,
+    siglip_loss,
     smoothed_cross_entropy,
     mention_marginal_log_probs,
     soft_target_kl_loss,
@@ -73,6 +76,32 @@ def _resolve_encoder_ablation(stream_names, active_encoders):
             f"with {sorted(built)}"
         )
     return tuple(name for name in built if name not in active)
+
+
+def _slice_samples(samples, index, batch_size):
+    """Rows ``index`` of every per-sample entry of a batch dict."""
+    out = {}
+    for key, value in samples.items():
+        if torch.is_tensor(value) and value.ndim > 0 and value.shape[0] == batch_size:
+            out[key] = value[index.to(value.device)]
+        elif isinstance(value, (list, tuple)) and len(value) == batch_size:
+            out[key] = [value[int(i)] for i in index.tolist()]
+        else:
+            out[key] = value
+    return out
+
+
+def _rng_state(device):
+    state = {"cpu": torch.get_rng_state()}
+    if device.type == "cuda":
+        state["cuda"] = torch.cuda.get_rng_state(device)
+    return state
+
+
+def _set_rng_state(state, device):
+    torch.set_rng_state(state["cpu"])
+    if "cuda" in state:
+        torch.cuda.set_rng_state(state["cuda"], device)
 
 
 def _hard_negative_sampling_weights(
@@ -200,6 +229,9 @@ class Blip2Qformer(Blip2Base):
         itc_temp=0.07,
         itc_temp_learnable=True,
         itc_label_smoothing=0.0,
+        itc_loss="softmax",
+        qformer_grad_checkpointing=False,
+        gradcache_chunk_size=0,
         feature_mask_ratio=0.0,
         mhcac_text_guidance="teacher_student",
         mhcac_layer_order="text_first",
@@ -249,6 +281,8 @@ class Blip2Qformer(Blip2Base):
                 key_orig = name.replace("_query", "")
                 param.data.copy_(state_dict[key_orig])
 
+        # Set after the pretrained weights are in; read by BertEncoder.forward.
+        self.Qformer.config.gradient_checkpointing = bool(qformer_grad_checkpointing)
         self.vision_proj = nn.Linear(self.Qformer.config.hidden_size, embed_dim)
         self.text_proj = nn.Linear(self.Qformer.config.hidden_size, embed_dim)
 
@@ -278,6 +312,25 @@ class Blip2Qformer(Blip2Base):
         self.itc_label_smoothing = float(itc_label_smoothing)
         if not 0.0 <= self.itc_label_smoothing < 1.0:
             raise ValueError("itc_label_smoothing must be in [0, 1)")
+        # ITC objective: "softmax" (BLIP-2 InfoNCE, every run before 2026-09-25)
+        # or "sigmoid" (SigLIP: pairwise, no batch normalisation). SigLIP owns
+        # its scale and bias; `temp` is then unused.
+        if itc_loss not in ("softmax", "sigmoid"):
+            raise ValueError(f"itc_loss must be 'softmax' or 'sigmoid', got {itc_loss!r}")
+        self.itc_loss = itc_loss
+        if itc_loss == "sigmoid":
+            if int(itc_queue_size) > 0:
+                raise ValueError("itc_loss 'sigmoid' scores the batch itself; set itc_queue_size: 0")
+            # SigLIP's initialisation: t' = log 10, b = -10.
+            self.siglip_logit_scale = nn.Parameter(torch.tensor(math.log(10.0)))
+            self.siglip_bias = nn.Parameter(torch.tensor(-10.0))
+        # Recompute each Q-Former layer in backward instead of storing it.
+        self.qformer_grad_checkpointing = bool(qformer_grad_checkpointing)
+        # >0: phase-1a GradCache -- the contrastive loss sees the whole batch,
+        # memory is that of one chunk (forward_gradcache).
+        self.gradcache_chunk_size = int(gradcache_chunk_size)
+        if self.gradcache_chunk_size < 0:
+            raise ValueError("gradcache_chunk_size must be >= 0")
         # Paper: "we randomly mask 10% of the features from each encoder".
         # Training only, per encoder, per sample. 0 disables it.
         self.feature_mask_ratio = float(feature_mask_ratio)
@@ -1072,6 +1125,26 @@ class Blip2Qformer(Blip2Base):
         )
 
         zero = image_features.sum() * 0.0
+        if self.itc_loss == "sigmoid":
+            raw = torch.einsum(
+                "bqd,nd->bnq", image_features, text_features_all
+            ).amax(dim=-1)
+            scale = self.siglip_logit_scale.exp()
+            # Scaled logits double as the ITM hard-negative similarities.
+            scored_i2t = (raw * scale + self.siglip_bias).masked_fill(
+                ~candidate_valid.unsqueeze(0), float("-inf")
+            )
+            scored_t2i = (raw.t() * scale + self.siglip_bias).masked_fill(
+                ~candidate_valid.unsqueeze(0), float("-inf")
+            )
+            loss = siglip_loss(raw, self.siglip_logit_scale, self.siglip_bias, valid_mask) \
+                if valid_mask.any() else zero
+            return (
+                loss,
+                scored_i2t[:, :current_count],
+                scored_t2i[:, :current_count],
+                valid_all,
+            )
         if not valid_mask.any():
             return (
                 zero,
@@ -1174,7 +1247,11 @@ class Blip2Qformer(Blip2Base):
         )
         return F.cross_entropy(logits, labels)
 
-    def _language_modeling(self, text_tokens, query_tokens, query_output, valid_mask):
+    def _language_modeling(self, text_tokens, query_tokens, query_output, valid_mask,
+                           image_embeds=None, token_normalizer=None):
+        """ITG / LM. ``token_normalizer`` replaces the local token count (GradCache
+        chunks divide by the WHOLE batch's count so the chunks sum to the mean).
+        """
         zero = query_output.last_hidden_state.sum() * 0.0
         if not valid_mask.any():
             return zero
@@ -1188,18 +1265,260 @@ class Blip2Qformer(Blip2Base):
         query_atts = torch.ones(
             query_tokens.shape[:-1], dtype=torch.long, device=query_tokens.device
         )
-        output = self.Qformer(
-            decoder_input_ids,
-            attention_mask=torch.cat([query_atts, text_tokens.attention_mask], dim=1),
-            past_key_values=query_output.past_key_values,
-            return_dict=True,
-            labels=labels,
-            reduction="none",
-        )
+        attention_mask = torch.cat([query_atts, text_tokens.attention_mask], dim=1)
+        # Under gradient checkpointing BertEncoder returns an EMPTY tuple, not
+        # None (it decides use_cache before the per-layer switch-off), so test
+        # for a non-empty cache rather than for None.
+        if query_output.past_key_values:
+            output = self.Qformer(
+                decoder_input_ids,
+                attention_mask=attention_mask,
+                past_key_values=query_output.past_key_values,
+                return_dict=True,
+                labels=labels,
+                reduction="none",
+            )
+        else:
+            # Gradient checkpointing forces use_cache off, so there is no query
+            # KV cache to condition on. Recompute the queries inside the LM pass
+            # instead -- the same computation BLIP-2's cache shortcut performs,
+            # and NOT optional: without it the LM would train with no image.
+            if image_embeds is None:
+                raise ValueError(
+                    "LM without a query KV cache needs image_embeds (gradient "
+                    "checkpointing is on)"
+                )
+            output = self.Qformer(
+                decoder_input_ids,
+                attention_mask=attention_mask,
+                query_embeds=query_tokens,
+                encoder_hidden_states=image_embeds,
+                encoder_attention_mask=torch.ones(
+                    image_embeds.shape[:-1], dtype=torch.long, device=image_embeds.device
+                ),
+                return_dict=True,
+                labels=labels,
+                reduction="none",
+            )
         token_count = (labels[:, 1:] != -100).sum()
+        if token_normalizer is not None:
+            return output.loss.sum() / max(float(token_normalizer), 1.0)
         if token_count == 0:
             return zero
         return output.loss.sum() / token_count
+
+    def _alignment_features(self, samples, text_tokens):
+        """Text then image, exactly as forward(): the tensors ITC/ITM/LM read."""
+        text_output = self.Qformer.bert(
+            text_tokens.input_ids,
+            attention_mask=text_tokens.attention_mask,
+            return_dict=True,
+        )
+        text_features = F.normalize(
+            self.text_proj(text_output.last_hidden_state[:, 0]), dim=-1
+        )
+        image_embeds = self.encode_samples(samples).tokens
+        query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
+        query_output = self.Qformer.bert(
+            query_embeds=query_tokens,
+            encoder_hidden_states=image_embeds,
+            encoder_attention_mask=torch.ones(
+                image_embeds.shape[:-1], dtype=torch.long, device=image_embeds.device
+            ),
+            use_cache=True,
+            return_dict=True,
+        )
+        image_features = F.normalize(
+            self.vision_proj(query_output.last_hidden_state), dim=-1
+        )
+        return image_features, text_features, image_embeds, query_tokens, query_output
+
+    def forward_gradcache(self, samples, loss_scale=1.0):
+        """Phase 1a with GradCache (Gao et al., arXiv 2101.06983).
+
+        ITC is computed over the WHOLE batch while activations are held for one
+        chunk at a time:
+
+        1. no_grad pass over every chunk -> all image/text features;
+        2. ITC on the full feature matrices; backward into those leaf tensors
+           (and into the temperature / SigLIP scale and bias);
+        3. per chunk, replay the RNG, recompute the features WITH grad, and
+           backpropagate the cached feature gradients together with the chunk's
+           ITM and LM terms, each normalised by the whole batch's count, so the
+           chunks sum exactly to the full-batch loss.
+
+        ITM hard negatives are drawn from the whole batch's similarities; a
+        negative image outside the chunk is re-encoded inside it.
+
+        It performs its own backward. The caller must NOT call backward on the
+        returned loss (it is detached). Only the alignment objectives are
+        allowed: MHCAC terms would need their own caching.
+        """
+        if self.needs_mhcac():
+            raise ValueError(
+                "gradcache covers the alignment-only phase (1a); switch off every "
+                "MHCAC objective or gradcache_chunk_size"
+            )
+        if self.itc_queue_size > 0:
+            raise ValueError("gradcache needs itc_queue_size: 0")
+        if not (self.lambda_itc > 0 or self.lambda_itm > 0 or self.lambda_lm > 0):
+            raise ValueError("gradcache with no alignment objective switched on")
+        text = samples["text_output"]
+        batch_size = len(text)
+        device = self.query_tokens.device
+        chunk = self.gradcache_chunk_size
+        generation_mask = self._batch_mask(samples, "generation_mask", batch_size, device)
+        text_tokens = self.tokenizer(
+            text,
+            padding="max_length",
+            truncation=True,
+            max_length=self.max_txt_len,
+            return_tensors="pt",
+        ).to(device)
+        chunks = [
+            torch.arange(start, min(start + chunk, batch_size), device=device)
+            for start in range(0, batch_size, chunk)
+        ]
+
+        def tokens_of(index):
+            return SimpleNamespace(
+                input_ids=text_tokens.input_ids[index],
+                attention_mask=text_tokens.attention_mask[index],
+            )
+
+        # 1. features of the whole batch, no graph
+        states, image_parts, text_parts = [], [], []
+        with torch.no_grad():
+            for index in chunks:
+                states.append(_rng_state(device))
+                image_f, text_f, *_ = self._alignment_features(
+                    _slice_samples(samples, index, batch_size), tokens_of(index)
+                )
+                image_parts.append(image_f.float())
+                text_parts.append(text_f.float())
+        image_all = torch.cat(image_parts).requires_grad_(True)
+        text_all = torch.cat(text_parts).requires_grad_(True)
+
+        # 2. contrastive loss over the whole batch
+        loss_itc, sim_i2t, sim_t2i, valid_all = self._image_text_contrastive(
+            image_all, text_all, generation_mask
+        )
+        if self.lambda_itc > 0:
+            (self.lambda_itc * loss_scale * loss_itc).backward()
+        grad_image = image_all.grad if image_all.grad is not None else torch.zeros_like(image_all)
+        grad_text = text_all.grad if text_all.grad is not None else torch.zeros_like(text_all)
+
+        valid_count = int(generation_mask.sum())
+        negatives_image = negatives_text = None
+        if self.lambda_itm > 0 and valid_count >= 2:
+            with torch.no_grad():
+                positives = torch.arange(batch_size, device=device)
+                weights_t2i = _hard_negative_sampling_weights(sim_t2i, valid_all, positives)
+                weights_i2t = _hard_negative_sampling_weights(sim_i2t, valid_all, positives)
+                negatives_image = torch.full((batch_size,), -1, dtype=torch.long, device=device)
+                negatives_text = torch.full((batch_size,), -1, dtype=torch.long, device=device)
+                for row in generation_mask.nonzero(as_tuple=True)[0]:
+                    negatives_image[row] = torch.multinomial(weights_t2i[row], 1).squeeze(0)
+                    negatives_text[row] = torch.multinomial(weights_i2t[row], 1).squeeze(0)
+        lm_tokens = 0
+        if self.lambda_lm > 0:
+            labels = text_tokens.input_ids.clone()
+            labels[:, 0] = self.tokenizer.bos_token_id
+            counted = (labels[:, 1:] != self.tokenizer.pad_token_id) & generation_mask[:, None]
+            lm_tokens = int(counted.sum())
+
+        # 3. per chunk: replay, recompute with grad, backward
+        total_itm = torch.zeros((), device=device)
+        total_lm = torch.zeros((), device=device)
+        for position, index in enumerate(chunks):
+            _set_rng_state(states[position], device)
+            sub = _slice_samples(samples, index, batch_size)
+            sub_tokens = tokens_of(index)
+            image_f, text_f, image_embeds, query_tokens, query_output = (
+                self._alignment_features(sub, sub_tokens)
+            )
+            chunk_loss = (image_f.float() * grad_image[index]).sum() + (
+                text_f.float() * grad_text[index]
+            ).sum()
+            local_valid = generation_mask[index]
+            if negatives_image is not None and local_valid.any():
+                rows = index[local_valid]
+                neg_images = self.encode_samples(
+                    _slice_samples(samples, negatives_image[rows], batch_size)
+                ).tokens
+                ids_pos = sub_tokens.input_ids[local_valid]
+                atts_pos = sub_tokens.attention_mask[local_valid]
+                ids_neg = text_tokens.input_ids[negatives_text[rows]]
+                atts_neg = text_tokens.attention_mask[negatives_text[rows]]
+                image_pos = image_embeds[local_valid]
+                text_ids = torch.cat([ids_pos, ids_pos, ids_neg], dim=0)
+                text_atts = torch.cat([atts_pos, atts_pos, atts_neg], dim=0)
+                image_inputs = torch.cat([image_pos, neg_images, image_pos], dim=0)
+                queries = self.query_tokens.expand(text_ids.shape[0], -1, -1)
+                query_atts = torch.ones(queries.shape[:-1], dtype=torch.long, device=device)
+                output = self.Qformer.bert(
+                    text_ids,
+                    query_embeds=queries,
+                    attention_mask=torch.cat([query_atts, text_atts], dim=1),
+                    encoder_hidden_states=image_inputs,
+                    encoder_attention_mask=torch.ones(
+                        image_inputs.shape[:-1], dtype=torch.long, device=device
+                    ),
+                    return_dict=True,
+                )
+                logits = self.itm_head(
+                    output.last_hidden_state[:, : queries.shape[1]]
+                ).mean(dim=1)
+                count = int(local_valid.sum())
+                labels_itm = torch.cat(
+                    [
+                        torch.ones(count, dtype=torch.long, device=device),
+                        torch.zeros(2 * count, dtype=torch.long, device=device),
+                    ]
+                )
+                # Summed, then divided by the whole batch's 3 x positives, so the
+                # chunks add up to the full-batch mean.
+                loss_itm = F.cross_entropy(logits.float(), labels_itm, reduction="sum") / (
+                    3 * valid_count
+                )
+                chunk_loss = chunk_loss + loss_scale * self.lambda_itm * loss_itm
+                total_itm = total_itm + loss_itm.detach()
+            if self.lambda_lm > 0 and local_valid.any():
+                loss_lm = self._language_modeling(
+                    sub_tokens, query_tokens, query_output, local_valid,
+                    image_embeds=image_embeds, token_normalizer=lm_tokens,
+                )
+                chunk_loss = chunk_loss + loss_scale * self.lambda_lm * loss_lm
+                total_lm = total_lm + loss_lm.detach()
+            chunk_loss.backward()
+
+        zero = torch.zeros((), device=device)
+        total = (
+            self.lambda_itc * loss_itc.detach()
+            + self.lambda_itm * total_itm
+            + self.lambda_lm * total_lm
+        )
+        return BlipOutput(
+            loss=total,
+            loss_itc=loss_itc.detach(),
+            loss_itm=total_itm,
+            loss_lm=total_lm,
+            loss_cls=zero,
+            loss_teacher_cls=zero,
+            loss_distill=zero,
+            loss_contrastive=zero,
+            loss_orthagonal=zero,
+            loss_sparsity=zero,
+            loss_explanation=None,
+            loss_gate=zero,
+            loss_mention_conditioned=zero,
+            loss_mpc=zero,
+            loss_view_consistency=zero,
+            classification_logits=None,
+            mention_logits=None,
+            mention_marginal_log_probs=None,
+            classification_mask=None,
+        )
 
     def needs_mhcac(self):
         """True when any objective reads the MHCAC classifier."""
@@ -1323,7 +1642,8 @@ class Blip2Qformer(Blip2Base):
                     )
             if self.lambda_lm > 0:
                 loss_lm = self._language_modeling(
-                    text_tokens, query_tokens, query_output, generation_mask
+                    text_tokens, query_tokens, query_output, generation_mask,
+                    image_embeds=image_embeds,
                 )
             if self.lambda_itc > 0:
                 self._update_itc_queue(
@@ -2071,6 +2391,9 @@ class Blip2Qformer(Blip2Base):
         itc_temp = float(loss_cfg.get("itc_temp", 0.07))
         itc_temp_learnable = bool(loss_cfg.get("itc_temp_learnable", True))
         itc_label_smoothing = float(loss_cfg.get("itc_label_smoothing", 0.0))
+        itc_loss = str(loss_cfg.get("itc_loss", "softmax"))
+        qformer_grad_checkpointing = bool(cfg.get("qformer_grad_checkpointing", False))
+        gradcache_chunk_size = int(cfg.get("gradcache_chunk_size", 0))
         feature_mask_ratio = float(cfg.get("feature_mask_ratio", 0.0))
 
         explanation_cfg_raw = cfg.get("explanation", {}) or {}
@@ -2161,6 +2484,9 @@ class Blip2Qformer(Blip2Base):
             itc_temp=itc_temp,
             itc_temp_learnable=itc_temp_learnable,
             itc_label_smoothing=itc_label_smoothing,
+            itc_loss=itc_loss,
+            qformer_grad_checkpointing=qformer_grad_checkpointing,
+            gradcache_chunk_size=gradcache_chunk_size,
             feature_mask_ratio=feature_mask_ratio,
             mhcac_text_guidance=mhcac_text_guidance,
             mhcac_layer_order=mhcac_layer_order,

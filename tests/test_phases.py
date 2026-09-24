@@ -53,6 +53,8 @@ class FakeBlip2(nn.Module):
         self.text_proj = nn.Linear(8, 4)
         self.itm_head = nn.Linear(8, 2)
         self.temp = nn.Parameter(torch.tensor(0.07))
+        self.siglip_logit_scale = nn.Parameter(torch.tensor(2.3))
+        self.siglip_bias = nn.Parameter(torch.tensor(-10.0))
         self.shared_visual_projector = nn.ModuleDict({"projections": nn.Linear(8, 8)})
         self.ln_vision = nn.LayerNorm(8)
         self.visual_encoder = nn.ModuleDict(
@@ -74,7 +76,8 @@ class FakeBlip2(nn.Module):
             self.pubmedclip(x), self.swin(x), self.mhcac(x), self.stream_adapters(x),
             self.view_fusion(x), self.mpc_heads(x),
         ]
-        return sum(p.sum() for p in parts) + self.query_tokens.sum() + self.temp
+        return (sum(p.sum() for p in parts) + self.query_tokens.sum() + self.temp
+                + self.siglip_logit_scale + self.siglip_bias)
 
 
 # --------------------------------------------------------------------------
@@ -110,8 +113,8 @@ def test_no_phases_block_means_the_historical_single_phase():
 
 @pytest.mark.parametrize(
     ("phase", "epochs", "itc", "cls", "batch", "aug"),
-    [("phase1a", 4, 1.0, 0.0, 32, False), ("phase1b", 5, 0.0, 1.0, 16, True),
-     ("phase1c", 1, 1.0, 1.0, 16, True)],
+    [("phase1a", 4, 1.0, 0.0, 128, False), ("phase1b", 5, 0.0, 1.0, 16, True),
+     ("phase1c", 1, 1.0, 1.0, 8, True)],
 )
 def test_phase_overrides_reach_the_config(phase, epochs, itc, cls, batch, aug):
     spec, config = _spec(phase)
@@ -119,7 +122,11 @@ def test_phase_overrides_reach_the_config(phase, epochs, itc, cls, batch, aug):
     assert config.model.loss.lambda_itc == itc and config.model.loss.lambda_cls == cls
     assert config.run.batch_size_train == batch
     assert config.datasets.mimic_cxr.vis_processor.train.augmentation.enabled is aug
-    assert config.model.encoder_finetune.enabled is False, "encoders stay frozen"
+    # Encoder blocks stay frozen except in 1c, where the user reopened the
+    # shallow set of run_20260820_ft (D-021).
+    assert config.model.encoder_finetune.enabled is (phase == "phase1c")
+    if phase == "phase1c":
+        assert len(config.model.encoder_finetune.patterns) == 5
     # The paper's MHCAC has no teacher in any phase.
     assert config.model.loss.lambda_teacher_cls == 0 and config.model.loss.lambda_distill == 0
 
@@ -153,12 +160,12 @@ def test_init_checkpoint_chain(tmp_path):
 
 EXPECTED_TRAINABLE = {
     "phase1a": {"query_tokens", "Qformer", "vision_proj", "text_proj", "itm_head", "temp",
-                "shared_visual_projector", "ln_vision"},
+                "siglip_logit_scale", "siglip_bias", "shared_visual_projector", "ln_vision"},
     "phase1b": {"query_tokens", "Qformer", "vision_proj", "text_proj", "itm_head", "temp",
-                "shared_visual_projector", "ln_vision", "mhcac", "stream_adapters",
+                "siglip_logit_scale", "siglip_bias", "shared_visual_projector", "ln_vision", "mhcac", "stream_adapters",
                 "view_fusion", "mpc_heads"},
     "phase1c": {"query_tokens", "Qformer", "vision_proj", "text_proj", "itm_head", "temp",
-                "shared_visual_projector", "ln_vision", "mhcac", "stream_adapters",
+                "siglip_logit_scale", "siglip_bias", "shared_visual_projector", "ln_vision", "mhcac", "stream_adapters",
                 "view_fusion", "mpc_heads", "visual_encoder"},
 }
 
