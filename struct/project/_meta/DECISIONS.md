@@ -28,7 +28,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-018](#d-018--ô-chexpert-trống-là-âm-tính-đảo-ngược-quyết-định-2026-08-14) | Ô CheXpert trống → âm tính (`blank_label_policy`) | ✅ Confirmed (quyết định của user) | 2026-09-24 |
 | [D-019](#d-019--tắt-mention-gate-phương-án-a) | Tắt mention gate; No Finding vào head P/N/U | ✅ Confirmed (quyết định của user) | 2026-09-24 |
 | [D-020](#d-020--meta-former-3-pha-theo-bài-báo-medclip-swin-mhcac-một-nhánh) | META-Former 3 pha theo bài báo; MedCLIP Swin; MHCAC một nhánh; bật lại ITC/ITM/LM | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
-| [D-021](#d-021--gradient-checkpointing-q-former-gradcache-pha-1a-siglip-mở-lại-khối-encoder-ở-1c) | Checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-25 |
+| [D-021](#d-021--gradient-checkpointing-q-former-gradcache-pha-1a-siglip-mở-lại-khối-encoder-ở-1c) | Checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
 
 ---
 
@@ -1091,7 +1091,7 @@ Cập nhật: runner, `blip2_qformer`, `mhcac_12`, `ReportDataset`, `swin_encode
 
 ## D-021 — Gradient checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c
 
-**Ngày:** 2026-09-25 · **Status:** ✅ Confirmed (quyết định của user). **Chỉ smoke.**
+**Ngày:** 2026-09-24 · **Status:** ✅ Confirmed (quyết định của user). **Chỉ smoke.**
 Đi kèm [D-020](#d-020--meta-former-3-pha-theo-bài-báo-medclip-swin-mhcac-một-nhánh).
 
 **Vì sao.** Smoke D-020: pha 1a OOM ở batch 32/24/16 (chạy được ở 8 — đúng

@@ -14,8 +14,8 @@ tại. Nếu chạy pha 1a mà chưa có cache: `precompute_features --anchor-on
 (`run.feature_cache_dir` chỉ cho 1a). Exit 3 nếu gate ITC pha 1a trượt
 (`PHASE_GATE_FAILED`), exit 4 nếu một pha xong mà không có
 `ROOT/checkpoint_<pha>.pth`. Biến: `CACHE`, `PHASES`, `EXTRA_OPTS`, `CACHE_OPTS`,
-`RESUME=1` (2026-09-25): pha đã có `ROOT/checkpoint_<pha>.pth` thì bỏ qua, pha có
+`RESUME=1` (2026-09-24): pha đã có `ROOT/checkpoint_<pha>.pth` thì bỏ qua, pha có
 thư mục thì resume từ `checkpoint_last.pth`; nếu `ROOT` đã có `PHASE_GATE_FAILED`
-thì exit 3 luôn. Kiểm chứng trên GPU 2026-09-25: cổng bị ép trượt sau epoch 2 →
+thì exit 3 luôn. Kiểm chứng trên GPU 2026-09-24: cổng bị ép trượt sau epoch 2 →
 exit 3, không chạy 1b, không có `checkpoint_phase1a`; kill giữa epoch rồi
 `RESUME=1` → nạp `checkpoint_last` (chạy lại epoch từ batch đầu), hoàn tất.

@@ -2,7 +2,7 @@
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-12
 
-⚠ **Cập nhật 2026-09-25 (D-021):** nhánh gradient checkpointing của
+⚠ **Cập nhật 2026-09-24 (D-021):** nhánh gradient checkpointing của
 `BertEncoder` dùng `use_reentrant=False`. Khi bật, encoder tự tắt `use_cache` và
 trả `past_key_values` là **tuple rỗng** (không phải `None`) — người gọi phải
 kiểm tra rỗng, xem `Blip2Qformer._language_modeling`.

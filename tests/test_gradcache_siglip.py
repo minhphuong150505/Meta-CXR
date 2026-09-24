@@ -1,4 +1,4 @@
-"""GradCache, Q-Former gradient checkpointing and SigLIP (D-021, 2026-09-25).
+"""GradCache, Q-Former gradient checkpointing and SigLIP (D-021, 2026-09-24).
 
 The claims pinned here are the ones that would fail SILENTLY:
 

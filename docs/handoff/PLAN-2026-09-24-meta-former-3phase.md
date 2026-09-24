@@ -480,7 +480,7 @@ because of it. Classification deltas 1c vs end of 1b on 400 val studies are
 
 ---
 
-## Decision update (user, 2026-09-25) — D-021
+## Decision update (user, 2026-09-24) — D-021
 
 1. For the batch: Q-Former **gradient checkpointing**, **GradCache** and
    **SigLIP**, all three.
@@ -488,7 +488,7 @@ because of it. Classification deltas 1c vs end of 1b on 400 val studies are
 3. `phase1c.unfreeze_encoder_blocks`: **true** — try it.
 4. Push.
 
-## Execution report — 2026-09-25 (continued session), planning checkout + host
+## Execution report — 2026-09-24 (continued session), planning checkout + host
 
 Pushed `08592d3` and `9350440` to `origin/feat/stage2-finding-tokens` first.
 
@@ -558,7 +558,7 @@ warm-up; 1c ranks 51.1 / 47.1, R@5 0.047 / 0.055, not above chance. Smoke only.
 
 ---
 
-## Go-ahead (user, 2026-09-25) — conditions
+## Go-ahead (user, 2026-09-24) — conditions
 
 1. Before the cache: report free space on /home and the checkpoint estimate;
    stop if < ~50 GB would remain.
@@ -569,7 +569,7 @@ warm-up; 1c ranks 51.1 / 47.1, R@5 0.047 / 0.055, not above chance. Smoke only.
 4. No other GPU job during the run.
 5. Report the gate as soon as 1a finishes epoch 2, and the H table after 1c.
 
-## Execution report — 2026-09-25 22:00–22:30, before the full run
+## Execution report — 2026-09-24 22:00–22:30, before the full run
 
 1. **Disk.** Free on /home 218.4 GB. Estimate from the smoke files: per phase
    `checkpoint_last` (with optimizer) 2.60 / 2.23 / 4.00 GB, `checkpoint_best`
