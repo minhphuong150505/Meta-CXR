@@ -29,6 +29,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | File | Doc | Status |
 |---|---|---|
 | `calibrate_thresholds.py` | [📄](calibrate_thresholds.py.doc.md) | ✅ Calibrate — **chỉ validation** |
+| `count_chexpert_blank_policy.py` | [📄](count_chexpert_blank_policy.py.doc.md) | ✅ CPU, đếm nhãn study-level dưới hai `blank_label_policy`, in class weight cho `negative`, kiểm nguồn gốc ô -100 |
 | `calibrate_cue_precision.py` | [📄](calibrate_cue_precision.py.doc.md) | ✅ CPU, fit ngưỡng precision cho cues; tắt nhãn không đạt thay vì fallback |
 | `evaluate_stage1.py` (328) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz` |
 | `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |

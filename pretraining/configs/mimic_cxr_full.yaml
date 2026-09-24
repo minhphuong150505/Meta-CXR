@@ -137,6 +137,29 @@ model:
   max_txt_len: 256
 
   mhcac:
+    # BLANK CHEXPERT CELLS: `negative` (blank -> class 0) or `ignore` (blank ->
+    # IGNORE_LABEL, dropped per cell). A config WITHOUT this key gets `ignore`,
+    # so every older config and ablation reproduces exactly; an unknown value
+    # raises. See model/lavis/data/chexpert_labels.py.
+    #
+    # ⚠ REVERSED 2026-09-24, `ignore` -> `negative`, at the user's request. The
+    # original META-CXR paper (Edirisinghe et al., IEEE Access 2025) states
+    # "missing (NaN) values were treated as the negative class" and upstream
+    # uses fillna(0.0); the study_presence evaluation framing, the only one
+    # this repo quotes F1 under, already reads a blank as "not present". The
+    # 2026-08-13 reasoning for `ignore` -- a blank is absence of evidence, not
+    # evidence of absence -- still holds as a caveat, and `ignore` remains one
+    # line away for an ablation.
+    #
+    # Under both policies a study with no CheXpert information (no record, or a
+    # record with all fourteen cells blank) keeps IGNORE_LABEL everywhere and
+    # stays out of classification_valid. Mention-gate targets are taken before
+    # the fill and are identical under both; excluded_labels applies after.
+    #
+    # ⚠ The descriptions below of No Finding, the class weights and the "79.5%
+    # blank share" were written under `ignore`. The class weights have been
+    # recomputed for `negative`; the rest is kept as history.
+    blank_label_policy: negative
     # Labels masked out of training AND evaluation entirely, because they cannot
     # be learned under the blank-masking policy. Counted on the source CheXpert
     # export at study level, 2026-08-15:
@@ -279,21 +302,69 @@ model:
     # picks that operating point and does it better. Nothing here is a
     # clinical judgement any more, which also retires the un-signed-off kappa
     # table. Pneumothorax leaves the cap entirely: 4.060 is its raw ratio.
+    #
+    # ⚠ RECOMPUTED 2026-09-24 FOR `blank_label_policy: negative`. Same formula
+    # as the table it replaces -- [1.0, n_neg/n_pos, n_neg/n_unc], kappa 1,
+    # capped at 10 -- but n_neg now counts every blank of a labelled study.
+    # Counted by scripts/count_chexpert_blank_policy.py on the training host,
+    # train split, study level (222,758 studies; 2,379 carry no CheXpert
+    # information and are excluded: 8 with no record, 2,371 with an all-blank
+    # record). Blanks per label (the "blank" column) became negatives.
+    #
+    #   label                        pos       neg     unc   (blank)  w_pos  raw
+    #   No Finding                74,305   146,074       0  146,074   1.966
+    #   Enlarged Cardiomediastinum 6,968   204,328   9,083  199,160  10.000  29.32 CAPPED
+    #   Cardiomegaly              43,602   170,908   5,869  155,295   3.920
+    #   Lung Opacity              50,099   166,554   3,726  163,561   3.324
+    #   Lung Lesion                6,091   213,174   1,114  212,333  10.000  35.00 CAPPED
+    #   Edema                     26,093   181,509  12,777  156,376   6.956
+    #   Consolidation             10,476   205,717   4,186  197,900  10.000  19.64 CAPPED
+    #   Pneumonia                 16,093   186,489  17,797  162,585  10.000  11.59 CAPPED
+    #   Atelectasis               44,718   165,620  10,041  164,118   3.704
+    #   Pneumothorax              10,171   209,102   1,106  167,831  10.000  20.56 CAPPED
+    #   Pleural Effusion          52,759   161,981   5,639  135,366   3.070
+    #   Pleural Other              1,933   217,703     743  217,577  10.000 112.62 CAPPED
+    #   Fracture                   4,283   215,548     548  214,671  10.000  50.33 CAPPED
+    #   Support Devices           64,868   155,281     230  151,859   2.394
+    #
+    # The imbalance flips back: negatives are the majority for every label, and
+    # 7 of 14 w_pos sit at the cap. w_uncertain is 10 (capped) everywhere except
+    # No Finding (no uncertain cells, 1.0); it is inert under
+    # uncertain_policy: ignore_uncertain, which drops class-2 cells from the loss.
+    # No Finding is in this head (excluded_labels: []) and, under `negative`,
+    # has real negatives for the first time.
+    #
+    # Masked-policy (`blank_label_policy: ignore`) table, SUPERSEDED 2026-09-24.
+    # Use it again only together with blank_label_policy: ignore:
+    #   - [1.0,  1.000, 1.000]  # No Finding -- excluded from this head entirely
+    #   - [1.0,  0.742, 0.569]  # Enlarged Cardiomediastinum  k=1  (was k=1 0.742)
+    #   - [1.0,  0.358, 2.660]  # Cardiomegaly                k=1  (was k=2 0.716)
+    #   - [1.0,  0.060, 0.803]  # Lung Opacity                k=1  (was k=1 0.060)
+    #   - [1.0,  0.138, 0.755]  # Lung Lesion                 k=1  (was k=2 0.276)
+    #   - [1.0,  0.963, 1.967]  # Edema                       k=1  (was k=3 2.890)
+    #   - [1.0,  0.746, 1.867]  # Consolidation               k=1  (was k=3 2.239)
+    #   - [1.0,  1.485, 1.343]  # Pneumonia                   k=1  (was k=3 4.456)
+    #   - [1.0,  0.034, 0.150]  # Atelectasis                 k=1  (was k=2 0.067)
+    #   - [1.0,  4.060, 10.000] # Pneumothorax                k=1  (was k=4 10.000 CAPPED)
+    #   - [1.0,  0.504, 4.720]  # Pleural Effusion            k=1  (was k=2 1.009)
+    #   - [1.0,  0.065, 0.170]  # Pleural Other               k=1  (was k=2 0.130)
+    #   - [1.0,  0.205, 1.600]  # Fracture                    k=1  (was k=2 0.410)
+    #   - [1.0,  0.053, 10.000] # Support Devices             k=1  (was k=1 0.053)
     class_weights:
-      - [1.0,  1.000, 1.000]  # No Finding -- excluded from this head entirely
-      - [1.0,  0.742, 0.569]  # Enlarged Cardiomediastinum  k=1  (was k=1 0.742)
-      - [1.0,  0.358, 2.660]  # Cardiomegaly                k=1  (was k=2 0.716)
-      - [1.0,  0.060, 0.803]  # Lung Opacity                k=1  (was k=1 0.060)
-      - [1.0,  0.138, 0.755]  # Lung Lesion                 k=1  (was k=2 0.276)
-      - [1.0,  0.963, 1.967]  # Edema                       k=1  (was k=3 2.890)
-      - [1.0,  0.746, 1.867]  # Consolidation               k=1  (was k=3 2.239)
-      - [1.0,  1.485, 1.343]  # Pneumonia                   k=1  (was k=3 4.456)
-      - [1.0,  0.034, 0.150]  # Atelectasis                 k=1  (was k=2 0.067)
-      - [1.0,  4.060, 10.000] # Pneumothorax                k=1  (was k=4 10.000 CAPPED)
-      - [1.0,  0.504, 4.720]  # Pleural Effusion            k=1  (was k=2 1.009)
-      - [1.0,  0.065, 0.170]  # Pleural Other               k=1  (was k=2 0.130)
-      - [1.0,  0.205, 1.600]  # Fracture                    k=1  (was k=2 0.410)
-      - [1.0,  0.053, 10.000] # Support Devices             k=1  (was k=1 0.053)
+      - [1.0,  1.966,  1.000]  # No Finding
+      - [1.0, 10.000, 10.000]  # Enlarged Cardiomediastinum  raw pos 29.32 CAPPED
+      - [1.0,  3.920, 10.000]  # Cardiomegaly
+      - [1.0,  3.324, 10.000]  # Lung Opacity
+      - [1.0, 10.000, 10.000]  # Lung Lesion                 raw pos 35.00 CAPPED
+      - [1.0,  6.956, 10.000]  # Edema
+      - [1.0, 10.000, 10.000]  # Consolidation               raw pos 19.64 CAPPED
+      - [1.0, 10.000, 10.000]  # Pneumonia                   raw pos 11.59 CAPPED
+      - [1.0,  3.704, 10.000]  # Atelectasis
+      - [1.0, 10.000, 10.000]  # Pneumothorax                raw pos 20.56 CAPPED
+      - [1.0,  3.070, 10.000]  # Pleural Effusion
+      - [1.0, 10.000, 10.000]  # Pleural Other               raw pos 112.62 CAPPED
+      - [1.0, 10.000, 10.000]  # Fracture                    raw pos 50.33 CAPPED
+      - [1.0,  2.394, 10.000]  # Support Devices
     distill_temperature: 2.0
     text_dropout: 0.2
     # Ambiguous pairs are not reliable positive/negative targets.

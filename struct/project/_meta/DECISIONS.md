@@ -25,6 +25,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-014](#d-014--mask-giải-thích-hai-tầng-và-split-project-là-nguồn-chân-lý) | Mask explanation hai tầng | ✅ Confirmed | 2026-08-13 |
 | [D-015](#d-015--đánh-giá-xai-dùng-entrypoint-có-grad-riêng) | XAI evaluator có grad, metric NumPy tách source | ✅ Confirmed | 2026-08-14 |
 | [D-017](#d-017--dừng-explanation-aware-loss-trong-production) | Dừng explanation-aware loss | ✅ Confirmed | 2026-08-17 |
+| [D-018](#d-018--ô-chexpert-trống-là-âm-tính-đảo-ngược-quyết-định-2026-08-14) | Ô CheXpert trống → âm tính (`blank_label_policy`) | ✅ Confirmed (quyết định của user) | 2026-09-24 |
 
 ---
 
@@ -895,3 +896,63 @@ explanation-aware nói chung là sai.
 
 **Liên quan:** [D-014](#d-014--mask-giải-thích-hai-tầng-và-split-project-là-nguồn-chân-lý) ·
 [D-015](#d-015--đánh-giá-xai-dùng-entrypoint-có-grad-riêng)
+
+---
+
+## D-018 — Ô CheXpert trống là âm tính (đảo ngược quyết định 2026-08-14)
+
+**Ngày:** 2026-09-24 · **Status:** ✅ Confirmed (quyết định của user). Class
+weight đã tính lại trên máy train (train, mức study): âm tính là đa số ở mọi
+nhãn, 7/14 `w_pos` chạm cap 10; No Finding 74.305 dương / 146.074 âm. Smoke 1
+epoch sạch; **chưa có run đầy đủ**. Xem
+`docs/handoff/PLAN-2026-09-24-blank-as-negative.md`.
+
+**Đảo ngược** mục "Ô trống CheXpert bị mask; chọn checkpoint theo val loss;
+manifest v2 (2026-08-14)" ở trên, chỉ riêng phần ô trống. Phần chọn checkpoint
+và manifest v2 giữ nguyên.
+
+**Quyết định.** Khoá mới `model.mhcac.blank_label_policy` ∈ {`negative`,
+`ignore`}. `mimic_cxr_full.yaml` đặt `negative`: ô trống của một study **có** bản
+ghi CheXpert → lớp 0. Config không có khoá → `ignore` (hành vi 2026-08-13 →
+2026-09-24), để config cũ và ablation tái lập đúng. Giá trị lạ → `ValueError`.
+
+**Lý do (của user).** Bài META-CXR gốc (Edirisinghe et al., IEEE Access 2025) ghi
+*"missing (NaN) values were treated as the negative class"*, code gốc dùng
+`fillna(0.0)`; và framing `study_presence` — framing duy nhất repo này báo F1 —
+vốn đã coi ô trống là "không có". Lập luận năm 2026-08-14 (ô trống là thiếu bằng
+chứng, không phải bằng chứng vắng mặt) vẫn đúng như một caveat, và phải nêu trong
+phần Limitations.
+
+**Những gì KHÔNG đổi, dưới cả hai policy:**
+
+- study không khớp bản ghi CheXpert nào, **hoặc** có bản ghi nhưng trống cả 14 ô,
+  vẫn là `-100` ở mọi ô và bị `classification_valid` loại — không bao giờ thành
+  14 số 0;
+- mention target (`_mention_*`) lấy từ export thô **trước** bước fill → mention
+  gate, `gate_class_weights`, `mention_conditioned_pos_weights` không đổi;
+- `excluded_labels` áp **sau** bước fill;
+- teacher, distill và `AbnormalitySpecificLoss` nhận nhãn qua dataset, không
+  thêm logic lọc cặp.
+
+⚠ **Khác một chút so với bản gốc:** `fillna(0.0)` của gốc sẽ biến một bản ghi
+trống toàn bộ thành một study "bình thường" hoàn toàn. Ở đây không.
+
+**Evidence.** `model/lavis/data/chexpert_labels.py` (`map_chexpert_labels`,
+`prepare_chexpert_labels`, `attach_chexpert_labels`); `ReportDataset.py` gọi hai
+hàm sau; `preporcessing/preprocess_mimic_cxr.py::clean_chexpert` giữ bản sao và
+`tests/test_blank_label_masking.py::test_preprocessing_applies_the_identical_mapping`
+ghim hai bên với nhau.
+
+**Hệ quả cho evaluator** (đọc code, chưa đo): eval hook ghi nhãn vào `.npz` với
+`-1` cho ô bị mask. Dưới `negative`, ô trống thành `0` trong `.npz`.
+`study_presence` cho ra **cùng** ma trận ground truth (`labels == POSITIVE` →
+dương, mọi giá trị khác → âm). `masked_polarity` **mất khả năng phân biệt** ô
+trống với âm tính tường minh: nó vẫn chạy, nhưng lặng lẽ trả lời câu hỏi
+"blank = negative" thay vì "polarity khi đã được nhắc". Đề xuất (chưa làm): eval
+hook ghi thêm `mention_targets` vào `.npz` để evaluator khôi phục mask.
+
+**Documentation impact.** `struct/project/model/lavis/data/ReportDataset.py.doc.md`,
+trang mới `chexpert_labels.py.doc.md`, `struct/project/preporcessing/preprocess_mimic_cxr.py.doc.md`,
+`struct/project/scripts/_index.md` và trang mới
+`count_chexpert_blank_policy.py.doc.md`.
+

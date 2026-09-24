@@ -45,11 +45,18 @@ from model.lavis.data.mimic_cxr_utils import (
     view_id,
 )
 
-# Per-cell "no label here" sentinel for the 14 CheXpert columns. Any negative
-# value works: ClassificationLoss keeps only ``labels_i >= 0`` and the eval
-# confusion matrix keeps only ``labels >= 0``. -100 matches the torch
-# ignore_index convention and still fits int8.
-IGNORE_LABEL = -100
+# Per-cell "no label here" sentinel for the 14 CheXpert columns, defined with the
+# blank-cell policy in chexpert_labels. Any negative value works:
+# ClassificationLoss keeps only ``labels_i >= 0`` and the eval confusion matrix
+# keeps only ``labels >= 0``. -100 matches the torch ignore_index convention and
+# still fits int8.
+from model.lavis.data.chexpert_labels import (  # noqa: E402
+    IGNORE_LABEL,
+    attach_chexpert_labels,
+    mention_column,
+    prepare_chexpert_labels,
+    resolve_blank_label_policy,
+)
 
 
 @registry.register_processor("my_blip_caption")
@@ -333,89 +340,54 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                 "CheXpert CSV is not unique by (subject_id, study_id); refusing "
                 "a many-to-many label merge."
             )
-        self.chexpert["_has_chexpert_label_raw"] = (
-            self.chexpert[self.chexpert_cols].notna().any(axis=1)
-        )
-        # Mention-gate targets: "did the report mention this finding at all?",
-        # one per abnormality. Taken here, BEFORE blanks become IGNORE_LABEL and
-        # before excluded_labels are masked, because the whole point of the gate
-        # is to learn the blank pattern that everything downstream throws away.
-        # 79.5% of the label matrix is blank and currently produces no gradient;
-        # this is its only consumer.
+        # Mention-gate targets ("did the report mention this finding at all?",
+        # one per abnormality), the blank-cell policy, excluded_labels and the
+        # per-row flags all live in chexpert_labels.prepare_chexpert_labels, so
+        # the CPU suite can pin them. The order there is load-bearing: mention
+        # targets are taken from the raw export BEFORE blanks are filled, and
+        # excluded_labels are applied AFTER.
         #
-        # `No Finding` is deliberately still covered here even though it is
-        # excluded from the classification head: "was No Finding mentioned" is
-        # "did the radiologist call this study normal", which has 74,305
-        # positives and 148,453 negatives and is perfectly well posed -- unlike
-        # its Positive/Negative split, which has no negatives at all.
-        self.mention_cols = [f"_mention_{c}" for c in self.chexpert_cols]
-        for column, target in zip(self.chexpert_cols, self.mention_cols):
-            self.chexpert[target] = self.chexpert[column].notna().astype("int8")
-        # CE uses 0=negative, 1=positive, 2=uncertain, and IGNORE_LABEL for a
-        # blank cell.
+        # `No Finding` stays covered by the gate even when it is excluded from
+        # the classification head: "was No Finding mentioned" is "did the
+        # radiologist call this study normal", 74,305 vs 148,453 on train.
         #
-        # A blank in the CheXpert export means the labeler found no mention of
-        # the finding in the report -- not that the radiologist ruled it out.
-        # 79.4% of the label matrix is blank, so folding blanks into 0 made
-        # roughly nine in ten "negatives" an absence of evidence rather than
-        # evidence of absence, and taught the model that silence means healthy.
-        # Masking them costs supervision (2.86 of 14 labels survive per study,
-        # and 31% of studies keep exactly one) and flips the imbalance so that
-        # positives dominate 12 of 14 labels -- see the class weights in
-        # mimic_cxr_full.yaml, which had to be recomputed downward.
+        # BLANK POLICY (model.mhcac.blank_label_policy):
+        #   negative  blank -> 0, as in the original META-CXR paper ("missing
+        #             (NaN) values were treated as the negative class") and as
+        #             the study_presence evaluation framing already reads it.
+        #             Shipped in mimic_cxr_full.yaml from 2026-09-24.
+        #   ignore    blank -> IGNORE_LABEL, dropped per cell. The policy from
+        #             2026-08-13 to 2026-09-24, and the DEFAULT when the key is
+        #             absent, so older configs reproduce exactly.
+        # Under both, a study with no CheXpert information at all keeps
+        # IGNORE_LABEL on every cell and stays out of classification_valid.
         #
-        # ClassificationLoss and the evaluation confusion matrix already drop
-        # labels < 0 per cell, so no consumer needed changing.
-        self.chexpert[self.chexpert_cols] = (
-            self.chexpert[self.chexpert_cols]
-            .replace(-1, 2)
-            .fillna(IGNORE_LABEL)
-            .astype("int8")
-        )
-
-        # Some labels cannot be learned under the blank-masking policy because
-        # the labeler never emits a negative for them. `No Finding` is the clear
-        # case, and it is structural rather than a data shortage: CheXpert sets
-        # it to 1.0 when the report describes no abnormality and leaves it blank
-        # otherwise, never 0.0. Counted on the source export at study level:
-        #
-        #   split   positive   negative   uncertain     blank
-        #   train     74,305          0           0   148,453
-        #   val          582          0           0     1,226
-        #   test         568          0           0     2,701
-        #
-        # Every surviving cell is therefore a positive, so the only thing the
-        # classification loss can teach for it is "always predict positive",
-        # with nothing to push back. Its expert token and classification head
-        # consume capacity to learn a constant, and no amount of extra data
-        # changes that. Masking the column here means the loss, the confusion
-        # matrix and the offline evaluator all drop it together, because they
-        # already skip cells < 0.
-        #
-        # Set model.mhcac.excluded_labels: [] to train it anyway for an ablation.
+        # `No Finding` under `ignore` has 74,305 positives and ZERO negatives on
+        # train (the labeler writes 1.0 or leaves it blank, never 0.0), so it
+        # can only teach a constant; under `negative` its blanks become real
+        # negatives. excluded_labels masks a column out of the classification
+        # head and the offline evaluator alike; the gate still covers it.
         mhcac_cfg = cfg.model_cfg.get("mhcac", {}) or {}
+        self.blank_label_policy = resolve_blank_label_policy(
+            mhcac_cfg.get("blank_label_policy", None)
+        )
         excluded = mhcac_cfg.get("excluded_labels", ["No Finding"])
+        self.chexpert = prepare_chexpert_labels(
+            self.chexpert,
+            self.chexpert_cols,
+            blank_policy=self.blank_label_policy,
+            excluded_labels=list(excluded or []),
+        )
         self.excluded_labels = [c for c in (excluded or []) if c in self.chexpert_cols]
-        unknown = sorted(set(excluded or []) - set(self.chexpert_cols))
-        if unknown:
-            raise ValueError(
-                f"excluded_labels names no such pathology: {unknown}; "
-                f"expected a subset of {self.chexpert_cols}"
-            )
-        for column in self.excluded_labels:
-            self.chexpert[column] = np.int8(IGNORE_LABEL)
+        self.mention_cols = [mention_column(c) for c in self.chexpert_cols]
+        print(f"CheXpert blank_label_policy: {self.blank_label_policy}")
 
         # Two flags, deliberately: `_has_chexpert_label_raw` records whether the
         # source export held anything at all for this study and stays the basis
-        # of the join-integrity check below, while `_has_usable_label` records
-        # whether anything survives the exclusion and is what becomes the
-        # per-row sample_mask. Collapsing them would make the integrity guard
-        # fire on every row whose only label was excluded -- which is not a
-        # rounding error: 22.3% of train studies (49,760) carry `No Finding`
-        # alone. Those rows drop out of the classification loss once it is
-        # masked, and out of the explanation loss too, which needs a positive.
-        kept = [c for c in self.chexpert_cols if c not in self.excluded_labels]
-        self.chexpert["_has_usable_label"] = (self.chexpert[kept] >= 0).any(axis=1)
+        # of the join-integrity check, while `_has_usable_label` records whether
+        # anything survives the exclusion and is what becomes the per-row
+        # sample_mask. Collapsing them would make the integrity guard fire on
+        # every row whose only label was excluded.
         if self.excluded_labels:
             lost = int(
                 (
@@ -501,52 +473,20 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.annotation["findings"] = self.annotation["findings"].str.replace(
             "\n", " ", regex=False
         )
-        has_processed_label_flag = "has_chexpert_label" in self.annotation
-        if has_processed_label_flag:
-            self.annotation["_has_chexpert_label_processed"] = self._coerce_bool(
+        processed_has_label = None
+        if "has_chexpert_label" in self.annotation:
+            processed_has_label = self._coerce_bool(
                 self.annotation["has_chexpert_label"], "has_chexpert_label"
-            )
-        labels = self.chexpert[
-            label_key
-            + self.chexpert_cols
-            + self.mention_cols
-            + ["_has_chexpert_label_raw", "_has_usable_label"]
-        ]
-        self.annotation = self.annotation.merge(
-            labels,
-            how="left",
-            on=label_key,
-            validate="many_to_one",
-            indicator="_chexpert_merge",
-        )
-        raw_has_label = self.annotation["_has_chexpert_label_raw"].fillna(False).astype(bool)
-        # Post-exclusion. The guard below still uses raw_has_label, so it keeps
-        # catching a broken join rather than firing on an intentional exclusion.
-        usable_label = self.annotation["_has_usable_label"].fillna(False).astype(bool)
-        if has_processed_label_flag:
-            preprocessed_has_label = self.annotation["_has_chexpert_label_processed"]
-            inconsistent = preprocessed_has_label & ~raw_has_label
-            if inconsistent.any():
-                raise ValueError(
-                    f"{int(inconsistent.sum())} processed rows claim CheXpert labels "
-                    "but no non-null source labels were found."
-                )
-            self.annotation["classification_valid"] = preprocessed_has_label & usable_label
-        else:
-            self.annotation["classification_valid"] = usable_label
-        # Rows that matched no CheXpert record land here with NaN across every
-        # label. They are already excluded by classification_valid, but they
-        # must not read back as negatives either.
-        self.annotation[self.chexpert_cols] = (
-            self.annotation[self.chexpert_cols].fillna(IGNORE_LABEL).astype("int8")
-        )
-        # A study that matched no CheXpert record tells us nothing about what
-        # the report mentioned, so it must not train the gate as fourteen
-        # zeros. That is a different question from classification_valid, which
-        # asks whether any usable P/N/U cell survived.
-        self.annotation["mention_valid"] = self.annotation["_chexpert_merge"].eq("both")
-        self.annotation[self.mention_cols] = (
-            self.annotation[self.mention_cols].fillna(0).astype("int8")
+            ).to_numpy()
+        # Join, classification_valid, mention_valid, and IGNORE_LABEL on every
+        # label of a study that matched no CheXpert record -- under either
+        # blank policy. See chexpert_labels.attach_chexpert_labels.
+        self.annotation = attach_chexpert_labels(
+            self.annotation,
+            self.chexpert,
+            self.chexpert_cols,
+            label_key=label_key,
+            processed_has_label=processed_has_label,
         )
         # Hand the gate targets to __getitem__ as a plain [N, 14] array indexed
         # by row position, and drop the columns again.
@@ -570,7 +510,6 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                 "_has_usable_label",
                 "_chexpert_merge",
                 *self.mention_cols,
-                *(["_has_chexpert_label_processed"] if has_processed_label_flag else []),
             ]
         ).reset_index(drop=True)
 

@@ -126,20 +126,28 @@ class TestShippedConfig:
     def test_every_kappa_is_one(self, cfg):
         """w_positive must be pure inverse frequency: (n_neg/n_pos), no kappa.
 
-        Checked against the counts the gate table carries, which are the same
-        studies. A kappa creeping back in shows up as w_pos exceeding the
-        label's own ratio.
+        Checked against the train study-level counts recorded beside the table
+        for `blank_label_policy: negative` (2026-09-24, from
+        scripts/count_chexpert_blank_policy.py). A kappa creeping back in shows
+        up as w_pos exceeding the label's own ratio. Until 2026-09-24 this
+        pinned Pneumothorax at 4.060, its ratio under the masked policy.
         """
+        assert cfg["model"]["mhcac"]["blank_label_policy"] == "negative"
         weights = cfg["model"]["mhcac"]["class_weights"]
         assert len(weights) == 14
         for row in weights:
             assert len(row) == 3
             assert row[0] == 1.0
-        # Pneumothorax was the one label pinned at the 10.0 cap by kappa 4.
-        assert weights[9][1] == pytest.approx(4.060), (
-            "Pneumothorax should sit at its raw ratio once kappa is 1, not at "
-            "the cap"
-        )
+        counts = {  # index: (n_pos, n_neg) under blank_label_policy: negative
+            0: (74305, 146074),   # No Finding
+            2: (43602, 170908),   # Cardiomegaly
+            5: (26093, 181509),   # Edema
+            8: (44718, 165620),   # Atelectasis
+            9: (10171, 209102),   # Pneumothorax -- raw 20.56, capped
+            13: (64868, 155281),  # Support Devices
+        }
+        for index, (n_pos, n_neg) in counts.items():
+            assert weights[index][1] == pytest.approx(min(n_neg / n_pos, 10.0), abs=1e-3)
 
     def test_gate_kappa_is_one(self, cfg):
         """gate weight = n_not_mentioned / n_mentioned, capped at 10, no kappa."""
