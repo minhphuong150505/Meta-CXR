@@ -12,7 +12,9 @@ mà pha nào đó train (`checkpoint_keep`); cuối pha ghi
 `checkpoint_<pha>.pth` vào output_dir và `run.phase_root`.
 `_run_phase_itc_gate` chạy gate ITC trên val mỗi epoch (`itc_gate.every_epoch`),
 ghi `itc_gate_epoch<N>.json`; trượt ở `stop_after_epochs` → `PHASE_GATE_FAILED`,
-dừng, KHÔNG ghi checkpoint pha. `_grad_interference_hook` (pha 1c, qua hook
+dừng, KHÔNG ghi checkpoint pha. Cổng quyết định ĐÚNG MỘT LẦN, ở cuối epoch
+`stop_after_epochs` (`==`, sửa 2026-09-25; trước đó `>=` sẽ dừng cả khi pass ở
+epoch 2 rồi tụt ở epoch sau). `_grad_interference_hook` (pha 1c, qua hook
 `pre_backward` của vòng train) ghi `grad_interference.jsonl`: cosine và
 ‖g_align‖/‖g_cls‖ theo nhóm tham số, bằng `torch.autograd.grad(retain_graph=True)`
 — không đụng `.grad`. `validate` ghi thêm `phase_metrics.jsonl`. Resume sau
