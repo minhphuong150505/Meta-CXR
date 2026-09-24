@@ -942,3 +942,71 @@ class MentionConditionedClassificationLoss(nn.Module):
             class_term = zero
 
         return mention_term.sum() / mention_count.clamp_min(1) + class_term
+
+
+def mention_gate_is_trained(lambda_gate, lambda_mention_conditioned_cls):
+    """Whether any objective gives the MHCAC mention heads a gradient.
+
+    The heads are built unconditionally so the parameter set never depends on a
+    loss weight. When this returns False their output is the random
+    initialisation, and nothing downstream may read it as a probability.
+    """
+    return float(lambda_gate) > 0 or float(lambda_mention_conditioned_cls) > 0
+
+
+def build_classification_losses(
+    *,
+    class_weights,
+    label_smoothing,
+    uncertain_policy,
+    lambda_cls,
+    lambda_gate,
+    lambda_mention_conditioned_cls,
+    gate_class_weights=None,
+    mention_conditioned_pos_weights=None,
+    num_abnormalities=14,
+):
+    """Build the P/N/U classification loss and the two optional gate objectives.
+
+    Returns ``(cls_loss_fn, gate_loss_fn, mention_conditioned_loss_fn)``.
+
+    ``class_weights`` goes to the P/N/U cross entropy and nowhere else.
+    ``gate_class_weights`` only ever reaches ``MentionGateLoss`` (a separate BCE
+    added to the total only while ``lambda_gate > 0``), and
+    ``mention_conditioned_pos_weights`` only reaches
+    ``MentionConditionedClassificationLoss``, which is not built at all unless
+    ``lambda_mention_conditioned_cls > 0``. So with both lambdas at 0 nothing
+    about the gate touches the P/N/U head's loss or weights.
+    ``tests/test_gate_off.py`` pins this.
+    """
+    if float(lambda_mention_conditioned_cls) > 0:
+        if float(lambda_gate) > 0:
+            raise ValueError(
+                "lambda_mention_conditioned_cls subsumes lambda_gate; set "
+                "lambda_gate: 0.0"
+            )
+        if float(lambda_cls) > 0:
+            raise ValueError(
+                "lambda_mention_conditioned_cls subsumes lambda_cls; set "
+                "lambda_cls: 0.0"
+            )
+    cls_loss_fn = ClassificationLoss(
+        class_weights=class_weights,
+        num_abnormalities=num_abnormalities,
+        label_smoothing=label_smoothing,
+        uncertain_policy=uncertain_policy,
+    )
+    # Built unconditionally so the parameter/buffer set does not depend on a
+    # loss weight; it contributes only while lambda_gate > 0.
+    gate_loss_fn = MentionGateLoss(
+        num_abnormalities=num_abnormalities, pos_weights=gate_class_weights
+    )
+    mention_conditioned_loss_fn = (
+        MentionConditionedClassificationLoss(
+            num_abnormalities=num_abnormalities,
+            pos_weights=mention_conditioned_pos_weights,
+        )
+        if float(lambda_mention_conditioned_cls) > 0
+        else None
+    )
+    return cls_loss_fn, gate_loss_fn, mention_conditioned_loss_fn

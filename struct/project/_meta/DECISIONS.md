@@ -26,6 +26,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-015](#d-015--đánh-giá-xai-dùng-entrypoint-có-grad-riêng) | XAI evaluator có grad, metric NumPy tách source | ✅ Confirmed | 2026-08-14 |
 | [D-017](#d-017--dừng-explanation-aware-loss-trong-production) | Dừng explanation-aware loss | ✅ Confirmed | 2026-08-17 |
 | [D-018](#d-018--ô-chexpert-trống-là-âm-tính-đảo-ngược-quyết-định-2026-08-14) | Ô CheXpert trống → âm tính (`blank_label_policy`) | ✅ Confirmed (quyết định của user) | 2026-09-24 |
+| [D-019](#d-019--tắt-mention-gate-phương-án-a) | Tắt mention gate; No Finding vào head P/N/U | ✅ Confirmed (quyết định của user) | 2026-09-24 |
 
 ---
 
@@ -955,4 +956,59 @@ hook ghi thêm `mention_targets` vào `.npz` để evaluator khôi phục mask.
 trang mới `chexpert_labels.py.doc.md`, `struct/project/preporcessing/preprocess_mimic_cxr.py.doc.md`,
 `struct/project/scripts/_index.md` và trang mới
 `count_chexpert_blank_policy.py.doc.md`.
+
+---
+
+## D-019 — Tắt mention gate (phương án A)
+
+**Ngày:** 2026-09-24 · **Status:** ✅ Confirmed (quyết định của user). Đi kèm
+[D-018](#d-018--ô-chexpert-trống-là-âm-tính-đảo-ngược-quyết-định-2026-08-14).
+
+**Quyết định.** `model.loss.lambda_gate: 0.0` (trước là 0.5 từ 2026-08-15).
+P(có bệnh) lấy thẳng từ head P/N/U (`q_pos`), giống bài gốc. Code gate,
+`gate_class_weights`, `mention_conditioned_pos_weights` và head mention **giữ
+nguyên** để ablation; chỉ tắt qua config.
+
+**Lý do.** Gate tồn tại để bù cho việc mask ô trống: nó là consumer duy nhất của
+~79,5% ô bị loại khỏi loss P/N/U. Dưới `blank_label_policy: negative` các ô đó
+train head P/N/U trực tiếp như lớp 0, nên lý do tồn tại của gate đã hết.
+
+**Cùng lúc (user xác nhận):** `uncertain_policy: ignore_uncertain` giữ nguyên;
+`excluded_labels: []` — No Finding nằm trong head với nhãn 0/1 thật (train
+74.305 dương / 146.074 âm), class weight `[1.0, 1.966, 1.0]` (`n_unc = 0` →
+`w_uncertain = 1.0`).
+
+**Bảo đảm "tắt là tắt"** (`tests/test_gate_off.py`):
+
+- `mhcac.loss.build_classification_losses`: `class_weights` là thứ duy nhất
+  vào CE của head P/N/U; bảng trọng số gate không đổi được giá trị loss P/N/U;
+  loss phân cấp không được dựng khi `lambda_mention_conditioned_cls == 0`.
+- BCE gate chỉ cộng vào total dưới `if self.lambda_gate > 0`.
+- Eval hook không xuất `mention_probabilities` khi gate chưa train và ghi
+  `metadata["mention_gate_trained"] = False`; `marginal_presence` khi đó raise
+  `ScoreUnavailableError`. Điểm mặc định của `evaluate_stage1.py` /
+  `calibrate_thresholds.py` là `conditional_positive`.
+
+**Hệ quả cho so sánh.** Mọi số Stage-1 trước 2026-09-24 được báo dưới
+`study_presence` + `marginal_presence`, tức có dùng gate. Run mới chỉ chấm được
+bằng `conditional_positive`. So sánh giữa hai loại là so hai quy tắc chấm khác
+nhau, cần nói rõ.
+
+**Evaluator.** Thêm `<metric>_13labels` (bỏ No Finding) và `_14labels`; macro
+chính giữ 12 nhãn (bỏ No Finding + Support Devices) để so với số cũ.
+
+**Stage 2 — CHƯA sửa, cần xử lý ở bước sau.** Các chỗ đọc logit/điểm gate:
+`training/train_eval_figure9_llm_variants_200.py` (`build_stage1_records` gọi
+`return_mention=True`, lưu `record["mention_logits"]`; cue rule
+`marginal_positive` — mặc định cho mode có MHCAC prompt — và `mention_gated`
+dùng `sigmoid(mention)`), `training/medgemma/finding_tokens.py` (`full` dùng
+`m`), `scripts/generate_stage2_reports.py` (`--cue-rule`, copy
+`mention_logits`), `scripts/calibrate_cue_precision.py` (`mention_probabilities
+× q_pos`), `training/run_medgemma_qlora.py` (mặc định `marginal_positive`).
+Với checkpoint Stage-1 train dưới D-019, các đường này đọc head **ngẫu nhiên**.
+
+**Documentation impact.** `mhcac/loss.py.doc.md`,
+`blip2_models/blip2_qformer.py.doc.md`, `tasks/image_text_pretrain.py.doc.md`,
+`training/evaluation/label_framing.py.doc.md`,
+`training/evaluation/classification_metrics.py.doc.md`.
 

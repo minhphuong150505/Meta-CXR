@@ -75,6 +75,20 @@ class ImageTextPretrainTask(BaseTask):
         # label_framing.presence_scores then refuses 'marginal_presence' rather
         # than silently substituting the conditional score.
         collected_mention = []
+        # With lambda_gate and lambda_mention_conditioned_cls both 0 (the
+        # shipped recipe from 2026-09-24) the mention heads never train, so
+        # their sigmoid is noise. Do not export it: the prediction file then
+        # carries no gate and records mention_gate_trained=False, and
+        # 'marginal_presence' scoring raises instead of reading random output.
+        mention_gate_trained = bool(
+            getattr(getattr(model, "module", model), "mention_gate_trained", True)
+        )
+        if not mention_gate_trained:
+            logger.info(
+                "mention gate is untrained (lambda_gate = 0 and "
+                "lambda_mention_conditioned_cls = 0); not exporting "
+                "mention_probabilities"
+            )
 
         for batch in data_loader:
             if cuda_enabled:
@@ -141,7 +155,9 @@ class ImageTextPretrainTask(BaseTask):
                 collected_labels.append(masked_labels.detach().cpu())
                 collected_keys.extend(_sample_keys(batch, labels.shape[0]))
                 mention_logits = output.get("mention_logits")
-                if mention_logits is None:
+                if not mention_gate_trained:
+                    pass  # untrained gate: never exported (see above)
+                elif mention_logits is None:
                     if not collected_mention and example_count <= batch_size:
                         logger.info(
                             "model emits no mention_logits; the prediction file "
@@ -236,6 +252,7 @@ class ImageTextPretrainTask(BaseTask):
             predictions = self._build_predictions(
                 collected_logits, collected_labels, collected_keys, collected_mention
             )
+            predictions.metadata["mention_gate_trained"] = mention_gate_trained
             if selection_metric in probability_metrics:
                 if is_dist_avail_and_initialized() and dist.get_world_size() > 1:
                     raise RuntimeError(

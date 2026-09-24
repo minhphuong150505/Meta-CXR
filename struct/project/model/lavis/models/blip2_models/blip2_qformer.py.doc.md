@@ -269,3 +269,12 @@ argmax validation, và từng ghim val F1 ở đúng 0.000000.
 Kết quả đo của chế độ này (hai cặp run độc lập): hiệu chuẩn giữa các nhãn tốt
 hơn, **không** cải thiện khả năng phân biệt, không có lợi ích Stage-2. Xem
 `docs/handoff/PLAN-2026-09-11-mention-conditioned-stage1.md`.
+
+## Mention gate tắt (2026-09-24, D-019)
+
+`__init__` dựng ba loss qua `mhcac.loss.build_classification_losses` và đặt
+`self.mention_gate_trained = mention_gate_is_trained(lambda_gate,
+lambda_mention_conditioned_cls)`. `mimic_cxr_full.yaml` đặt `lambda_gate: 0.0`:
+head mention vẫn tồn tại (parameter set không đổi, checkpoint cũ vẫn nạp được)
+nhưng không nhận gradient; BCE gate chỉ cộng vào total khi `lambda_gate > 0`;
+`mention_logits` vẫn được trả trong output nhưng là giá trị ngẫu nhiên.
