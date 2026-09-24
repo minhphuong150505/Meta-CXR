@@ -75,6 +75,13 @@ MARGINAL_PRESENCE = "marginal_presence"
 SCORES = (CONDITIONAL_POSITIVE, MARGINAL_PRESENCE)
 DEFAULT_SCORE = CONDITIONAL_POSITIVE
 
+#: Metadata key the Stage-1 eval hook writes into every prediction file. False
+#: means the run trained neither gate objective (lambda_gate = 0 and
+#: lambda_mention_conditioned_cls = 0), so the mention heads are random and
+#: ``marginal_presence`` must not be formed. Files written before 2026-09-24
+#: lack the key; their gate was trained whenever they carry mention_probabilities.
+MENTION_GATE_TRAINED_KEY = "mention_gate_trained"
+
 
 class UnknownFramingError(ValueError):
     """The requested label framing does not exist."""
@@ -122,6 +129,14 @@ def presence_scores(
     q_pos = predictions.probabilities[..., POSITIVE]
     if score == CONDITIONAL_POSITIVE:
         return q_pos
+    if predictions.metadata.get(MENTION_GATE_TRAINED_KEY) is False:
+        raise ScoreUnavailableError(
+            "score 'marginal_presence' needs a trained mention gate, but this "
+            "prediction file comes from a run with lambda_gate = 0 and "
+            "lambda_mention_conditioned_cls = 0: the gate head never trained and "
+            "its output is random. Use 'conditional_positive' (q_pos from the "
+            "P/N/U softmax), which is the default."
+        )
     mention = predictions.mention_probabilities
     if mention is None:
         raise ScoreUnavailableError(

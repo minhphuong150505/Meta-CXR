@@ -39,10 +39,9 @@ from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector
 VISUAL_DIM = 1408
 
 from mhcac.loss import (
-    ClassificationLoss,
-    MentionGateLoss,
     MultiPositiveContrastiveLoss,
-    MentionConditionedClassificationLoss,
+    build_classification_losses,
+    mention_gate_is_trained,
     mention_marginal_log_probs,
     soft_target_kl_loss,
     view_consistency_loss,
@@ -288,24 +287,11 @@ class Blip2Qformer(Blip2Base):
         # optimising the same heads under two disagreeing objectives is how the
         # gate ended up disconnected from the prediction in the first place.
         self.lambda_mention_conditioned_cls = float(lambda_mention_conditioned_cls)
-        if self.lambda_mention_conditioned_cls > 0:
-            if self.lambda_gate > 0:
-                raise ValueError(
-                    "lambda_mention_conditioned_cls subsumes lambda_gate; set "
-                    "lambda_gate: 0.0"
-                )
-            if float(lambda_cls) > 0:
-                raise ValueError(
-                    "lambda_mention_conditioned_cls subsumes lambda_cls; set "
-                    "lambda_cls: 0.0"
-                )
-        self.mention_conditioned_loss_fn = (
-            MentionConditionedClassificationLoss(
-                num_abnormalities=14,
-                pos_weights=mention_conditioned_pos_weights,
-            )
-            if self.lambda_mention_conditioned_cls > 0
-            else None
+        # False when both gate objectives are off (the shipped recipe as of
+        # 2026-09-24): the mention heads then keep their random init, and the
+        # eval hook refuses to export them as probabilities.
+        self.mention_gate_trained = mention_gate_is_trained(
+            self.lambda_gate, self.lambda_mention_conditioned_cls
         )
         self.current_epoch = 0
         explanation_cfg = dict(explanation_cfg or {})
@@ -544,17 +530,23 @@ class Blip2Qformer(Blip2Base):
             class_weights = default_class_weights
         elif len(class_weights) == 0:
             class_weights = None
-        self.cls_loss_fn = ClassificationLoss(
+        # One builder for the P/N/U loss and both gate objectives, so the CPU
+        # suite can pin that gate weights never reach the P/N/U cross entropy
+        # (tests/test_gate_off.py). It also rejects the lambda combinations the
+        # hierarchical objective forbids.
+        (
+            self.cls_loss_fn,
+            self.gate_loss_fn,
+            self.mention_conditioned_loss_fn,
+        ) = build_classification_losses(
             class_weights=class_weights,
-            num_abnormalities=14,
             label_smoothing=cls_label_smoothing,
             uncertain_policy=uncertain_policy,
-        )
-        # The mention gate is what gives the model somewhere to put "nothing to
-        # report". Built unconditionally so the parameter set does not depend on
-        # a loss weight, but it only receives gradient while lambda_gate > 0.
-        self.gate_loss_fn = MentionGateLoss(
-            num_abnormalities=14, pos_weights=gate_class_weights
+            lambda_cls=lambda_cls,
+            lambda_gate=self.lambda_gate,
+            lambda_mention_conditioned_cls=self.lambda_mention_conditioned_cls,
+            gate_class_weights=gate_class_weights,
+            mention_conditioned_pos_weights=mention_conditioned_pos_weights,
         )
         
     def set_epoch(self, epoch):

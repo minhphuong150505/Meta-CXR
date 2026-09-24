@@ -2764,7 +2764,9 @@ mentioned".
 present", so `--uncertain-policy` no longer decides anything. Say so; do not
 report both flags as if they were independent.
 
-⚠ `--score marginal_presence` multiplies the mention gate into the score —
+⚠ **Unavailable for runs with the gate off (`lambda_gate: 0`, from
+2026-09-24, D-019): the score raises.** For those use `conditional_positive`.
+`--score marginal_presence` multiplies the mention gate into the score —
 `P(present) = sigmoid(mention) x q_pos` — which is what `study_presence` actually
 asks about, since `classification_logits` is `q`, conditional on mention.
 It needs `mention_probabilities` in the `.npz`, written only by runs whose eval
@@ -3162,6 +3164,34 @@ config without `class_weights` gets. ⚠ Under `negative` the `.npz` labels carr
 `-1`: `study_presence` is unaffected, but `masked_polarity` silently becomes
 "blank = negative" — never quote it from a `negative` run. Plan and status:
 `docs/handoff/PLAN-2026-09-24-blank-as-negative.md`.
+
+⚠⚠ **MENTION GATE OFF, same day (D-019): `lambda_gate: 0.0`** (was 0.5). The
+gate existed to consume the blanks the masked policy threw away; under
+`negative` they train the P/N/U head directly, so P(present) is `q_pos` from the
+3-class softmax, as in the original paper. Code, heads and `gate_class_weights`
+are kept for ablation. `excluded_labels: []` (No Finding in the head, 0/1
+labels) and `ignore_uncertain` confirmed by the user. What "off" guarantees,
+pinned by `tests/test_gate_off.py`:
+- `mhcac.loss.build_classification_losses` is the only place the three losses
+  are built; `class_weights` alone reaches the P/N/U CE, and the
+  mention-conditioned loss is not even constructed at `lambda_mc == 0`;
+- the gate BCE is added only under `if self.lambda_gate > 0`;
+- `Blip2Qformer.mention_gate_trained` is False, so the eval hook exports no
+  `mention_probabilities` and writes `metadata["mention_gate_trained"]=False`;
+  `--score marginal_presence` then raises `ScoreUnavailableError`. **Score new
+  runs with the default `conditional_positive`.** Every Stage-1 number in this
+  file used `marginal_presence` — i.e. the gate — so old-vs-new is also a
+  scoring-rule change; say so.
+- `evaluate_classification` adds `<metric>_13labels` (No Finding out) and
+  `<metric>_14labels`; the primary macro stays at 12 (No Finding and Support
+  Devices out) for comparability.
+
+⚠ **Stage 2 still reads the gate and has NOT been changed**:
+`build_stage1_records` (`return_mention=True` → `record["mention_logits"]`),
+cue rules `marginal_positive` (the default for MHCAC-prompt modes) and
+`mention_gated`, finding tokens `full`, `calibrate_cue_precision.py`. On a
+Stage-1 checkpoint trained with the gate off those read a random head. Fix
+before any Stage-2 run from such a checkpoint.
 
 **Historical (the `ignore` policy, 2026-08-13 → 2026-09-24): a blank CheXpert
 cell is masked, not negative.** The export leaves a cell blank

@@ -347,3 +347,103 @@ run.max_epoch=1 run.eval_start_epoch=0`. Log: `~/smoke_blankneg_20260924.log`.
 - The `.npz` `mention_targets` proposal for `masked_polarity` is not
   implemented.
 - `default_class_weights` in `blip2_qformer.py` is unchanged (masked-policy).
+
+---
+
+## Decision update (user, 2026-09-24) — overrides "GIỮ NGUYÊN"
+
+1. `uncertain_policy`: keep `ignore_uncertain`.
+2. No Finding back in the head, all 14 labels: `excluded_labels: []`; its class
+   weight from the same formula, `w_uncertain = 1.0` when `n_unc = 0`; evaluator
+   must report macro 13 (without No Finding) and macro 14; a test that No Finding
+   carries valid 0/1. Stage 2 / cue rules: report only.
+3. Mention gate OFF (option A): `lambda_gate: 0`, code kept; nothing gate-related
+   may reach the P/N/U loss or class weights; eval/calibrate default to `q_pos`
+   and must raise if a marginal score is requested with the gate off; Stage 2
+   not touched, only listed; docs updated (D-019).
+
+## Execution report — 2026-09-24 19:45–19:55, planning checkout + host `minhphuong`
+
+### Findings the prompt asked to report
+
+- **`excluded_labels` was already `[]`** (since 2026-08-15); unchanged. Only the
+  code default in `ReportDataset.py` and `count_chexpert_blank_policy.py`
+  (`["No Finding"]` when the key is absent) still excludes it — left as the
+  back-compat default. Other No Finding special cases found by grep:
+  `training/evaluation/schemas.py::META_LABELS` (No Finding + Support Devices out
+  of the primary macro; kept, 13/14 views added instead),
+  `scripts/probe_soft_tokens.py` (same meta-label set, diagnostic),
+  `mhcac/utils.py`, `mhcac/mhcac_7.py` (legacy label lists);
+  Stage 2, not touched: `stage2/prompts/ontology.py`,
+  `training/train_eval_figure9_llm_variants_200.py:215,433,517`,
+  `scripts/calibrate_cue_precision.py:35`, `training/medgemma/finding_tokens.py:78`
+  (No Finding excluded from the 13 finding tokens), `safety/claims.py:48`.
+- **The gate was configured over all 14 labels** (`gate_class_weights` has 14
+  rows incl. No Finding); no No-Finding-specific gate mask exists. Nothing
+  changed there beyond `lambda_gate: 0`.
+- **No Finding class weight:** `[1.0, 1.966, 1.000]` — 74,305 pos / 146,074 neg /
+  0 unc on train; `w_uncertain = 1.0` with the reason in the YAML comment.
+
+### Gate/mention/marginal classification (grep over `mhcac/ model/ training/ scripts/`)
+
+| where | kind | with `lambda_gate = 0` |
+|---|---|---|
+| `mhcac/mhcac_12.py` `mention_heads` | parallel head on the pooled representation; does not feed `student_logits` | exists, no gradient |
+| `mhcac/loss.py::MentionGateLoss`, `blip2_qformer` `loss_gate` | (a) separate BCE term | added only under `if self.lambda_gate > 0`; logs `0.0000` |
+| `mhcac/loss.py::MentionConditionedClassificationLoss` + `mention_conditioned_pos_weights` | (a) separate hierarchical objective; replaces `lambda_cls` only when on | not constructed at `lambda_mc = 0` |
+| `gate_class_weights` | (a) only into `MentionGateLoss` | inert |
+| P/N/U `class_weights` override | (b) — **none found**: no gate table ever reached `ClassificationLoss` | pinned by test |
+| `image_text_pretrain.py` mention export → `.npz` | (c) | **not exported**, `metadata.mention_gate_trained=False` (new) |
+| `label_framing.py` `marginal_presence`; `evaluate_stage1.py` / `calibrate_thresholds.py` `--score` | (c) default already `conditional_positive` | `marginal_presence` now **raises** on a gate-off file (new) |
+| `threshold_calibration.py:190`, `runner_base.py:765`, `evaluate_explanation.py:339` | comments / tuple unpacking only | — |
+| `train_eval_figure9_llm_variants_200.py` (`build_stage1_records` `return_mention=True`, `record["mention_logits"]`, cue rules `marginal_positive` / `mention_gated`), `run_medgemma_qlora.py` (`marginal_positive` default for MHCAC-prompt modes), `generate_stage2_reports.py` (`--cue-rule`, copies `mention_logits`), `finding_tokens.py` (`full` uses `m`), `calibrate_cue_precision.py` (`mention_probabilities × q_pos`) | **(d) Stage 2 — NOT changed** | would read a **random** head from a gate-off Stage-1 checkpoint |
+
+### Code changes
+
+- `mhcac/loss.py`: `mention_gate_is_trained()`, `build_classification_losses()`
+  (moved the three constructions and the lambda-conflict checks out of
+  `Blip2Qformer.__init__`, behaviour unchanged).
+- `blip2_qformer.py`: uses the builder; sets `self.mention_gate_trained`.
+- `image_text_pretrain.py`: no mention export when the gate is untrained;
+  writes `mention_gate_trained` into prediction metadata.
+- `label_framing.py`: `MENTION_GATE_TRAINED_KEY`; `marginal_presence` raises on
+  gate-off files (older files without the key behave as before).
+- `classification_metrics.py`: `<metric>_13labels` / `<metric>_14labels` for
+  macro AUROC/AUPRC, positive-macro F1/P/R, macro specificity. Primary macro
+  still 12 labels.
+- `mimic_cxr_full.yaml`: `lambda_gate: 0.0` with rationale; No Finding weight
+  comment.
+- `tests/test_gate_off.py` (17 tests).
+
+### Verification
+
+- CPU box: same 15 baseline failures as before (torchvision/transformers
+  missing), no new ones.
+- Host snapshot `~/blankneg_20260924_src`: **3 failed, 1104 passed, 2 skipped**
+  (= previous 1087 + 17 new); the 3 are the git-only tests, which pass in
+  `~/Meta-CXR`. Log `~/gateoff_pytest_20260924.log`.
+- Smoke `~/smoke_gateoff_20260924` (same guards, launched once, rc 0; log
+  `~/smoke_gateoff_20260924.log`): 125 iters, **0.3528 s/it**, `max mem`
+  **9,839 MiB**, no NaN/inf, no traceback; log line "mention gate is untrained
+  ... not exporting mention_probabilities".
+
+  | iter | total loss | `loss_cls` | `loss_teacher_cls` | `loss_gate` |
+  |---|---:|---:|---:|---:|
+  | 0 (gate on, earlier smoke) | 2.6545 | 1.3481 | 1.3367 | 0.9819 |
+  | 0 (gate off) | **2.1636** | 1.3481 | 1.3367 | **0.0000** |
+  | 50 (gate off) | 1.9585 | 1.2298 | 1.2412 | 0.0000 |
+  | 124 (gate off) | 1.7435 | 1.0863 | 1.0834 | 0.0000 |
+
+  2.6545 − 0.5 × 0.9819 = 2.1636: the only difference from the gate-on smoke at
+  iteration 0 is the removed gate term.
+- Prediction `.npz` carry no `mention_probabilities`,
+  `metadata = {"mention_gate_trained": false}`.
+  `calibrate_thresholds.py --score marginal_presence` → exit 2 with the new
+  message; the default score calibrates and `evaluate_stage1.py` reports
+  `macro_auroc` / `_13labels` / `_14labels` (smoke values, meaningless as
+  quality).
+
+### Not done
+
+- No full run. Stage 2 not touched (see table). `default_class_weights` in
+  `blip2_qformer.py` unchanged.

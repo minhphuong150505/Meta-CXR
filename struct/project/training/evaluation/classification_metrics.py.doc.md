@@ -68,3 +68,12 @@ này quan trọng: 0 nghĩa là "dự đoán sai hoàn toàn", `nan` nghĩa là 
 - **Related:** [`schemas.py`](schemas.py.doc.md) · [`scripts/_index.md`](../../scripts/_index.md)
 
 ← [HOME](../../../HOME.md)
+
+## Macro 13 và 14 nhãn (2026-09-24)
+
+`evaluate_classification` thêm `<metric>_13labels` (bỏ riêng `No Finding`) và
+`<metric>_14labels` (đủ 14) vào `aggregates` cho `macro_auroc`, `macro_auprc`,
+`positive_macro_f1/precision/recall`, `macro_specificity` — chỉ khi bộ nhãn là
+CheXpert-14. Macro chính (`macro_auroc`, …) **không đổi**: vẫn theo
+`include_meta_labels`, mặc định 12 nhãn (bỏ `No Finding` và `Support Devices`),
+để so được với số cũ.

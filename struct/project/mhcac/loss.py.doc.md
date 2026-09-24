@@ -242,3 +242,14 @@ Không. Hàm thuần (trừ dropout khi training).
 - **Related:** [`mhcac_12.py`](mhcac_12.py.doc.md) · [`blip2_qformer.py`](../model/lavis/models/blip2_models/blip2_qformer.py.doc.md)
 
 ← [HOME](../../HOME.md)
+
+## `build_classification_losses` và `mention_gate_is_trained` (2026-09-24)
+
+Hàm thuần dựng `(cls_loss_fn, gate_loss_fn, mention_conditioned_loss_fn)` cho
+`Blip2Qformer.__init__`, kèm kiểm tra xung đột lambda của loss phân cấp.
+`class_weights` chỉ đi vào `ClassificationLoss`; `gate_class_weights` chỉ vào
+`MentionGateLoss`; `mention_conditioned_pos_weights` chỉ vào
+`MentionConditionedClassificationLoss`, vốn **không được dựng** khi
+`lambda_mention_conditioned_cls == 0`. `mention_gate_is_trained(lambda_gate,
+lambda_mc)` = một trong hai > 0. Ghim bởi `tests/test_gate_off.py`.
+Gate tắt trong production: [D-019](../_meta/DECISIONS.md#d-019--tắt-mention-gate-phương-án-a).

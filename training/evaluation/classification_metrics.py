@@ -513,6 +513,7 @@ def evaluate_classification(
     )
     aggregates["micro_auroc"] = micro_auroc
     aggregates["micro_auprc"] = micro_auprc
+    aggregates.update(_label_set_macros(per_pathology, names))
 
     if skipped:
         logger.info(
@@ -549,6 +550,44 @@ def evaluate_classification(
             "decision_rule": "argmax" if binary_predictions is not None else "threshold",
         },
     )
+
+
+#: Extra macro views reported beside the primary macro, which averages over
+#: ``macro_pathology_indices(include_meta_labels)`` -- 12 labels by default
+#: (``No Finding`` and ``Support Devices`` out). Added 2026-09-24 when No Finding
+#: returned to the classification head with real negatives
+#: (``blank_label_policy: negative``): ``_13labels`` drops only ``No Finding``,
+#: ``_14labels`` keeps everything, so a run can be compared both with earlier
+#: 12-label results and with the 14-label table of the original paper.
+LABEL_SET_VIEWS: dict[str, frozenset[str]] = {
+    "13labels": frozenset({"No Finding"}),
+    "14labels": frozenset(),
+}
+LABEL_SET_METRICS = (
+    ("macro_auroc", "auroc"),
+    ("macro_auprc", "auprc"),
+    ("positive_macro_f1", "f1"),
+    ("positive_macro_precision", "precision"),
+    ("positive_macro_recall", "recall"),
+    ("macro_specificity", "specificity"),
+)
+
+
+def _label_set_macros(
+    per_pathology: list[PathologyMetrics], names: tuple[str, ...] | list[str]
+) -> dict[str, float]:
+    """``<metric>_13labels`` / ``<metric>_14labels`` for the CheXpert-14 layout.
+
+    Empty for any other label set, where "without No Finding" means nothing.
+    """
+    if "No Finding" not in names or len(names) != 14:
+        return {}
+    out: dict[str, float] = {}
+    for suffix, excluded in LABEL_SET_VIEWS.items():
+        chosen = [m for m in per_pathology if m.name not in excluded]
+        for key, attribute in LABEL_SET_METRICS:
+            out[f"{key}_{suffix}"] = _nanmean([getattr(m, attribute) for m in chosen])
+    return out
 
 
 def _three_class_aggregates(

@@ -82,3 +82,11 @@ Test: `tests/test_label_framing.py` (9 test).
 ## Parent
 
 [`training/evaluation/`](_index.md)
+
+## `MENTION_GATE_TRAINED_KEY` (2026-09-24, D-019)
+
+`presence_scores(..., "marginal_presence")` raise `ScoreUnavailableError` khi
+`metadata["mention_gate_trained"] is False` — kể cả nếu file có
+`mention_probabilities` — vì head gate khi đó chưa từng train. File cũ không có
+khoá vẫn chấm được như trước. Điểm mặc định vẫn là `conditional_positive`
+(`q_pos` từ softmax 3 lớp).

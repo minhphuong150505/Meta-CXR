@@ -303,7 +303,7 @@ file kết quả, giống cách `uncertain_policy.py` xử lý lớp Uncertain.
 0.032, và calibrate ngưỡng chỉ mua thêm 0.0004 so với ngưỡng 0.5. **Chỉ trích dẫn F1
 dưới `study_presence`.**
 
-`--score marginal_presence` nhân thêm mention gate: `P(có) = sigmoid(mention) × q_pos`.
+`--score marginal_presence` nhân thêm mention gate: `P(có) = sigmoid(mention) × q_pos`. ⚠ Không dùng được cho run có `lambda_gate: 0` (từ 2026-09-24) — sẽ báo lỗi.
 Cần `mention_probabilities` trong `.npz` (chỉ có ở run mà eval hook thu gate). Không có
 thì raise, **không** âm thầm rơi về `conditional_positive`.
 
@@ -492,7 +492,7 @@ không có khoá, nên config cũ tái lập đúng. Giá trị lạ → `ValueE
 |---|---|---|
 | ô trống, study có bản ghi | `0` | `-100` |
 | study không có thông tin CheXpert (không bản ghi, hoặc trống cả 14 ô) | `-100` mọi ô, bị loại khỏi classification | như bên trái |
-| mention gate target | lấy từ export thô, **không đổi** | như bên trái |
+| mention gate target | lấy từ export thô, **không đổi** (gate đang tắt, xem dưới) | như bên trái |
 | `excluded_labels` | áp sau bước fill | như bên trái |
 
 Class weight đã được tính lại cho `negative` bằng
@@ -511,6 +511,19 @@ ground truth dưới cả hai policy; `masked_polarity` dưới `negative` khôn
 phân biệt được ô trống với âm tính tường minh, vì `.npz` không mang mask ô trống.
 Caveat cần nêu trong luận văn: ô trống là *không được nhắc tới*, không phải bác sĩ
 loại trừ — nên một phần "âm tính" là thiếu bằng chứng.
+
+**Mention gate TẮT (2026-09-24, `lambda_gate: 0.0`).** Gate sinh ra để bù cho
+việc mask ô trống; khi ô trống đã là âm tính thì lý do đó không còn. P(có bệnh)
+lấy thẳng `q_pos` từ softmax 3 lớp của head P/N/U, giống bài gốc. Code gate giữ
+lại cho ablation. Khi gate tắt, eval hook không xuất `mention_probabilities` và
+`--score marginal_presence` báo lỗi — chấm run mới bằng `conditional_positive`
+(mặc định). Mọi số Stage-1 cũ trong README dùng `marginal_presence`, nên so cũ
+với mới là so hai quy tắc chấm khác nhau. No Finding nằm trong head (nhãn 0/1
+thật, `excluded_labels: []`); `uncertain_policy: ignore_uncertain` giữ nguyên.
+Evaluator báo thêm `<metric>_13labels` (bỏ No Finding) và `<metric>_14labels`;
+macro chính vẫn là 12 nhãn. ⚠ Stage 2 (cue `marginal_positive`, finding tokens
+`full`) vẫn đọc gate và **chưa được sửa** — không chạy Stage 2 từ checkpoint
+Stage-1 train với gate tắt trước khi xử lý.
 
 ## Dữ liệu
 

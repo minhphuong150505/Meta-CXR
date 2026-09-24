@@ -143,3 +143,11 @@ Cấp phát bộ nhớ giữ chunk logits
 - **Related:** [`runner_base.py`](../runners/runner_base.py.doc.md) · [`blip2_qformer.py`](../models/blip2_models/blip2_qformer.py.doc.md)
 
 ← [HOME](../../../../HOME.md)
+
+## Không xuất gate chưa train (2026-09-24, D-019)
+
+`evaluation` đọc `model.mention_gate_trained` (mặc định `True` nếu thiếu). Khi
+`False` nó **không** thu `mention_logits`, file `.npz` không có
+`mention_probabilities`, và `predictions.metadata["mention_gate_trained"] =
+False`. `label_framing.presence_scores` dựa vào khoá này để từ chối
+`marginal_presence`.
