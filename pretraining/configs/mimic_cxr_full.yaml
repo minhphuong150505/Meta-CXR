@@ -1137,9 +1137,13 @@ run:
         # frozen), so no auxiliary view is read or cached in this phase.
         multi_view: false
         # GradCache (D-021): the contrastive loss sees the whole batch of 128,
-        # activations are held for 16 studies at a time. Batch 32/24/16 OOMed
-        # without it at iteration 0 (2026-09-24 smoke).
-        gradcache_chunk_size: 16
+        # activations are held for 32 studies at a time. Batch 32/24/16 OOMed
+        # without it at iteration 0 (2026-09-24 smoke). The chunk only splits
+        # the computation -- ITC scores the full 128 x 128 matrix, ITM draws
+        # negatives from the whole batch, LM is normalised by the whole batch's
+        # tokens -- so 16 -> 32 (2026-09-25) changes speed and memory, not the
+        # objective (tests/test_gradcache_siglip.py: chunk 2 == chunk 6).
+        gradcache_chunk_size: 32
         loss:
           lambda_itc: 1.0
           lambda_itm: 1.0

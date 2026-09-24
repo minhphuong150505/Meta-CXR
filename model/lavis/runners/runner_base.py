@@ -774,9 +774,11 @@ class RunnerBase:
         path.write_text(json.dumps(report, indent=2) + "\n")
         logging.info("ITC gate epoch %s: %s", cur_epoch, json.dumps(report))
         stop_after = cfg.get("stop_after_epochs")
+        # Decided exactly once, at the end of epoch `stop_after_epochs` (1-based):
+        # "after 2 epochs still at chance -> stop". Later epochs are logged only.
         if (
             stop_after is not None
-            and cur_epoch + 1 >= int(stop_after)
+            and cur_epoch + 1 == int(stop_after)
             and not report["meets_threshold"]
         ):
             self._phase_gate_failed = True

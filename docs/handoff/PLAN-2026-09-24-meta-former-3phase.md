@@ -555,3 +555,48 @@ warm-up; 1c ranks 51.1 / 47.1, R@5 0.047 / 0.055, not above chance. Smoke only.
   `ROOT=$HOME/run_<date>_3phase bash scripts/run_stage1_phases.sh`. Not started.
 - Phase 1a now has headroom (7.2 of 15.5 GB): chunk 32 would be faster; not
   changed without a decision.
+
+---
+
+## Go-ahead (user, 2026-09-25) — conditions
+
+1. Before the cache: report free space on /home and the checkpoint estimate;
+   stop if < ~50 GB would remain.
+2. Explain whether the GradCache chunk changes ITC/ITM negatives; raise it to 32
+   either way (record in DECISIONS if it does); 50-step smoke, peak < 14 GB.
+3. Confirm the phase-1a gate after epoch 2 stops the WHOLE script, and that a
+   phase resumes from a mid-phase checkpoint.
+4. No other GPU job during the run.
+5. Report the gate as soon as 1a finishes epoch 2, and the H table after 1c.
+
+## Execution report — 2026-09-25 22:00–22:30, before the full run
+
+1. **Disk.** Free on /home 218.4 GB. Estimate from the smoke files: per phase
+   `checkpoint_last` (with optimizer) 2.60 / 2.23 / 4.00 GB, `checkpoint_best`
+   1.09 / 1.26 / 1.37, `checkpoint_<phase>` twice (output dir + phase_root)
+   2.18 / 2.51 / 2.74, plus 1b's `checkpoint_4` (save_freq 5) 2.23 → **~22 GB**,
+   ~26 GB with one in-flight `.tmp`. Cache 158.4 GB → only ~34 GB would remain,
+   below 50. The deficit was this session's own smoke/verify directories
+   (~46 GB): moved to `/mnt/drive1tb/archive-home/` with file-count and byte
+   verification (`~/archive_smoke.sh`), 0 mismatches. Free now **268.0 GB** →
+   ~83 GB remains after cache + checkpoints. The cache builder is also called
+   with `--min-free-gb 76` so it refuses to write if that changes.
+2. **Chunk.** Pure computation split: ITC scores the full 128 × 128 matrix,
+   ITM negatives are drawn from the whole batch's similarities (out-of-chunk
+   negative images are re-encoded), LM is normalised by the whole batch's
+   tokens; chunk 2 vs 6 gradients agree to < 1e-4 of scale. Only dropout masks
+   are drawn in a different pattern (statistically equivalent). Negatives do
+   not change → no DECISIONS entry; raised to 32 with a YAML comment.
+3. **Gate stop and resume, verified on GPU** (smoke cache, chunk 32,
+   `~/verify.log`): (A) gate forced to fail (`min_delta=100`, 3 epochs
+   configured): after epoch 2 the runner wrote `PHASE_GATE_FAILED`, epoch 3 did
+   not run, no `checkpoint_phase1a`, driver **exit 3**, phase 1b never
+   launched. Fixed on the way: the stop check was `>=`, so a gate passing at
+   epoch 2 and dipping later would also have stopped the run; it is now `==`.
+   (B) process group killed after the mid-epoch checkpoint at iter 10;
+   `RESUME=1` resumed from `checkpoint_last` ("mid-epoch ... restarting that
+   epoch from its first batch"), finished, wrote `checkpoint_phase1a`. Driver
+   gained `RESUME=1` for this.
+4. Pipeline `~/pipeline_3phase.sh` (log `~/pipeline_3phase.log`) launched once
+   at 22:26: cache → 50-update smoke at chunk 32 (stops if peak ≥ 14,000 MiB) →
+   full run in `~/run_20260925_3phase` (log `~/run_20260925_3phase.log`).
