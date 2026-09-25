@@ -507,7 +507,19 @@ pha, **SigLIP** thay InfoNCE cho ITC, **GradCache** ở pha 1a (ITC trên cả b
 7.221 MiB, 8,0 s/it ở batch 128 (≈3,9 h/epoch toàn bộ); 1b 6.466 MiB; 1c 9.337
 MiB, 0,63 s/it. Tính đúng của GradCache/checkpointing/SigLIP được ghim bằng test.
 
-⚠ **Trạng thái:** mới smoke; chưa có run đầy đủ. Xem
+**Lớp Uncertain và tiền xử lý PubMedCLIP (2026-09-25, D-022).** Theo bài báo:
+`uncertain_policy: three_class` (ô Uncertain học như lớp thứ ba, trọng số
+`w_uncertain`, cộng số hạng uncertain-alignment của loss contrastive; trước đó
+`ignore_uncertain` bỏ các ô này). PubMedCLIP đọc **tiền xử lý riêng** từ ảnh gốc
+(`model.pubmedclip.preprocess: native`: RGB, cạnh ngắn 224 bicubic, crop giữa
+224, mean/std CLIP — đúng `CLIPImageProcessor` của checkpoint, ghim bằng test so
+với processor thật), không còn là bản thu nhỏ của crop 448 của BioViL. Hệ quả:
+vùng nhìn của PubMedCLIP khác BioViL, nên giả định "chung hệ tọa độ" cho bản đồ
+giải thích Stage-1 không còn đúng.
+
+⚠ **Trạng thái:** run đầy đủ đầu tiên `run_20260925_3phase` qua cổng ITC ở pha
+1a (epoch 2: rank trung bình 8,8 / 10,4 so với mức ngẫu nhiên 127,5), rồi bị
+dừng ở pha 1b ngày 2026-09-25 để áp D-022; cả ba pha chạy lại. Xem
 `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
 
 ⚠ **Hạn chế:** MedCLIP được pretrain trên MIMIC-CXR + CheXpert; bài MedCLIP nói
@@ -555,7 +567,7 @@ lại cho ablation. Khi gate tắt, eval hook không xuất `mention_probabiliti
 `--score marginal_presence` báo lỗi — chấm run mới bằng `conditional_positive`
 (mặc định). Mọi số Stage-1 cũ trong README dùng `marginal_presence`, nên so cũ
 với mới là so hai quy tắc chấm khác nhau. No Finding nằm trong head (nhãn 0/1
-thật, `excluded_labels: []`); `uncertain_policy: ignore_uncertain` giữ nguyên.
+thật, `excluded_labels: []`); `uncertain_policy` là `three_class` từ 2026-09-25 (D-022).
 Evaluator báo thêm `<metric>_13labels` (bỏ No Finding) và `<metric>_14labels`;
 macro chính vẫn là 12 nhãn. ⚠ Stage 2 (cue `marginal_positive`, finding tokens
 `full`) vẫn đọc gate và **chưa được sửa** — không chạy Stage 2 từ checkpoint

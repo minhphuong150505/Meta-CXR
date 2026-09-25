@@ -27,6 +27,7 @@ from mhcac.mhcac_12 import AbnormalityClassificationModel, StreamLayout
 
 
 from vision_encoders.pubmedclip.pubmed_clip import Pubmedclip
+from vision_encoders.pubmedclip.preprocess import resolve_pubmedclip_preprocess
 from vision_encoders.swin.swin_encoder import SwinEncoder
 from vision_encoders.rad_dino.rad_dino_encoder import RadDinoEncoder
 from vision_encoders.stream_adapter import (
@@ -187,6 +188,7 @@ class Blip2Qformer(Blip2Base):
         max_txt_len=32,
         use_biovil=True,
         use_pubmedclip=True,
+        pubmedclip_preprocess="biovil_tensor",
         use_swin=False,
         swin_model_name="ChayanM/SwinV2-GPT2_Mimic",
         swin_backend="hf",
@@ -243,6 +245,10 @@ class Blip2Qformer(Blip2Base):
 
         self.use_biovil = bool(use_biovil)
         self.use_pubmedclip = bool(use_pubmedclip)
+        # "native": PubMedCLIP reads the dataset's pubmedclip_image (its own
+        # CLIP preprocessing of the raw radiograph, D-022); "biovil_tensor":
+        # the historical crop of the BioViL tensor.
+        self.pubmedclip_preprocess = resolve_pubmedclip_preprocess(pubmedclip_preprocess)
         self.use_swin = bool(use_swin)
         self.use_raddino = bool(use_raddino)
         if not any([self.use_biovil, self.use_pubmedclip, self.use_swin, self.use_raddino]):
@@ -658,13 +664,25 @@ class Blip2Qformer(Blip2Base):
             return swin_image
         return image
 
+    def _pubmedclip_tokens(self, image, pubmedclip_image, what="image"):
+        """Raw PubMedCLIP tokens [B, 50, 768] from the input its mode names."""
+        if self.pubmedclip_preprocess == "native":
+            if pubmedclip_image is None:
+                raise ValueError(
+                    f"model.pubmedclip.preprocess 'native' needs the dataset's "
+                    f"pubmedclip_{what} (CLIP-preprocessed 224x224); it must not "
+                    "read the BioViL tensor"
+                )
+            return self.pubmedclip(pubmedclip_image, apply_aug=False, preprocessed=True)[0]
+        return self.pubmedclip(image, apply_aug=False)[0]
+
     def _mask_stream(self, tokens):
         if self.training and self.feature_mask_ratio > 0:
             return mask_encoder_tokens(tokens, self.feature_mask_ratio)
         return tokens
 
     def _encode_aux_streams(self, aux_image, cached=None, aux_mask=None,
-                            aux_swin_image=None):
+                            aux_swin_image=None, aux_pubmedclip_image=None):
         """[B, N, 3, H, W] -> dict[name, [B, N, P, D]] of raw frozen-encoder output.
 
         Batched (one encoder call over the real auxiliary images, not a per-image
@@ -718,6 +736,12 @@ class Blip2Qformer(Blip2Base):
         swin_real = (
             None if swin_flat is None else (swin_flat if keep is None else swin_flat[keep])
         )
+        clip_flat = (
+            aux_pubmedclip_image.flatten(0, 1) if aux_pubmedclip_image is not None else None
+        )
+        clip_real = (
+            None if clip_flat is None else (clip_flat if keep is None else clip_flat[keep])
+        )
 
         def scatter(x):
             return scatter_aux_rows(x, keep, B, N)
@@ -733,7 +757,7 @@ class Blip2Qformer(Blip2Base):
                 # Fuse the 768-dim ViT stream; the 1408 projection is recomputed
                 # from the fused tokens, so the aux projection is discarded here.
                 streams["pubmedclip"] = scatter(
-                    self.pubmedclip(real, apply_aug=False)[0]
+                    self._pubmedclip_tokens(real, clip_real, "aux_image")
                 )
             if "swin" in need:
                 streams["swin"] = scatter(
@@ -869,12 +893,15 @@ class Blip2Qformer(Blip2Base):
             aux_view_ids=samples.get("aux_view_ids"),
             swin_image=samples.get("swin_image"),
             aux_swin_image=samples.get("aux_swin_image"),
+            pubmedclip_image=samples.get("pubmedclip_image"),
+            aux_pubmedclip_image=samples.get("aux_pubmedclip_image"),
         )
 
     def _encode_image_streams(self, image, apply_aug=False, cached=None,
                               aux_image=None, aux_cached=None, aux_mask=None,
                               anchor_view_id=None, aux_view_ids=None,
-                              swin_image=None, aux_swin_image=None):
+                              swin_image=None, aux_swin_image=None,
+                              pubmedclip_image=None, aux_pubmedclip_image=None):
         # ``cached`` holds raw frozen-encoder outputs (before ln_vision /
         # *_qformer_proj) precomputed by pretraining/precompute_features.py. When
         # present we skip the frozen encoder forward; the trainable projection
@@ -899,6 +926,7 @@ class Blip2Qformer(Blip2Base):
             self._encode_aux_streams(
                 aux_image, cached=aux_cached, aux_mask=aux_mask,
                 aux_swin_image=aux_swin_image,
+                aux_pubmedclip_image=aux_pubmedclip_image,
             )
             if fuse_on and has_aux_input
             else {}
@@ -933,7 +961,7 @@ class Blip2Qformer(Blip2Base):
             if "pubmedclip" in cached:
                 vit_patches = cached["pubmedclip"]
             else:
-                vit_patches, _ = self.pubmedclip(image, apply_aug=apply_aug)
+                vit_patches = self._pubmedclip_tokens(image, pubmedclip_image)
             vit_patches = self._adapt("pubmedclip", self._mask_stream(vit_patches))
             self._stash_prefusion("pubmedclip", vit_patches, aux_streams)
             vit_patches = self._fuse("pubmedclip", vit_patches, aux_streams,
@@ -2007,6 +2035,10 @@ class Blip2Qformer(Blip2Base):
             aux_mask=samples.get("aux_mask"),
             anchor_view_id=samples.get("anchor_view_id"),
             aux_view_ids=samples.get("aux_view_ids"),
+            swin_image=samples.get("swin_image"),
+            aux_swin_image=samples.get("aux_swin_image"),
+            pubmedclip_image=samples.get("pubmedclip_image"),
+            aux_pubmedclip_image=samples.get("aux_pubmedclip_image"),
         )
         batch_size = image_embeds.shape[0]
         device = image_embeds.device
@@ -2066,9 +2098,17 @@ class Blip2Qformer(Blip2Base):
         """
         cached = {}
         aux_cached = {}
+        own_inputs = {}
         if isinstance(image, dict):
             samples = image
             image = samples.get("image")
+            # Encoders with their own preprocessing (MedCLIP Swin, native
+            # PubMedCLIP) read these, never the BioViL tensor.
+            own_inputs = {
+                k: samples.get(k)
+                for k in ("swin_image", "aux_swin_image",
+                          "pubmedclip_image", "aux_pubmedclip_image")
+            }
             aux_image = samples.get("aux_image", aux_image)
             aux_mask = samples.get("aux_mask", aux_mask)
             anchor_view_id = samples.get("anchor_view_id", anchor_view_id)
@@ -2088,6 +2128,7 @@ class Blip2Qformer(Blip2Base):
             aux_image=aux_image, aux_mask=aux_mask,
             aux_cached=aux_cached,
             anchor_view_id=anchor_view_id, aux_view_ids=aux_view_ids,
+            **own_inputs,
         )
 
         concat_image_embeds = shared_visual.tokens
@@ -2313,6 +2354,9 @@ class Blip2Qformer(Blip2Base):
                 cfg.get("use_pubmedclip", "pubmedclip" in list(vit_model_cls)),
             )
         )
+        pubmedclip_preprocess = resolve_pubmedclip_preprocess(
+            (cfg.get("pubmedclip", {}) or {}).get("preprocess", None)
+        )
         use_swin = cfg_bool(encoders.get("swin", cfg.get("use_swin", False)))
         swin_cfg = cfg.get("swin", {}) or {}
         swin_model_name = cfg.get(
@@ -2442,6 +2486,7 @@ class Blip2Qformer(Blip2Base):
             max_txt_len=max_txt_len,
             use_biovil=use_biovil,
             use_pubmedclip=use_pubmedclip,
+            pubmedclip_preprocess=pubmedclip_preprocess,
             use_swin=use_swin,
             swin_model_name=swin_model_name,
             swin_backend=swin_backend,

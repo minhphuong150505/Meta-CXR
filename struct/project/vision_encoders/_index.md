@@ -47,6 +47,7 @@ và có thể trôi dạt sang hai biểu diễn khác nhau.
 | `shared_visual_tokens.py` | [📄](shared_visual_tokens.py.doc.md) | ✅ ★ | → 1408 | `SharedVisualTokens`, `SharedVisualTokenProjector` |
 | `stream_adapter.py` | [📄](stream_adapter.py.doc.md) | 🟡 | giữ `D` | `StreamAdapter` (đường chính, identity ở init), `ContrastiveProjectionHead`, `pool_stream`. Lý do tồn tại: MPC từng có **gradient bằng 0** |
 | `pubmedclip/pubmed_clip.py` | [📄](pubmedclip.py.doc.md) | ✅ | 768 | Dựng với `project=False` — projector sở hữu phép chiếu |
+| `pubmedclip/preprocess.py` | [📄](pubmedclip.py.doc.md) | ✅ | — | Tiền xử lý CLIP riêng trên ảnh gốc (`preprocess: native`, D-022) |
 | `swin/swin_encoder.py` | [📄](swin_encoder.py.doc.md) | ✅ | 768 (medclip) | Backend `medclip` (production, D-020) — MedCLIP Swin-Tiny, 50 token; backend `hf` + `ChayanM/SwinV2-GPT2_Mimic` chỉ còn cho ablation |
 | `swin/medclip_swin.py` | [📄](medclip_swin.py.doc.md) | ✅ | 768 | Tiền xử lý MedCLIP, nạp weights strict, ghép pooled + 49 patch |
 | `feature_mask.py` | [📄](feature_mask.py.doc.md) | ✅ | giữ `D` | Mask 10% token mỗi encoder lúc train (bài báo) |
@@ -87,7 +88,7 @@ requirements nào**. Đó là một lý do nữa để coi nó là legacy.
 Blip2Qformer._encode_image_streams()
    │
    ├─ biovil     → visual_encoder(image).projected_patch_embeddings → ln_vision
-   ├─ pubmedclip → self.pubmedclip(image, apply_aug=False)[0]
+   ├─ pubmedclip → self._pubmedclip_tokens(image, pubmedclip_image)  (native: ảnh riêng, D-022)
    ├─ swin       → self.swin(image)
    └─ raddino    → self.raddino(image)          (nếu bật)
         │

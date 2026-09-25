@@ -627,3 +627,16 @@ NaN/inf. Train losses per epoch: ITC (SigLIP) 3.66 / 2.87 / 2.54, ITM 0.60 /
 ⚠ Val `loss_itm` 0.635 / 0.651 / 0.692 against a chance value of 0.6365: ITM
 does not generalise even as retrieval improves; val SigLIP loss 3.08 / 3.04 /
 3.12 is flat. Recorded, nothing changed.
+
+### Stopped on 2026-09-25 ~15:50, in phase 1b — for D-022
+
+Phase 1a finished all 4 epochs (`checkpoint_phase1a.pth` written); phase 1b was
+at epoch 0, iteration 5,550 / 13,922, when the user chose to apply D-022
+(Uncertain as a trained third class; PubMedCLIP on its own CLIP preprocessing)
+and rerun all three phases. The pipeline, the phase driver and the trainer were
+killed; GPU back to 117 MiB. No 1b/1c result exists. The 1a checkpoint and gate
+JSONs stay in `~/run_20260925_3phase` as the record of the gate above; they
+are not reused, because PubMedCLIP's input changed under the Q-Former.
+
+The rerun reuses the BioViL and Swin caches (their inputs did not change) and
+rebuilds only PubMedCLIP's with `precompute_features.py --encoders pubmedclip`.

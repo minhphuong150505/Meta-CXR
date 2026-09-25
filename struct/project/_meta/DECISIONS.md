@@ -1124,3 +1124,49 @@ có cache, checkpointing không đổi gradient, SigLIP đúng công thức. Hos
 passed / 2 skipped. Smoke: 1a 7.221 MiB, 8,03 s/it (batch 128); 1b 6.466 MiB;
 1c 9.337 MiB, 0,634 s/it với 342,78M tham số trainable.
 
+
+## D-022 — Uncertain là lớp thứ ba; PubMedCLIP có tiền xử lý riêng
+
+**Ngày:** 2026-09-25 · **Status:** ✅ Confirmed (quyết định của user). **Chưa có run đầy đủ.**
+Đi kèm [D-020](#d-020--meta-former-3-pha-theo-bài-báo-medclip-swin-mhcac-một-nhánh).
+
+**Vì sao.** User muốn bám bài báo ở hai điểm mà code chưa làm:
+
+1. `uncertain_policy: ignore_uncertain` bỏ mọi ô Uncertain khỏi CE, nên đầu
+   3 lớp thực chất chỉ học P/N và `w_uncertain` trong `class_weights` không có
+   tác dụng. Bài báo phân loại 3 lớp.
+2. PubMedCLIP đọc tensor của BioViL (resize cạnh ngắn 512 → crop giữa 448 →
+   [0,1] → 3 kênh), rồi `CLIPImageProcessorFast` thu về 224. Bài báo tiền xử lý
+   từng encoder theo cách của nó; MedCLIP Swin đã làm vậy từ D-020.
+
+**Cài đặt.**
+- `model.mhcac.uncertain_policy` và `run.uncertain_policy`: `three_class`.
+  `ClassificationLoss` giữ ô lớp 2 với trọng số `w_uncertain` (10, bị cap, trừ
+  No Finding 1.0); `AbnormalitySpecificLoss` bật số hạng uncertain-alignment.
+  Metric `sp_*` (study_presence) gộp uncertain vào "không có", nên không đổi
+  cách đọc.
+- `model.pubmedclip.preprocess: native` (không có key → `biovil_tensor`, đường
+  cũ). `vision_encoders/pubmedclip/preprocess.py` cài lại `CLIPImageProcessor`
+  (bản chậm) theo `preprocessor_config.json` của
+  `flaviagiammarino/pubmed-clip-vit-base-patch32`: RGB, cạnh ngắn 224 bicubic,
+  crop giữa 224, /255, mean/std của CLIP. Dataset phát `pubmedclip_image` /
+  `aux_pubmedclip_image` từ ảnh gốc, không augmentation.
+  `Blip2Qformer._pubmedclip_tokens` là lối vào duy nhất của encoder, và báo lỗi
+  nếu chế độ `native` thiếu input riêng. `forward_image` và `generate` cũng
+  chuyển `swin_image`/`pubmedclip_image` (trước đây thiếu cả Swin).
+- `precompute_features.py --encoders pubmedclip`: dựng lại cache của một
+  encoder, dùng lại các encoder còn lại (thứ tự dòng là thứ tự dataset).
+
+**Hệ quả.**
+- Vùng nhìn của PubMedCLIP ≠ BioViL: ảnh dọc được crop giữa theo cạnh ngắn
+  (100% chiều rộng), còn BioViL giữ 448/512 của cạnh ngắn. Giả định "một hệ tọa
+  độ chung" của `training/explainability/projection.assert_shared_coordinate_frame`
+  không còn đúng cho bản đồ Stage-1 từ PubMedCLIP.
+- Checkpoint và cache PubMedCLIP cũ không tương thích về mặt đầu vào; run
+  `run_20260925_3phase` dừng ở pha 1b epoch 0 (cổng ITC 1a đã qua, ghi trong
+  D-021/handoff) và chạy lại cả ba pha.
+
+**Evidence.** `tests/test_pubmedclip_preprocess.py`: khớp processor thật trên
+host (5 ảnh tổng hợp, `atol 1e-5`, transformers 4.53.2); mỗi lời gọi PubMedCLIP
+đi qua helper. `tests/test_gate_off.py`: config ship `three_class`, ô Uncertain
+làm đổi loss.

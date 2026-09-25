@@ -73,7 +73,29 @@ def test_shipped_recipe_keeps_the_decisions_the_user_fixed(cfg):
     mhcac = cfg["model"]["mhcac"]
     assert mhcac["blank_label_policy"] == "negative"
     assert mhcac["excluded_labels"] == []
-    assert mhcac["uncertain_policy"] == "ignore_uncertain"
+    # D-022 (2026-09-25): Uncertain is a trained third class, as in the paper,
+    # and the eval side scores under the same policy.
+    assert mhcac["uncertain_policy"] == "three_class"
+    assert cfg["run"]["uncertain_policy"] == "three_class"
+
+
+def test_shipped_loss_trains_uncertain_as_its_own_class(cfg):
+    """D-022: an Uncertain cell moves the shipped P/N/U loss; under the old
+    ignore_uncertain it was dropped and w_uncertain was inert."""
+    torch.manual_seed(0)
+    logits = torch.randn(4, 14, 3)
+    labels = torch.zeros(4, 14, dtype=torch.long)
+    labels[0, 3] = 2  # one Uncertain cell, Lung Opacity
+    shipped, *_ = build_classification_losses(**_shipped_builder_args(cfg))
+    ignoring, *_ = build_classification_losses(
+        **_shipped_builder_args(cfg, uncertain_policy="ignore_uncertain")
+    )
+    as_negative = labels.clone()
+    as_negative[0, 3] = 0
+
+    assert float(shipped(logits, labels)) != pytest.approx(float(shipped(logits, as_negative)))
+    # And the shipped policy differs from the one it replaced on the same batch.
+    assert float(ignoring(logits, labels)) != pytest.approx(float(shipped(logits, labels)))
 
 
 def test_no_finding_uncertain_weight_is_neutral_not_a_division_by_zero(cfg):

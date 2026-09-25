@@ -7,6 +7,11 @@
 (không augmentation, không lấy từ tensor BioViL); view phụ thành
 `aux_swin_image`; collater pad mọi khóa `aux_*_image` / `aux_*_feat`.
 
+⚠ **Cập nhật 2026-09-25 (D-022):** khi `encoders.pubmedclip` bật và
+`model.pubmedclip.preprocess: native`, `_row_visual` thêm `pubmedclip_image` =
+`pubmedclip_preprocess(ảnh gốc)` (RGB, cạnh ngắn 224, crop giữa, mean/std CLIP,
+không augmentation); view phụ thành `aux_pubmedclip_image`.
+
 # `ReportDataset.py`
 
 ## Purpose
