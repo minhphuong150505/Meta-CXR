@@ -600,3 +600,30 @@ warm-up; 1c ranks 51.1 / 47.1, R@5 0.047 / 0.055, not above chance. Smoke only.
 4. Pipeline `~/pipeline_3phase.sh` (log `~/pipeline_3phase.log`) launched once
    at 22:26: cache → 50-update smoke at chunk 32 (stops if peak ≥ 14,000 MiB) →
    full run in `~/run_20260925_3phase` (log `~/run_20260925_3phase.log`).
+
+## Full run — `~/run_20260925_3phase` (started 2026-09-24 23:20)
+
+- Cache: 158.47 GB (222,758 train + 1,808 val anchors) in 47 min; /home free
+  after it 109.5 GB.
+- 50-update smoke at chunk 32 on the full cache: peak **9,575 MiB** (< 14,000),
+  8.12 s/it. Run launched.
+
+### Phase 1a — ITC gate (256 val pairs, valid fraction 0.615) — PASSED at epoch 2
+
+| epoch | delta_nats | mean rank i2t / t2i (chance 127.5) | R@1 i2t / t2i | R@5 i2t / t2i (chance 0.0195; ≥ 12 hits) | pass |
+|---:|---:|---|---|---|---|
+| 1 | +2.569 | 11.14 / 13.59 | 0.258 / 0.266 | 0.602 / 0.547 | yes |
+| **2** | **+2.859** | **8.77 / 10.44** | **0.328 / 0.285** | **0.652 / 0.613** | **yes** |
+| 3 | +2.976 | 8.11 / 10.20 | 0.383 / 0.281 | 0.672 / 0.641 | yes |
+
+First above-chance ITC in this repository (four previous measurements, all at
+chance, at batch 8 with softmax InfoNCE and a live-encoder queue). SigLIP
+temperature equivalent 0.088 → 0.077.
+
+Epochs 3:52:31 / 3:52:33 / 3:52:36 at 8.02 s/it; GPU ~12.1 GB, 70 °C; no
+NaN/inf. Train losses per epoch: ITC (SigLIP) 3.66 / 2.87 / 2.54, ITM 0.60 /
+0.55 / 0.52, LM 2.83 / 2.40 / 2.33.
+
+⚠ Val `loss_itm` 0.635 / 0.651 / 0.692 against a chance value of 0.6365: ITM
+does not generalise even as retrieval improves; val SigLIP loss 3.08 / 3.04 /
+3.12 is flat. Recorded, nothing changed.
