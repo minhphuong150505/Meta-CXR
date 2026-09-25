@@ -8,6 +8,12 @@ các anchor mà run `multi_view: false` đọc — cache pha 1a, ~158 GB cho tra
 DỪNG trước khi ghi nếu không đủ chỗ), Swin MedCLIP đọc `swin_image` qua
 `model._swin_input`, `device` cấu hình được.
 
+⚠ **Cập nhật 2026-09-25 (D-022):** PubMedCLIP đi qua `model._pubmedclip_tokens`
+(đọc `pubmedclip_image` khi `preprocess: native`). `--encoders <tên…>` chỉ ghi
+các encoder được nêu trong số encoder config bật — dựng lại cache của một
+encoder và dùng lại phần còn lại; thứ tự dòng là thứ tự dataset nên `ids.json`
+khớp nhau.
+
 # `pretraining/precompute_features.py`
 
 ## Purpose

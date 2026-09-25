@@ -731,6 +731,21 @@ record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
   0.274 s/it. Phase 1c OOMs at 16×4 and runs at 8×8 at **15,043 MiB -- 97% of
   the card**, 0.454 s/it. No full run exists; the batch decision is the
   user's (ITC at batch 8 is exactly what measured chance four times).
+- ⚠⚠ **D-022, 2026-09-25: `uncertain_policy: three_class` (model AND run) and
+  PubMedCLIP reads its OWN preprocessing** (`model.pubmedclip.preprocess:
+  native` -> dataset `pubmedclip_image` / `aux_pubmedclip_image`, via
+  `vision_encoders/pubmedclip/preprocess.py`: RGB, shortest edge 224 bicubic,
+  centre crop 224, CLIP mean/std, pinned against the real processor by
+  `tests/test_pubmedclip_preprocess.py`). Absent key = `biovil_tensor`, the old
+  224 downscale of BioViL's 448 crop. Every PubMedCLIP forward goes through
+  `Blip2Qformer._pubmedclip_tokens`, which raises in `native` mode without the
+  input. Consequences: `w_uncertain` (10, capped) is now LIVE; PubMedCLIP's field
+  of view is no longer BioViL's, so the "shared coordinate frame" paragraph
+  below is historical for Stage-1 maps; the PubMedCLIP feature cache must be
+  rebuilt (`precompute_features.py --encoders pubmedclip` reuses the others).
+  `run_20260925_3phase` passed the 1a ITC gate (epoch 2: mean rank
+  8.8 / 10.4 vs chance 127.5, R@5 0.652 / 0.613, `delta_nats` +2.86 -- the first
+  above-chance ITC in this repo) and was stopped in 1b to apply D-022.
 - ⚠ MedCLIP was pretrained on MIMIC-CXR + CheXpert with a split that cannot be
   verified (paper says "training split", its own table counts all 377,111
   images). State it as a limitation.

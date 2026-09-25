@@ -74,6 +74,13 @@ def parse_args():
         help="refuse to start a split unless the estimated size plus this much "
              "stays free on the output filesystem.",
     )
+    parser.add_argument(
+        "--encoders", nargs="+", default=None,
+        choices=["biovil", "pubmedclip", "swin", "raddino"],
+        help="write only these of the config's enabled encoders, e.g. to rebuild "
+             "one encoder's cache after its preprocessing changed while reusing "
+             "the others. Row order is the dataset's, so the ids match.",
+    )
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument(
         "--options", nargs="+", default=[],
@@ -83,7 +90,7 @@ def parse_args():
 
 
 @torch.no_grad()
-def extract_raw_features(model, image, enabled, swin_image=None):
+def extract_raw_features(model, image, enabled, swin_image=None, pubmedclip_image=None):
     """Return {encoder: raw frozen output} for the enabled encoders.
 
     Matches blip2_qformer._encode_image_streams exactly, but stops BEFORE the
@@ -97,7 +104,8 @@ def extract_raw_features(model, image, enabled, swin_image=None):
             image.shape[0], -1, 1408
         )
     if enabled.get("pubmedclip"):
-        out["pubmedclip"] = model.pubmedclip(image, apply_aug=False)[0]
+        # Its own CLIP preprocessing when model.pubmedclip.preprocess is native.
+        out["pubmedclip"] = model._pubmedclip_tokens(image, pubmedclip_image)
     if enabled.get("swin"):
         # MedCLIP Swin reads its own 224x224 input, never the BioViL tensor.
         out["swin"] = model.swin(model._swin_input(image, swin_image))
@@ -141,9 +149,11 @@ def precompute_split(model, dataset, split, output_dir, enabled, batch_size, num
 
     for batch in tqdm(loader, total=len(loader), desc=f"precompute {split}"):
         swin_image = batch.get("swin_image")
+        clip_image = batch.get("pubmedclip_image")
         feats = extract_raw_features(
             model, batch["image"].to(device), enabled,
             swin_image=None if swin_image is None else swin_image.to(device),
+            pubmedclip_image=None if clip_image is None else clip_image.to(device),
         )
         b = len(batch["dicom_id"])
 
@@ -193,6 +203,11 @@ def main():
     }
     if not any(enabled.values()):
         raise ValueError("Enable at least one frozen vision encoder before precomputing.")
+    if args.encoders:
+        off = [e for e in args.encoders if not enabled[e]]
+        if off:
+            raise ValueError(f"--encoders names encoders the config disables: {off}")
+        enabled = {k: v and k in args.encoders for k, v in enabled.items()}
     print(f"Enabled encoders to cache: {[k for k, v in enabled.items() if v]}")
 
     task = tasks.setup_task(cfg)

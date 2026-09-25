@@ -51,6 +51,10 @@ from model.lavis.data.mimic_cxr_utils import (
 # keeps only ``labels >= 0``. -100 matches the torch ignore_index convention and
 # still fits int8.
 from vision_encoders.swin.medclip_swin import medclip_preprocess  # noqa: E402
+from vision_encoders.pubmedclip.preprocess import (  # noqa: E402
+    pubmedclip_preprocess,
+    resolve_pubmedclip_preprocess,
+)
 from model.lavis.data.chexpert_labels import (  # noqa: E402
     IGNORE_LABEL,
     attach_chexpert_labels,
@@ -541,6 +545,15 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         self.emit_swin_image = bool(encoders_cfg.get("swin", False)) and (
             str(swin_cfg.get("backend", "hf")).lower() == "medclip"
         )
+        # PubMedCLIP likewise, when model.pubmedclip.preprocess is "native"
+        # (D-022): resize shortest edge 224, centre crop, CLIP mean/std, from
+        # the raw radiograph, not augmented.
+        pubmedclip_cfg = model_cfg.get("pubmedclip", {}) or {}
+        self.emit_pubmedclip_image = bool(
+            encoders_cfg.get("pubmedclip", False)
+        ) and resolve_pubmedclip_preprocess(
+            pubmedclip_cfg.get("preprocess", None)
+        ) == "native"
 
         # Optional precomputed frozen-encoder feature cache.
         self._init_feature_cache(cfg)
@@ -1025,6 +1038,8 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             image = self.load_image(Path(image_path))
             if self.emit_swin_image:
                 out["swin_image"] = medclip_preprocess(image)
+            if self.emit_pubmedclip_image:
+                out["pubmedclip_image"] = pubmedclip_preprocess(image)
             if explanation_mask is None:
                 out["image"] = self.optical_trans(self.geometric_trans(image))
             else:
@@ -1205,6 +1220,10 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                 sample["aux_image"] = [a["image"] for a in aux_visuals]
                 if self.emit_swin_image:
                     sample["aux_swin_image"] = [a["swin_image"] for a in aux_visuals]
+                if self.emit_pubmedclip_image:
+                    sample["aux_pubmedclip_image"] = [
+                        a["pubmedclip_image"] for a in aux_visuals
+                    ]
             else:
                 for enc in self.feature_cache:
                     sample[f"aux_{enc}_feat"] = [a[f"{enc}_feat"] for a in aux_visuals]

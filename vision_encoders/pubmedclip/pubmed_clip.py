@@ -77,14 +77,18 @@ class Pubmedclip(nn.Module):
         self.model.eval()
         return self
 
-    def forward(self, image, apply_aug = True):
-        # Input is already a [0,1] float tensor from dataset ToTensor(); skip
-        # the processor's /255 rescale or it produces near-constant features.
-        inputs = self.processor(images=image, return_tensors="pt", do_rescale=False)
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}  # Move to device
-        
-        # inputs = inputs['pixel_values'].squeeze(0)
-        inputs = inputs['pixel_values']
+    def forward(self, image, apply_aug = True, preprocessed = False):
+        if preprocessed:
+            # The dataset's pubmedclip_image: the raw radiograph through
+            # vision_encoders/pubmedclip/preprocess.py (resize 224, centre crop,
+            # CLIP mean/std). Nothing further to do here.
+            inputs = image.to(self.device)
+        else:
+            # Historical path: the BioViL [0,1] tensor, resized and normalised
+            # here. Skip the processor's /255 rescale or it produces
+            # near-constant features.
+            inputs = self.processor(images=image, return_tensors="pt", do_rescale=False)
+            inputs = inputs['pixel_values'].to(self.device)
 
         if apply_aug and self.aug is not None:
              inputs = self.aug(inputs)

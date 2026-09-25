@@ -206,6 +206,7 @@ Meta-CXR-source/
 ├── vision_encoders/
 │   ├── shared_visual_tokens.py     ✅ ★ điểm chiếu DUY NHẤT
 │   ├── pubmedclip/pubmed_clip.py   ✅
+│   ├── pubmedclip/preprocess.py    ✅ tiền xử lý CLIP riêng (D-022)
 │   ├── swin/swin_encoder.py        ✅
 │   ├── rad_dino/rad_dino_encoder.py 🟡 raddino: false ở mọi config
 │   ├── biovil_t/                   🕰 ⚠ BẢN SAO — bản dùng thật là biovil_t/ ở root

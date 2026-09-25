@@ -108,7 +108,7 @@ Trong khối `model:` của run YAML:
 
 | Key | Mặc định | Ảnh hưởng |
 |---|---|---|
-| `mhcac.uncertain_policy` | `three_class` (prod: `ignore_uncertain`) | Cách xử lý lớp Uncertain |
+| `mhcac.uncertain_policy` | `three_class` (prod `three_class` từ 2026-09-25, D-022; trước đó `ignore_uncertain`) | Cách xử lý lớp Uncertain |
 | `mhcac.distill_temperature` | `2.0` | Nhiệt độ trong `soft_target_kl_loss` |
 | `mhcac.text_dropout` | `0.2` | Dropout trên đường text của teacher |
 | `mhcac.label_smoothing` | `0.05` | |

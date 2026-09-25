@@ -1,6 +1,6 @@
 > Source: `vision_encoders/pubmedclip/pubmed_clip.py` (122 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-14
+> Last verified against source: 2026-09-25
 
 # `vision_encoders/pubmedclip/pubmed_clip.py`
 
@@ -28,7 +28,17 @@ rồi `SharedVisualTokenProjector`.
 |---|---|---|
 | `__init__(aug=None, device=None, project=True)` | 6 | `device=None` → resolve `cuda` nếu có, ngược lại `cpu` (sửa 2026-08-18) |
 | `train(mode=True)` | 61 | Override để giữ eval mode |
-| `forward(image, apply_aug=True)` | 66 | Trả tuple; `[0]` là `[B, 50, 768]` |
+| `forward(image, apply_aug=True, preprocessed=False)` | 80 | Trả tuple; `[0]` là `[B, 50, 768]`. `preprocessed=True`: input đã là `pubmedclip_image` (D-022), bỏ qua processor |
+
+## ★ Tiền xử lý riêng (D-022, 2026-09-25)
+
+`model.pubmedclip.preprocess: native` (config ship): dataset phát
+`pubmedclip_image` qua [`preprocess.py`](../../../vision_encoders/pubmedclip/preprocess.py)
+— RGB, cạnh ngắn 224 bicubic, crop giữa 224, mean/std CLIP, đúng
+`CLIPImageProcessor` của checkpoint — và model gọi `forward(..., preprocessed=True)`
+qua `Blip2Qformer._pubmedclip_tokens`. Không có key → `biovil_tensor`: tensor
+BioViL 448 đi qua `CLIPImageProcessorFast` như trước. Ghim bởi
+`tests/test_pubmedclip_preprocess.py` (so với processor thật trên host).
 
 ## ⚠ Được dựng với `project=False`
 

@@ -58,7 +58,7 @@ Dict metric cho `RunnerBase.validate` · file `.npz` khi `run.save_predictions: 
 | `run.task` | Phải là `image_text_pretrain_eval` để dùng class này |
 | `run.save_predictions` | Có ghi `.npz` không |
 | `run.save_text_predictions` | Có lưu text sinh ra không (prod: `false`) |
-| `run.uncertain_policy` | prod: `ignore_uncertain` |
+| `run.uncertain_policy` | prod: `three_class` (D-022, 2026-09-25; trước đó `ignore_uncertain`) |
 | `run.include_meta_labels` | prod: `false` |
 
 ## Main classes

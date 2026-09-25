@@ -17,7 +17,7 @@ policy, và **`sample_mask`**.
 | `class_weights` | 14×3 sqrt inverse-freq, cap 10 | `[]` → tắt (ablation) |
 | `num_abnormalities` | 14 | |
 | `label_smoothing` | 0.05 | |
-| `uncertain_policy` | `ignore_uncertain` | |
+| `uncertain_policy` | `three_class` (prod từ D-022; trước đó `ignore_uncertain`) | |
 
 `class_weights` mặc định (`blip2_qformer.py:357`) = `sqrt(prevalence_negative /
 prevalence_class)`, cap ở 10, tính từ **cohort train theo study** (không phải theo ảnh).

@@ -132,6 +132,16 @@ model:
     # their native layouts too: 196 + 50 + 50 = 296 tokens into both branches.
     swin: true
     raddino: false
+  # ⚠ PubMedCLIP reads its OWN preprocessing, 2026-09-25 (user decision, D-022):
+  # the raw radiograph, RGB, shortest edge 224 bicubic, centre crop 224, CLIP
+  # mean/std -- the slow CLIPImageProcessor of
+  # flaviagiammarino/pubmed-clip-vit-base-patch32, reimplemented in
+  # vision_encoders/pubmedclip/preprocess.py. Absent key = biovil_tensor, the
+  # historical path (a 224 downscale of BioViL's 512->448 centre crop). Its
+  # field of view is therefore NOT BioViL's any more: the shared-coordinate-
+  # frame assumption of training/explainability no longer holds for Stage-1 maps.
+  pubmedclip:
+    preprocess: native
   swin:
     # MedCLIP (Wang et al., EMNLP 2022). Weights: the zip named in
     # github.com/RyanWangZf/MedCLIP/raw/main/medclip/medclip_vit_weight.txt,
@@ -356,8 +366,8 @@ model:
     #
     # The imbalance flips back: negatives are the majority for every label, and
     # 7 of 14 w_pos sit at the cap. w_uncertain is 10 (capped) everywhere except
-    # No Finding (no uncertain cells, 1.0); it is inert under
-    # uncertain_policy: ignore_uncertain, which drops class-2 cells from the loss.
+    # No Finding (no uncertain cells, 1.0). It is LIVE since 2026-09-25 (D-022):
+    # uncertain_policy is three_class, so class-2 cells train as their own class.
     # No Finding is in this head (excluded_labels: []) and, under `negative`,
     # has real negatives for the first time.
     #
@@ -404,8 +414,11 @@ model:
     layer_order: self_first
     text_mask: element
     text_dropout: 0.2
-    # Ambiguous pairs are not reliable positive/negative targets.
-    uncertain_policy: ignore_uncertain
+    # ⚠ three_class, 2026-09-25 (user decision, D-022), as the paper: Uncertain
+    # is the third class of the P/N/U softmax, weighted by w_uncertain above,
+    # and AbnormalitySpecificLoss adds its uncertain-alignment term. Was
+    # ignore_uncertain (class-2 cells dropped) from 2026-08 to 2026-09-24.
+    uncertain_policy: three_class
     # Defaults are sqrt inverse-frequency weights derived from the full
     # study-level train split; [] disables weighting for an ablation.
     label_smoothing: 0.05
@@ -1085,7 +1098,9 @@ run:
   save_text_predictions: false
   # Enables offline per-pathology threshold calibration without another GPU pass.
   save_predictions: true
-  uncertain_policy: ignore_uncertain
+  # Matches model.mhcac.uncertain_policy (D-022). study_presence metrics (sp_*)
+  # fold uncertain into "not present" whatever this says.
+  uncertain_policy: three_class
   include_meta_labels: false
 
   device: cuda
