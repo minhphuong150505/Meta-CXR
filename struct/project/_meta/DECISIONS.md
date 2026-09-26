@@ -1170,3 +1170,11 @@ passed / 2 skipped. Smoke: 1a 7.221 MiB, 8,03 s/it (batch 128); 1b 6.466 MiB;
 host (5 ảnh tổng hợp, `atol 1e-5`, transformers 4.53.2); mỗi lời gọi PubMedCLIP
 đi qua helper. `tests/test_gate_off.py`: config ship `three_class`, ô Uncertain
 làm đổi loss.
+
+**Run đầy đủ (2026-09-26, `run_20260925b_3phase`).** Xong cả ba pha, `rc=0`.
+Cổng ITC 1a epoch 2: `delta_nats` +2,93, R@5 0,664 / 0,641. Val (q_pos, 0,5):
+cuối 1b AUROC 0,7869, 1c 0,7851 — pha 1c không đổi phân loại; cosine gradient
+≈ 0. Test (n=3.269, calibrate trên val, `study_presence`, `q_pos`): macro AUROC
+0,7642, micro 0,8460, AUPRC 0,3220, F1 dương 0,3498. Chưa so sánh có kiểm soát
+với `run_20260820_ft` (khác quy tắc chấm, policy ô trống, gate). Chi tiết:
+`docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
