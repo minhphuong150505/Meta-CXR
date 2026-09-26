@@ -746,6 +746,12 @@ record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
   `run_20260925_3phase` passed the 1a ITC gate (epoch 2: mean rank
   8.8 / 10.4 vs chance 127.5, R@5 0.652 / 0.613, `delta_nats` +2.86 -- the first
   above-chance ITC in this repo) and was stopped in 1b to apply D-022.
+  **The D-022 rerun `run_20260925b_3phase` COMPLETED 2026-09-26, `rc=0`:** 1a
+  gate epoch 2 `delta_nats` +2.93, R@5 0.664 / 0.641; phase 1c changes val
+  classification by -0.002 AUROC (gradient cosine ~0, alignment 10-95x larger);
+  test from 1c (`study_presence`, `q_pos`, val-calibrated): macro AUROC 0.7642,
+  micro 0.8460, AUPRC 0.3220, pos. F1 0.3498 -- NOT yet a controlled comparison
+  with `run_20260820_ft`. Record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
 - ⚠ MedCLIP was pretrained on MIMIC-CXR + CheXpert with a split that cannot be
   verified (paper says "training split", its own table counts all 377,111
   images). State it as a limitation.

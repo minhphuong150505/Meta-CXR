@@ -519,7 +519,12 @@ giải thích Stage-1 không còn đúng.
 
 ⚠ **Trạng thái:** run đầy đủ đầu tiên `run_20260925_3phase` qua cổng ITC ở pha
 1a (epoch 2: rank trung bình 8,8 / 10,4 so với mức ngẫu nhiên 127,5), rồi bị
-dừng ở pha 1b ngày 2026-09-25 để áp D-022; cả ba pha chạy lại. Xem
+dừng ở pha 1b ngày 2026-09-25 để áp D-022. Run chạy lại `run_20260925b_3phase`
+**xong cả ba pha ngày 2026-09-26**: cổng ITC epoch 2 +2,93 nats, R@5 0,664 /
+0,641; pha 1c không đổi phân loại (val AUROC 0,7869 → 0,7851); test từ
+checkpoint 1c (`study_presence`, `q_pos`, ngưỡng calibrate trên val): macro
+AUROC 0,7642, micro 0,8460, AUPRC 0,3220, F1 dương 0,3498 — chưa so sánh có
+kiểm soát với `run_20260820_ft`. Xem
 `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
 
 ⚠ **Hạn chế:** MedCLIP được pretrain trên MIMIC-CXR + CheXpert; bài MedCLIP nói
