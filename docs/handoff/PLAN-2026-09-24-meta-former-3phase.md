@@ -640,3 +640,60 @@ are not reused, because PubMedCLIP's input changed under the Q-Former.
 
 The rerun reuses the BioViL and Swin caches (their inputs did not change) and
 rebuilds only PubMedCLIP's with `precompute_features.py --encoders pubmedclip`.
+
+## Full run with D-022 — `~/run_20260925b_3phase` — COMPLETED 2026-09-26
+
+Pipeline `~/pipeline_d022.sh` (snapshot `~/metaformer3b_src` = commit `81cc9a9`):
+PubMedCLIP cache rebuilt 15:56 → 17:15 (BioViL/Swin caches reused by hard
+link, ids identical across the three encoders); three-phase smoke peak
+9,622 MiB, no NaN/inf; full run 2026-09-25 17:26 → 2026-09-26 21:40, `rc=0`,
+no Traceback. 1a 15h36m, 1b 7h53m, 1c 4h45m.
+
+### ITC gate (256 val pairs)
+
+| phase | epoch | delta_nats | R@1 i2t / t2i | R@5 i2t / t2i | pass |
+|---|---:|---:|---|---|---|
+| 1a | 0 | +2.690 | 0.305 / 0.270 | 0.613 / 0.613 | yes |
+| 1a | 1 | +2.935 | 0.352 / 0.285 | 0.633 / 0.617 | yes |
+| 1a | **2 (gate)** | **+2.931** | 0.379 / 0.316 | **0.664 / 0.641** | **yes** |
+| 1a | 3 | +2.934 | 0.344 / 0.332 | 0.668 / 0.617 | yes |
+| 1c | 0 | +2.759 | 0.285 / 0.277 | 0.578 / 0.606 | yes |
+
+### Section H — val, `study_presence` + `q_pos`, threshold 0.5
+
+| | macro AUROC 12 / 13 / 14 | macro AUPRC 12 | pos. macro F1 12 |
+|---|---|---:|---:|
+| 1b epochs 0..4 | 0.7705, 0.7849, 0.7875, 0.7867, 0.7869 (12) | 0.3103 → 0.3198 | 0.2910 → 0.3200 |
+| end of 1b | 0.7869 / 0.7979 / 0.8030 | 0.3198 | 0.3200 |
+| 1c | 0.7851 / 0.7959 / 0.8011 | 0.3188 | 0.3215 |
+
+Phase 1c moves classification by -0.002 AUROC, i.e. nothing. Gradient
+interference, 18 measurements over updates 0..3400: mean cosine
++0.003 (BioViL head), +0.019 (Q-Former text tower), +0.000 (shared projector),
+-0.004 (stream adapters); alignment/classification norm ratio 10-95x (median
+8-40x). Orthogonal, and alignment dominates -- the D-020 smoke signature.
+
+### Test, from the 1c checkpoint (n=3,269; CPU, 2026-09-26)
+
+`scripts/calibrate_thresholds.py` on 1c val, then `scripts/evaluate_stage1.py`
+on 1c test, both with `--label-framing study_presence --uncertain-policy
+three_class`, default score `conditional_positive`, `--selection plateau
+--plateau-fraction 0.95 --min-positive 5`. Outputs in `~/eval_d022/` (private).
+
+| | macro AUROC | micro AUROC | macro AUPRC | pos. macro F1 | precision | recall | specificity |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 12 labels | 0.7642 | 0.8460 | 0.3220 | 0.3498 | 0.2979 | 0.4616 | 0.8325 |
+| 13 / 14 labels (AUROC) | 0.7746 / 0.7773 | | | | | | |
+| `run_20260820_ft` (reported model) | 0.7643 | 0.8166 | 0.3203 | 0.3542 | 0.2931 | 0.5373 | 0.8020 |
+
+⚠ Not a controlled comparison: the old row is `marginal_presence` with the
+mention gate trained and blanks masked; this row is `q_pos` with the gate off,
+blanks negative, three phases and D-022. No paired bootstrap has been run.
+Read as: macro AUROC/AUPRC essentially equal, micro AUROC higher (the
+cross-label-calibration signature seen with the joint objective), operating
+point toward specificity. `Fracture` gets 1 TP of 89 at its calibrated
+threshold -- threshold noise on a rare label, check AUROC before reading it.
+
+Host note: after the run `nvidia-smi` reported `Driver/library version
+mismatch` (driver updated underneath); the user rebooted 2026-09-26 22:06,
+GPU and `ntfs3` verified after.
