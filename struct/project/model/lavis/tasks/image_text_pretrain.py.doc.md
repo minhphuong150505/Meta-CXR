@@ -8,6 +8,9 @@
 
 # `image_text_pretrain.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Hook đánh giá chỉ báo metric ba lớp của bài báo (`evaluate_classification(...).aggregates` + loss); không còn `sp_*`, positive-F1, confusion nhị phân hay xuất mention. `__init__` gọi `reject_retired_run_keys`; logits phải là `[B, A, 3]`. Xem [D-023](../../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 Task hook của Stage 1: định nghĩa `evaluation()` — chạy model trên một split, thu

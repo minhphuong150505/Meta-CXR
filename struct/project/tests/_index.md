@@ -4,6 +4,9 @@
 
 # `tests/`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Đã XÓA: `test_gate_off.py`, `test_mention_gate.py`, `test_selective_cues.py`, `test_cue_mention_gate.py`, `test_label_framing.py`. Mới: `test_three_class_only.py` (quét AST cấm tên nhị phân, từ chối khóa config đã gỡ, bỏ head cũ khi load checkpoint) và `test_paper_protocol.py` (Eq. 21, CE, BERTScore của bài báo). Viết lại: `test_classification_metrics.py` (đối chiếu sklearn), `test_threshold_calibration.py`, `test_stage1_eval_hook.py`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 Test suite CPU. Nhưng vai trò thật của nó lớn hơn "kiểm thử":

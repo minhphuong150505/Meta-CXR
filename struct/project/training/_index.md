@@ -4,6 +4,9 @@
 
 # `training/`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Cue nhị phân (`marginal_positive`, `conditional_positive`, `mention_gated`) và `--finding-tokens full` đã bị XÓA; cue rule: `argmax` | `paper_thresholds` | `none`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 **Stage 2** (sinh báo cáo bằng MedGemma), cộng hai thứ dùng chung: lớp đọc dữ

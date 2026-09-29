@@ -1178,3 +1178,49 @@ cuối 1b AUROC 0,7869, 1c 0,7851 — pha 1c không đổi phân loại; cosine 
 0,7642, micro 0,8460, AUPRC 0,3220, F1 dương 0,3498. Chưa so sánh có kiểm soát
 với `run_20260820_ft` (khác quy tắc chấm, policy ô trống, gate). Chi tiết:
 `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
+
+## D-023 — Ba lớp, không bao giờ nhị phân: gỡ toàn bộ khung nhị phân
+
+**Ngày:** 2026-09-29 · **Người quyết định:** người dùng · **Trạng thái:** ✅ code + test CPU; ⏳ test trên host, chưa có run GPU
+
+**Bối cảnh.** Bài báo META-CXR phân loại mỗi bệnh thành Negative / Positive /
+Uncertain và đánh giá đúng như thế. Từ 2026-08 đến 2026-09 một trợ lý AI, không
+được người dùng kiểm chứng, đã biến bài toán thành "có / không có": mention gate
+nhị phân, objective mention-conditioned, `uncertain_policy` gộp/bỏ lớp Uncertain,
+framing đánh giá `study_presence` / `marginal_presence`, F1 dương tính làm số
+chính, ngưỡng nhị phân, và cue Stage 2 dựa trên gate. Người dùng coi đây là sai
+lầm của mình và yêu cầu gỡ hết, kèm lưu ý để AI không lặp lại.
+
+**Quyết định.** Gỡ tất cả, trừ **hai** tính toán nhị phân mà chính bài báo dùng:
+- Bảng 4, CheXpert cross-domain: `p_final = p1/(p0+p1)` (Eq. 21);
+- Bảng 3, Clinical Efficacy: P/R/F1 trên nhãn labeler của báo cáo sinh ra.
+
+Cả hai nằm trong `training/evaluation/paper_protocol.py`.
+
+**Đánh giá mới (giống bài báo).**
+- argmax trên softmax 3 lớp;
+- mỗi bệnh sklearn `average='weighted'`, `zero_division=1`, rồi trung bình đều 14
+  bệnh (Fig 10: 0,87 / 0,78 / 0,73);
+- `mean_weighted_f1_5` trên Atelectasis, Cardiomegaly, Consolidation, Edema,
+  Pleural Effusion (Bảng 5/7: 0,701);
+- AUROC one-vs-rest theo lớp (Fig 5);
+- ngưỡng Eq. 22 theo (bệnh, lớp) chỉ cho prompt Stage 2;
+- `--paper-bertscore` (distilroberta-base + rescale).
+
+**Chốt chặn chống tái phát.**
+- `pretraining/retired_keys.py` từ chối khóa config đã gỡ, ở `train.py`,
+  `Blip2Qformer.from_config` và `ImageTextPretrainTask`.
+- Checkpoint cũ vẫn load được: `drop_retired_state` bỏ head đã gỡ.
+- `tests/test_three_class_only.py` quét AST mọi source Python và mọi YAML để
+  cấm các tên đã gỡ.
+- CLAUDE.md, AGENTS.md và README có mục "Ba lớp, không bao giờ nhị phân".
+
+**Hệ quả.**
+- Mọi số Stage-1/Stage-2 ghi trước ngày này đều chấm bằng khung đã gỡ, nên không
+  so trực tiếp được với bài báo. Chấm lại từ `.npz` cũ bằng
+  `scripts/evaluate_stage1.py`.
+- Code tham chiếu tính trung bình theo batch; ở đây tính trên toàn split.
+- Repo chưa có loader CheXpert val và chưa có labeler cho CE.
+- Không có RadGraph/RadCliQ.
+
+Handoff: `docs/handoff/PLAN-2026-09-29-three-class-only.md`.

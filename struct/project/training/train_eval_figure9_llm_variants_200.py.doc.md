@@ -4,6 +4,9 @@
 
 # `training/train_eval_figure9_llm_variants_200.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Cue rule: `CUE_RULE_ARGMAX`, `CUE_RULE_PAPER` (ngưỡng theo lớp, biên lớn nhất thắng, No Finding bỏ qua), `CUE_RULE_NONE`; record không còn `mention_logits`; `load_thresholds` ủy quyền cho `evaluation.threshold_calibration`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## ⚠ Tên file gây hiểu nhầm nghiêm trọng
 
 Tên gợi ý một script vẽ figure chạy một lần trên 200 mẫu. **Nó là động cơ Stage 2.**
@@ -149,7 +152,7 @@ settings reuse cached results; changed stopping or prompt semantics regenerate
 them. This is separate from the Stage-1 feature cache.
 
 Selective positive artifacts add binary `positive_enabled`. `load_thresholds`
-validates the flag; [validate_selective_thresholds](train_eval_figure9_llm_variants_200.py.methods/validate_selective_thresholds.md)
+validates the flag; `validate_selective_thresholds` (đã XÓA, D-023; thay bằng `validate_cue_thresholds`)
 requires a complete 13-label artifact and the marginal rule before cache access.
 `classify_with_thresholds` skips disabled labels even at score 1. Producer:
 `scripts/calibrate_cue_precision.py`; callers remain training and generation.

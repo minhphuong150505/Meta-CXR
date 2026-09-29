@@ -99,97 +99,64 @@ def workspace(tmp_path: Path) -> Path:
 def test_full_stage1_pipeline_runs_without_a_model(workspace: Path):
     validation = synthetic_predictions(400, seed=1, split="validation")
     test = synthetic_predictions(300, seed=2, split="test")
-
     validation_path = validation.save(workspace / "validation_predictions.npz")
     test_path = test.save(workspace / "test_predictions.npz")
 
-    # ---- 1. calibrate on validation ---------------------------------------
+    # ---- 1. per-class thresholds on validation (paper Eq. 22) --------------
     thresholds_path = workspace / "thresholds.json"
-    exit_code = calibrate_cli.main(
-        [
-            "--predictions", str(validation_path),
-            "--objective", "f1",
-            "--uncertain-policy", "ignore_uncertain",
-            "--split", "validation",
-            "--output", str(thresholds_path),
-        ]
-    )
-    assert exit_code == 0
-    assert thresholds_path.is_file()
-
+    assert calibrate_cli.main(
+        ["--predictions", str(validation_path), "--output", str(thresholds_path)]
+    ) == 0
     payload = json.loads(thresholds_path.read_text())
     assert payload["metadata"]["split"] == "validation"
     assert set(payload["thresholds"]) == set(PATHOLOGIES)
-    # At least one threshold should have moved off the 0.5 default.
-    assert any(abs(v - 0.5) > 1e-6 for v in payload["thresholds"].values())
+    assert set(payload["thresholds"]["Edema"]) == {"negative", "positive", "uncertain"}
 
-    # ---- 2. evaluate test with those thresholds ---------------------------
+    # ---- 2. evaluate test with the paper's three-class protocol -----------
     output_dir = workspace / "stage1_evaluation"
-    exit_code = stage1_cli.main(
+    assert stage1_cli.main(
         [
             "--predictions", str(test_path),
-            "--thresholds", str(thresholds_path),
-            "--uncertain-policy", "ignore_uncertain",
             "--bootstrap-samples", "20",
             "--evaluation-seed", "7",
             "--no-plots",
             "--output-dir", str(output_dir),
         ]
-    )
-    assert exit_code == 0
-
-    # ---- 3. every artifact exists -----------------------------------------
-    for name in (
-        "metrics.json",
-        "summary.csv",
-        "per_pathology_metrics.csv",
-        "evaluation_report.md",
-    ):
+    ) == 0
+    for name in ("metrics.json", "summary.csv", "per_pathology_metrics.csv", "evaluation_report.md"):
         assert (output_dir / name).is_file(), f"{name} was not written"
 
-    metrics = json.loads((output_dir / "metrics.json").read_text())
-    classification = metrics["classification"]
-
-    assert classification["settings"]["uncertain_policy"] == "ignore_uncertain"
-    assert "positive_macro_f1" in classification["aggregates"]
-    assert "macro_auroc" in classification["aggregates"]
+    classification = json.loads((output_dir / "metrics.json").read_text())["classification"]
+    aggregates = classification["aggregates"]
+    for key in ("weighted_precision", "weighted_recall", "weighted_f1",
+                "mean_weighted_f1_5", "auroc_positive_mean", "auroc_negative_mean"):
+        assert key in aggregates
+    assert not [k for k in aggregates if "positive_macro" in k or "presence" in k]
+    # All six findings, No Finding and Support Devices included (paper Fig. 5).
     assert len(classification["per_pathology"]) == len(PATHOLOGIES)
+    assert aggregates["auroc_positive_mean"] > 0.7
 
-    # Meta labels are reported but kept out of the macro.
-    assert "No Finding" not in classification["macro_pathologies"]
-    assert "Support Devices" not in classification["macro_pathologies"]
-
-    # The synthetic model is informative, so AUROC must beat chance.
-    assert classification["aggregates"]["macro_auroc"] > 0.7
-
-    # Bootstrap intervals bracket the point estimate.
-    interval = classification["intervals"]["positive_macro_f1"]
+    interval = classification["intervals"]["weighted_f1"]
     assert interval["lower"] <= interval["point_estimate"] <= interval["upper"]
 
-    # Baselines are present and the all-negative row exposes the accuracy trap.
     baselines = {row["baseline"]: row for row in classification["baselines"]}
-    assert baselines["all_negative"]["positive_macro_f1"] == 0.0
-    assert baselines["all_negative"]["accuracy"] > 0.5
+    assert {"all_negative", "majority_class", "prior_random"} <= set(baselines)
 
-    # Subgroups derived from view metadata.
     subgroups = {row["subgroup"] for row in classification["subgroups"]}
-    assert "view_PA" in subgroups
-    assert "multi_view" in subgroups
+    assert "view_PA" in subgroups and "multi_view" in subgroups
 
     report = (output_dir / "evaluation_report.md").read_text()
-    assert "Experiment metadata" in report
-    assert "Baseline comparison" in report
-    assert "Limitations" in report
+    for section in ("Experiment metadata", "Baseline comparison", "Limitations"):
+        assert section in report
 
 
 def test_metrics_json_is_parseable_and_has_no_nan_token(workspace: Path):
-    """A pathology with no positives yields null, not a bare NaN token."""
+    """A class that never occurs yields null AUROC, not a bare NaN token."""
     labels = np.zeros((20, 2), dtype=int)
-    labels[:5, 0] = 1  # P0 has positives, P1 has none
+    labels[:5, 0] = 1  # P0 has positives, P1 has only negatives
     probabilities = np.zeros((20, 2, 3))
     probabilities[..., 1] = 0.3
     probabilities[..., 0] = 0.7
-
     predictions = ClassificationPredictions(
         labels=labels,
         probabilities=probabilities,
@@ -199,58 +166,24 @@ def test_metrics_json_is_parseable_and_has_no_nan_token(workspace: Path):
     )
     path = predictions.save(workspace / "test.npz")
     output_dir = workspace / "out"
-
     assert stage1_cli.main(
-        [
-            "--predictions", str(path),
-            "--no-bootstrap", "--no-plots",
-            "--output-dir", str(output_dir),
-        ]
+        ["--predictions", str(path), "--no-bootstrap", "--no-plots", "--output-dir", str(output_dir)]
     ) == 0
-
     raw = (output_dir / "metrics.json").read_text()
-    assert "NaN" not in raw
-    assert "Infinity" not in raw
-    metrics = json.loads(raw)  # would raise on a bare NaN
-
+    assert "NaN" not in raw and "Infinity" not in raw
     per_pathology = {
-        row["pathology"]: row for row in metrics["classification"]["per_pathology"]
+        row["pathology"]: row for row in json.loads(raw)["classification"]["per_pathology"]
     }
-    assert per_pathology["Fracture"]["auroc"] is None
-    assert "no_positive_samples" in metrics["classification"]["skipped"]["Fracture"]
-
-
-def test_evaluator_refuses_thresholds_calibrated_on_test(workspace: Path):
-    predictions = synthetic_predictions(100, seed=3, split="test")
-    path = predictions.save(workspace / "test.npz")
-
-    bad = workspace / "bad_thresholds.json"
-    bad.write_text(
-        json.dumps({"metadata": {"split": "test"}, "thresholds": {"Edema": 0.3}})
-    )
-
-    exit_code = stage1_cli.main(
-        [
-            "--predictions", str(path),
-            "--thresholds", str(bad),
-            "--no-bootstrap", "--no-plots",
-            "--output-dir", str(workspace / "out"),
-        ]
-    )
-    assert exit_code == 2
+    assert per_pathology["Fracture"]["auroc_positive"] is None
+    assert per_pathology["Fracture"]["auroc_uncertain"] is None
 
 
 def test_calibration_cli_refuses_a_test_split(workspace: Path):
     predictions = synthetic_predictions(100, seed=4, split="test")
     path = predictions.save(workspace / "test.npz")
-    exit_code = calibrate_cli.main(
-        [
-            "--predictions", str(path),
-            "--split", "test",
-            "--output", str(workspace / "thresholds.json"),
-        ]
-    )
-    assert exit_code == 2
+    assert calibrate_cli.main(
+        ["--predictions", str(path), "--output", str(workspace / "thresholds.json")]
+    ) == 2
 
 
 def test_missing_prediction_file_exits_nonzero(workspace: Path):

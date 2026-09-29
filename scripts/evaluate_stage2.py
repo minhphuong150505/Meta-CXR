@@ -93,6 +93,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--evaluation-seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--no-bootstrap", action="store_true")
     parser.add_argument("--bertscore-model", default="distilbert-base-uncased")
+    parser.add_argument(
+        "--bertscore-rescale", action="store_true",
+        help="rescale_with_baseline=True. Use with --bertscore-model "
+             "distilroberta-base (or --paper-bertscore) to compare with the "
+             "META-CXR paper's Table 3 BERTScore (0.426): the paper does not "
+             "state its setting, and that is the CXR-Report-Metric setting of "
+             "the RadCliQ work it cites. Raw BERTScore (~0.8) is NOT comparable.",
+    )
+    parser.add_argument(
+        "--paper-bertscore", action="store_true",
+        help="Shorthand for --bertscore-model distilroberta-base --bertscore-rescale.",
+    )
     parser.add_argument("--bertscore-device", default="cpu")
     parser.add_argument(
         "--include-text",
@@ -142,8 +154,11 @@ def main(argv: list[str] | None = None) -> int:
             generated,
             references,
             metrics=tuple(args.metrics),
-            bertscore_model=args.bertscore_model,
+            bertscore_model=(
+                "distilroberta-base" if args.paper_bertscore else args.bertscore_model
+            ),
             bertscore_device=args.bertscore_device,
+            bertscore_rescale=bool(args.bertscore_rescale or args.paper_bertscore),
             strict=args.strict,
         )
     except Exception as exc:  # noqa: BLE001
@@ -263,7 +278,6 @@ def main(argv: list[str] | None = None) -> int:
         checkpoint=args.checkpoint,
         seed=args.evaluation_seed,
         threshold_source="n/a (generation)",
-        uncertain_policy="n/a (generation)",
     )
 
     write_json({"metadata": metadata.to_dict(), "generation": payload}, output_dir / "metrics.json")

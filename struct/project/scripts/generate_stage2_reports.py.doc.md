@@ -4,6 +4,9 @@
 
 # `scripts/generate_stage2_reports.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `--cue-rule` giờ là `argmax` (mặc định) | `paper_thresholds` (cần `--threshold-path`, Eq. 22) | `none`. `marginal_positive`, `conditional_positive`, `mention_gated`, `--finding-tokens full` đã bị XÓA. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 Sinh FINDINGS bằng MedGemma và ghi ra đúng định dạng `.jsonl` mà
@@ -120,7 +123,7 @@ hiếm nó suy biến thành hằng số "luôn nói có".
 `marginal_positive` đặt ngưỡng `sigmoid(m) · q_pos` **theo từng nhãn** và **chỉ
 phát nhóm positive** — không khẳng định bệnh nào vắng mặt, vì cue âm sai có thể
 dập tắt một bệnh có thật và dự án chưa đo gì về chất lượng cue âm. Ngưỡng ở
-`configs/stage2_cue_thresholds_marginal_pfit.json`.
+`configs/stage2_cue_thresholds_marginal_pfit.json` (đã xóa 2026-09-29, D-023).
 
 `none` phát nhóm rỗng nhưng **giữ nguyên hình dạng prompt guided và soft token**
 — dùng để tách riêng ảnh hưởng của cue. Nhóm rỗng là một dự đoán hợp lệ; record

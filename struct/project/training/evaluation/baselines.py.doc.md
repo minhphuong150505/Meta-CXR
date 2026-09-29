@@ -1,46 +1,16 @@
-> Source: `training/evaluation/baselines.py` (204 dòng)
+> Source: `training/evaluation/baselines.py` (127 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-09-29
 
 # `baselines.py`
 
-## Purpose
-Baseline để so sánh: đặc biệt là **all-negative**.
+Baseline tầm thường **ba lớp**, chấm bằng cùng `evaluate_classification`:
+`all_negative`, `all_positive`, `all_uncertain`, `majority_class` (lớp phổ biến
+nhất của từng bệnh), `prior_random` (rút theo tần suất lớp). Cột bảng:
+`BASELINE_COLUMNS` = weighted P/R/F1 + `mean_weighted_f1_5`. Viết lại 2026-09-29
+(D-023) — bản cũ tính F1 lớp dương nhị phân.
 
-## Why it exists
-Với dữ liệu mất cân bằng nặng, một model đoán "negative" cho mọi thứ vẫn đạt
-accuracy cao. Không có baseline này, một kết quả tầm thường trông như thành công.
+⚠ `majority_class` và `prior_random` đọc tần suất của chính split được chấm → là
+sàn lạc quan.
 
-## Status
-```text
-✅ ACTIVE
-```
-
-## Main items
-| Tên | Dòng | Vai trò |
-|---|---|---|
-| `compute_baselines(...)` | 80 | ★ Tính các baseline |
-| `baseline_table(...)` | 180 | Bảng so sánh |
-| `BaselineRow` | 44 | Một dòng kết quả |
-| `_row(name, report, description)` | 67 | Helper |
-
-## Calls / Called by
-Gọi: `evaluation.classification_metrics`, `schemas`, `uncertain_policy`.
-Được gọi: `scripts/evaluate_stage1.py:32,208`; `tests/test_threshold_calibration.py:18`.
-
-## Side effects
-Không.
-
-## Related tests
-`tests/test_threshold_calibration.py`
-
-## Developer notes
-**Luôn báo cáo baseline cùng kết quả model.** Một con số F1 không có baseline
-không nói lên điều gì về dữ liệu mất cân bằng.
-
-## Source relationships
-
-- **Parent:** [`training/evaluation/`](_index.md)
-- **Related:** [`schemas.py`](schemas.py.doc.md)
-
-← [HOME](../../../HOME.md)
+Caller: `scripts/evaluate_stage1.py`.

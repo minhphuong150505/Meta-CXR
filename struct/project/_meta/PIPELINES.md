@@ -4,6 +4,9 @@
 
 # Pipelines
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Các lệnh đánh giá có `--label-framing`, `--score`, `--uncertain-policy`, `--thresholds` đã không còn chạy. Dùng `python scripts/evaluate_stage1.py --predictions <npz> --output-dir <dir>` (argmax, giao thức bài báo). Xem [D-023](DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 Repository có **mười một** pipeline riêng biệt. Chúng không phải mười một cách chạy cùng
 một thứ — mỗi cái có entrypoint, input, output và điều kiện tiên quyết khác nhau.
 
@@ -393,7 +396,7 @@ python -m pretraining.train \
 
 python scripts/evaluate_stage1.py \
   --predictions <test_predictions.npz> \
-  --thresholds configs/stage1_thresholds_f1_val.json \
+  --thresholds <đã xóa: stage1_thresholds_f1_val.json, D-023> \
   --output-dir <eval-dir>
 ```
 

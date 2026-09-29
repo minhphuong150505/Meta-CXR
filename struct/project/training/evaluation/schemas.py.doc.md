@@ -4,6 +4,9 @@
 
 # `schemas.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Đã XÓA `META_LABELS`, `mention_probabilities`, `positive_probabilities`, `macro_pathology_indices`. Xem [D-023](../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 Schema có kiểu cho dữ liệu evaluation: `ClassificationPredictions` (đọc `.npz`) và
@@ -51,7 +54,7 @@ Field optional `[N, P]`: xác suất của **mention gate** — *"báo cáo có 
 finding này không?"*. Chỉ có ở run mà eval hook thu thập gate
 (`model/lavis/tasks/image_text_pretrain.py`).
 
-Đây là thừa số mà [`label_framing.presence_scores`](label_framing.py.doc.md) nhân
+Đây là thừa số mà `label_framing.presence_scores` (đã XÓA, D-023) nhân
 vào `q_positive` để ra `P(present)`. Không có nó thì score `marginal_presence`
 **raise**, không rơi ngầm về `conditional_positive`.
 

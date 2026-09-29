@@ -24,7 +24,6 @@ Siêu tham số Stage 1 nằm ở [`pretraining/configs/`](../pretraining/config
 | `stage2_prompt_v2.yaml` | [📄](stage2_prompt_v2.yaml.doc.md) | ✅ | Prompt v2 — **opt-in** |
 | `experiments/pretrained_medgemma_findings_first.yaml` | [📄](experiments/pretrained_medgemma_findings_first.yaml.doc.md) | ✅ | Baseline P8 |
 | `prompt_ablation/P1..P9.yaml` | [📄](prompt_ablation/_index.md) | 🧪 | 9 biến thể prompt |
-| `stage1_thresholds_f1_val.json` | [📄](stage1_thresholds_f1_val.json.doc.md) | ✅ | Threshold validation dùng cho Stage-1 Table 5 |
 
 ## `env_config.yaml` — bắt buộc trước mọi thứ
 

@@ -16,51 +16,15 @@ from training.evaluation.bootstrap import (
     DEFAULT_SAMPLES,
     DEFAULT_SEED,
 )
+from training.evaluation.classification_metrics import AGGREGATE_METRICS
 from training.evaluation.generation_metrics import LEXICAL_METRICS
-from training.evaluation.threshold_calibration import (
-    DEFAULT_OBJECTIVE,
-    OBJECTIVES,
-)
-from training.evaluation.uncertain_policy import DEFAULT_POLICY, POLICIES
 
-#: Aggregate metric names a Stage-1 checkpoint may be selected on.
-CLASSIFICATION_METRICS = (
-    "accuracy",
-    "binary_accuracy",
-    "balanced_accuracy",
-    "macro_precision",
-    "macro_recall",
-    "macro_f1",
-    "micro_precision",
-    "micro_recall",
-    "micro_f1",
-    "weighted_precision",
-    "weighted_recall",
-    "weighted_f1",
-    "positive_macro_precision",
-    "positive_macro_recall",
-    "positive_macro_f1",
-    "positive_micro_precision",
-    "positive_micro_recall",
-    "positive_micro_f1",
-    "macro_auroc",
-    "macro_auprc",
-    "micro_auroc",
-    "micro_auprc",
-    "macro_specificity",
-    "macro_npv",
-)
+#: The paper's three-class aggregates (classification_metrics.AGGREGATE_METRICS).
+#: There are no positive-only / binary metrics any more (D-023).
+CLASSIFICATION_METRICS = AGGREGATE_METRICS
 
-#: Stage-1 selection metrics, including the legacy key the runner already uses.
-STAGE1_SELECTION_METRICS = (
-    "f1_positive_macro",  # legacy key, still the runner default
-    "f1_positive_macro_defined_only",
-    "positive_macro_f1",
-    "macro_auroc",
-    "macro_auprc",
-    "validation_loss",
-    "loss",
-)
+#: Stage-1 selection metrics.
+STAGE1_SELECTION_METRICS = ("loss", "validation_loss", *AGGREGATE_METRICS)
 
 #: Stage-2 selection metrics.
 STAGE2_SELECTION_METRICS = (
@@ -75,8 +39,6 @@ STAGE2_SELECTION_METRICS = (
 )
 
 CLINICAL_METRICS = ("chexbert", "radgraph", "chexpert_labeler")
-
-THRESHOLD_MODES = ("default", "calibrated")
 
 #: Default composite weights. Documented rather than hard-coded silently:
 #: clinical correctness is weighted above surface overlap because a report that
@@ -117,11 +79,7 @@ class BootstrapConfig:
 class EvaluationConfig:
     """The validated ``evaluation:`` block."""
 
-    uncertain_policy: str = DEFAULT_POLICY
-    selection_metric: str = "f1_positive_macro"
-    threshold_mode: str = "default"
-    threshold_objective: str = DEFAULT_OBJECTIVE
-    include_meta_labels: bool = False
+    selection_metric: str = "loss"
     bootstrap: BootstrapConfig = field(default_factory=BootstrapConfig)
     classification_metrics: tuple[str, ...] = ()
     generation_metrics: tuple[str, ...] = ()
@@ -134,12 +92,6 @@ class EvaluationConfig:
     save_per_sample_results: bool = True
 
     def validate(self, *, stage: str = "stage1") -> EvaluationConfig:
-        if self.uncertain_policy not in POLICIES:
-            raise EvaluationConfigError(
-                f"evaluation.uncertain_policy={self.uncertain_policy!r} is not "
-                f"one of {', '.join(POLICIES)}"
-            )
-
         allowed = (
             STAGE1_SELECTION_METRICS if stage == "stage1" else STAGE2_SELECTION_METRICS
         )
@@ -149,17 +101,6 @@ class EvaluationConfig:
                 f"computed for {stage}. Valid options: {', '.join(allowed)}. "
                 "Validating this before training starts is deliberate: a run must "
                 "not train for hours and then find it has nothing to select on."
-            )
-
-        if self.threshold_mode not in THRESHOLD_MODES:
-            raise EvaluationConfigError(
-                f"evaluation.threshold_mode={self.threshold_mode!r} is not one of "
-                f"{', '.join(THRESHOLD_MODES)}"
-            )
-        if self.threshold_objective not in OBJECTIVES:
-            raise EvaluationConfigError(
-                f"evaluation.threshold_objective={self.threshold_objective!r} is "
-                f"not one of {', '.join(OBJECTIVES)}"
             )
 
         unknown = set(self.classification_metrics) - set(CLASSIFICATION_METRICS)

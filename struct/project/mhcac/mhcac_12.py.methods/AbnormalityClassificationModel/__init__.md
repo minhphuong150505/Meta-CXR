@@ -3,6 +3,9 @@
 
 # `AbnormalityClassificationModel.__init__(...)`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Không còn `uncertain_policy` và `mention_heads`. Xem [D-023](../../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Located in
 
 [`mhcac_12.py`](../../mhcac_12.py.doc.md)

@@ -1,79 +1,54 @@
-> Source: `training/evaluation/classification_metrics.py` (662 dòng)
+> Source: `training/evaluation/classification_metrics.py` (347 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-09-29
 
 # `classification_metrics.py`
 
 ## Purpose
 
-Toàn bộ chỉ số phân loại Stage 1: precision/recall/F1, AUROC, AUPRC, ma trận nhầm
-lẫn 3 lớp, và các phép gộp macro/micro/weighted.
-
-**Chỉ cần numpy** — chạy được ở bất cứ đâu test chạy được.
+Chấm Stage 1 **đúng giao thức của bài báo META-CXR**, ba lớp
+(Negative / Positive / Uncertain). Viết lại hoàn toàn ngày 2026-09-29
+([D-023](../../_meta/DECISIONS.md)): không còn framing nhị phân, không còn
+F1 chỉ lớp dương, không còn `uncertain_policy`, không còn loại nhãn "meta".
 
 ## Status
 
 ```text
-✅ ACTIVE — file lớn nhất trong evaluation/ (662 dòng)
+✅ ACTIVE — dùng bởi scripts/evaluate_stage1.py, eval hook Stage 1 (mọi epoch được chấm), baselines.py
 ```
 
 ## Main items
 
 | Tên | Dòng | Vai trò |
 |---|---|---|
-| `evaluate_classification(...)` | 296 | [📄](classification_metrics.py.methods/evaluate_classification.md) ★ Điểm vào chính |
-| `PathologyMetrics` | 173 | Chỉ số một bệnh lý |
-| `ClassificationReport` | 235 | Kết quả tổng |
-| `roc_auc(scores, y_true)` | 79 | ★ Tự implement |
-| `average_precision(scores, y_true)` | 110 | ★ AUPRC |
-| `binary_confusion(...)` | 66 | TP/FP/FN/TN |
-| `three_class_confusion_matrices(...)` | 264 | 14 ma trận 3×3 |
-| `apply_thresholds(...)` | 282 | Áp threshold đã calibrate |
-| `_three_class_aggregates(...)` | 554 | Gộp 3 lớp |
-| `_micro_probability_metrics(...)` | 640 | Micro theo xác suất |
-| `_safe_divide`, `_nanmean`, `_harmonic`, `_weighted_by`, `_positive_f1` | — | Helper số học |
+| `evaluate_classification(predictions)` | 234 | [📄](classification_metrics.py.methods/evaluate_classification.md) ★ Điểm vào |
+| `weighted_prf(y_true, y_pred)` | 148 | sklearn `average='weighted'`, `zero_division=1` |
+| `per_class_prf(matrix)` | 127 | P/R/F1 từng lớp, ngữ nghĩa sklearn |
+| `confusion_matrix` | 120 | 3×3, hàng = nhãn thật |
+| `decide(probabilities)` | 229 | argmax ba lớp (quyết định của code gốc) |
+| `roc_auc`, `average_precision` | 68, 97 | ROC (Mann-Whitney) và AP bậc thang |
+| `PAPER_FIVE_FINDINGS` | 56 | 5 bệnh của Bảng 5 và 7 |
+| `AGGREGATE_METRICS` | 334 | Tên aggregate hợp lệ (config, selection metric) |
 
-`_safe_divide` (`:54`) và `_nanmean` (`:256`) tồn tại vì bệnh lý hiếm có thể cho
-mẫu số 0 — trả `nan` có kiểm soát thay vì crash hoặc trả 0 gây hiểu nhầm.
+## Aggregates — mapping tới bài báo
 
-## Calls / Called by
+| Key | Bài báo |
+|---|---|
+| `weighted_precision` / `weighted_recall` / `weighted_f1` / `accuracy` | Hình 10, Sec. IV-B-2a (0.87 / 0.78 / 0.73) — trung bình đều 14 bệnh |
+| `mean_weighted_f1_5` | Bảng 5, 7 (0.701) |
+| `auroc_{negative,positive,uncertain}_mean`, `auroc_mean` | Hình 5 — ROC một-lớp-với-phần-còn-lại |
+| `auprc_*_mean` | không có trong bài báo, báo cáo thêm |
 
-Gọi: `numpy`, `evaluation.schemas`, `evaluation.uncertain_policy`.
-Được gọi: `scripts/evaluate_stage1.py:39`; `baselines.py:25`;
-`model/lavis/tasks/image_text_pretrain.py:223` (**import trễ, trong hàm**);
-`tests/test_classification_metrics.py`, `test_threshold_calibration.py:27`.
+⚠ Code gốc (`META-CXR/mhcac/utils.py:compute_metrics_for_tasks`) lấy trung bình
+theo batch rồi trung bình các batch; module này tính trên cả split.
 
-## Side effects
+## Callers
 
-Không. Hàm thuần.
+`scripts/evaluate_stage1.py`, `model/lavis/tasks/image_text_pretrain.py`,
+`training/evaluation/baselines.py`, `training/evaluation/config.py`,
+`training/evaluation/paper_protocol.py` (dùng `roc_auc`, `PAPER_FIVE_FINDINGS`).
 
-## Error / edge cases
+## Tests
 
-Bệnh lý không có mẫu positive → AUPRC/AUROC là `nan`, **không phải 0**. Phân biệt
-này quan trọng: 0 nghĩa là "dự đoán sai hoàn toàn", `nan` nghĩa là "không tính được".
-
-## Related tests
-
-`tests/test_classification_metrics.py` (377 dòng)
-
-## Developer notes
-
-1. **`nan` ≠ 0.** Đừng thay `nan` bằng 0 khi tổng hợp — sẽ kéo macro xuống một
-   cách sai lệch.
-2. `selection_metric: macro_auprc` của Stage 1 đến từ file này.
-
-## Source relationships
-
-- **Parent:** [`training/evaluation/`](_index.md)
-- **Related:** [`schemas.py`](schemas.py.doc.md) · [`scripts/_index.md`](../../scripts/_index.md)
-
-← [HOME](../../../HOME.md)
-
-## Macro 13 và 14 nhãn (2026-09-24)
-
-`evaluate_classification` thêm `<metric>_13labels` (bỏ riêng `No Finding`) và
-`<metric>_14labels` (đủ 14) vào `aggregates` cho `macro_auroc`, `macro_auprc`,
-`positive_macro_f1/precision/recall`, `macro_specificity` — chỉ khi bộ nhãn là
-CheXpert-14. Macro chính (`macro_auroc`, …) **không đổi**: vẫn theo
-`include_meta_labels`, mặc định 12 nhãn (bỏ `No Finding` và `Support Devices`),
-để so được với số cũ.
+`tests/test_classification_metrics.py` (có so khớp sklearn khi host có sklearn),
+`tests/test_three_class_only.py`.

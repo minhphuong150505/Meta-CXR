@@ -2,8 +2,9 @@
 
 Reads what the runner writes under ``<root>/<phase>/<run_name>/``:
 
-* ``phase_metrics.jsonl`` -- per-epoch val stats, including the ``sp_*``
-  study_presence macros (12-label primary, ``_13labels``, ``_14labels``);
+* ``phase_metrics.jsonl`` -- per-epoch val stats, including the paper's
+  three-class numbers (weighted P/R/F1 over the 14 findings, the five-finding
+  mean F1, one-vs-rest AUROC per class);
 * ``itc_gate_epoch<N>.json`` -- the per-epoch ITC gate;
 * ``grad_interference.jsonl`` -- phase-1c cosine / norm ratio of classification
   vs alignment gradients on shared parameters.
@@ -23,11 +24,14 @@ import statistics
 from pathlib import Path
 
 CLASSIFICATION_KEYS = [
-    ("macro AUROC", "sp_macro_auroc"),
-    ("macro AUPRC", "sp_macro_auprc"),
-    ("pos. macro F1 @0.5", "sp_positive_macro_f1"),
+    ("weighted precision (14)", "weighted_precision"),
+    ("weighted recall (14)", "weighted_recall"),
+    ("weighted F1 (14)", "weighted_f1"),
+    ("mean weighted F1 (5 findings)", "mean_weighted_f1_5"),
+    ("AUROC Positive vs rest", "auroc_positive_mean"),
+    ("AUROC Negative vs rest", "auroc_negative_mean"),
+    ("AUROC Uncertain vs rest", "auroc_uncertain_mean"),
 ]
-VIEWS = [("12", ""), ("13", "_13labels"), ("14", "_14labels")]
 
 
 def _phase_dir(root: Path, phase: str) -> Path | None:
@@ -81,23 +85,19 @@ def classification_table(root: Path) -> list[str]:
         return ["(no phase1b val metrics)"]
     ref = ref_rows[max(ref_rows)]
     lines = [
-        "| metric | labels | end of 1b | "
+        "| metric | end of 1b | "
         + " | ".join(f"1c ep {e} (delta)" for e in sorted(joint_rows))
         + " |",
-        "|---|---:|---:|" + "---:|" * len(joint_rows),
+        "|---|---:|" + "---:|" * len(joint_rows),
     ]
     for label, key in CLASSIFICATION_KEYS:
-        for view, suffix in VIEWS:
-            k = key + suffix
-            if k not in ref:
-                continue
-            cells = []
-            for epoch in sorted(joint_rows):
-                value = joint_rows[epoch].get(k)
-                cells.append(
-                    "n/a" if value is None else f"{value:.4f} ({value - ref[k]:+.4f})"
-                )
-            lines.append(f"| {label} | {view} | {ref[k]:.4f} | " + " | ".join(cells) + " |")
+        if key not in ref:
+            continue
+        cells = []
+        for epoch in sorted(joint_rows):
+            value = joint_rows[epoch].get(key)
+            cells.append("n/a" if value is None else f"{value:.4f} ({value - ref[key]:+.4f})")
+        lines.append(f"| {label} | {ref[key]:.4f} | " + " | ".join(cells) + " |")
     return lines
 
 
@@ -131,7 +131,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     root = args.root.expanduser()
     out = ["## ITC gate per epoch", "", *gate_table(root, ["phase1a", "phase1c"]), ""]
-    out += ["## Classification on val (study_presence, q_pos) vs end of phase 1b", ""]
+    out += ["## Classification on val (paper protocol: three classes, argmax) vs end of phase 1b", ""]
     out += classification_table(root) + [""]
     out += ["## Gradient interference in phase 1c", ""] + interference_table(root)
     print("\n".join(out))

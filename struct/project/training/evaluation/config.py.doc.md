@@ -4,6 +4,9 @@
 
 # `config.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `CLASSIFICATION_METRICS = AGGREGATE_METRICS` (ba lớp); đã XÓA `uncertain_policy`, `threshold_mode`, `threshold_objective`, `include_meta_labels`; `selection_metric` mặc định `loss`. Xem [D-023](../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 Schema và validate cho một khối config `evaluation:` — hình dung một luồng
 evaluation điều khiển bằng config thay vì CLI.

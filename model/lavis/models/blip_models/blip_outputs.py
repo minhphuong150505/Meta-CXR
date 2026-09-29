@@ -94,23 +94,7 @@ class BlipOutput(ModelOutput):
 
     loss_explanation: Optional[torch.FloatTensor] = None
 
-    loss_gate: Optional[torch.FloatTensor] = None
-
     loss_mpc: Optional[torch.FloatTensor] = None
-
-    # The hierarchical objective (model.loss.lambda_mention_conditioned_cls).
-    # It MUST be reported: when it is on, lambda_cls and lambda_gate are both
-    # forced to 0.0, so `loss_cls` and `loss_gate` print exactly 0.0000 and the
-    # total is otherwise made up of auxiliary terms. Without this field a run
-    # whose --options failed to take would look completely healthy while
-    # training no classification objective at all -- the same silent no-op that
-    # cost this project a 70-hour Stage-2 arm.
-    loss_mention_conditioned: Optional[torch.FloatTensor] = None
-    # Four-state joint log-probabilities when the mention-conditioned hierarchy
-    # is on: P(blank)=1-m, P(Neg)=m*q_neg, P(Pos)=m*q_pos, P(Unc)=m*q_unc.
-    # classification_logits stays the CONDITIONAL polarity distribution q, which
-    # is what the blank-masked CheXpert metric actually scores.
-    mention_marginal_log_probs: Optional[torch.FloatTensor] = None
 
     loss_view_consistency: Optional[torch.FloatTensor] = None
 
@@ -119,15 +103,6 @@ class BlipOutput(ModelOutput):
     loss_distill: Optional[torch.FloatTensor] = None
 
     classification_logits: Optional[torch.FloatTensor] = None
-
-    # [B, num_abnormalities] raw logits of the mention gate: "will the report
-    # mention this finding at all?". Always populated (MHCAC computes it
-    # unconditionally); whether it was TRAINED depends on lambda_gate or
-    # lambda_mention_conditioned_cls being > 0. Exposed so evaluation can score
-    # P(present) = sigmoid(mention) * q_positive, which is the quantity the
-    # study_presence label framing asks about -- classification_logits alone is
-    # conditional on mention and cannot answer it.
-    mention_logits: Optional[torch.FloatTensor] = None
 
     classification_mask: Optional[torch.BoolTensor] = None
 

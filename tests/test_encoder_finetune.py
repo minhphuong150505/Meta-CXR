@@ -148,20 +148,3 @@ class TestShippedConfig:
         }
         for index, (n_pos, n_neg) in counts.items():
             assert weights[index][1] == pytest.approx(min(n_neg / n_pos, 10.0), abs=1e-3)
-
-    def test_gate_kappa_is_one(self, cfg):
-        """gate weight = n_not_mentioned / n_mentioned, capped at 10, no kappa."""
-        gate = cfg["model"]["mhcac"]["gate_class_weights"]
-        assert len(gate) == 14
-        counts = {  # (mentioned, not mentioned), from the config's own comments
-            0: (74305, 148453),
-            2: (65084, 157674),
-            10: (85013, 137745),
-            13: (68520, 154238),
-        }
-        for index, (mentioned, not_mentioned) in counts.items():
-            expected = min(not_mentioned / mentioned, 10.0)
-            assert gate[index] == pytest.approx(expected, abs=1e-3), (
-                f"gate weight {index} is not plain inverse frequency; a kappa "
-                "has crept back in"
-            )

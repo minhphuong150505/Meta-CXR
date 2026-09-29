@@ -1,5 +1,8 @@
 # Meta-CXR — Source Code Guide
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** mention gate, `uncertain_policy`, `study_presence`/`marginal_presence`, F1 dương tính và ngưỡng nhị phân đã bị XÓA khỏi code. Mọi đoạn bên dưới nhắc tới chúng là lịch sử. Đánh giá theo giao thức ba lớp của bài báo: `training/evaluation/classification_metrics.py`, `paper_protocol.py`. Xem [D-023](project/_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 > Điểm bắt đầu **duy nhất**. Mọi thứ khác đều tới được từ đây.
 > Last verified against source: 2026-08-14 · branch `explanation-loss` · Phase 3 working tree
 
@@ -162,6 +165,7 @@ Meta-CXR-source/
 │
 ├── pretraining/                    ✅ Stage 1
 │   ├── train.py                    ✅ ★ ENTRYPOINT Stage 1
+│   ├── retired_keys.py             ✅ chặn khóa config nhị phân đã gỡ (D-023)
 │   ├── precompute_features.py      🟡 feature cache
 │   ├── configs/
 │   │   ├── mimic_cxr_full.yaml          ✅ ★ PRODUCTION — recipe duy nhất
@@ -269,8 +273,8 @@ Meta-CXR-source/
 ├── scripts/                        🧰 CLI
 │   ├── vm_preflight.py             🧰 chạy TRƯỚC mọi run dài
 │   ├── train_healthcheck.sh         🧰 monitor chỉ đọc Stage 1/2; cron dùng exit code
-│   ├── calibrate_thresholds.py     ✅   evaluate_stage1.py ✅
-│   ├── calibrate_cue_precision.py  ✅ selective marginal cues, validation-only fitting
+│   ├── calibrate_thresholds.py     ✅ ngưỡng theo (bệnh, lớp), Eq. 22   evaluate_stage1.py ✅ giao thức bài báo
+│   ├── evaluate_chexpert_crossdomain.py ✅ Bảng 4   evaluate_clinical_efficacy.py ✅ Bảng 3 CE
 │   ├── evaluate_explanation.py     ✅ XAI, checkpoint + autograd, không train
 │   ├── evaluate_stage2.py          ✅   check_notebook_privacy.py ✅ pre-commit
 │   ├── run_prompt_ablation.py      🧪   export_stage2_prompt_samples.py 🧪 ⚠ chứa findings
@@ -285,7 +289,6 @@ Meta-CXR-source/
 ├── configs/
 │   ├── env_config.yaml.example     ✅ (env_config.yaml git-ignored)
 │   ├── stage2_prompt_v2.yaml       ✅ opt-in Prompt v2
-│   ├── stage1_thresholds_f1_val.json ✅ threshold validation cho Table 5
 │   ├── experiments/pretrained_medgemma_findings_first.yaml ✅
 │   └── prompt_ablation/P1..P9.yaml 🧪
 │
@@ -334,6 +337,7 @@ Meta-CXR-source/
 [📁 Directory documentation](project/pretraining/_index.md)
 
 - [`train.py`](project/pretraining/train.py.doc.md) ★ entrypoint
+- [`retired_keys.py`](project/pretraining/retired_keys.py.doc.md) — khóa nhị phân đã gỡ (D-023)
 - [`precompute_features.py`](project/pretraining/precompute_features.py.doc.md)
 
 #### `pretraining/configs/`

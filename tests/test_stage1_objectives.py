@@ -40,47 +40,29 @@ def test_empty_classification_mask_returns_differentiable_zero():
     assert torch.count_nonzero(logits.grad) == 0
 
 
-def test_ignore_uncertain_drops_only_uncertain_pairs():
+def test_uncertain_is_trained_as_its_own_third_class():
+    """Paper Eq. 10: every cell, Uncertain included, is a three-class CE term."""
     torch.manual_seed(2)
     logits = torch.randn(3, 2, 3, requires_grad=True)
     labels = torch.tensor([[0, 2], [2, 1], [1, 0]])
-    loss_fn = ClassificationLoss(
-        num_abnormalities=2,
-        label_smoothing=0.0,
-        uncertain_policy="ignore_uncertain",
-    )
+    loss_fn = ClassificationLoss(num_abnormalities=2, label_smoothing=0.0)
 
     actual = loss_fn(logits, labels)
     expected = torch.stack(
-        [
-            F.cross_entropy(logits[[0, 2], 0], labels[[0, 2], 0]),
-            F.cross_entropy(logits[[1, 2], 1], labels[[1, 2], 1]),
-        ]
+        [F.cross_entropy(logits[:, 0], labels[:, 0]), F.cross_entropy(logits[:, 1], labels[:, 1])]
     ).mean()
-
     torch.testing.assert_close(actual, expected)
     actual.backward()
-    assert torch.count_nonzero(logits.grad[1, 0]) == 0
-    assert torch.count_nonzero(logits.grad[0, 1]) == 0
+    # The Uncertain cells receive gradient: they are not dropped or folded.
+    assert torch.count_nonzero(logits.grad[1, 0]) > 0
+    assert torch.count_nonzero(logits.grad[0, 1]) > 0
 
 
-@pytest.mark.parametrize(
-    ("policy", "replacement"),
-    [("uncertain_as_positive", 1), ("uncertain_as_negative", 0)],
-)
-def test_uncertain_mapping_policies(policy, replacement):
-    logits = torch.randn(2, 1, 3)
-    labels = torch.tensor([[2], [1]])
-    loss_fn = ClassificationLoss(
-        num_abnormalities=1,
-        label_smoothing=0.0,
-        uncertain_policy=policy,
-    )
-
-    actual = loss_fn(logits, labels)
-    expected_labels = torch.tensor([replacement, 1])
-    expected = F.cross_entropy(logits[:, 0], expected_labels)
-    torch.testing.assert_close(actual, expected)
+def test_there_is_no_uncertain_folding_option():
+    with pytest.raises(TypeError):
+        ClassificationLoss(num_abnormalities=1, uncertain_policy="ignore_uncertain")
+    with pytest.raises(TypeError):
+        AbnormalitySpecificLoss(num_abnormalities=1, uncertain_policy="three_class")
 
 
 def test_sparse_pathologies_do_not_exponentially_duplicate_contrastive_loss():
@@ -96,7 +78,6 @@ def test_sparse_pathologies_do_not_exponentially_duplicate_contrastive_loss():
         margin=0.5,
         d_embedding=embedding_dim,
         num_abnormalities=num_abnormalities,
-        uncertain_policy="ignore_uncertain",
     )
 
     _, _, contrastive, _ = objective(common, attention, labels)
@@ -144,13 +125,13 @@ def test_mhcac_text_is_teacher_only_and_student_shape_matches_inference():
     handle = model.attention_layers[0].expert_to_text_attention.register_forward_hook(
         lambda *args: text_attention_calls.append(True)
     )
-    student_logits, _, contrastive, orthogonal, sparse, _ = model(
+    student_logits, _, contrastive, orthogonal, sparse = model(
         shared,
         text_embeddings=None,
         labels=labels,
     )
     assert text_attention_calls == []
-    teacher_logits, _, _, _, _, _ = model(
+    teacher_logits, _, _, _, _ = model(
         shared,
         text_embeddings=text_embeddings,
         labels=labels,

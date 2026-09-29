@@ -11,6 +11,50 @@ branch `main`). It is a sibling of the older `../META-CXR/` checkout. The parent
 `medgemma_inference/`; Stage-2 test counts), **this file wins for work done
 inside this directory.**
 
+## ⚠⚠⚠ Three classes, never binary — read this before touching labels or metrics (D-023)
+
+**Every CheXpert finding is a THREE-class problem: Negative (0), Positive (1),
+Uncertain (2). The model is trained that way and evaluated that way, as the
+META-CXR paper does. Do not reduce it to "present / not present" anywhere.**
+
+Between 2026-08 and 2026-09 an AI assistant, without the user verifying it,
+turned this repository's task into a binary one: a binary "mention gate" head
+(`lambda_gate`), a mention-conditioned objective, `uncertain_policy`
+(`ignore_uncertain` / `uncertain_as_*`, which dropped or folded the Uncertain
+class), a `study_presence` / `marginal_presence` evaluation framing, a
+positive-only `positive_macro_f1` headline, binary positive-threshold
+calibration, and Stage-2 cue rules built on the gate (`conditional_positive`,
+`marginal_positive`, `mention_gated`, selective positive cues). **The user
+called this a mistake and had all of it removed on 2026-09-29.** What exists now:
+
+- **Training:** `mhcac.loss.ClassificationLoss` is a three-class weighted CE
+  with no folding option; `AbnormalitySpecificLoss` always includes the
+  uncertain term. MHCAC has no mention head.
+- **Evaluation (`training/evaluation/classification_metrics.py`) = the paper's
+  protocol:** argmax over the three classes; per-finding sklearn-weighted
+  precision / recall / F1 (`zero_division=1`) averaged over all 14 findings
+  (paper Fig. 10: 0.87 / 0.78 / 0.73); `mean_weighted_f1_5` over Atelectasis,
+  Cardiomegaly, Consolidation, Edema, Pleural Effusion (Tables 5/7: 0.701);
+  one-vs-rest AUROC per class per finding (Fig. 5). All 14 findings count,
+  No Finding and Support Devices included.
+- **Thresholds (`threshold_calibration.py`)** are the paper's per-(finding,
+  class) ROC-distance thresholds (Eq. 22, Fig. 11), used only for the Stage-2
+  prompt (`--cue-rule paper_thresholds`). Stage-2 cue rules: `argmax` (default),
+  `paper_thresholds`, `none`.
+- **The only binary computations left are the two the paper itself uses**, in
+  `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
+  (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).
+- **Guards:** `pretraining/retired_keys.py` refuses every retired config key
+  (model, run and phase blocks) with an explanation, and drops the retired
+  heads from old checkpoints on load. `tests/test_three_class_only.py` fails if
+  any retired identifier reappears in executable Python or shipped YAML.
+
+**If a task seems to need a binary framing, stop and ask the user.** Every
+Stage-1 number in this file labelled `study_presence`, `marginal_presence`,
+`positive_macro_f1` or "12-label macro" is a HISTORICAL binary-framing number:
+it is not comparable with the paper and its CLI flags no longer exist. Re-score
+old runs with `scripts/evaluate_stage1.py` (their `.npz` files still load).
+
 ## Who does what — one Claude plans, another Claude executes
 
 Set by the user on 2026-08-19. Claude Code is installed and authenticated on the
@@ -638,20 +682,17 @@ CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
 CUDA_VISIBLE_DEVICES=0 python training/run_medgemma_qlora.py \
     --train-limit 500 --val-limit 10 --test-limit 10 --no-upload --output-dir training/outputs/smoke
 
-# Evaluation — calibrate on validation only, then score the test split
-python scripts/calibrate_thresholds.py --predictions <val.npz> --objective f1 \
-    --uncertain-policy ignore_uncertain --min-positive 20 --output <thresholds.json>
-# --uncertain-policy is NOT optional here: it defaults to three_class in BOTH
-# scripts, while training runs ignore_uncertain. Omitting it on the eval line
-# after calibrating with ignore_uncertain silently scores the thresholds under a
-# different label binarisation -- measured 2026-08-16 on the same npz:
-# macro_auroc 0.6537 vs 0.7850, positive_macro_f1 0.7734 vs 0.8757. It does not
-# warn; the report just prints "Uncertain policy: three_class" in its metadata.
-python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresholds.json> \
-    --uncertain-policy ignore_uncertain --output-dir <dir>
-# To get an F1 that MEANS anything, add --label-framing study_presence to BOTH
-# lines (see "Which question the metrics answer" below). Mismatched framings are
-# refused rather than silently scored, unlike --uncertain-policy.
+# Evaluation -- the META-CXR paper's protocol, three classes (D-023)
+python scripts/evaluate_stage1.py --predictions <test.npz> --output-dir <dir>
+# prints weighted P/R/F1 over the 14 findings (paper 0.87/0.78/0.73), the
+# five-finding mean F1 (paper 0.701) and one-vs-rest AUROC per class (Fig. 5).
+# Per-class prompt thresholds (Eq. 22), fitted on VALIDATION only:
+python scripts/calibrate_thresholds.py --predictions <val.npz> --output <thresholds.json>
+# Paper Table 4 (CheXpert val, p1/(p0+p1)) and Table 3 CE (labeler output):
+python scripts/evaluate_chexpert_crossdomain.py --predictions <chexpert_val.npz>
+python scripts/evaluate_clinical_efficacy.py --generated-labels <csv> --reference-labels <csv>
+# ⚠ Neither the CheXpert-val Stage-1 loader nor a CheXpert labeler/CheXbert is
+# in this repo; only the scoring is. See training/evaluation/paper_protocol.py.
 CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
     --checkpoint <checkpoint_best.pth> --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --split test --mask-cache-dir <mask-cache> --output-dir <private-results>/xai \
@@ -661,6 +702,10 @@ CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
 # PNG/NPZ from this script are patient data.
 python scripts/evaluate_stage2.py --predictions <reports.jsonl> \
     --metrics bleu,rouge,meteor,cider,bertscore --skip-clinical-metrics --output-dir <dir>
+# Add --paper-bertscore (distilroberta-base, rescale_with_baseline=True) to
+# compare with the paper's BERTScore 0.426. The default raw distilbert score
+# (~0.8) is a different scale; the paper does not state its setting, and this
+# is the CXR-Report-Metric setting of the RadCliQ work it cites.
 
 # Manifest invariants (split leakage, required columns, section targets)
 python -m training.dataio.validate_manifest --section-mode findings_and_impression
@@ -1973,6 +2018,12 @@ is indicative, not tight: the probe is **val**, mean-pooled, and `q`-equivalent
 with no mention gate, while 0.7643 is **test** with calibrated thresholds and
 `marginal_presence`.
 
+⚠ **SUPERSEDED 2026-09-29 (D-023): the cue rules below (`conditional_positive`,
+`marginal_positive`, `mention_gated`, selective) were REMOVED with the mention
+gate.** `--cue-rule` is now `argmax` (default) | `paper_thresholds` (per-class
+Eq. 22 thresholds, needs `--threshold-path` from `scripts/calibrate_thresholds.py`)
+| `none`; finding tokens are `q_only` only. The paragraphs are kept as history.
+
 **Cue contract, corrected 2026-09-08.** Both `run_medgemma_qlora.py` and
 `generate_stage2_reports.py` accept `--cue-rule`; all train/val/test records and
 training evaluation fingerprints receive it. From 2026-09-10, both CLIs default
@@ -2627,6 +2678,12 @@ smoke figures are not results.
 
 ### Evaluation — `training/evaluation/`, driven by `scripts/evaluate_stage*.py`
 
+**Three-class, paper protocol only (D-023)** -- see "Three classes, never
+binary" at the top. `label_framing.py` and `uncertain_policy.py` were DELETED;
+`classification_metrics.py`, `threshold_calibration.py`, `baselines.py`,
+`config.py`, `report_writer.py` were rewritten for the paper's metrics;
+`paper_protocol.py` holds the paper's two binary tables.
+
 There is **no top-level `evaluation/` directory**; older docs that cite one are
 stale. The core (classification metrics, AUROC/AUPRC, threshold calibration,
 bootstrap, BLEU/ROUGE, error analysis) needs only numpy, so it runs wherever the
@@ -2657,6 +2714,16 @@ model or enables extra sections. `runtime/device.py` resolves device/dtype from
 config or the machine; nothing hardcodes `cuda:0`.
 
 ## The labels, the manifest, and how a checkpoint gets picked
+
+⚠⚠⚠ **HISTORICAL from here to "Data handling": the mention gate, the
+mention-conditioned objective, `uncertain_policy`, `--label-framing`,
+`--score marginal_presence` and positive-only F1 described below were REMOVED
+on 2026-09-29 (D-023).** The measurements are kept as a record of what was
+tried; none of the flags or keys exists any more, and none of those numbers is
+comparable with the paper. Current rules: "Three classes, never binary" at the
+top of this file. What below is still current: the blank-cell policy
+(`blank_label_policy: negative`), the manifest rules, and checkpoint selection
+on validation only.
 
 Three things here are easy to get wrong and produce a run that looks healthy.
 

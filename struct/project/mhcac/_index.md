@@ -4,6 +4,9 @@
 
 # `mhcac/`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `loss.py` không còn `MentionGateLoss`, `MentionConditionedClassificationLoss`, `mention_marginal_log_probs`, `build_classification_losses`; `mhcac_12.py` không còn `mention_heads` và tham số `uncertain_policy`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 **M**ulti-**H**ead **C**ross-**A**ttention **C**lassification — khối phân loại 14

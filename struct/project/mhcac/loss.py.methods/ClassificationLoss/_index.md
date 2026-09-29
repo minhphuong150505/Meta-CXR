@@ -3,6 +3,9 @@
 
 # `class ClassificationLoss(nn.Module)`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Tham số `uncertain_policy` đã bị XÓA; hàm luôn là CE ba lớp (Negative/Positive/Uncertain), bỏ ô `-100`. Xem [D-023](../../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Located in
 
 [`loss.py`](../../loss.py.doc.md)

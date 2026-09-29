@@ -27,6 +27,9 @@ rỗng dưới checkpointing) thì đưa lại query + ảnh.
 
 # `blip2_qformer.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Đã XÓA: `lambda_gate`, `lambda_mention_conditioned_cls`, `gate_class_weights`, `mention_conditioned_pos_weights`, `uncertain_policy`, `mention_gate_trained`, `return_mention`. `from_config` gọi `reject_retired_binary_keys`; `load_state_dict` bỏ head đã gỡ qua `drop_retired_state`. `forward_image` trả `(classification_logits, query_tokens)`. Xem [D-023](../../../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 **Toàn bộ Stage 1 nằm trong một class: `Blip2Qformer`.** Encoder, view fusion,

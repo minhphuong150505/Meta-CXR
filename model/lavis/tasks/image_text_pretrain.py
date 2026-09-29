@@ -18,25 +18,27 @@ logger = logging.getLogger(__name__)
 
 @registry.register_task("image_text_pretrain_eval")
 class ImageTextPretrainTask(BaseTask):
-    """Stage-1 validation.
+    """Stage-1 validation, scored with the META-CXR paper's protocol.
 
-    The confusion-matrix metrics below are kept **bit-identical** to their
-    historical behaviour. ``f1_positive_macro`` remains available for old
-    runs, while production selects checkpoints with threshold-free
-    ``macro_auprc``. The legacy metric's known defect -- a pathology with no positive
-    samples contributes 0 to the macro instead of being excluded -- is fixed in
-    ``training/evaluation/classification_metrics.py`` and surfaced here under
-    separate ``*_defined_only`` keys.
+    Every scored epoch reports the paper's three-class numbers
+    (``training/evaluation/classification_metrics.py``): argmax over
+    Negative / Positive / Uncertain, per-finding sklearn-weighted precision /
+    recall / F1 averaged over the 14 findings, the five-finding mean F1 of
+    Tables 5 and 7, and one-vs-rest AUROC per class. There are no binary /
+    positive-only metrics and no uncertain policy (removed 2026-09-29, D-023).
 
-    Set ``run.save_predictions: true`` in the run config to additionally write a
-    prediction ``.npz``, which lets the full offline evaluator
-    (``scripts/evaluate_stage1.py``) recompute AUROC/AUPRC, calibrate
-    thresholds and bootstrap without another GPU pass.
+    ``run.selection_metric`` may be ``loss`` or any of
+    ``classification_metrics.AGGREGATE_METRICS``. Set
+    ``run.save_predictions: true`` to also write a prediction ``.npz`` for
+    ``scripts/evaluate_stage1.py``.
     """
 
     def __init__(self, cfg=None):
         super().__init__()
         self.cfg = getattr(cfg, "run_cfg", cfg)
+        from pretraining.retired_keys import reject_retired_run_keys
+
+        reject_retired_run_keys(self.cfg)
         self.eval_split = "validation"
         self.eval_epoch = "unknown"
 
@@ -53,51 +55,14 @@ class ImageTextPretrainTask(BaseTask):
     def evaluation(self, model, data_loader, cuda_enabled=True):
         loss_sums = {}
         example_count = 0
-        confusion = None
 
         run_cfg = self.cfg
         save_predictions = bool(
             run_cfg.get("save_predictions", False) if run_cfg is not None else False
         )
-        selection_metric = str(
-            run_cfg.get("selection_metric", "f1_positive_macro")
-            if run_cfg is not None
-            else "f1_positive_macro"
-        )
-        probability_metrics = {"macro_auprc", "macro_auroc"}
-        # Phase schedules also ask for study_presence metrics every scored epoch
-        # (13- and 14-label macros), which need the collected predictions.
-        report_study_presence = bool(
-            run_cfg.get("report_study_presence", False) if run_cfg is not None else False
-        )
-        collect_predictions = (
-            save_predictions
-            or selection_metric in probability_metrics
-            or report_study_presence
-        )
         collected_logits = []
         collected_labels = []
         collected_keys = []
-        # Mention-gate logits, kept alongside the polarity logits so the offline
-        # evaluator can form P(present) = sigmoid(mention) * q_positive. A run
-        # whose model predates this field simply writes no gate array, and
-        # label_framing.presence_scores then refuses 'marginal_presence' rather
-        # than silently substituting the conditional score.
-        collected_mention = []
-        # With lambda_gate and lambda_mention_conditioned_cls both 0 (the
-        # shipped recipe from 2026-09-24) the mention heads never train, so
-        # their sigmoid is noise. Do not export it: the prediction file then
-        # carries no gate and records mention_gate_trained=False, and
-        # 'marginal_presence' scoring raises instead of reading random output.
-        mention_gate_trained = bool(
-            getattr(getattr(model, "module", model), "mention_gate_trained", True)
-        )
-        if not mention_gate_trained:
-            logger.info(
-                "mention gate is untrained (lambda_gate = 0 and "
-                "lambda_mention_conditioned_cls = 0); not exporting "
-                "mention_probabilities"
-            )
 
         for batch in data_loader:
             if cuda_enabled:
@@ -114,73 +79,29 @@ class ImageTextPretrainTask(BaseTask):
             logits = output.get("classification_logits")
             if logits is None or labels is None:
                 continue
-            if logits.ndim != 3 or labels.shape != logits.shape[:2]:
+            if logits.ndim != 3 or labels.shape != logits.shape[:2] or logits.shape[-1] != 3:
                 raise ValueError(
-                    "classification logits/labels must be [B, abnormalities, classes] "
-                    f"and [B, abnormalities], got {tuple(logits.shape)} and {tuple(labels.shape)}"
+                    "classification logits/labels must be [B, abnormalities, 3] and "
+                    f"[B, abnormalities], got {tuple(logits.shape)} and {tuple(labels.shape)}"
                 )
 
             sample_mask = output.get("classification_mask")
             if sample_mask is None:
                 sample_mask = batch.get("classification_mask")
             if sample_mask is None:
-                sample_mask = batch.get("has_chexpert_label")
-            if sample_mask is None:
                 sample_mask = torch.ones(labels.shape[0], dtype=torch.bool, device=labels.device)
             sample_mask = torch.as_tensor(
                 sample_mask, dtype=torch.bool, device=labels.device
             ).reshape(-1)
 
-            num_abnormalities, num_classes = logits.shape[1:]
-            if confusion is None:
-                confusion = torch.zeros(
-                    num_abnormalities,
-                    num_classes,
-                    num_classes,
-                    dtype=torch.float64,
-                    device=logits.device,
-                )
-            predictions = logits.argmax(dim=-1)
-            valid = sample_mask[:, None] & (labels >= 0) & (labels < num_classes)
-            abnormality_idx = torch.arange(num_abnormalities, device=labels.device)[None, :]
-            flat_index = (
-                abnormality_idx * num_classes * num_classes
-                + labels.long() * num_classes
-                + predictions.long()
-            )
-            counts = torch.bincount(
-                flat_index[valid], minlength=num_abnormalities * num_classes * num_classes
-            )
-            confusion += counts.reshape(num_abnormalities, num_classes, num_classes)
-
-            if collect_predictions:
-                # Labels are masked to -1 where the sample carries no CheXpert
-                # annotation, so the offline evaluator skips exactly the rows
-                # this loop skipped. Without it, an unlabelled row would be
-                # read back as a true negative.
-                masked_labels = labels.clone()
-                masked_labels[~valid] = -1
-                collected_logits.append(logits.detach().float().cpu())
-                collected_labels.append(masked_labels.detach().cpu())
-                collected_keys.extend(_sample_keys(batch, labels.shape[0]))
-                mention_logits = output.get("mention_logits")
-                if not mention_gate_trained:
-                    pass  # untrained gate: never exported (see above)
-                elif mention_logits is None:
-                    if not collected_mention and example_count <= batch_size:
-                        logger.info(
-                            "model emits no mention_logits; the prediction file "
-                            "will carry no gate and 'marginal_presence' scoring "
-                            "will be unavailable offline"
-                        )
-                elif mention_logits.shape != labels.shape:
-                    raise ValueError(
-                        "mention logits must be [B, abnormalities] to line up "
-                        f"with the labels, got {tuple(mention_logits.shape)} vs "
-                        f"{tuple(labels.shape)}"
-                    )
-                else:
-                    collected_mention.append(mention_logits.detach().float().cpu())
+            # A study with no CheXpert information carries -1 in the exported
+            # labels, so every metric skips exactly those cells.
+            valid = sample_mask[:, None] & (labels >= 0) & (labels < 3)
+            masked_labels = labels.clone()
+            masked_labels[~valid] = -1
+            collected_logits.append(logits.detach().float().cpu())
+            collected_labels.append(masked_labels.detach().cpu())
+            collected_keys.extend(_sample_keys(batch, labels.shape[0]))
 
         device = next(model.parameters()).device
         loss_names = sorted(loss_sums)
@@ -190,8 +111,6 @@ class ImageTextPretrainTask(BaseTask):
         )
         if is_dist_avail_and_initialized():
             dist.all_reduce(totals, op=dist.ReduceOp.SUM)
-            if confusion is not None:
-                dist.all_reduce(confusion, op=dist.ReduceOp.SUM)
 
         denom = max(totals[-1].item(), 1.0)
         stats = {
@@ -199,105 +118,19 @@ class ImageTextPretrainTask(BaseTask):
             for index, name in enumerate(loss_names)
         }
 
-        if confusion is not None:
-            true_positive = confusion.diagonal(dim1=1, dim2=2)
-            support = confusion.sum(dim=2)
-            predicted = confusion.sum(dim=1)
-            precision = true_positive / predicted.clamp_min(1.0)
-            recall = true_positive / support.clamp_min(1.0)
-            f1 = 2 * precision * recall / (precision + recall).clamp_min(1e-12)
-            stats.update(
-                {
-                    "precision_macro": precision.mean().item(),
-                    "recall_macro": recall.mean().item(),
-                    "f1_macro": f1.mean().item(),
-                    "f1_weighted": (
-                        (f1 * support).sum() / support.sum().clamp_min(1.0)
-                    ).item(),
-                    "accuracy": (
-                        true_positive.sum() / confusion.sum().clamp_min(1.0)
-                    ).item(),
-                }
-            )
-            # CheXpert class index 1 is the positive finding class. Reporting
-            # this separately avoids a deceptively high F1 dominated by common
-            # negatives and is the primary classification-quality signal.
-            if confusion.shape[-1] > 1:
-                stats.update(
-                    {
-                        "precision_positive_macro": precision[:, 1].mean().item(),
-                        "recall_positive_macro": recall[:, 1].mean().item(),
-                        "f1_positive_macro": f1[:, 1].mean().item(),
-                    }
-                )
-
-                # Same quantities, averaged over pathologies that actually have
-                # positive samples in this split. The keys above dilute the
-                # macro with a hard 0 for every pathology with zero positive
-                # support, which makes them shift with split composition; these
-                # do not. Reported alongside rather than instead, so the
-                # selection metric and every historical log stay comparable.
-                has_positive = support[:, 1] > 0
-                num_defined = int(has_positive.sum().item())
-                if num_defined:
-                    stats.update(
-                        {
-                            "precision_positive_macro_defined_only": precision[has_positive, 1].mean().item(),
-                            "recall_positive_macro_defined_only": recall[has_positive, 1].mean().item(),
-                            "f1_positive_macro_defined_only": f1[has_positive, 1].mean().item(),
-                            "num_pathologies_with_positives": float(num_defined),
-                        }
-                    )
-                if num_defined < confusion.shape[0]:
-                    logger.info(
-                        "%d/%d pathologies have no positive samples in this split; "
-                        "they drag f1_positive_macro down but are excluded from "
-                        "f1_positive_macro_defined_only",
-                        confusion.shape[0] - num_defined,
-                        confusion.shape[0],
-                    )
-
         if collected_logits:
-            predictions = self._build_predictions(
-                collected_logits, collected_labels, collected_keys, collected_mention
+            if is_dist_avail_and_initialized() and dist.get_world_size() > 1:
+                raise RuntimeError("Stage-1 evaluation supports single-GPU runs only")
+            from training.evaluation.classification_metrics import (
+                evaluate_classification,
             )
-            predictions.metadata["mention_gate_trained"] = mention_gate_trained
-            if selection_metric in probability_metrics:
-                if is_dist_avail_and_initialized() and dist.get_world_size() > 1:
-                    raise RuntimeError(
-                        f"{selection_metric} checkpoint selection currently supports "
-                        "single-GPU evaluation only"
-                    )
-                from training.evaluation.classification_metrics import (
-                    evaluate_classification,
-                )
 
-                uncertain_policy = (
-                    str(run_cfg.get("uncertain_policy", "three_class"))
-                    if run_cfg is not None
-                    else "three_class"
-                )
-                include_meta_labels = bool(
-                    run_cfg.get("include_meta_labels", False)
-                    if run_cfg is not None
-                    else False
-                )
-                report = evaluate_classification(
-                    predictions,
-                    uncertain_policy=uncertain_policy,
-                    include_meta_labels=include_meta_labels,
-                )
-                for key in (
-                    "macro_auprc",
-                    "macro_auroc",
-                    "positive_macro_f1",
-                    "positive_micro_f1",
-                    "balanced_accuracy",
-                ):
-                    stats[key] = float(report.aggregates[key])
-
-            if report_study_presence:
-                stats.update(self._study_presence_stats(predictions, run_cfg))
+            predictions = self._build_predictions(
+                collected_logits, collected_labels, collected_keys
+            )
+            predictions.metadata["split"] = self.eval_split
+            report = evaluate_classification(predictions)
+            stats.update({k: float(v) for k, v in report.aggregates.items()})
 
             if save_predictions:
                 self._save_predictions(predictions)
@@ -305,35 +138,7 @@ class ImageTextPretrainTask(BaseTask):
         return stats
 
     @staticmethod
-    def _study_presence_stats(predictions, run_cfg):
-        """``sp_*``: study_presence framing, q_pos score, thresholds at 0.5.
-
-        Reported for the 12-label primary macro and the 13-/14-label views, so a
-        phase's classification can be followed epoch by epoch without an offline
-        pass. Threshold-free AUROC/AUPRC are the numbers to compare; F1 at a flat
-        0.5 is indicative only.
-        """
-        from training.evaluation.classification_metrics import evaluate_classification
-        from training.evaluation.label_framing import apply_framing
-
-        framed = apply_framing(predictions, "study_presence", "conditional_positive")
-        report = evaluate_classification(
-            framed,
-            uncertain_policy=str(run_cfg.get("uncertain_policy", "three_class")),
-            include_meta_labels=False,
-        )
-        out = {}
-        for key, value in report.aggregates.items():
-            base = key.rsplit("_", 1)[0] if key.endswith(("_13labels", "_14labels")) else key
-            if base in {
-                "macro_auroc", "macro_auprc", "positive_macro_f1",
-                "positive_macro_precision", "positive_macro_recall", "macro_specificity",
-            }:
-                out[f"sp_{key}"] = float(value)
-        return out
-
-    @staticmethod
-    def _build_predictions(logits_chunks, label_chunks, keys, mention_chunks=None):
+    def _build_predictions(logits_chunks, label_chunks, keys):
         from model.lavis.models.blip2_models.blip2_qformer import chexpert_cols
         from training.evaluation.schemas import (
             ClassificationPredictions,
@@ -354,26 +159,12 @@ class ImageTextPretrainTask(BaseTask):
                 labels.shape[1],
             )
 
-        mention_probabilities = None
-        if mention_chunks:
-            mention = torch.cat(mention_chunks, dim=0)
-            if mention.shape == labels.shape:
-                mention_probabilities = torch.sigmoid(mention).numpy()
-            else:
-                logger.warning(
-                    "mention logits have shape %s but labels have %s; "
-                    "not writing mention_probabilities",
-                    tuple(mention.shape),
-                    labels.shape,
-                )
-
         return ClassificationPredictions(
             labels=labels,
             probabilities=probabilities,
             logits=logits,
             pathology_names=names,
             sample_keys=build_sample_keys(list(keys[: labels.shape[0]])),
-            mention_probabilities=mention_probabilities,
         )
 
     def _save_predictions(self, predictions):

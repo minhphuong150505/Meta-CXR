@@ -55,6 +55,14 @@ acceptable answers; a claim that something passed when it was never executed is 
 
 ## Hard rules — violating any of these is worse than failing the task
 
+- **Three classes, never binary.** Every CheXpert finding is Negative / Positive /
+  Uncertain in training AND evaluation, as the META-CXR paper does. Do not add a
+  mention gate, an uncertain-folding policy, a `study_presence`-style "present / not
+  present" framing, positive-only F1 or binary thresholds — all of that was removed on
+  2026-09-29 (D-023) and `tests/test_three_class_only.py` fails if it returns. The only
+  binary computations allowed are the paper's own Table 3 CE and Table 4 CheXpert
+  cross-domain, in `training/evaluation/paper_protocol.py`. If a task seems to need
+  more, stop and ask. See `CLAUDE.md`, "Three classes, never binary".
 - **MIMIC-CXR is PhysioNet credentialed data; this remote is public.** Never commit or
   paste report text, `subject_id` / `study_id` / `dicom_id`, real image paths, split
   CSVs, `*.npz`, `*.jsonl`, checkpoints or credentials — not in a commit, a handoff

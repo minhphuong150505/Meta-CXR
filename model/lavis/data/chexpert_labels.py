@@ -14,9 +14,8 @@ classification head is trained on:
 
 ``negative``
     Blank -> 0. This is what the original META-CXR paper does ("missing (NaN)
-    values were treated as the negative class"; upstream uses ``fillna(0.0)``)
-    and what the ``study_presence`` evaluation framing already assumes. Shipped
-    in ``mimic_cxr_full.yaml`` as of 2026-09-24.
+    values were treated as the negative class"; upstream uses ``fillna(0.0)``).
+    Shipped in ``mimic_cxr_full.yaml`` as of 2026-09-24.
 
 ``ignore``
     Blank -> ``IGNORE_LABEL``: the cell is masked. This was the policy from
@@ -28,8 +27,11 @@ or a record whose fourteen cells are all blank -- keeps ``IGNORE_LABEL`` on
 every cell and stays out of ``classification_valid``. Filling those with
 fourteen zeros would invent a fully-normal study from nothing.
 
-Mention targets are taken from the raw export BEFORE the fill, and
-``excluded_labels`` are applied AFTER it, under both policies.
+``excluded_labels`` are applied AFTER the fill, under both policies.
+
+Labels are ALWAYS the paper's three classes. There is no binary "was it
+mentioned" target any more: the mention gate that consumed it was removed on
+2026-09-29 (D-023, ``pretraining/retired_keys.py``).
 """
 
 from __future__ import annotations
@@ -61,10 +63,6 @@ def resolve_blank_label_policy(value) -> str:
     return value
 
 
-def mention_column(label: str) -> str:
-    return f"_mention_{label}"
-
-
 def map_chexpert_labels(
     frame: pd.DataFrame, cols: Sequence[str], blank_policy: str
 ) -> pd.DataFrame:
@@ -91,9 +89,8 @@ def prepare_chexpert_labels(
 ) -> pd.DataFrame:
     """Return a copy of ``chexpert`` carrying mapped labels and the row flags.
 
-    Adds ``_has_chexpert_label_raw`` (the export held anything for this study),
-    one ``_mention_<label>`` target per label (taken before the fill), and
-    ``_has_usable_label`` (a kept column holds a class after the fill and the
+    Adds ``_has_chexpert_label_raw`` (the export held anything for this study)
+    and ``_has_usable_label`` (a kept column holds a class after the fill and the
     exclusion).
     """
     cols = list(cols)
@@ -105,8 +102,6 @@ def prepare_chexpert_labels(
         )
     out = chexpert.copy()
     out["_has_chexpert_label_raw"] = out[cols].notna().any(axis=1)
-    for column in cols:
-        out[mention_column(column)] = out[column].notna().astype("int8")
     out[cols] = map_chexpert_labels(out, cols, blank_policy)
     for column in excluded_labels:
         out[column] = np.int8(IGNORE_LABEL)
@@ -126,15 +121,14 @@ def attach_chexpert_labels(
     """Left-join ``prepared`` onto ``annotation`` and derive the validity flags.
 
     ``processed_has_label`` is the split CSV's own ``has_chexpert_label`` (already
-    coerced to bool) when it carries one. Adds ``classification_valid`` and
-    ``mention_valid``; a row that matched no record gets ``IGNORE_LABEL`` on
-    every label and zero on every mention target, and both flags False.
+    coerced to bool) when it carries one. Adds ``classification_valid``; a row
+    that matched no record gets ``IGNORE_LABEL`` on every label and the flag
+    False.
     """
     cols = list(cols)
     label_key = list(label_key)
-    mention_cols = [mention_column(c) for c in cols]
     labels = prepared[
-        label_key + cols + mention_cols + ["_has_chexpert_label_raw", "_has_usable_label"]
+        label_key + cols + ["_has_chexpert_label_raw", "_has_usable_label"]
     ]
     merged = annotation.merge(
         labels,
@@ -162,10 +156,4 @@ def attach_chexpert_labels(
     # label. They are already excluded by classification_valid, but they must
     # not read back as negatives either -- under EITHER blank policy.
     merged[cols] = merged[cols].fillna(IGNORE_LABEL).astype("int8")
-    # A study that matched no CheXpert record tells us nothing about what the
-    # report mentioned, so it must not train the gate as fourteen zeros. That
-    # is a different question from classification_valid, which asks whether
-    # any usable P/N/U cell survived.
-    merged["mention_valid"] = merged["_chexpert_merge"].eq("both")
-    merged[mention_cols] = merged[mention_cols].fillna(0).astype("int8")
     return merged

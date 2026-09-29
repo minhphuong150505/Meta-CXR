@@ -4,6 +4,9 @@
 
 # Kiến trúc Meta-CXR
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** MHCAC chỉ còn head P/N/U ba lớp; mention gate và head `mention_heads` đã bị XÓA. `forward` của MHCAC trả 5 giá trị, `Blip2Qformer.forward_image` trả `(classification_logits, query_tokens)`. Xem [D-023](DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 Trang này mô tả các **khối** và cách chúng nối với nhau. Nếu bạn chưa đọc
 [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md), đọc nó trước.
 

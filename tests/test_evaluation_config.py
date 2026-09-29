@@ -21,32 +21,36 @@ from training.evaluation.config import (  # noqa: E402
 
 def test_defaults_validate():
     config = EvaluationConfig().validate()
-    assert config.uncertain_policy == "three_class"
-    assert config.selection_metric == "f1_positive_macro"
+    assert config.selection_metric == "loss"
 
 
 def test_from_dict_parses_the_documented_block():
     config = EvaluationConfig.from_dict(
         {
-            "uncertain_policy": "ignore_uncertain",
-            "selection_metric": "positive_macro_f1",
-            "threshold_mode": "calibrated",
-            "threshold_objective": "f1",
+            "selection_metric": "weighted_f1",
             "bootstrap": {"enabled": True, "samples": 1000, "confidence": 0.95, "seed": 42},
-            "classification_metrics": ["accuracy", "positive_macro_f1", "macro_auprc"],
+            "classification_metrics": ["weighted_f1", "mean_weighted_f1_5", "auroc_positive_mean"],
             "generation_metrics": ["bleu", "rouge"],
             "clinical_metrics": ["chexbert", "radgraph"],
             "save_predictions": True,
         }
     ).validate()
-    assert config.threshold_mode == "calibrated"
     assert config.bootstrap.samples == 1000
     assert config.clinical_metrics == ("chexbert", "radgraph")
 
 
-def test_unknown_policy_is_rejected():
-    with pytest.raises(EvaluationConfigError, match="uncertain_policy"):
-        EvaluationConfig(uncertain_policy="uncertain_as_maybe").validate()
+@pytest.mark.parametrize("retired", ["uncertain_policy", "threshold_mode", "include_meta_labels"])
+def test_retired_binary_keys_are_rejected(retired):
+    with pytest.raises(EvaluationConfigError, match="unknown key"):
+        EvaluationConfig.from_dict({retired: "x"})
+
+
+@pytest.mark.parametrize("binary", ["positive_macro_f1", "macro_auprc", "f1_positive_macro"])
+def test_binary_metrics_cannot_be_selected_or_requested(binary):
+    with pytest.raises(EvaluationConfigError):
+        EvaluationConfig(selection_metric=binary).validate(stage="stage1")
+    with pytest.raises(EvaluationConfigError):
+        EvaluationConfig(classification_metrics=(binary,)).validate()
 
 
 def test_unknown_selection_metric_is_rejected_before_training():

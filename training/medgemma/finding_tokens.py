@@ -1,20 +1,16 @@
-"""Learnable finding tokens — Stage-1 mention/polarity as embedding-space tokens.
+"""Learnable finding tokens — Stage-1 three-class probabilities as tokens.
 
 EXPERIMENTAL. Every entry point here is reached only when ``--finding-tokens``
 is set to something other than ``off``; with the flag off nothing in this module
 is imported at runtime and the default Stage-2 path is byte-identical.
 
-Stage 1 gives two numbers per finding: a mention gate ``m = sigmoid(mention_logits)``
-answering "will the report mention this at all", and a polarity distribution
-``q = softmax(classification_logits)`` over {negative, positive, uncertain} that
-is CONDITIONAL on mention -- 79.5% of the CheXpert matrix is blank and masked
-out of the classification loss, so ``q`` never saw "absent from the report".
-Every recorded experiment passed that pair to Stage 2 through a hard threshold
-and an English sentence. This module passes it as 13 continuous tokens instead.
+Stage 1 gives one three-class distribution per finding,
+``q = softmax(classification_logits)`` over {negative, positive, uncertain}.
+Every recorded cue experiment passed it to Stage 2 through a threshold and an
+English sentence; this module passes it as 13 continuous tokens instead.
 
-**"Not mentioned" is never turned into "negative".** A low ``m`` scales all three
-polarity numbers toward zero, which is the honest encoding of "Stage 1 has no
-opinion here"; it never produces a negative assertion.
+The ``full`` variant, which multiplied ``q`` by a binary mention gate, was
+removed with the gate on 2026-09-29 (D-023); ``q_only`` is the only mode.
 
 Depends on nothing but torch, so the shape, ordering, masking and gradient
 contracts are unit-testable on a CPU box without MedGemma weights or a GPU.
@@ -40,16 +36,13 @@ NO_FINDING_INDEX = 0
 
 FINDING_TOKENS_OFF = "off"
 FINDING_TOKENS_Q_ONLY = "q_only"
-FINDING_TOKENS_FULL = "full"
-FINDING_TOKEN_MODES = (FINDING_TOKENS_OFF, FINDING_TOKENS_Q_ONLY, FINDING_TOKENS_FULL)
+FINDING_TOKEN_MODES = (FINDING_TOKENS_OFF, FINDING_TOKENS_Q_ONLY)
 
 #: ``CLASS_MAP`` in the Stage-2 runner: negative=0, positive=1, uncertain=2.
 CLASS_NEGATIVE, CLASS_POSITIVE, CLASS_UNCERTAIN = 0, 1, 2
 
-#: Numeric feature width per mode. ``q_only`` is the control that isolates the
-#: mention contribution: same identity, same projection, same 13 positions, only
-#: ``m`` removed.
-FEATURE_WIDTHS = {FINDING_TOKENS_Q_ONLY: 3, FINDING_TOKENS_FULL: 4}
+#: Numeric feature width per mode: the three class probabilities.
+FEATURE_WIDTHS = {FINDING_TOKENS_Q_ONLY: 3}
 
 DEFAULT_IDENTITY_DIM = 64
 
@@ -68,28 +61,12 @@ def feature_width(mode: str) -> int:
     return FEATURE_WIDTHS[mode]
 
 
-def finding_features(
-    class_logits: torch.Tensor,
-    mention_logits: torch.Tensor | None,
-    mode: str,
-) -> torch.Tensor:
-    """``[14, 3]`` + ``[14]`` Stage-1 outputs -> ``[13, k]`` token features.
+def finding_features(class_logits: torch.Tensor, mode: str) -> torch.Tensor:
+    """``[14, 3]`` Stage-1 logits -> ``[13, 3]`` token features ``[q_neg, q_pos, q_unc]``.
 
     Row ``i`` of the result is ``ABNORMALITIES_14[i + 1]``: ``No Finding`` is
     dropped and the remaining order is preserved exactly, so it matches
     ``stage2.prompts.ontology.MODELED_FINDINGS`` position for position.
-
-    ``q_only``  -> ``[q_neg, q_pos, q_unc]``
-    ``full``    -> ``[m, m*q_pos, m*q_neg, m*q_unc]``
-
-    ``m`` is linearly redundant in ``full`` (the three products sum to it); it is
-    kept so a single linear projection has a direct route to "was it mentioned"
-    without having to sum three inputs.
-
-    ⚠ ``m`` is NOT a calibrated mention probability -- the gate trains with
-    inverse-frequency weights capped at 10, so its odds are inflated. That is
-    fine for a learned projection, which can absorb a monotone rescaling, but it
-    means these numbers must never be reported as probabilities.
     """
     validate_mode(mode)
     if mode == FINDING_TOKENS_OFF:
@@ -104,32 +81,7 @@ def finding_features(
             f"class_logits has {n_labels} labels, expected {NUM_FINDING_TOKENS + 1} "
             "(ABNORMALITIES_14)"
         )
-    q = torch.softmax(logits, dim=-1)
-
-    if mode == FINDING_TOKENS_Q_ONLY:
-        features = q
-    else:
-        if mention_logits is None:
-            raise ValueError(
-                "finding_tokens='full' needs mention_logits. Records built before "
-                "the gate was threaded through carry none; rebuild them rather "
-                "than silently falling back to q-only features."
-            )
-        gate = torch.as_tensor(mention_logits).reshape(-1).float()
-        if gate.numel() != n_labels:
-            raise ValueError(
-                f"mention_logits has {gate.numel()} entries, expected {n_labels}"
-            )
-        m = torch.sigmoid(gate).unsqueeze(-1)
-        features = torch.cat(
-            [
-                m,
-                m * q[:, CLASS_POSITIVE : CLASS_POSITIVE + 1],
-                m * q[:, CLASS_NEGATIVE : CLASS_NEGATIVE + 1],
-                m * q[:, CLASS_UNCERTAIN : CLASS_UNCERTAIN + 1],
-            ],
-            dim=-1,
-        )
+    features = torch.softmax(logits, dim=-1)
 
     keep = [i for i in range(n_labels) if i != NO_FINDING_INDEX]
     out = features[keep].contiguous()

@@ -100,22 +100,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     stage1.add_argument("--stage1-checkpoint", type=Path, default=None)
     stage1.add_argument("--threshold-path", type=Path, default=None)
     stage1.add_argument("--num-workers", type=int, default=4)
-    stage1.add_argument("--cue-rule", default=None,
-                        choices=("conditional_positive", "mention_gated",
-                                 "marginal_positive", "none"),
-                        help="How MHCAC predictions become P/N/U cues. "
-                             "Default for structured Stage-1 modes: marginal_positive. "
-                             "conditional_positive reproduces the historical q-only rule. "
-                             "mention_gated opens the mention gate first. "
-                             "marginal_positive thresholds sigmoid(m)*q_pos per "
-                             "label and emits ONLY positives, using a 0.5 floor "
-                             "unless per-label marginal thresholds are supplied. "
-                             "Changing this changes the Stage-1 cache identity, "
-                             "so it rebuilds.")
+    stage1.add_argument("--cue-rule", default="argmax",
+                        choices=("argmax", "paper_thresholds", "none"),
+                        help="How MHCAC's three-class predictions become the prompt's "
+                             "P/N/U groups. argmax (default): every finding under its "
+                             "most probable class. paper_thresholds: a finding is listed "
+                             "only when a class clears its per-class threshold "
+                             "(META-CXR Fig. 11; needs --threshold-path from "
+                             "scripts/calibrate_thresholds.py). none: no cues. "
+                             "Changing this changes the Stage-1 cache identity.")
     stage1.add_argument("--finding-tokens", default="off",
-                        choices=("off", "q_only", "full"),
+                        choices=("off", "q_only"),
                         help="EXPERIMENTAL, default off. Read Stage-1's per-finding "
-                             "mention/polarity numbers through 13 learnable tokens. "
+                             "three-class probabilities through 13 learnable tokens. "
                              "Must match what the adapter was TRAINED with; "
                              "finding_tokens.pt is required and its mode is checked.")
     stage1.add_argument("--finding-feature-ablation", default=None,
@@ -129,12 +126,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "TRAINING output dir to reuse that run's encode pass; "
                              "defaults to --output-dir, which rebuilds it.")
     args = parser.parse_args(argv)
-    if args.cue_rule is None:
-        args.cue_rule = (
-            "marginal_positive"
-            if any(mode.uses_mhcac_prompt for mode in resolve_pipeline_modes(args.pipeline_mode))
-            else "conditional_positive"
-        )
     return args
 
 
@@ -153,21 +144,26 @@ FINDING_TOKENS_OFF = "off"
 
 def validate_invocation(args: argparse.Namespace, mode) -> None:
     """Reject impossible combinations before anything expensive is imported."""
-    if args.cue_rule != "conditional_positive":
+    if args.cue_rule == "paper_thresholds" and args.threshold_path is None:
+        raise SystemExit(
+            "--cue-rule paper_thresholds needs --threshold-path (a per-class file "
+            "from scripts/calibrate_thresholds.py, fitted on Stage-1 validation)"
+        )
+    if args.cue_rule != "argmax":
         if not mode.requires_stage1:
             raise SystemExit("--cue-rule requires a Stage-1 pipeline mode")
         if args.prompt_config is None:
-            raise SystemExit("marginal/abstaining --cue-rule requires a matching guided --prompt-config")
+            raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
         from stage2.prompts import load_prompt_config
 
         prompt = load_prompt_config(args.prompt_config)
         if prompt.visual_mode.image_mode != mode.image_mode or not prompt.visual_mode.includes_structured:
-            raise SystemExit("marginal/abstaining --cue-rule requires a matching guided --prompt-config")
+            raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
     if args.finding_tokens != FINDING_TOKENS_OFF:
         if not mode.requires_stage1:
             raise SystemExit(
                 "--finding-tokens needs a Stage-1 pipeline mode: the features are "
-                "MHCAC's mention gate and polarity head"
+                "MHCAC's three-class probabilities"
             )
         if args.prompt_config is None:
             raise SystemExit(
@@ -322,7 +318,6 @@ def permute_finding_features_across_studies(
     for record, donor in zip(records, donors, strict=True):
         copied = dict(record)
         copied["class_logits"] = donor.get("class_logits")
-        copied["mention_logits"] = donor.get("mention_logits")
         out.append(copied)
     return out
 

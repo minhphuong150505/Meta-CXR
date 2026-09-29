@@ -71,21 +71,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--threshold-path",
         type=Path,
-        help="Optional Stage-1 validation-calibrated thresholds; marginal cues use 0.5 without per-label marginal thresholds.",
+        help="Per-class thresholds from scripts/calibrate_thresholds.py (fitted on "
+             "Stage-1 validation); required by --cue-rule paper_thresholds.",
     )
     parser.add_argument(
         "--finding-tokens", choices=fig9.FINDING_TOKEN_MODES, default=fig9.FINDING_TOKENS_OFF,
-        help="EXPERIMENTAL, default off. Feed Stage-1's per-finding mention/polarity "
-             "numbers to Stage 2 as 13 learnable tokens instead of (or alongside) "
-             "text cues. 'q_only' carries the polarity distribution alone and is the "
-             "control that isolates the mention contribution in 'full'. Requires a "
-             "Stage-1 pipeline mode and a guided --prompt-config.",
+        help="EXPERIMENTAL, default off. Feed Stage-1's per-finding three-class "
+             "probabilities to Stage 2 as 13 learnable tokens instead of (or "
+             "alongside) text cues. Requires a Stage-1 pipeline mode and a guided "
+             "--prompt-config.",
     )
     parser.add_argument(
-        "--cue-rule", choices=fig9.CUE_RULES, default=None,
-        help="Stage-1 cue rule for all splits, identical to generation --cue-rule. "
-             "Defaults to marginal_positive for structured Stage-1 modes. "
-             "Marginal/abstaining rules require a matching guided --prompt-config.",
+        "--cue-rule", choices=fig9.CUE_RULES, default=fig9.DEFAULT_CUE_RULE,
+        help="How MHCAC's three-class predictions become P/N/U cues, identical to "
+             "generation --cue-rule. argmax (default) | paper_thresholds (needs "
+             "--threshold-path from scripts/calibrate_thresholds.py) | none. "
+             "Abstaining rules require a matching guided --prompt-config.",
     )
     parser.add_argument(
         "--pipeline-mode",
@@ -181,12 +182,6 @@ def parse_args() -> argparse.Namespace:
             f"[deprecated] --image-mode {args.legacy_image_mode} "
             f"-> --pipeline-mode {args.pipeline_mode}",
             flush=True,
-        )
-    if args.cue_rule is None:
-        args.cue_rule = (
-            fig9.CUE_RULE_MARGINAL
-            if any(mode.uses_mhcac_prompt for mode in resolve_pipeline_modes(args.pipeline_mode))
-            else fig9.CUE_RULE_CONDITIONAL
         )
     if args.max_new_tokens <= 0:
         args.max_new_tokens = (
@@ -460,7 +455,12 @@ def main() -> None:
             f"visual_mode={prompt_config.visual_mode.value}",
             flush=True,
         )
-    if args.cue_rule != fig9.CUE_RULE_CONDITIONAL:
+    if args.cue_rule == fig9.CUE_RULE_PAPER and args.threshold_path is None:
+        raise SystemExit(
+            "--cue-rule paper_thresholds needs --threshold-path (per-class file "
+            "from scripts/calibrate_thresholds.py)"
+        )
+    if args.cue_rule != fig9.DEFAULT_CUE_RULE:
         if not needs_stage1:
             raise SystemExit("--cue-rule requires a Stage-1 pipeline mode")
         if prompt_config is None or any(
@@ -469,12 +469,12 @@ def main() -> None:
                 or not prompt_config.visual_mode.includes_structured
             ) for mode in modes
         ):
-            raise SystemExit("marginal/abstaining --cue-rule requires a matching guided --prompt-config")
+            raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
     if args.finding_tokens != fig9.FINDING_TOKENS_OFF:
         if not needs_stage1:
             raise SystemExit(
                 "--finding-tokens needs a Stage-1 pipeline mode: the features are "
-                "MHCAC's mention gate and polarity head"
+                "MHCAC's three-class probabilities"
             )
         if prompt_config is None:
             raise SystemExit(

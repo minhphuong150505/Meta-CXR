@@ -28,6 +28,10 @@ from mhcac.mhcac_12 import AbnormalityClassificationModel, StreamLayout
 
 from vision_encoders.pubmedclip.pubmed_clip import Pubmedclip
 from vision_encoders.pubmedclip.preprocess import resolve_pubmedclip_preprocess
+from pretraining.retired_keys import (
+    drop_retired_state,
+    reject_retired_model_keys as reject_retired_binary_keys,
+)
 from vision_encoders.swin.swin_encoder import SwinEncoder
 from vision_encoders.rad_dino.rad_dino_encoder import RadDinoEncoder
 from vision_encoders.stream_adapter import (
@@ -42,12 +46,10 @@ from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector
 VISUAL_DIM = 1408
 
 from mhcac.loss import (
+    ClassificationLoss,
     MultiPositiveContrastiveLoss,
-    build_classification_losses,
-    mention_gate_is_trained,
     siglip_loss,
     smoothed_cross_entropy,
-    mention_marginal_log_probs,
     soft_target_kl_loss,
     view_consistency_loss,
 )
@@ -217,16 +219,11 @@ class Blip2Qformer(Blip2Base):
         lambda_sparsity=0.01,
         lambda_explanation=0.0,
         lambda_explanation_strong=0.0,
-        lambda_gate=0.0,
-        lambda_mention_conditioned_cls=0.0,
-        gate_class_weights=None,
-        mention_conditioned_pos_weights=None,
         explanation_cfg=None,
         distill_temperature=2.0,
         mhcac_text_dropout=0.2,
         class_weights=None,
         cls_label_smoothing=0.05,
-        uncertain_policy="three_class",
         itc_queue_size=1024,
         itc_temp=0.07,
         itc_temp_learnable=True,
@@ -377,18 +374,6 @@ class Blip2Qformer(Blip2Base):
         # including CAM capture.
         self.lambda_explanation = float(lambda_explanation)
         self.lambda_explanation_strong = float(lambda_explanation_strong)
-        self.lambda_gate = float(lambda_gate)
-        # Hierarchical replacement for (cls_loss + gate BCE). When > 0 it owns
-        # the classification objective and both of those are rejected, because
-        # optimising the same heads under two disagreeing objectives is how the
-        # gate ended up disconnected from the prediction in the first place.
-        self.lambda_mention_conditioned_cls = float(lambda_mention_conditioned_cls)
-        # False when both gate objectives are off (the shipped recipe as of
-        # 2026-09-24): the mention heads then keep their random init, and the
-        # eval hook refuses to export them as probabilities.
-        self.mention_gate_trained = mention_gate_is_trained(
-            self.lambda_gate, self.lambda_mention_conditioned_cls
-        )
         self.current_epoch = 0
         explanation_cfg = dict(explanation_cfg or {})
         self.explanation_warmup_start_epoch = int(
@@ -584,7 +569,6 @@ class Blip2Qformer(Blip2Base):
             visual_dim=VISUAL_DIM,
             text_dropout_rate=mhcac_text_dropout,
             use_cnn=self.use_biovil,
-            uncertain_policy=uncertain_policy,
             stream_layouts=self._native_stream_layouts(img_size),
             layer_order=mhcac_layer_order,
             text_mask_mode=mhcac_text_mask_mode,
@@ -629,25 +613,23 @@ class Blip2Qformer(Blip2Base):
             class_weights = default_class_weights
         elif len(class_weights) == 0:
             class_weights = None
-        # One builder for the P/N/U loss and both gate objectives, so the CPU
-        # suite can pin that gate weights never reach the P/N/U cross entropy
-        # (tests/test_gate_off.py). It also rejects the lambda combinations the
-        # hierarchical objective forbids.
-        (
-            self.cls_loss_fn,
-            self.gate_loss_fn,
-            self.mention_conditioned_loss_fn,
-        ) = build_classification_losses(
+        # The paper's weighted cross entropy over three classes (Eq. 10).
+        self.cls_loss_fn = ClassificationLoss(
             class_weights=class_weights,
             label_smoothing=cls_label_smoothing,
-            uncertain_policy=uncertain_policy,
-            lambda_cls=lambda_cls,
-            lambda_gate=self.lambda_gate,
-            lambda_mention_conditioned_cls=self.lambda_mention_conditioned_cls,
-            gate_class_weights=gate_class_weights,
-            mention_conditioned_pos_weights=mention_conditioned_pos_weights,
         )
         
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        """Drop the retired binary mention-gate entries, then load as usual.
+
+        Checkpoints written before 2026-09-29 carry ``mhcac.mention_heads.*``
+        and the gate losses' ``pos_weight`` buffers (D-023). Everything else in
+        them is unchanged, so they still restore.
+        """
+        return super().load_state_dict(
+            drop_retired_state(state_dict), strict=strict, assign=assign
+        )
+
     def set_epoch(self, epoch):
         self.current_epoch = int(epoch)
 
@@ -1538,13 +1520,9 @@ class Blip2Qformer(Blip2Base):
             loss_orthagonal=zero,
             loss_sparsity=zero,
             loss_explanation=None,
-            loss_gate=zero,
-            loss_mention_conditioned=zero,
             loss_mpc=zero,
             loss_view_consistency=zero,
             classification_logits=None,
-            mention_logits=None,
-            mention_marginal_log_probs=None,
             classification_mask=None,
         )
 
@@ -1559,8 +1537,6 @@ class Blip2Qformer(Blip2Base):
                 self.lambda_mhcac_contrastive,
                 self.lambda_orthogonality,
                 self.lambda_sparsity,
-                self.lambda_gate,
-                self.lambda_mention_conditioned_cls,
                 self.lambda_view_consistency,
                 self.lambda_explanation,
                 self.lambda_explanation_strong,
@@ -1738,14 +1714,13 @@ class Blip2Qformer(Blip2Base):
                 )
 
         cam_streams = None
-        student_logits = mention_logits = None
+        student_logits = None
         contrastive_loss = orth_loss = sparsity_loss = zero
         if needs_mhcac:
             self.mhcac.capture_streams = capture_explanation
             try:
                 (
                     student_logits, _, contrastive_loss, orth_loss, sparsity_loss,
-                    mention_logits,
                 ) = self.mhcac(
                     shared_visual,
                     text_embeddings=(
@@ -1809,52 +1784,6 @@ class Blip2Qformer(Blip2Base):
                     + (self.lambda_explanation_strong / peak)
                     * loss_explanation_strong
                 )
-        # Hierarchy, when enabled: the gate and the classifier become ONE
-        # likelihood. `student_logits` still leaves this function as `q`, the
-        # polarity CONDITIONAL on mention -- the four-state joint is exported
-        # beside it as `mention_marginal_log_probs`, never in place of it. See
-        # the note below the loss call for why substituting the marginal here
-        # pinned validation F1 at exactly 0.000.
-        loss_mention_conditioned = zero
-        if self.mention_conditioned_loss_fn is not None:
-            mention_targets = samples.get("mention_targets")
-            if mention_targets is None:
-                raise ValueError(
-                    "lambda_mention_conditioned_cls > 0 but the batch carries no "
-                    "mention_targets; the dataset must emit them"
-                )
-            # MUST be mention_mask: that is the key ReportDataset emits. Asking
-            # for has_chexpert_label silently fell through to default=True and
-            # trained every unmatched study as fourteen "not mentioned" cells.
-            mention_mask = self._batch_mask(
-                samples, "mention_mask", batch_size, device, default=True
-            )
-            loss_mention_conditioned = self.mention_conditioned_loss_fn(
-                student_logits,
-                mention_logits,
-                cls_labels,
-                mention_targets.to(mention_logits.device),
-                sample_mask=mention_mask,
-            )
-            # Keep `student_logits` = q, the polarity distribution CONDITIONAL on
-            # the finding being mentioned. The CheXpert P/N/U metric masks blank
-            # cells, so that is exactly the quantity it scores.
-            #
-            # The four-state joint is exported alongside, never in place of it:
-            #   P(blank) = 1 - m,  P(Neg) = m*q_neg,  P(Pos) = m*q_pos,
-            #   P(Unc) = m*q_unc
-            # Substituting the three-state marginal here (which aliased blank
-            # onto Negative) made Positive unwinnable under argmax and pinned
-            # validation F1 at exactly 0.000 for every epoch of the smoke.
-            # Report-time emission is a two-stage decision -- open the gate on a
-            # per-label threshold fitted on validation, then read the class off
-            # q -- not an argmax over a marginal.
-            marginal_log_probs = mention_marginal_log_probs(
-                student_logits, mention_logits
-            )
-        else:
-            marginal_log_probs = None
-
         cls_loss = self.cls_loss_fn(
             student_logits, cls_labels, sample_mask=classification_mask
         ) if self.lambda_cls > 0 else zero
@@ -1867,7 +1796,7 @@ class Blip2Qformer(Blip2Base):
         if teacher_mask.any() and (
             self.lambda_teacher_cls > 0 or self.lambda_distill > 0
         ):
-            teacher_logits, _, _, _, _, _ = self.mhcac(
+            teacher_logits, _, _, _, _ = self.mhcac(
                 shared_visual,
                 text_embeddings=text_output.last_hidden_state,
                 text_attention_mask=text_tokens.attention_mask,
@@ -1922,7 +1851,7 @@ class Blip2Qformer(Blip2Base):
                     if name in pre
                 }
                 anchor_shared = self.shared_visual_projector(anchor_raw_streams)
-                anchor_logits, _, _, _, _, _ = self.mhcac(
+                anchor_logits, _, _, _, _ = self.mhcac(
                     anchor_shared,
                     text_embeddings=None,
                     labels=None,
@@ -1948,24 +1877,7 @@ class Blip2Qformer(Blip2Base):
             + self.lambda_sparsity * sparsity_loss
             + self._mpc_lambda() * loss_mpc
             + self.lambda_view_consistency * loss_view_consistency
-            + self.lambda_mention_conditioned_cls * loss_mention_conditioned
         )
-        loss_gate = zero
-        if self.lambda_gate > 0:
-            mention_targets = samples.get("mention_targets")
-            if mention_targets is None:
-                raise ValueError(
-                    "lambda_gate > 0 but the batch carries no mention_targets; "
-                    "the dataset must be rebuilt (ReportDataset emits them)"
-                )
-            loss_gate = self.gate_loss_fn(
-                mention_logits,
-                mention_targets.to(mention_logits.device),
-                sample_mask=self._batch_mask(
-                    samples, "mention_mask", batch_size, device, default=True
-                ),
-            )
-            total_loss = total_loss + self.lambda_gate * loss_gate
         if lambda_eff > 0:
             total_loss = total_loss + lambda_eff * loss_explanation
         return BlipOutput(
@@ -1980,13 +1892,9 @@ class Blip2Qformer(Blip2Base):
             loss_orthagonal=orth_loss,
             loss_sparsity=sparsity_loss,
             loss_explanation=loss_explanation,
-            loss_gate=loss_gate,
-            loss_mention_conditioned=loss_mention_conditioned,
             loss_mpc=loss_mpc,
             loss_view_consistency=loss_view_consistency,
             classification_logits=student_logits,
-            mention_logits=mention_logits,
-            mention_marginal_log_probs=marginal_log_probs,
             classification_mask=classification_mask,
         )
 
@@ -2080,21 +1988,15 @@ class Blip2Qformer(Blip2Base):
         return captions
 
     def forward_image(self, image, aux_image=None, aux_mask=None,
-                      anchor_view_id=None, aux_view_ids=None,
-                      return_mention=False):
+                      anchor_view_id=None, aux_view_ids=None):
         """Return image-only classification logits and learned Q-Former tokens.
 
         ``image`` may be a tensor (legacy API) or a complete samples dict.  The
         dict form supports the frozen-feature cache and study auxiliary view.
         Report text is intentionally ignored: this is the student/inference path.
 
-        ``return_mention=True`` appends the MHCAC mention-gate logits, giving
-        ``(classification_logits, query_tokens, mention_logits)``. The gate has
-        always been computed here and was discarded into ``_``; Stage-2 cue
-        building needs it, because ``classification_logits`` is ``q`` --
-        polarity CONDITIONAL on the finding being mentioned -- and a cue must
-        answer whether the finding is there at all. The default stays a 2-tuple
-        so `inference.py` and `blip2.compute_sim_matrix` are untouched.
+        ``classification_logits`` are the paper's three-class P/N/U logits
+        ``[B, 14, 3]``; there is no separate mention/presence head.
         """
         cached = {}
         aux_cached = {}
@@ -2139,7 +2041,6 @@ class Blip2Qformer(Blip2Base):
             contrastive_loss,
             orth_loss,
             sparsity_loss,
-            mention_logits,
         ) = self.mhcac(
             shared_visual,
             text_embeddings=None,
@@ -2167,12 +2068,6 @@ class Blip2Qformer(Blip2Base):
         # txt_cls_token = text_output.last_hidden_state[:, 0, :]
         # print(f"query_output.last_hidden_state shape: {query_output.last_hidden_state.shape}")
 
-        if return_mention:
-            return (
-                classification_logits,
-                query_output.last_hidden_state,
-                mention_logits,
-            )
         return classification_logits, query_output.last_hidden_state
 
 
@@ -2427,10 +2322,7 @@ class Blip2Qformer(Blip2Base):
         lambda_explanation_strong = float(
             loss_cfg.get("lambda_explanation_strong", 0.0)
         )
-        lambda_gate = float(loss_cfg.get("lambda_gate", 0.0))
-        lambda_mention_conditioned_cls = float(
-            loss_cfg.get("lambda_mention_conditioned_cls", 0.0)
-        )
+        reject_retired_binary_keys(cfg)
         itc_queue_size = int(loss_cfg.get("itc_queue_size", 1024))
         itc_temp = float(loss_cfg.get("itc_temp", 0.07))
         itc_temp_learnable = bool(loss_cfg.get("itc_temp_learnable", True))
@@ -2458,17 +2350,12 @@ class Blip2Qformer(Blip2Base):
         }
 
         mhcac_cfg = cfg.get("mhcac", {}) or {}
-        gate_class_weights = mhcac_cfg.get("gate_class_weights", None)
-        mention_conditioned_pos_weights = mhcac_cfg.get(
-            "mention_conditioned_pos_weights", None
-        )
         distill_temperature = float(mhcac_cfg.get("distill_temperature", 2.0))
         mhcac_text_dropout = float(mhcac_cfg.get("text_dropout", 0.2))
         class_weights = mhcac_cfg.get("class_weights", None)
         if class_weights is not None:
             class_weights = [list(weights) for weights in class_weights]
         cls_label_smoothing = float(mhcac_cfg.get("label_smoothing", 0.05))
-        uncertain_policy = str(mhcac_cfg.get("uncertain_policy", "three_class"))
         # Absent keys reproduce the historical MHCAC exactly.
         mhcac_text_guidance = str(mhcac_cfg.get("text_guidance", "teacher_student"))
         mhcac_layer_order = str(mhcac_cfg.get("layer_order", "text_first"))
@@ -2515,16 +2402,11 @@ class Blip2Qformer(Blip2Base):
             lambda_sparsity=lambda_sparsity,
             lambda_explanation=lambda_explanation,
             lambda_explanation_strong=lambda_explanation_strong,
-            lambda_gate=lambda_gate,
-            lambda_mention_conditioned_cls=lambda_mention_conditioned_cls,
-            gate_class_weights=gate_class_weights,
-            mention_conditioned_pos_weights=mention_conditioned_pos_weights,
             explanation_cfg=explanation_cfg,
             distill_temperature=distill_temperature,
             mhcac_text_dropout=mhcac_text_dropout,
             class_weights=class_weights,
             cls_label_smoothing=cls_label_smoothing,
-            uncertain_policy=uncertain_policy,
             itc_queue_size=itc_queue_size,
             itc_temp=itc_temp,
             itc_temp_learnable=itc_temp_learnable,

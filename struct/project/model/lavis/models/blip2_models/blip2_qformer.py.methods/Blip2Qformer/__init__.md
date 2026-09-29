@@ -3,6 +3,9 @@
 
 # `Blip2Qformer.__init__(...)`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Các tham số gate / mention-conditioned / `uncertain_policy` đã bị XÓA; `cls_loss_fn = ClassificationLoss(class_weights=..., label_smoothing=...)`. Xem [D-023](../../../../../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Located in
 
 [`blip2_qformer.py`](../../blip2_qformer.py.doc.md)
