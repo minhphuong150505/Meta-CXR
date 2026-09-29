@@ -1,17 +1,20 @@
-"""Trivial baselines, for detecting deceptively high metrics.
+"""Trivial three-class baselines, scored with the same paper protocol.
 
-On MIMIC-CXR most (study, pathology) pairs are negative, so a model that never
-predicts a positive finding still scores high accuracy. A metric table without
-baselines cannot distinguish "the model learned something" from "the split is
-imbalanced". Every baseline here is computed from the labels alone -- none of
-them looks at the model's probabilities except ``threshold_half``, which reuses
-them at the fixed default threshold.
+The paper's weighted P/R/F1 average the three classes by their support, so on
+MIMIC-CXR -- where most cells are Negative under the blank-as-negative policy --
+a model that always answers "Negative" already scores high. A metric table
+without these rows cannot tell learning from class imbalance.
 
-Reading the table
------------------
-If the model's accuracy is close to ``all_negative`` while its positive macro F1
-is close to 0, the model has not learned to detect findings, whatever the
-headline accuracy says.
+Every baseline is a probability array fed through
+:func:`training.evaluation.classification_metrics.evaluate_classification`,
+so it is scored by exactly the code that scores the model.
+
+* ``all_negative`` / ``all_positive`` / ``all_uncertain`` -- one class always.
+* ``majority_class`` -- each finding's most frequent class in this split.
+* ``prior_random`` -- each finding's class drawn from its class frequencies.
+
+⚠ ``majority_class`` and ``prior_random`` read the evaluated split's own class
+frequencies, so they are an optimistic floor, not a deployable model.
 """
 
 from __future__ import annotations
@@ -23,182 +26,102 @@ from typing import Any
 import numpy as np
 
 from training.evaluation.classification_metrics import (
-    ClassificationReport,
+    NUM_CLASSES,
     evaluate_classification,
 )
-from training.evaluation.schemas import ClassificationPredictions
-from training.evaluation.uncertain_policy import DEFAULT_POLICY, binarize_labels
+from training.evaluation.schemas import MISSING, ClassificationPredictions
 
 logger = logging.getLogger(__name__)
 
-ALL_NEGATIVE = "all_negative"
-ALL_POSITIVE = "all_positive"
-MAJORITY_CLASS = "majority_class"
-PREVALENCE_RANDOM = "prevalence_random"
-THRESHOLD_HALF = "threshold_half"
+BASELINES = ("all_negative", "all_positive", "all_uncertain", "majority_class", "prior_random")
 
-BASELINES = (ALL_NEGATIVE, ALL_POSITIVE, MAJORITY_CLASS, PREVALENCE_RANDOM, THRESHOLD_HALF)
+#: Columns of the baseline table: the paper's headline numbers.
+BASELINE_COLUMNS = ("weighted_precision", "weighted_recall", "weighted_f1", "mean_weighted_f1_5")
 
 
 @dataclass
 class BaselineRow:
-    """One row of the baseline comparison table."""
-
     name: str
-    accuracy: float
-    positive_macro_f1: float
-    positive_macro_recall: float
-    macro_auroc: float
-    macro_auprc: float
+    metrics: dict[str, float]
     description: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "baseline": self.name,
-            "accuracy": self.accuracy,
-            "positive_macro_f1": self.positive_macro_f1,
-            "positive_macro_recall": self.positive_macro_recall,
-            "macro_auroc": self.macro_auroc,
-            "macro_auprc": self.macro_auprc,
-            "description": self.description,
-        }
+        return {"baseline": self.name, "description": self.description, **self.metrics}
 
 
-def _row(name: str, report: ClassificationReport, description: str) -> BaselineRow:
-    aggregates = report.aggregates
-    return BaselineRow(
-        name=name,
-        accuracy=aggregates["binary_accuracy"],
-        positive_macro_f1=aggregates["positive_macro_f1"],
-        positive_macro_recall=aggregates["positive_macro_recall"],
-        macro_auroc=aggregates["macro_auroc"],
-        macro_auprc=aggregates["macro_auprc"],
-        description=description,
-    )
+def _one_hot(classes: np.ndarray) -> np.ndarray:
+    probabilities = np.zeros(classes.shape + (NUM_CLASSES,), dtype=np.float64)
+    np.put_along_axis(probabilities, classes[..., None], 1.0, axis=-1)
+    return probabilities
+
+
+def _class_frequencies(labels: np.ndarray) -> np.ndarray:
+    """``[P, 3]`` class frequencies per finding, over non-missing cells."""
+    freqs = np.zeros((labels.shape[1], NUM_CLASSES), dtype=np.float64)
+    for p in range(labels.shape[1]):
+        column = labels[:, p]
+        column = column[column != MISSING]
+        if column.size:
+            freqs[p] = np.bincount(column.astype(int), minlength=NUM_CLASSES) / column.size
+        else:
+            freqs[p, 0] = 1.0
+    return freqs
 
 
 def compute_baselines(
-    predictions: ClassificationPredictions,
-    *,
-    uncertain_policy: str = DEFAULT_POLICY,
-    include_meta_labels: bool = False,
-    seed: int = 42,
-    which: tuple[str, ...] = BASELINES,
+    predictions: ClassificationPredictions, *, seed: int = 42
 ) -> list[BaselineRow]:
-    """Evaluate each trivial baseline under the same settings as the model.
+    labels = predictions.labels
+    n, p = labels.shape
+    freqs = _class_frequencies(labels)
+    rng = np.random.default_rng(seed)
 
-    AUROC/AUPRC are reported for completeness but are meaningless for the
-    constant baselines (their scores carry no ranking information); they appear
-    as ``nan`` or 0.5-like values and should not be compared.
-    """
-    y_true, valid = binarize_labels(predictions.labels, uncertain_policy)
-    shape = predictions.labels.shape
-    rows: list[BaselineRow] = []
-
-    def evaluate(binary: np.ndarray) -> ClassificationReport:
-        return evaluate_classification(
-            predictions,
-            uncertain_policy=uncertain_policy,
-            include_meta_labels=include_meta_labels,
-            binary_predictions=binary,
+    candidates = {
+        "all_negative": (np.zeros((n, p), dtype=int), "Negative for every finding"),
+        "all_positive": (np.ones((n, p), dtype=int), "Positive for every finding"),
+        "all_uncertain": (np.full((n, p), 2, dtype=int), "Uncertain for every finding"),
+        "majority_class": (
+            np.broadcast_to(freqs.argmax(axis=1), (n, p)).copy(),
+            "each finding's most frequent class in this split",
+        ),
+        "prior_random": (
+            np.stack(
+                [rng.choice(NUM_CLASSES, size=n, p=freqs[j]) for j in range(p)], axis=1
+            ),
+            f"class drawn from this split's frequencies (seed {seed})",
+        ),
+    }
+    rows = []
+    for name, (classes, description) in candidates.items():
+        fake = ClassificationPredictions(
+            labels=labels,
+            probabilities=_one_hot(classes),
+            pathology_names=predictions.pathology_names,
+            sample_keys=predictions.sample_keys,
         )
-
-    if ALL_NEGATIVE in which:
+        aggregates = evaluate_classification(fake).aggregates
         rows.append(
-            _row(
-                ALL_NEGATIVE,
-                evaluate(np.zeros(shape, dtype=np.int64)),
-                "predict negative for every pathology on every study",
+            BaselineRow(
+                name=name,
+                metrics={k: aggregates[k] for k in BASELINE_COLUMNS},
+                description=description,
             )
         )
-
-    if ALL_POSITIVE in which:
-        rows.append(
-            _row(
-                ALL_POSITIVE,
-                evaluate(np.ones(shape, dtype=np.int64)),
-                "predict positive for every pathology on every study",
-            )
-        )
-
-    if MAJORITY_CLASS in which:
-        majority = np.zeros(shape, dtype=np.int64)
-        for index in range(shape[1]):
-            column_valid = valid[:, index]
-            if not np.any(column_valid):
-                continue
-            positives = int(np.sum(y_true[column_valid, index] == 1))
-            if positives * 2 > int(np.sum(column_valid)):
-                majority[:, index] = 1
-        rows.append(
-            _row(
-                MAJORITY_CLASS,
-                evaluate(majority),
-                "predict each pathology's majority class, decided per pathology",
-            )
-        )
-
-    if PREVALENCE_RANDOM in which:
-        rng = np.random.default_rng(seed)
-        random_predictions = np.zeros(shape, dtype=np.int64)
-        for index in range(shape[1]):
-            column_valid = valid[:, index]
-            n_valid = int(np.sum(column_valid))
-            prevalence = (
-                float(np.sum(y_true[column_valid, index] == 1)) / n_valid
-                if n_valid
-                else 0.0
-            )
-            random_predictions[:, index] = (
-                rng.random(shape[0]) < prevalence
-            ).astype(np.int64)
-        rows.append(
-            _row(
-                PREVALENCE_RANDOM,
-                evaluate(random_predictions),
-                f"sample each prediction from the pathology's prevalence (seed={seed})",
-            )
-        )
-
-    if THRESHOLD_HALF in which:
-        rows.append(
-            _row(
-                THRESHOLD_HALF,
-                evaluate_classification(
-                    predictions,
-                    uncertain_policy=uncertain_policy,
-                    include_meta_labels=include_meta_labels,
-                    thresholds=None,
-                ),
-                "the model's own probabilities at the uncalibrated 0.5 threshold",
-            )
-        )
-
     return rows
 
 
-def baseline_table(
-    rows: list[BaselineRow], model_row: BaselineRow | None = None
-) -> str:
-    """Render the comparison as a Markdown table."""
-    header = (
-        "| Model | Accuracy | Positive Macro F1 | Macro AUROC | Macro AUPRC |\n"
-        "| --- | ---: | ---: | ---: | ---: |\n"
-    )
-
+def baseline_table(rows: list[BaselineRow], model_row: BaselineRow) -> str:
     def fmt(value: float) -> str:
-        return "n/a" if np.isnan(value) else f"{value:.4f}"
+        return "n/a" if value is None or np.isnan(value) else f"{value:.4f}"
 
-    body = ""
-    if model_row is not None:
-        body += (
-            f"| **{model_row.name}** | {fmt(model_row.accuracy)} | "
-            f"{fmt(model_row.positive_macro_f1)} | {fmt(model_row.macro_auroc)} | "
-            f"{fmt(model_row.macro_auprc)} |\n"
-        )
-    for row in rows:
-        body += (
-            f"| {row.name} | {fmt(row.accuracy)} | {fmt(row.positive_macro_f1)} | "
-            f"{fmt(row.macro_auroc)} | {fmt(row.macro_auprc)} |\n"
-        )
+    header = (
+        "| | " + " | ".join(BASELINE_COLUMNS) + " |\n"
+        "| --- |" + " ---: |" * len(BASELINE_COLUMNS) + "\n"
+    )
+    body = "".join(
+        f"| {'**' + row.name + '**' if row is model_row else row.name} | "
+        + " | ".join(fmt(row.metrics[c]) for c in BASELINE_COLUMNS)
+        + " |\n"
+        for row in [model_row, *rows]
+    )
     return header + body

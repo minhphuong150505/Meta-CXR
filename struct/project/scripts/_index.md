@@ -4,6 +4,9 @@
 
 # `scripts/`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Mọi ghi chú bên dưới về `--label-framing`, `--score`, `--uncertain-policy`, ngưỡng F1 và cue nhị phân là lịch sử. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 CLI cho những việc **không phải training**: preflight, calibrate, evaluate, phân
@@ -31,10 +34,11 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 
 | File | Doc | Status |
 |---|---|---|
-| `calibrate_thresholds.py` | [📄](calibrate_thresholds.py.doc.md) | ✅ Calibrate — **chỉ validation** |
+| `calibrate_thresholds.py` | [📄](calibrate_thresholds.py.doc.md) | ✅ Ngưỡng theo (bệnh, lớp), Eq. 22 — **chỉ validation** |
+| `evaluate_chexpert_crossdomain.py` | [📄](evaluate_chexpert_crossdomain.py.doc.md) | ✅ Bảng 4 của bài báo (chỉ chấm điểm) |
+| `evaluate_clinical_efficacy.py` | [📄](evaluate_clinical_efficacy.py.doc.md) | ✅ Bảng 3 CE của bài báo (chấm nhãn labeler có sẵn) |
 | `count_chexpert_blank_policy.py` | [📄](count_chexpert_blank_policy.py.doc.md) | ✅ CPU, đếm nhãn study-level dưới hai `blank_label_policy`, in class weight cho `negative`, kiểm nguồn gốc ô -100 |
-| `calibrate_cue_precision.py` | [📄](calibrate_cue_precision.py.doc.md) | ✅ CPU, fit ngưỡng precision cho cues; tắt nhãn không đạt thay vì fallback |
-| `evaluate_stage1.py` (328) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz` |
+| `evaluate_stage1.py` (236) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz`, giao thức ba lớp của bài báo |
 | `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |
 | `generate_stage2_reports.py` (381) | [📄](generate_stage2_reports.py.doc.md) | ✅ Sinh `.jsonl` cho dòng trên. `--pipeline-mode` chọn nguồn record: CSV (native) hay Stage-1 (soft token). ⚠ Hai cohort khác nhau — dùng `--restrict-to` mới so sánh được |
 | `evaluate_explanation.py` | [📄](evaluate_explanation.py.doc.md) | ✅ XAI — load checkpoint, cần autograd sống, không train |
@@ -110,9 +114,10 @@ Người dùng. `check_notebook_privacy.py` được `.pre-commit-config.yaml` g
 
 ## Notes
 
-- **`calibrate_thresholds.py` phải chạy TRƯỚC `evaluate_stage1.py`**, và **chỉ
-  trên validation**. Calibrate trên test là rò rỉ test set.
-- `--min-positive 20`: bệnh lý dưới 20 mẫu positive giữ threshold 0.5.
+- `calibrate_thresholds.py` chỉ chạy trên **validation** (từ chối split `test`);
+  ngưỡng chỉ dùng cho prompt Stage 2, `evaluate_stage1.py` luôn dùng argmax.
+- `calibrate_cue_precision.py` đã XÓA 2026-09-29 (D-023): nó fit ngưỡng cue dương
+  tính nhị phân dựa trên mention gate.
 - `evaluate_stage1.py:294` import `visualization` **trễ, trong hàm** — script vẫn
   chạy được khi không có matplotlib.
 - `evaluate_stage2.py:159` import `clinical` trễ tương tự, và báo **unavailable**

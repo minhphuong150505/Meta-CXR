@@ -1,59 +1,23 @@
-> Source: `scripts/calibrate_thresholds.py` (141 dòng)
+> Source: `scripts/calibrate_thresholds.py` (72 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-20
+> Last verified against source: 2026-09-29
 
 # `scripts/calibrate_thresholds.py`
 
-## Purpose
-Calibrate threshold per-pathology — **chỉ trên validation**.
+← [scripts](_index.md) · [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân)
 
-## Entry point
+Fit ngưỡng theo **(bệnh, lớp)** bằng Eq. 22 / Fig 11 của bài báo: điểm ROC gần
+(0,1) nhất, `argmin sqrt((1-TPR)^2 + FPR^2)`, one-vs-rest trên xác suất từng lớp.
+
 ```bash
-python scripts/calibrate_thresholds.py \
-    --predictions <val.npz> --objective f1 \
-    --uncertain-policy ignore_uncertain --min-positive 20 \
-    --output <thresholds.json>
+python scripts/calibrate_thresholds.py --predictions <val.npz> --output <thresholds.json>
 ```
 
-## Main functions
-`parse_args(argv)` (`:42`) · `main(argv) -> int` (`:72`)
+- **Chỉ validation**: `.npz` có metadata split `test` → exit 2.
+- File ghi format `meta_cxr_per_class_roc_distance_v1`; mọi format khác (file
+  ngưỡng nhị phân cũ) bị [`load_thresholds`](../training/evaluation/threshold_calibration.py.doc.md) từ chối.
+- Ngưỡng chỉ dùng cho **prompt Stage 2** (`--cue-rule paper_thresholds`). Metric
+  phân loại Stage 1 luôn dùng argmax — đúng như bài báo.
 
-## Inputs / Outputs
-Vào: `.npz` validation. Ra: `thresholds.json`.
-
-## `--label-framing` / `--score` (2026-08-20)
-
-Giống `evaluate_stage1.py`. Framing được áp **trước** khi calibrate, và được ghi
-vào `metadata.source_metadata` của file JSON kết quả — đó chính là thứ
-`evaluate_stage1.py` đọc lại để từ chối cặp không khớp.
-
-⚠ Calibrate và evaluate **phải dùng cùng một cặp** `--label-framing` / `--score`.
-
-## `--selection` / `--plateau-fraction` (2026-08-20)
-
-Chuyển tiếp vào `calibrate_one`. Xem
-[`threshold_calibration.py`](../training/evaluation/threshold_calibration.py.doc.md).
-
-Cấu hình được đo là tốt nhất (chọn bằng CV trong val, không nhìn test):
-
-```
---selection plateau --plateau-fraction 0.95 --min-positive 5
-```
-
-## Calls / Called by
-Gọi: `training.evaluation.schemas` (`:30`), `.threshold_calibration` (`:31`),
-`.uncertain_policy` (`:37`).
-Được gọi: người dùng, sau Stage 1.
-
-## Side effects
-Ghi JSON. **Không GPU.**
-
-## Related tests
-`tests/test_threshold_calibration.py`
-
-## Developer notes
-⚠ **Chạy trên validation, không phải test.** `load_thresholds(allow_test_split=False)`
-ở phía evaluate sẽ từ chối file calibrate trên test.
-`--min-positive 20`: bệnh lý ít positive giữ 0.5 thay vì overfit.
-
-← [`_index.md`](_index.md) · [HOME](../../HOME.md)
+Đã gỡ (D-023): `--objective f1`, `--selection plateau`, `--min-positive`,
+`--uncertain-policy`, `--label-framing`, `--score`.

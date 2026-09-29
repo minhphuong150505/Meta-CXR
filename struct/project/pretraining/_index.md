@@ -38,6 +38,7 @@ pretraining/  ──►  checkpoint_best.pth  ──►  training/  (chỉ mode 
 | `precompute_features.py` | [📄](precompute_features.py.doc.md) | ✅ | Tính trước feature encoder đóng băng; cache anchor-only cho pha 1a (D-020) |
 | `phases.py` | [📄](phases.py.doc.md) | ✅ ★ | Lịch 3 pha của bài báo: `run.phases`, requires_grad theo pha, chuyển dần pha 1b (D-020) |
 | `itc_gate.py` | [📄](itc_gate.py.doc.md) | ✅ | Gate ITC dùng chung: `delta_nats` + R@1/R@5 so với kiểm định nhị thức |
+| `retired_keys.py` | [📄](retired_keys.py.doc.md) | ✅ | Từ chối khóa config nhị phân đã gỡ; bỏ head cũ khi load checkpoint (D-023) |
 | `__init__.py` | — | ✅ | Rỗng; làm `pretraining` thành package để `python -m` chạy được |
 
 ### Subdirectories

@@ -3,6 +3,9 @@
 
 # `AbnormalityClassificationModel.forward(...)`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Trả đúng 5 giá trị `(logits, attention_weights_list, contrastive_loss, orth_loss, sparsity_loss)`; không còn mention logits. Xem [D-023](../../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Located in
 
 [`mhcac_12.py`](../../mhcac_12.py.doc.md)

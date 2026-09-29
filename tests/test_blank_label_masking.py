@@ -12,7 +12,8 @@ no mention of the finding. `model.mhcac.blank_label_policy` picks the reading:
   2026-09-24.
 
 Under both, a study with no CheXpert information must stay IGNORE_LABEL on
-every cell, and the mention-gate targets must not depend on the policy.
+every cell. Labels are always the paper's three classes; there is no binary
+mention target any more (D-023).
 """
 
 import importlib.util
@@ -33,7 +34,6 @@ from model.lavis.data.chexpert_labels import (
     IGNORE_LABEL,
     attach_chexpert_labels,
     map_chexpert_labels,
-    mention_column,
     prepare_chexpert_labels,
     resolve_blank_label_policy,
 )
@@ -182,19 +182,13 @@ def test_a_study_without_a_chexpert_record_stays_ignored(policy):
 
     assert [int(unmatched[c]) for c in COLS] == [IGNORE_LABEL] * len(COLS)
     assert not bool(unmatched["classification_valid"])
-    assert not bool(unmatched["mention_valid"])
 
 
-def test_mention_targets_are_identical_under_both_policies():
-    mention_cols = [mention_column(c) for c in COLS]
-    ignore = _attached(BLANK_IGNORED)
-    negative = _attached(BLANK_AS_NEGATIVE)
-
-    pd.testing.assert_frame_equal(ignore[mention_cols], negative[mention_cols])
-    pd.testing.assert_series_equal(ignore["mention_valid"], negative["mention_valid"])
-    # And they are the raw notna pattern, not something derived after the fill.
-    assert ignore[mention_cols].iloc[0].tolist() == [0, 1, 1]
-    assert ignore[mention_cols].iloc[4].tolist() == [0, 0, 0]
+@pytest.mark.parametrize("policy", BLANK_LABEL_POLICIES)
+def test_no_binary_mention_columns_are_produced(policy):
+    """The binary mention targets were removed with the gate (D-023)."""
+    merged = _attached(policy)
+    assert not [c for c in merged.columns if "mention" in c]
 
 
 def test_ignore_policy_masks_blanks_of_a_matched_study():
@@ -219,8 +213,6 @@ def test_excluded_labels_are_applied_after_the_fill(policy):
     merged = _attached(policy, excluded=["No Finding"])
 
     assert (merged["No Finding"] == IGNORE_LABEL).all()
-    # The gate still sees No Finding's raw pattern.
-    assert merged[mention_column("No Finding")].tolist() == [0, 1, 0, 0, 0]
 
 
 def test_a_study_whose_only_label_is_excluded_regains_a_cell_under_negative():

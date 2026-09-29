@@ -1,4 +1,4 @@
-"""Threshold calibration, bootstrap and baseline tests."""
+"""Per-class thresholds of the META-CXR paper (Sec. V-C, Eq. 22, Fig. 11)."""
 
 from __future__ import annotations
 
@@ -14,346 +14,72 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tests.test_classification_metrics import make_predictions  # noqa: E402
-from training.evaluation.baselines import (  # noqa: E402
-    ALL_NEGATIVE,
-    compute_baselines,
-)
-from training.evaluation.bootstrap import (  # noqa: E402
-    BootstrapError,
-    bootstrap_metric,
-    bootstrap_sample_metric,
-)
-from training.evaluation.classification_metrics import (  # noqa: E402
-    evaluate_classification,
-)
+from training.evaluation.schemas import ClassificationPredictions  # noqa: E402
 from training.evaluation.threshold_calibration import (  # noqa: E402
-    BALANCED_ACCURACY,
-    F1,
-    PRECISION_AT_RECALL,
-    RECALL_AT_PRECISION,
-    YOUDEN_J,
+    ABSTAIN,
     CalibrationError,
-    calibrate_one,
-    calibrate_thresholds,
+    ThresholdFile,
+    apply_thresholds,
+    fit_class_thresholds,
     load_thresholds,
+    roc_distance_threshold,
 )
 
-# --------------------------------------------------------------------------
-# Calibration must never touch test data
-# --------------------------------------------------------------------------
+
+def test_roc_distance_picks_the_point_nearest_the_top_left_corner():
+    # threshold 0.6 separates perfectly: TPR 1, FPR 0, distance 0.
+    scores = np.array([0.9, 0.6, 0.4, 0.1])
+    y = np.array([1, 1, 0, 0])
+    assert roc_distance_threshold(scores, y) == pytest.approx(0.6)
 
 
-def test_calibrating_on_test_split_is_refused():
-    preds = make_predictions(np.array([[1], [0]]), np.array([[0.9], [0.1]]))
-    with pytest.raises(CalibrationError, match="refusing to calibrate"):
-        calibrate_thresholds(preds, split="test")
+def test_roc_distance_hand_computed_with_overlap():
+    # candidates (TPR, FPR): 0.9->(1/2,0) d=.5 ; 0.7->(1/2,1/2) d=.707 ;
+    # 0.5->(1,1/2) d=.5 ; 0.2->(1,1) d=1. Tie between 0.9 and 0.5 -> first (0.9).
+    scores = np.array([0.9, 0.7, 0.5, 0.2])
+    y = np.array([1, 0, 1, 0])
+    assert roc_distance_threshold(scores, y) == pytest.approx(0.9)
 
 
-def test_loading_test_fitted_thresholds_is_refused(tmp_path):
-    path = tmp_path / "bad.json"
-    path.write_text(
-        json.dumps({"metadata": {"split": "test"}, "thresholds": {"P0": 0.3}})
+def test_undefined_when_a_class_never_occurs():
+    assert math.isnan(roc_distance_threshold(np.array([0.2, 0.8]), np.array([0, 0])))
+
+
+def _preds():
+    labels = np.array([[0], [0], [1], [1], [2], [2]])
+    probs = np.array(
+        [[[0.8, 0.1, 0.1]], [[0.7, 0.2, 0.1]], [[0.1, 0.8, 0.1]],
+         [[0.2, 0.7, 0.1]], [[0.1, 0.1, 0.8]], [[0.1, 0.2, 0.7]]]
     )
-    with pytest.raises(CalibrationError, match="calibrated on validation"):
-        load_thresholds(path)
-    # The guard is the only thing standing between the two; prove it is what
-    # fires, not a parse error.
-    assert load_thresholds(path, allow_test_split=True) == {"P0": 0.3}
-
-
-def test_validation_thresholds_load_cleanly(tmp_path):
-    preds = make_predictions(
-        np.array([[1], [1], [0], [0]]), np.array([[0.8], [0.7], [0.3], [0.2]])
+    return ClassificationPredictions(
+        labels=labels, probabilities=probs, pathology_names=("Edema",),
+        sample_keys=np.arange(6).astype(str),
     )
-    result = calibrate_thresholds(preds, split="validation")
-    path = result.save(tmp_path / "thresholds.json")
-    assert load_thresholds(path) == result.as_mapping()
 
 
-# --------------------------------------------------------------------------
-# The threshold actually moves, and moves in the right direction
-# --------------------------------------------------------------------------
+def test_fit_gives_one_threshold_per_class_for_every_finding():
+    thresholds = fit_class_thresholds(_preds())
+    assert set(thresholds["Edema"]) == {"negative", "positive", "uncertain"}
+    assert thresholds["Edema"]["positive"] == pytest.approx(0.7)
 
 
-def test_calibrated_threshold_differs_from_half_when_scores_are_shifted():
-    """All scores sit below 0.5, so 0.5 detects nothing.
+def test_apply_thresholds_takes_largest_margin_and_abstains_below_all():
+    thresholds = {"Edema": {"negative": 0.6, "positive": 0.3, "uncertain": 0.9}}
+    probs = np.array([
+        [[0.65, 0.30, 0.05]],   # neg margin .05, pos margin 0 -> negative
+        [[0.20, 0.50, 0.30]],   # only positive clears -> positive
+        [[0.50, 0.20, 0.30]],   # nothing clears -> abstain
+    ])
+    out = apply_thresholds(probs, thresholds, ("Edema",))
+    assert out[:, 0].tolist() == [0, 1, ABSTAIN]
 
-    Calibration must find a cutoff inside the score range instead.
-    """
-    scores = np.array([0.40, 0.35, 0.20, 0.10])
-    truth = np.array([1, 1, 0, 0])
-    threshold, score = calibrate_one(scores, truth, objective=F1)
-    assert 0.20 < threshold < 0.35
-    assert score == pytest.approx(1.0)
-    assert threshold != 0.5
 
+def test_round_trip_and_format_guard(tmp_path):
+    path = ThresholdFile(fit_class_thresholds(_preds()), {"split": "val"}).save(tmp_path / "t.json")
+    loaded = load_thresholds(path)
+    assert loaded["Edema"]["uncertain"] == pytest.approx(0.7)
 
-def test_calibration_improves_f1_over_default_threshold():
-    labels = np.array([[1], [1], [0], [0], [0], [0]])
-    positive = np.array([[0.45], [0.40], [0.30], [0.20], [0.10], [0.05]])
-    preds = make_predictions(labels, positive)
-
-    at_half = evaluate_classification(preds)
-    assert at_half.aggregates["positive_macro_f1"] == 0.0  # nothing crosses 0.5
-
-    result = calibrate_thresholds(preds, split="validation", objective=F1)
-    calibrated = evaluate_classification(preds, thresholds=result.as_mapping())
-    assert calibrated.aggregates["positive_macro_f1"] == pytest.approx(1.0)
-
-    detail = result.thresholds[0]
-    assert detail.calibrated
-    assert detail.objective_score > detail.default_threshold_score
-
-
-def test_every_objective_runs_and_records_its_score():
-    scores = np.array([0.9, 0.7, 0.6, 0.4, 0.3, 0.1])
-    truth = np.array([1, 1, 0, 1, 0, 0])
-    for objective in (F1, YOUDEN_J, BALANCED_ACCURACY):
-        threshold, score = calibrate_one(scores, truth, objective=objective)
-        assert 0.0 <= threshold <= 1.0
-        assert not math.isnan(score)
-
-
-def test_constrained_objectives_respect_the_constraint():
-    scores = np.array([0.9, 0.8, 0.7, 0.6, 0.5, 0.4])
-    truth = np.array([1, 0, 1, 0, 1, 0])
-
-    # Demand precision >= 1.0: only the top-1 cutoff qualifies, recall = 1/3.
-    threshold, recall = calibrate_one(
-        scores, truth, objective=RECALL_AT_PRECISION, constraint=1.0
-    )
-    assert recall == pytest.approx(1 / 3)
-
-    # Demand recall >= 1.0: the cutoff must reach the lowest positive.
-    threshold, precision = calibrate_one(
-        scores, truth, objective=PRECISION_AT_RECALL, constraint=1.0
-    )
-    assert threshold < 0.5
-    assert precision == pytest.approx(0.6)
-
-
-def test_unsatisfiable_constraint_falls_back_to_default():
-    scores = np.array([0.9, 0.8, 0.7, 0.6])
-    truth = np.array([0, 0, 0, 1])
-    # Precision 1.0 is unreachable except at a cutoff that also has recall 0.
-    threshold, score = calibrate_one(
-        scores, truth, objective=RECALL_AT_PRECISION, constraint=1.0
-    )
-    assert threshold <= 1.0  # a value is still returned; nothing crashes
-
-
-def test_pathology_without_positives_keeps_default_threshold():
-    labels = np.array([[0], [0], [0]])
-    preds = make_predictions(labels, np.array([[0.9], [0.5], [0.1]]))
-    result = calibrate_thresholds(preds, split="validation")
-    detail = result.thresholds[0]
-    assert detail.threshold == 0.5
-    assert not detail.calibrated
-    assert "positive" in detail.reason
-
-
-def test_calibration_records_class_counts_and_metadata():
-    labels = np.array([[1], [2], [0], [-1]])
-    preds = make_predictions(labels, np.array([[0.9], [0.6], [0.2], [0.1]]))
-    result = calibrate_thresholds(preds, split="validation", objective=F1)
-
-    assert result.metadata["split"] == "validation"
-    assert result.metadata["objective"] == F1
-    detail = result.thresholds[0]
-    assert detail.n_positive == 1
-    assert detail.n_uncertain == 1
-    assert detail.n_valid == 3  # the -1 row is excluded
-
-
-# --------------------------------------------------------------------------
-# Bootstrap
-# --------------------------------------------------------------------------
-
-
-def test_bootstrap_is_reproducible_with_the_same_seed():
-    values = np.linspace(0, 1, 50)
-
-    def mean_of(indices: np.ndarray) -> float:
-        return float(np.mean(values[indices]))
-
-    first = bootstrap_metric(mean_of, 50, samples=100, seed=7)
-    second = bootstrap_metric(mean_of, 50, samples=100, seed=7)
-    assert (first.lower, first.upper) == (second.lower, second.upper)
-
-    different = bootstrap_metric(mean_of, 50, samples=100, seed=8)
-    assert (different.lower, different.upper) != (first.lower, first.upper)
-
-
-def test_bootstrap_interval_brackets_the_point_estimate():
-    values = np.random.default_rng(0).normal(0.5, 0.1, size=200)
-    interval = bootstrap_sample_metric(values, samples=200, seed=1)
-    assert interval.lower <= interval.point_estimate <= interval.upper
-    assert interval.valid_replicates == 200
-
-
-def test_bootstrap_can_be_disabled():
-    interval = bootstrap_sample_metric([0.1, 0.2, 0.3], samples=0)
-    assert interval.method == "disabled"
-    assert math.isnan(interval.lower)
-    assert interval.point_estimate == pytest.approx(0.2)
-
-
-def test_bootstrap_drops_undefined_replicates_instead_of_scoring_them_zero():
-    def sometimes_undefined(indices: np.ndarray) -> float:
-        return float("nan") if indices[0] % 2 == 0 else 1.0
-
-    interval = bootstrap_metric(sometimes_undefined, 10, samples=50, seed=3)
-    assert interval.valid_replicates < 50
-    assert interval.lower == pytest.approx(1.0)
-
-
-def test_bootstrap_rejects_invalid_configuration():
-    with pytest.raises(BootstrapError):
-        bootstrap_metric(lambda i: 1.0, 0, samples=10)
-    with pytest.raises(BootstrapError):
-        bootstrap_metric(lambda i: 1.0, 5, samples=10, confidence=1.5)
-
-
-def test_confidence_interval_json_has_no_nan():
-    interval = bootstrap_sample_metric([float("nan")], samples=0)
-    payload = interval.to_dict()
-    assert payload["lower"] is None
-    # json.dumps with allow_nan=False would raise on a real NaN.
-    json.dumps(payload, allow_nan=False)
-
-
-# --------------------------------------------------------------------------
-# Baselines
-# --------------------------------------------------------------------------
-
-
-def test_all_negative_baseline_exposes_deceptive_accuracy():
-    """19/20 negative: the baseline gets 95% accuracy and 0 positive F1."""
-    labels = np.zeros((10, 2), dtype=int)
-    labels[0, 0] = 1
-    labels[0, 1] = 1
-    preds = make_predictions(labels, np.full((10, 2), 0.9))
-
-    rows = {row.name: row for row in compute_baselines(preds)}
-    negative = rows[ALL_NEGATIVE]
-    assert negative.accuracy == pytest.approx(0.9)
-    assert negative.positive_macro_f1 == 0.0
-
-
-def test_baselines_cover_every_requested_variant():
-    labels = np.array([[1, 0], [0, 1], [1, 1], [0, 0]])
-    preds = make_predictions(labels, np.array([[0.9, 0.1]] * 4))
-    rows = compute_baselines(preds, seed=0)
-    assert {row.name for row in rows} == {
-        "all_negative",
-        "all_positive",
-        "majority_class",
-        "prevalence_random",
-        "threshold_half",
-    }
-    for row in rows:
-        assert row.description
-
-
-class TestPlateauSelection:
-    """Where you stand on the objective curve is a separate choice from which
-    objective you maximise, and on a validation split this size it matters.
-
-    Measured by 5-fold x 10-repeat CV inside validation (1,808 studies):
-    plateau at 0.95 scored 0.3246 macro F1 against argmax's 0.3202, and the
-    same choice moved held-out test macro F1 from 0.3223 to 0.3409.
-    """
-
-    @staticmethod
-    def _spiky():
-        """A curve whose exact peak is one lucky point on a broad shoulder.
-
-        Twenty negatives below 0.5 and twenty positives above it, with a single
-        extra positive parked at 0.99 so that a very high threshold scores a
-        narrow local optimum that argmax can be steered onto.
-        """
-        import numpy as np
-
-        scores = np.concatenate(
-            [np.linspace(0.01, 0.45, 20), np.linspace(0.55, 0.95, 20), [0.99]]
-        )
-        truth = np.array([False] * 20 + [True] * 21)
-        return scores, truth
-
-    def test_plateau_stays_inside_the_near_optimal_region(self):
-        import numpy as np
-
-        from training.evaluation.threshold_calibration import calibrate_one
-
-        scores, truth = self._spiky()
-        t_arg, v_arg = calibrate_one(scores, truth, selection="argmax")
-        t_pla, v_pla = calibrate_one(scores, truth, selection="plateau")
-
-        # Plateau never claims a better objective value than the peak -- it
-        # deliberately gives some up in exchange for transferring better.
-        assert v_pla <= v_arg + 1e-9
-        assert v_pla >= 0.95 * v_arg
-        assert np.isfinite(t_pla)
-
-    def test_plateau_fraction_one_reduces_to_the_peak_value(self):
-        from training.evaluation.threshold_calibration import calibrate_one
-
-        scores, truth = self._spiky()
-        _, v_arg = calibrate_one(scores, truth, selection="argmax")
-        _, v_pla = calibrate_one(
-            scores, truth, selection="plateau", plateau_fraction=1.0
-        )
-        assert v_pla == v_arg
-
-    def test_argmax_remains_the_default(self):
-        from training.evaluation.threshold_calibration import (
-            DEFAULT_SELECTION,
-            calibrate_one,
-        )
-
-        assert DEFAULT_SELECTION == "argmax"
-        scores, truth = self._spiky()
-        assert calibrate_one(scores, truth) == calibrate_one(
-            scores, truth, selection="argmax"
-        )
-
-    def test_unknown_selection_is_rejected(self):
-        import pytest
-
-        from training.evaluation.threshold_calibration import (
-            CalibrationError,
-            calibrate_one,
-        )
-
-        scores, truth = self._spiky()
-        with pytest.raises(CalibrationError):
-            calibrate_one(scores, truth, selection="middle")
-
-    def test_selection_is_recorded_in_the_threshold_file(self, tmp_path):
-        """A threshold file that does not say how it was fitted cannot be audited."""
-        import json
-
-        import numpy as np
-
-        from training.evaluation.schemas import ClassificationPredictions
-        from training.evaluation.threshold_calibration import calibrate_thresholds
-
-        rng = np.random.default_rng(0)
-        n = 200
-        labels = rng.integers(0, 2, size=(n, 2))
-        q = rng.random((n, 2))
-        probabilities = np.stack([1 - q, q, np.zeros_like(q)], axis=-1)
-        preds = ClassificationPredictions(
-            labels=labels,
-            probabilities=probabilities,
-            pathology_names=("a", "b"),
-            sample_keys=np.array([f"s{i}" for i in range(n)]),
-        )
-        result = calibrate_thresholds(
-            preds, split="validation", selection="plateau", plateau_fraction=0.9
-        )
-        path = result.save(tmp_path / "t.json")
-        meta = json.loads(path.read_text())["metadata"]
-        assert meta["selection"] == "plateau"
-        assert meta["plateau_fraction"] == 0.9
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(json.dumps({"thresholds": {"Edema": 0.4}}))
+    with pytest.raises(CalibrationError, match="per-class"):
+        load_thresholds(legacy)

@@ -97,6 +97,13 @@ def count_split(labels_mod, chexpert, studies, policy, excluded):
         processed_has_label=processed,
     )
     ignore = labels_mod.IGNORE_LABEL
+    # Raw blank cells of studies that DO have a CheXpert record, counted from
+    # the export itself (the binary mention columns this used to read were
+    # removed with the mention gate, D-023).
+    raw = studies[["subject_id", "study_id"]].merge(
+        chexpert[["subject_id", "study_id", *CHEXPERT_COLS]],
+        how="left", on=["subject_id", "study_id"], validate="many_to_one",
+    )
     per_label = {}
     for col in CHEXPERT_COLS:
         values = merged[col].to_numpy()
@@ -108,7 +115,7 @@ def count_split(labels_mod, chexpert, studies, policy, excluded):
             "blank_raw": int(
                 (merged["_chexpert_merge"].eq("both")
                  & merged["_has_chexpert_label_raw"].eq(True)
-                 & merged[labels_mod.mention_column(col)].eq(0)).sum()
+                 & raw[col].isna().to_numpy()).sum()
             ),
         }
     no_info = ~(
@@ -184,14 +191,13 @@ def main() -> None:
             )
             entry = {
                 "classification_valid": int(merged["classification_valid"].sum()),
-                "mention_valid": int(merged["mention_valid"].sum()),
                 "per_label": per_label,
                 "ignore_provenance": ignore_provenance(merged, per_label, no_info, excluded),
             }
             report["splits"][split][policy] = entry
             print(f"\n=== {split} / blank_label_policy={policy} ===")
             print(f"studies {len(merged):,}  classification_valid "
-                  f"{entry['classification_valid']:,}  mention_valid {entry['mention_valid']:,}")
+                  f"{entry['classification_valid']:,}")
             print(f"{'label':28s} {'neg(0)':>9s} {'pos(1)':>9s} {'unc(2)':>9s} "
                   f"{'-100':>9s} {'blank(raw)':>11s}")
             for col, c in per_label.items():

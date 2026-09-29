@@ -4,6 +4,9 @@
 
 # `training/medgemma/finding_tokens.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Chế độ `full` (dùng mention gate `m`) đã bị XÓA; chỉ còn `q_only` với `finding_features(class_logits, mode)` và `FEATURE_WIDTHS = {q_only: 3}`. Xem [D-023](../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 Đưa **thông tin mention của Stage 1** vào Stage 2 qua **13 finding token học

@@ -11,6 +11,9 @@ chỉ-ảnh trong layer text. Mặc định (khóa vắng) = hành vi cũ, ghim 
 
 # `mhcac/mhcac_12.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `mention_heads` và tham số `uncertain_policy` đã bị XÓA. `forward` trả `(logits, attention_weights_list, contrastive_loss, orth_loss, sparsity_loss)`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 Bộ phân loại 14 bệnh lý × 3 lớp bằng **expert token cross-attention**. 14 token

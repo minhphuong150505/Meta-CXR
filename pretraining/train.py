@@ -16,6 +16,10 @@ import wandb
 from omegaconf import OmegaConf
 import model.lavis.tasks as tasks
 from model.lavis.common.config import Config
+from pretraining.retired_keys import (
+    reject_retired_model_keys,
+    reject_retired_run_keys,
+)
 from pretraining.phases import (
     apply_phase_to_config,
     apply_trainable,
@@ -126,6 +130,13 @@ def main():
     # Three-phase schedule: merge run.phases.<run.phase> into the config before
     # anything reads it. None for an unphased YAML (the historical recipe).
     phase_spec = apply_phase_to_config(cfg.config, cfg.run_cfg.get("phase", None))
+    # The binary-label options were removed (D-023); refuse any config -- or
+    # any phase override inside it -- that still names one.
+    reject_retired_model_keys(cfg.model_cfg)
+    reject_retired_run_keys(cfg.run_cfg)
+    for phase_block in (cfg.run_cfg.get("phases", None) or {}).values():
+        reject_retired_run_keys((phase_block or {}).get("run", None))
+        reject_retired_model_keys((phase_block or {}).get("model", None))
 
     job_id = now()
 

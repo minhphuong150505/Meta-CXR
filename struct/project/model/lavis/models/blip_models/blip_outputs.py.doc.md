@@ -4,6 +4,9 @@
 
 # `blip_outputs.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Trường `loss_gate`, `loss_mention_conditioned`, `mention_marginal_log_probs`, `mention_logits` đã bị XÓA. Xem [D-023](../../../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 Định nghĩa các `ModelOutput` dataclass của fork BLIP. `BlipOutput` là hợp đồng giữa

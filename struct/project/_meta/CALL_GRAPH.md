@@ -4,6 +4,9 @@
 
 # Call Graph
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Các cạnh tới `MentionGateLoss`, `MentionConditionedClassificationLoss`, `build_classification_losses`, `label_framing.*`, `uncertain_policy.*`, `calibrate_cue_precision` không còn tồn tại. Cạnh mới: `train.py` / `Blip2Qformer.from_config` / `ImageTextPretrainTask.__init__` → `retired_keys.reject_*`; `evaluate_chexpert_crossdomain`/`evaluate_clinical_efficacy` → `paper_protocol`. Xem [D-023](DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 Đường đi thực thi ở mức critical path. **Không** liệt kê mọi hàm — chỉ những mắt
 xích mà nếu không hiểu thì không lần được luồng.
 

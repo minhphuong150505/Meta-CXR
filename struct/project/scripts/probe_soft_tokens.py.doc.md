@@ -4,6 +4,9 @@
 
 # `scripts/probe_soft_tokens.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Probe giờ là multinomial ba lớp, AUROC one-vs-rest theo lớp (raw 0→Neg, 1→Pos, -1→Unc, trống→Neg); không còn `study_presence`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 Trả lời một câu hỏi **trước khi** đốt ~70 giờ GPU cho arm C

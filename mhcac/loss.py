@@ -33,7 +33,14 @@ import torch.nn.functional as F
 #         return total_loss
 
 class ClassificationLoss(nn.Module):
-    """Per-abnormality weighted cross entropy with sample-level masking.
+    """Per-abnormality weighted cross entropy over the paper's THREE classes.
+
+    Negative (0), Positive (1) and Uncertain (2) are always three separate
+    classes, as the META-CXR paper trains them (Eq. 10). There is deliberately
+    no option to fold Uncertain into another class or to drop it: those
+    "uncertain_policy" variants turned the task into a binary one and were
+    removed on 2026-09-29 (D-023). ``IGNORE_LABEL`` (-100) cells -- studies with
+    no CheXpert information -- are the only cells skipped.
 
     ``penalty_weight`` remains in the signature for old configs.  The previous
     implementation computed that penalty and then discarded it, so it is no
@@ -46,21 +53,8 @@ class ClassificationLoss(nn.Module):
         class_weights=None,
         num_abnormalities=14,
         label_smoothing=0.0,
-        uncertain_policy="three_class",
     ):
         super().__init__()
-        valid_policies = {
-            "three_class",
-            "uncertain_as_positive",
-            "uncertain_as_negative",
-            "ignore_uncertain",
-        }
-        if uncertain_policy not in valid_policies:
-            raise ValueError(
-                f"unknown uncertain_policy {uncertain_policy!r}; expected one of "
-                f"{', '.join(sorted(valid_policies))}"
-            )
-        self.uncertain_policy = uncertain_policy
         self.penalty_weight = float(penalty_weight)
         if class_weights is not None:
             if not isinstance(class_weights, (list, tuple)):
@@ -105,12 +99,6 @@ class ClassificationLoss(nn.Module):
             labels_i = true_labels[:, abnormality_idx].long()
             # Also accept -100 for future partially-labelled annotations.
             valid = sample_mask & (labels_i >= 0) & (labels_i < logits.shape[-1])
-            if self.uncertain_policy == "ignore_uncertain":
-                valid = valid & (labels_i != 2)
-            elif self.uncertain_policy == "uncertain_as_positive":
-                labels_i = torch.where(labels_i == 2, 1, labels_i)
-            elif self.uncertain_policy == "uncertain_as_negative":
-                labels_i = torch.where(labels_i == 2, 0, labels_i)
             if valid.any():
                 losses.append(loss_fn(logits[valid, abnormality_idx], labels_i[valid]))
 
@@ -245,10 +233,12 @@ class AbnormalitySpecificLoss(nn.Module):
         margin=0.7,
         d_embedding=768,
         num_abnormalities=14,
-        uncertain_policy="three_class",
     ):
         """
-        Modified InfoNCE Loss for abnormality-specific tokens.
+        Modified InfoNCE Loss for abnormality-specific tokens (paper Eqs. 16-19).
+
+        Always three-class: positive/negative separation plus the uncertain
+        term that keeps Uncertain samples equidistant from both.
 
         Args:
             temperature (float): Temperature parameter for scaling similarity logits.
@@ -258,15 +248,6 @@ class AbnormalitySpecificLoss(nn.Module):
         super(AbnormalitySpecificLoss, self).__init__()
         self.temperature = temperature
         self.margin = margin
-        valid_policies = {
-            "three_class",
-            "uncertain_as_positive",
-            "uncertain_as_negative",
-            "ignore_uncertain",
-        }
-        if uncertain_policy not in valid_policies:
-            raise ValueError(f"unknown uncertain_policy {uncertain_policy!r}")
-        self.uncertain_policy = uncertain_policy
         self.attention_pooling = AttentionPooling(d_embedding, num_abnormalities)
     
     def orthogonality_loss(self, common_representations):
@@ -388,11 +369,6 @@ class AbnormalitySpecificLoss(nn.Module):
             tokens = pooled_representations[:, a, :]  # [batch_size, d_embedding]
             token_labels = labels_for_loss[:, a]  # [batch_size]
 
-            if self.uncertain_policy == "uncertain_as_positive":
-                token_labels = torch.where(token_labels == 2, 1, token_labels)
-            elif self.uncertain_policy == "uncertain_as_negative":
-                token_labels = torch.where(token_labels == 2, 0, token_labels)
-
             # Masks
             pos_mask = (token_labels == 1).float()
             neg_mask = (token_labels == 0).float()
@@ -414,8 +390,7 @@ class AbnormalitySpecificLoss(nn.Module):
             
             # Uncertain Alignment
             if (
-                self.uncertain_policy != "ignore_uncertain"
-                and len(unc_indices) > 0
+                len(unc_indices) > 0
                 and len(pos_indices) > 0
                 and len(neg_indices) > 0
             ):
@@ -691,325 +666,6 @@ loss = loss_fn(logits, true_labels)
 
 print(f"Loss with class weighting: {loss.item()}")
 """
-
-
-class MentionGateLoss(nn.Module):
-    """"Will the report mention this finding at all?", one binary head per label.
-
-    This is the only consumer of the 79.5% of the CheXpert matrix that is blank.
-    Everything else masks those cells out, which is correct for a Positive /
-    Negative / Uncertain question -- a blank is not a negative -- but it leaves
-    the model unable to say "I have nothing to report here". Forced to pick one
-    of three classes for all fourteen findings on every image, it emitted an
-    average of 10.8 positives per study on the test split, and called every
-    single study `No Finding = Positive` while simultaneously flagging 8.8 other
-    findings on it.
-
-    ``pos_weights`` carries (n_not_mentioned / n_mentioned) x kappa per label, so
-    a wrongly silent gate -- the model hiding a finding the radiologist wrote
-    about -- costs kappa times a gate that speaks up unnecessarily. The cap
-    matters as much as the weights: three labels are mentioned so rarely that
-    their raw ratio is 26-79, and applying that unclipped just moves the
-    degenerate "always the majority class" behaviour into the gate.
-
-    ``sample_mask`` drops studies that matched no CheXpert record. Their blank
-    pattern is unknown, not empty, and training them as fourteen zeros would
-    teach the gate to stay silent on exactly the rows with no supervision.
-    """
-
-    def __init__(self, num_abnormalities=14, pos_weights=None, weight_cap=10.0):
-        super().__init__()
-        self.num_abnormalities = num_abnormalities
-        if pos_weights is None:
-            weights = torch.ones(num_abnormalities)
-        else:
-            if len(pos_weights) != num_abnormalities:
-                raise ValueError(
-                    f"pos_weights must hold one value per abnormality: "
-                    f"got {len(pos_weights)} for {num_abnormalities}"
-                )
-            weights = torch.tensor([float(w) for w in pos_weights])
-            if (weights <= 0).any():
-                raise ValueError("pos_weights must be positive")
-            weights = weights.clamp(max=float(weight_cap))
-        self.register_buffer("pos_weight", weights)
-
-    def forward(self, logits, targets, sample_mask=None):
-        if logits.shape != targets.shape:
-            raise ValueError(
-                f"gate logit/target shape mismatch: {tuple(logits.shape)} vs "
-                f"{tuple(targets.shape)}"
-            )
-        if logits.shape[1] != self.num_abnormalities:
-            raise ValueError(
-                f"expected {self.num_abnormalities} abnormalities, got {logits.shape[1]}"
-            )
-
-        if sample_mask is None:
-            sample_mask = torch.ones(
-                logits.shape[0], dtype=torch.bool, device=logits.device
-            )
-        else:
-            sample_mask = torch.as_tensor(
-                sample_mask, dtype=torch.bool, device=logits.device
-            ).reshape(-1)
-            if sample_mask.numel() != logits.shape[0]:
-                raise ValueError("sample_mask must contain one value per batch item")
-        if not sample_mask.any():
-            # Keep the zero connected to the graph for backward/DDP.
-            return logits.sum() * 0.0
-
-        per_cell = F.binary_cross_entropy_with_logits(
-            logits[sample_mask],
-            targets[sample_mask].to(logits.dtype),
-            pos_weight=self.pos_weight.to(logits.dtype),
-            reduction="none",
-        )
-        return per_cell.mean()
-
-
-# Class index convention, shared with ClassificationLoss and the evaluator:
-#   0 = Negative, 1 = Positive, 2 = Uncertain
-_NEGATIVE, _POSITIVE, _UNCERTAIN = 0, 1, 2
-
-
-def mention_marginal_log_probs(conditional_logits, mention_logits):
-    """Marginalise the mention gate into the classification distribution.
-
-    The gate and the classifier used to be two independent heads: the gate could
-    say "this finding is never mentioned" while the classifier said "Positive",
-    and nothing reconciled them, because the gate's prediction was consumed by
-    its own BCE and by nothing else. Measured consequence on the 2026-08-15 run:
-    macro specificity 0.2637, with specificity ~0 on four labels.
-
-    Making the two hierarchical is what actually couples them::
-
-        P(Negative)  = (1 - m) + m * q_negative
-        P(Positive)  =           m * q_positive
-        P(Uncertain) =           m * q_uncertain
-
-    where ``m = sigmoid(mention_logits)`` and ``q = softmax(conditional_logits)``.
-    "Not mentioned" maps onto Negative because that is what an absent finding
-    means in a report. Silence now suppresses positives instead of sitting
-    beside them.
-
-    Computed in log space throughout: ``logsigmoid`` and ``log_softmax`` are
-    stable where ``log(sigmoid(x))`` is not, and the returned tensor is meant to
-    be used exactly like the old logits — ``softmax`` of it recovers the
-    marginals, since they already sum to one.
-
-    conditional_logits: [B, A, C>=2]   mention_logits: [B, A]
-    returns:            [B, A, C]      log of the marginal probabilities
-    """
-    if conditional_logits.ndim != 3:
-        raise ValueError("conditional_logits must be [B, A, C]")
-    if mention_logits.shape != conditional_logits.shape[:2]:
-        raise ValueError(
-            f"mention_logits must be [B, A]; got {tuple(mention_logits.shape)} "
-            f"against {tuple(conditional_logits.shape[:2])}"
-        )
-    num_classes = conditional_logits.shape[-1]
-    if num_classes < 2:
-        raise ValueError("need at least Negative and Positive classes")
-
-    log_m = F.logsigmoid(mention_logits).unsqueeze(-1)          # [B,A,1]
-    log_not_m = F.logsigmoid(-mention_logits).unsqueeze(-1)     # [B,A,1]
-    log_q = F.log_softmax(conditional_logits.float(), dim=-1)   # [B,A,C]
-
-    log_joint = log_m + log_q                                   # mentioned path
-    negative = torch.logaddexp(
-        log_not_m.squeeze(-1), log_joint[..., _NEGATIVE]
-    )
-    parts = [
-        negative if index == _NEGATIVE else log_joint[..., index]
-        for index in range(num_classes)
-    ]
-    return torch.stack(parts, dim=-1)
-
-
-class MentionConditionedClassificationLoss(nn.Module):
-    """One hierarchical likelihood in place of a gate BCE plus a weighted CE.
-
-    Replaces ``ClassificationLoss`` + ``MentionGateLoss``, which optimised two
-    heads that never met::
-
-        not mentioned      ->  -log(1 - m)
-        mentioned, class y ->  -log(m) - log(q[y])
-
-    **No inverse-frequency or clinical-kappa weights.** Those weights were an
-    attempt to buy a decision preference inside the likelihood, and the run they
-    produced shows what that costs: recall 0.9021 against precision 0.6835, four
-    labels at specificity ~0. An operating point belongs in the calibrated
-    thresholds, which this project already fits on validation after training;
-    the training objective should estimate probabilities, not pick a threshold.
-
-    An ignored class cell (uncertain policy, or a blank the labeler never wrote)
-    still trains the **mention** term — whether a finding was written about is
-    known even when its polarity is not. Only the conditional class term drops.
-    ``pos_weights`` upweights the **wrong-silence** term only. 79.5% of cells are
-    blank, so an unweighted mention term makes silence the majority answer and
-    charges hiding a finding the radiologist did write about exactly as much as
-    mentioning one they did not -- measured ratio 1.00x, against 4-10x in the
-    separate gate BCE this replaces. ``alpha = n_not_mentioned / n_mentioned``
-    per label, capped. That is class balancing and nothing more: no clinical
-    kappa is applied here.
-
-    WARNING: weighting the mention term means ``m`` is no longer a calibrated
-    mention probability. Its odds are inflated by ``alpha``, so a raw 0.5
-    threshold corresponds to a true probability of ``1/(1+alpha)``. Recover it
-    with ``logit(p) = logit(m) - log(alpha)``, or fit the gate threshold on
-    validation. The conditional class term stays unweighted and calibrated.
-    """
-
-    def __init__(self, pos_weights=None, num_abnormalities=14, weight_cap=10.0):
-        super().__init__()
-        if pos_weights is None:
-            weights = torch.ones(num_abnormalities)
-        else:
-            if len(pos_weights) != num_abnormalities:
-                raise ValueError(
-                    "pos_weights must hold one value per abnormality: got "
-                    f"{len(pos_weights)} for {num_abnormalities}"
-                )
-            weights = torch.tensor([float(w) for w in pos_weights])
-            if (weights <= 0).any():
-                raise ValueError("pos_weights must be positive")
-            weights = weights.clamp(max=float(weight_cap))
-        self.register_buffer("pos_weight", weights)
-
-    def forward(
-        self,
-        conditional_logits,
-        mention_logits,
-        labels,
-        mention_targets,
-        sample_mask=None,
-    ):
-        if conditional_logits.ndim != 3:
-            raise ValueError("conditional_logits must be [B, A, C]")
-        if mention_logits.shape != conditional_logits.shape[:2]:
-            raise ValueError("mention_logits must be [B, A]")
-        if labels.shape != conditional_logits.shape[:2]:
-            raise ValueError("labels must be [B, A]")
-        if mention_targets.shape != conditional_logits.shape[:2]:
-            raise ValueError("mention_targets must be [B, A]")
-
-        device = conditional_logits.device
-        labels = labels.to(device)
-        mention_targets = mention_targets.to(device=device)
-        if sample_mask is None:
-            rows = torch.ones(
-                conditional_logits.shape[0], dtype=torch.bool, device=device
-            )
-        else:
-            rows = torch.as_tensor(
-                sample_mask, dtype=torch.bool, device=device
-            ).reshape(-1)
-            if rows.numel() != conditional_logits.shape[0]:
-                raise ValueError("sample_mask must hold one value per batch item")
-
-        zero = conditional_logits.sum() * 0.0
-        if not rows.any():
-            return zero
-
-        log_m = F.logsigmoid(mention_logits)
-        log_not_m = F.logsigmoid(-mention_logits)
-        mentioned = mention_targets > 0.5
-        active = rows[:, None].expand_as(mentioned)
-
-        # Mention term: every cell of every supervised study.
-        weight = self.pos_weight.to(device=device, dtype=log_m.dtype)
-        if weight.numel() != mentioned.shape[1]:
-            raise ValueError(
-                f"pos_weight has {weight.numel()} entries but there are "
-                f"{mentioned.shape[1]} abnormalities"
-            )
-        mention_term = torch.where(
-            mentioned, -log_m * weight[None, :], -log_not_m
-        )
-        mention_term = mention_term * active.to(mention_term.dtype)
-        mention_count = active.sum()
-
-        # Conditional term: only mentioned cells whose class survived masking.
-        log_q = F.log_softmax(conditional_logits.float(), dim=-1)
-        usable = active & mentioned & (labels >= 0) & (labels < log_q.shape[-1])
-        if usable.any():
-            picked = log_q.gather(
-                -1, labels.clamp_min(0).unsqueeze(-1).long()
-            ).squeeze(-1)
-            class_term = (-picked * usable.to(picked.dtype)).sum() / usable.sum()
-        else:
-            class_term = zero
-
-        return mention_term.sum() / mention_count.clamp_min(1) + class_term
-
-
-def mention_gate_is_trained(lambda_gate, lambda_mention_conditioned_cls):
-    """Whether any objective gives the MHCAC mention heads a gradient.
-
-    The heads are built unconditionally so the parameter set never depends on a
-    loss weight. When this returns False their output is the random
-    initialisation, and nothing downstream may read it as a probability.
-    """
-    return float(lambda_gate) > 0 or float(lambda_mention_conditioned_cls) > 0
-
-
-def build_classification_losses(
-    *,
-    class_weights,
-    label_smoothing,
-    uncertain_policy,
-    lambda_cls,
-    lambda_gate,
-    lambda_mention_conditioned_cls,
-    gate_class_weights=None,
-    mention_conditioned_pos_weights=None,
-    num_abnormalities=14,
-):
-    """Build the P/N/U classification loss and the two optional gate objectives.
-
-    Returns ``(cls_loss_fn, gate_loss_fn, mention_conditioned_loss_fn)``.
-
-    ``class_weights`` goes to the P/N/U cross entropy and nowhere else.
-    ``gate_class_weights`` only ever reaches ``MentionGateLoss`` (a separate BCE
-    added to the total only while ``lambda_gate > 0``), and
-    ``mention_conditioned_pos_weights`` only reaches
-    ``MentionConditionedClassificationLoss``, which is not built at all unless
-    ``lambda_mention_conditioned_cls > 0``. So with both lambdas at 0 nothing
-    about the gate touches the P/N/U head's loss or weights.
-    ``tests/test_gate_off.py`` pins this.
-    """
-    if float(lambda_mention_conditioned_cls) > 0:
-        if float(lambda_gate) > 0:
-            raise ValueError(
-                "lambda_mention_conditioned_cls subsumes lambda_gate; set "
-                "lambda_gate: 0.0"
-            )
-        if float(lambda_cls) > 0:
-            raise ValueError(
-                "lambda_mention_conditioned_cls subsumes lambda_cls; set "
-                "lambda_cls: 0.0"
-            )
-    cls_loss_fn = ClassificationLoss(
-        class_weights=class_weights,
-        num_abnormalities=num_abnormalities,
-        label_smoothing=label_smoothing,
-        uncertain_policy=uncertain_policy,
-    )
-    # Built unconditionally so the parameter/buffer set does not depend on a
-    # loss weight; it contributes only while lambda_gate > 0.
-    gate_loss_fn = MentionGateLoss(
-        num_abnormalities=num_abnormalities, pos_weights=gate_class_weights
-    )
-    mention_conditioned_loss_fn = (
-        MentionConditionedClassificationLoss(
-            num_abnormalities=num_abnormalities,
-            pos_weights=mention_conditioned_pos_weights,
-        )
-        if float(lambda_mention_conditioned_cls) > 0
-        else None
-    )
-    return cls_loss_fn, gate_loss_fn, mention_conditioned_loss_fn
 
 
 def smoothed_cross_entropy(logits, targets, label_smoothing):

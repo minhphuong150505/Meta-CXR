@@ -17,8 +17,9 @@ Design constraints:
   the point of the bug, not three metrics later.
 
 Label encoding matches ``ReportDataset``: ``0=negative, 1=positive,
-2=uncertain``. ``-1`` marks a genuinely missing label; see
-``training/evaluation/uncertain_policy.py`` for how each policy treats them.
+2=uncertain`` -- always three classes, as in the META-CXR paper. ``-1`` marks a
+study with no CheXpert information; every metric skips it and nothing else is
+merged or dropped (D-023).
 """
 
 from __future__ import annotations
@@ -42,13 +43,6 @@ MISSING = -1
 #: Canonical class order, matching ``CLASS_MAP`` in
 #: ``training/train_eval_figure9_llm_variants_200.py``.
 CLASS_NAMES = ("negative", "positive", "uncertain")
-
-#: Labels in the 14-column CheXpert vector that are not pathologies. ``No
-#: Finding`` is a meta-label (the negation of the other thirteen) and ``Support
-#: Devices`` is equipment. Averaging either into a macro pathology score is not
-#: what the radiology literature reports, so they are excluded from macro
-#: aggregates by default and still reported per-label.
-META_LABELS = ("No Finding", "Support Devices")
 
 
 class SchemaError(ValueError):
@@ -78,13 +72,6 @@ class ClassificationPredictions:
     sample_keys:
         ``[N]`` array of opaque per-study keys. Never a raw MIMIC identifier
         unless the caller explicitly opted in.
-    mention_probabilities:
-        Optional ``[N, P]`` float array: the mention gate's ``P(the report
-        mentions this finding at all)``. Present only for runs whose eval hook
-        collected the gate. It is what
-        :func:`training.evaluation.label_framing.presence_scores` multiplies
-        ``q_positive`` by to get ``P(present)``; without it the
-        ``marginal_presence`` score is unavailable.
     """
 
     labels: np.ndarray
@@ -94,7 +81,6 @@ class ClassificationPredictions:
     logits: np.ndarray | None = None
     view_positions: np.ndarray | None = None
     num_views: np.ndarray | None = None
-    mention_probabilities: np.ndarray | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -135,16 +121,6 @@ class ClassificationPredictions:
                     f"{self.probabilities.shape}"
                 )
 
-        if self.mention_probabilities is not None:
-            self.mention_probabilities = np.asarray(
-                self.mention_probabilities, dtype=np.float64
-            )
-            if self.mention_probabilities.shape != self.labels.shape:
-                raise SchemaError(
-                    f"mention_probabilities shape {self.mention_probabilities.shape} "
-                    f"!= labels shape {self.labels.shape}"
-                )
-
         bad = np.unique(self.labels[(self.labels < MISSING) | (self.labels >= self.num_classes)])
         if bad.size:
             raise SchemaError(
@@ -157,7 +133,7 @@ class ClassificationPredictions:
             worst = float(np.max(np.abs(sums - 1.0)))
             logger.warning(
                 "probabilities do not sum to 1 along the class axis "
-                "(max deviation %.4g); AUROC/AUPRC use the positive column as-is",
+                "(max deviation %.4g); per-class AUROC uses each column as-is",
                 worst,
             )
 
@@ -172,17 +148,6 @@ class ClassificationPredictions:
     @property
     def num_classes(self) -> int:
         return int(self.probabilities.shape[2])
-
-    @property
-    def positive_probabilities(self) -> np.ndarray:
-        """``[N, P]`` probability of the positive class.
-
-        This is the score AUROC/AUPRC and threshold calibration operate on. It
-        is deliberately the raw positive column rather than a renormalised
-        positive-vs-rest quantity: renormalising would change the ranking when
-        the uncertain mass differs between samples.
-        """
-        return self.probabilities[..., POSITIVE]
 
     def save(self, path: str | Path) -> Path:
         """Write a compressed ``.npz``. Returns the path actually written."""
@@ -200,8 +165,6 @@ class ClassificationPredictions:
             arrays["view_positions"] = np.asarray(self.view_positions, dtype="U")
         if self.num_views is not None:
             arrays["num_views"] = np.asarray(self.num_views)
-        if self.mention_probabilities is not None:
-            arrays["mention_probabilities"] = self.mention_probabilities
         arrays["metadata_json"] = np.asarray(json.dumps(self.metadata, default=str))
         np.savez_compressed(path, **arrays)
         logger.info(
@@ -231,23 +194,8 @@ class ClassificationPredictions:
                     handle["view_positions"] if "view_positions" in handle else None
                 ),
                 num_views=handle["num_views"] if "num_views" in handle else None,
-                mention_probabilities=(
-                    handle["mention_probabilities"]
-                    if "mention_probabilities" in handle
-                    else None
-                ),
                 metadata=metadata,
             )
-
-    def macro_pathology_indices(self, include_meta_labels: bool = False) -> list[int]:
-        """Column indices that macro aggregates should average over."""
-        if include_meta_labels:
-            return list(range(self.num_pathologies))
-        return [
-            index
-            for index, name in enumerate(self.pathology_names)
-            if name not in META_LABELS
-        ]
 
 
 def build_sample_keys(

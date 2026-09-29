@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""Calibrate per-pathology positive-class thresholds on the validation split.
+"""Fit the paper's per-class thresholds on the VALIDATION predictions.
+
+META-CXR Sec. V-C / Fig. 11: for every finding and each of its three classes,
+take the one-vs-rest ROC of that class's probability and keep the threshold
+closest to the top-left corner, ``sqrt((1-TPR)^2 + FPR^2)`` (Eq. 22). The
+result is one threshold per (finding, class). They decide which findings the
+Stage-2 prompt lists as Positive / Negative / Uncertain; the classification
+metrics themselves use argmax.
+
+Fit on validation, never on test.
 
     python scripts/calibrate_thresholds.py \\
-        --predictions outputs/val_predictions.npz \\
-        --objective f1 \\
-        --uncertain-policy ignore_uncertain \\
-        --output outputs/thresholds.json
-
-The split name is written into the output file, and ``evaluate_stage1.py``
-refuses a threshold file recorded against a test split. Calibrating a threshold
-on test and then reporting test metrics with it is the classic way to publish an
-optimistically biased number; the two scripts are wired so it cannot happen by
-accident.
-
-Exit codes: 0 success, 1 calibration failed, 2 bad arguments or input.
+        --predictions <run>/result/val_predictions_epoch_best.npz \\
+        --output <private dir>/class_thresholds.json
 """
 
 from __future__ import annotations
@@ -27,168 +26,44 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from training.evaluation.label_framing import (  # noqa: E402
-    DEFAULT_FRAMING,
-    DEFAULT_SCORE,
-    FRAMINGS,
-    SCORES,
-    ScoreUnavailableError,
-    apply_framing,
-)
-from training.evaluation.schemas import ClassificationPredictions  # noqa: E402
+from training.evaluation.schemas import CLASS_NAMES, ClassificationPredictions  # noqa: E402
 from training.evaluation.threshold_calibration import (  # noqa: E402
-    DEFAULT_OBJECTIVE,
-    DEFAULT_PLATEAU_FRACTION,
-    DEFAULT_SELECTION,
-    OBJECTIVES,
-    SELECTIONS,
-    CalibrationError,
-    calibrate_thresholds,
+    ThresholdFile,
+    fit_class_thresholds,
 )
-from training.evaluation.uncertain_policy import DEFAULT_POLICY, POLICIES  # noqa: E402
 
 logger = logging.getLogger("calibrate_thresholds")
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument("--predictions", required=True, type=Path)
-    parser.add_argument("--objective", default=DEFAULT_OBJECTIVE, choices=sorted(OBJECTIVES))
-    parser.add_argument("--uncertain-policy", default=DEFAULT_POLICY, choices=sorted(POLICIES))
-    parser.add_argument(
-        "--constraint",
-        type=float,
-        default=0.5,
-        help="Precision floor for recall_at_precision, or recall floor for "
-        "precision_at_recall. Ignored by the other objectives.",
-    )
-    parser.add_argument(
-        "--split",
-        default="validation",
-        help="Split these predictions came from. A test split is refused.",
-    )
-    parser.add_argument(
-        "--min-positive",
-        type=int,
-        default=1,
-        help="Pathologies with fewer positives keep the 0.5 default.",
-    )
-    parser.add_argument(
-        "--selection",
-        default=DEFAULT_SELECTION,
-        choices=sorted(SELECTIONS),
-        help="Where to stand on the objective curve. 'argmax' takes its exact "
-        "peak (historical default); 'plateau' takes the middle of the "
-        "near-optimal region, which transfers better from a validation split "
-        "this size.",
-    )
-    parser.add_argument(
-        "--plateau-fraction",
-        type=float,
-        default=DEFAULT_PLATEAU_FRACTION,
-        help="With --selection plateau, candidates scoring at least this "
-        "fraction of the peak count as near-optimal.",
-    )
-    parser.add_argument(
-        "--label-framing",
-        default=DEFAULT_FRAMING,
-        choices=sorted(FRAMINGS),
-        help="Which question the labels answer. 'masked_polarity' scores "
-        "polarity given the finding was mentioned (blank cells masked); "
-        "'study_presence' scores whether the study has the finding at all "
-        "(blank/uncertain = not present). Must match the value used at "
-        "evaluation time.",
-    )
-    parser.add_argument(
-        "--score",
-        default=DEFAULT_SCORE,
-        choices=sorted(SCORES),
-        help="'conditional_positive' uses the polarity head alone; "
-        "'marginal_presence' multiplies it by the mention gate and requires "
-        "mention_probabilities in the prediction file.",
-    )
-    parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--verbose", action="store_true")
-    return parser.parse_args(argv)
-
-
 def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--predictions", required=True, type=Path,
+                        help="VALIDATION prediction .npz.")
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-    if not args.predictions.is_file():
-        logger.error("prediction file not found: %s", args.predictions)
+    predictions = ClassificationPredictions.load(args.predictions)
+    split = str(predictions.metadata.get("split", "unknown"))
+    if split == "test":
+        logger.error("refusing to fit thresholds on the test split")
         return 2
+    thresholds = fit_class_thresholds(predictions)
+    ThresholdFile(
+        thresholds=thresholds,
+        metadata={
+            "source": str(args.predictions),
+            "split": split,
+            "num_samples": predictions.num_samples,
+            "rule": "per (finding, class): argmin sqrt((1-TPR)^2 + FPR^2) on the "
+                    "one-vs-rest ROC (META-CXR Eq. 22)",
+        },
+    ).save(args.output)
 
-    try:
-        predictions = ClassificationPredictions.load(args.predictions)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("could not read %s: %s", args.predictions, exc)
-        return 2
-
-    if predictions.num_samples == 0:
-        logger.error("%s contains no samples", args.predictions)
-        return 2
-
-    try:
-        predictions = apply_framing(predictions, args.label_framing, args.score)
-    except ScoreUnavailableError as exc:
-        logger.error("%s", exc)
-        return 2
-
-    logger.info(
-        "label framing %r, score %r", args.label_framing, args.score
-    )
-    logger.info(
-        "calibrating %d pathologies on %d studies from split %r",
-        predictions.num_pathologies,
-        predictions.num_samples,
-        args.split,
-    )
-
-    try:
-        result = calibrate_thresholds(
-            predictions,
-            split=args.split,
-            objective=args.objective,
-            uncertain_policy=args.uncertain_policy,
-            constraint=args.constraint,
-            min_positive=args.min_positive,
-            selection=args.selection,
-            plateau_fraction=args.plateau_fraction,
-        )
-    except CalibrationError as exc:
-        logger.error("%s", exc)
-        return 2
-
-    result.save(args.output)
-
-    calibrated = [t for t in result.thresholds if t.calibrated]
-    skipped = [t for t in result.thresholds if not t.calibrated]
-    logger.info("calibrated %d pathologies, %d kept the default", len(calibrated), len(skipped))
-    for threshold in skipped:
-        logger.warning("%s kept threshold 0.5: %s", threshold.name, threshold.reason)
-
-    print(f"\n{'pathology':<30} {'thr':>6} {'obj@thr':>9} {'obj@0.5':>9} {'n+':>6}")
-    print("-" * 64)
-    for threshold in result.thresholds:
-        objective_score = (
-            "n/a" if threshold.objective_score != threshold.objective_score
-            else f"{threshold.objective_score:.4f}"
-        )
-        default_score = (
-            "n/a" if threshold.default_threshold_score != threshold.default_threshold_score
-            else f"{threshold.default_threshold_score:.4f}"
-        )
-        print(
-            f"{threshold.name:<30} {threshold.threshold:>6.3f} {objective_score:>9} "
-            f"{default_score:>9} {threshold.n_positive:>6}"
-        )
+    print(f"{'finding':28s} " + " ".join(f"{c:>10s}" for c in CLASS_NAMES))
+    for name, by_class in thresholds.items():
+        print(f"{name:28s} " + " ".join(f"{by_class[c]:10.4f}" for c in CLASS_NAMES))
     print(f"\nwrote {args.output}")
     return 0
 

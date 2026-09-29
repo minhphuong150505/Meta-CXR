@@ -124,8 +124,8 @@ def clean_chexpert(
     # according to blank_label_policy.
     #
     #   negative  blank -> 0. The original META-CXR paper ("missing (NaN) values
-    #             were treated as the negative class") and the study_presence
-    #             evaluation framing. The shipped policy from 2026-09-24.
+    #             were treated as the negative class"). The shipped policy from
+    #             2026-09-24.
     #   ignore    blank -> IGNORE_LABEL, dropped per cell by every consumer. The
     #             policy from 2026-08-13 to 2026-09-24: a blank means the
     #             labeler found no mention, which is not a radiologist ruling

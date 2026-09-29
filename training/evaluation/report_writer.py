@@ -8,8 +8,7 @@ value passes through :func:`_json_safe`, which turns nan/inf into ``null``, and
 the accompanying ``skipped`` section says *why* a value is null.
 
 **No number without its provenance.** The metadata block records the git commit,
-the checkpoint, the split, the seed, the uncertain policy, the threshold source
-and the version of every metric package. A metric table that cannot be traced
+the checkpoint, the split, the seed, the threshold source and the version of every metric package. A metric table that cannot be traced
 back to a run is not usable in a thesis.
 """
 
@@ -31,13 +30,15 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 #: Metrics whose headline value is worth a confidence interval.
+#: The paper's three-class numbers (Fig. 10, Tables 5/7, Fig. 5).
 HEADLINE_CLASSIFICATION_METRICS = (
-    "positive_macro_f1",
-    "positive_macro_recall",
-    "positive_macro_precision",
-    "macro_auroc",
-    "macro_auprc",
-    "positive_micro_f1",
+    "weighted_precision",
+    "weighted_recall",
+    "weighted_f1",
+    "mean_weighted_f1_5",
+    "auroc_positive_mean",
+    "auroc_negative_mean",
+    "auroc_uncertain_mean",
 )
 
 HEADLINE_GENERATION_METRICS = (
@@ -138,7 +139,6 @@ class ExperimentMetadata:
     checkpoint: str = "unknown"
     config: str = "unknown"
     seed: int = 42
-    uncertain_policy: str = "unknown"
     threshold_source: str = "unknown"
     num_pathologies: int = 0
     extra: dict[str, Any] = field(default_factory=dict)
@@ -154,7 +154,6 @@ class ExperimentMetadata:
             "checkpoint": self.checkpoint,
             "config": self.config,
             "seed": self.seed,
-            "uncertain_policy": self.uncertain_policy,
             "threshold_source": self.threshold_source,
             "device": _device(),
             "platform": platform.platform(),
@@ -274,7 +273,6 @@ def build_markdown_report(
         + f"| Checkpoint | `{meta['checkpoint']}` |\n"
         + f"| Config | `{meta['config']}` |\n"
         + f"| Seed | {meta['seed']} |\n"
-        + f"| Uncertain policy | `{meta['uncertain_policy']}` |\n"
         + f"| Threshold source | `{meta['threshold_source']}` |\n"
         + f"| Device | {meta['device']} |\n"
         + f"| Git commit | `{meta['git_commit']}` |\n"
@@ -333,36 +331,28 @@ def _classification_section(payload: dict[str, Any]) -> str:
     if payload.get("baseline_table"):
         parts.append(
             "### Baseline comparison\n\n"
-            "A model whose accuracy is close to `all_negative` while its positive "
-            "macro F1 is near 0 has not learned to detect findings.\n\n"
+            "Same three-class protocol. A model close to `all_negative` or "
+            "`majority_class` has learned the class imbalance, not the findings."
+            "\n\n"
             + payload["baseline_table"]
         )
 
     rows = payload.get("per_pathology", [])
     if rows:
         header = (
-            "| Pathology | n+ | Prev. | P | R | F1 | AUROC | AUPRC | Thr. |\n"
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+            "| Finding | n Neg | n Pos | n Unc | wP | wR | wF1 | "
+            "AUC Pos | AUC Neg | AUC Unc |\n"
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
         )
         body = "".join(
-            f"| {row['pathology']} | {row['support_positive']} | "
-            f"{_fmt(row['prevalence'])} | {_fmt(row['precision'])} | "
-            f"{_fmt(row['recall'])} | {_fmt(row['f1'])} | {_fmt(row['auroc'])} | "
-            f"{_fmt(row['auprc'])} | {_fmt(row['threshold'])} |\n"
+            f"| {row['pathology']} | {row['n_negative']} | {row['n_positive']} | "
+            f"{row['n_uncertain']} | {_fmt(row['weighted_precision'])} | "
+            f"{_fmt(row['weighted_recall'])} | {_fmt(row['weighted_f1'])} | "
+            f"{_fmt(row['auroc_positive'])} | {_fmt(row['auroc_negative'])} | "
+            f"{_fmt(row['auroc_uncertain'])} |\n"
             for row in rows
         )
         parts.append("### Per-pathology\n\n" + header + body)
-
-    skipped = payload.get("skipped", {})
-    if skipped:
-        lines = "\n".join(
-            f"- **{name}**: {', '.join(reasons)}" for name, reasons in sorted(skipped.items())
-        )
-        parts.append(
-            "### Pathologies with undefined metrics\n\n"
-            "These are **excluded** from the macro averages rather than counted "
-            "as zero.\n\n" + lines
-        )
 
     if payload.get("calibration_table"):
         parts.append("### Threshold calibration\n\n" + payload["calibration_table"])

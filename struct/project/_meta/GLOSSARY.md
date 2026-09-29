@@ -4,6 +4,9 @@
 
 # Glossary
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Các thuật ngữ `study_presence`, `masked_polarity`, `marginal_presence`, `conditional_positive`, `marginal_positive`, mention gate, `uncertain_policy`, `positive_macro_f1` mô tả code đã bị XÓA. Thuật ngữ hiện hành: argmax ba lớp, weighted P/R/F1 theo bệnh, `mean_weighted_f1_5`, AUROC one-vs-rest theo lớp, Eq. 21 (`p1/(p0+p1)`, chỉ Bảng 4), Eq. 22 (ngưỡng theo lớp, chỉ prompt Stage 2). Xem [D-023](DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 Chỉ những thuật ngữ **thực sự xuất hiện** trong Meta-CXR. Không giải thích khái
 niệm ML tổng quát trừ khi repo dùng nó theo nghĩa riêng.
 

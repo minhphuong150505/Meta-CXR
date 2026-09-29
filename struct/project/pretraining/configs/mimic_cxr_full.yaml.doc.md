@@ -4,6 +4,9 @@
 
 # `pretraining/configs/mimic_cxr_full.yaml`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Đã XÓA khỏi YAML: `gate_class_weights`, `mention_conditioned_pos_weights`, `uncertain_policy` (model và run), `include_meta_labels`, `lambda_gate`, `lambda_mention_conditioned_cls`, `report_study_presence`. Viết lại chúng sẽ bị `pretraining/retired_keys.py` từ chối. Xem [D-023](../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 **Recipe Stage 1 production**: full MIMIC-CXR p10–p19, một GPU; recipe
 classification thuần.

@@ -4,6 +4,9 @@
 
 # `training/run_medgemma_qlora.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `--cue-rule` ∈ {`argmax` (mặc định), `paper_thresholds` (cần `--threshold-path`), `none`}; `--finding-tokens` ∈ {`off`, `q_only`}. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 Entrypoint Stage 2. Resolve kiến trúc từ `--pipeline-mode`, dựng record, gọi động

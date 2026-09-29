@@ -7,6 +7,9 @@ hữu hạn) và `siglip_loss` (SigLIP, chỉ trên cặp hợp lệ) — cả h
 
 # `mhcac/loss.py`
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `ClassificationLoss(penalty_weight, class_weights, num_abnormalities, label_smoothing)` luôn ba lớp, không có `uncertain_policy`; `AbnormalitySpecificLoss` luôn tính term uncertain. Đã XÓA: `MentionGateLoss`, `mention_marginal_log_probs`, `MentionConditionedClassificationLoss`, `mention_gate_is_trained`, `build_classification_losses`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 ## Purpose
 
 **Nơi duy nhất** định nghĩa hàm loss của Stage 1. Sáu thành phần, ba trong số đó

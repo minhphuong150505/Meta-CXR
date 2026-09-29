@@ -58,7 +58,6 @@ from vision_encoders.pubmedclip.preprocess import (  # noqa: E402
 from model.lavis.data.chexpert_labels import (  # noqa: E402
     IGNORE_LABEL,
     attach_chexpert_labels,
-    mention_column,
     prepare_chexpert_labels,
     resolve_blank_label_policy,
 )
@@ -345,21 +344,14 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                 "CheXpert CSV is not unique by (subject_id, study_id); refusing "
                 "a many-to-many label merge."
             )
-        # Mention-gate targets ("did the report mention this finding at all?",
-        # one per abnormality), the blank-cell policy, excluded_labels and the
-        # per-row flags all live in chexpert_labels.prepare_chexpert_labels, so
-        # the CPU suite can pin them. The order there is load-bearing: mention
-        # targets are taken from the raw export BEFORE blanks are filled, and
-        # excluded_labels are applied AFTER.
-        #
-        # `No Finding` stays covered by the gate even when it is excluded from
-        # the classification head: "was No Finding mentioned" is "did the
-        # radiologist call this study normal", 74,305 vs 148,453 on train.
+        # The blank-cell policy, excluded_labels and the per-row flags all live
+        # in chexpert_labels.prepare_chexpert_labels, so the CPU suite can pin
+        # them. Labels are always the paper's three classes (0 negative,
+        # 1 positive, 2 uncertain); there is no binary mention target (D-023).
         #
         # BLANK POLICY (model.mhcac.blank_label_policy):
         #   negative  blank -> 0, as in the original META-CXR paper ("missing
-        #             (NaN) values were treated as the negative class") and as
-        #             the study_presence evaluation framing already reads it.
+        #             (NaN) values were treated as the negative class").
         #             Shipped in mimic_cxr_full.yaml from 2026-09-24.
         #   ignore    blank -> IGNORE_LABEL, dropped per cell. The policy from
         #             2026-08-13 to 2026-09-24, and the DEFAULT when the key is
@@ -371,7 +363,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         # train (the labeler writes 1.0 or leaves it blank, never 0.0), so it
         # can only teach a constant; under `negative` its blanks become real
         # negatives. excluded_labels masks a column out of the classification
-        # head and the offline evaluator alike; the gate still covers it.
+        # head and the offline evaluator alike.
         mhcac_cfg = cfg.model_cfg.get("mhcac", {}) or {}
         self.blank_label_policy = resolve_blank_label_policy(
             mhcac_cfg.get("blank_label_policy", None)
@@ -384,7 +376,6 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             excluded_labels=list(excluded or []),
         )
         self.excluded_labels = [c for c in (excluded or []) if c in self.chexpert_cols]
-        self.mention_cols = [mention_column(c) for c in self.chexpert_cols]
         print(f"CheXpert blank_label_policy: {self.blank_label_policy}")
 
         # Two flags, deliberately: `_has_chexpert_label_raw` records whether the
@@ -483,7 +474,7 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             processed_has_label = self._coerce_bool(
                 self.annotation["has_chexpert_label"], "has_chexpert_label"
             ).to_numpy()
-        # Join, classification_valid, mention_valid, and IGNORE_LABEL on every
+        # Join, classification_valid, and IGNORE_LABEL on every
         # label of a study that matched no CheXpert record -- under either
         # blank policy. See chexpert_labels.attach_chexpert_labels.
         self.annotation = attach_chexpert_labels(
@@ -493,28 +484,11 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             label_key=label_key,
             processed_has_label=processed_has_label,
         )
-        # Hand the gate targets to __getitem__ as a plain [N, 14] array indexed
-        # by row position, and drop the columns again.
-        #
-        # This is not premature optimisation. Leaving them in the DataFrame took
-        # __getitem__ from 42.5 ms to 687 ms per study -- 16x -- because
-        # `self.annotation.iloc[i]` on a mixed-dtype frame has to consolidate
-        # every block into one object Series, so the cost scales with the column
-        # count and adding fourteen int8 columns fell off a pandas cliff. It cut
-        # the loader from 92.9 studies/s to roughly 17 and put GPU utilisation
-        # back down to 15%, which is how it was found. Measured 2026-08-15.
-        self._mention_matrix = self.annotation[self.mention_cols].to_numpy(
-            dtype="float32", copy=True
-        )
-        self._mention_valid = self.annotation["mention_valid"].to_numpy(
-            dtype=bool, copy=True
-        )
         self.annotation = self.annotation.drop(
             columns=[
                 "_has_chexpert_label_raw",
                 "_has_usable_label",
                 "_chexpert_merge",
-                *self.mention_cols,
             ]
         ).reset_index(drop=True)
 
@@ -1166,12 +1140,6 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
             "classification_labels": torch.tensor(chexpert_labels, dtype=torch.long),  # Convert to tensor
             "classification_mask": torch.tensor(
                 bool(ann["classification_valid"]), dtype=torch.bool
-            ),
-            "mention_targets": torch.from_numpy(
-                self._mention_matrix[study["anchor"]].copy()
-            ),
-            "mention_mask": torch.tensor(
-                bool(self._mention_valid[study["anchor"]]), dtype=torch.bool
             ),
             "generation_mask": torch.tensor(bool(ann["target_valid"]), dtype=torch.bool),
             "dicom_id": ann["dicom_id"],

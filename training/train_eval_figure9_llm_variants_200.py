@@ -72,7 +72,6 @@ try:
         private_bucket_violations,
         safe_prediction_row,
         section_omission_rate,
-        select_threshold_class,
         stable_fingerprint,
     )
 except ImportError:  # ``python -m training...``
@@ -88,7 +87,6 @@ except ImportError:  # ``python -m training...``
         private_bucket_violations,
         safe_prediction_row,
         section_omission_rate,
-        select_threshold_class,
         stable_fingerprint,
     )
 
@@ -277,29 +275,20 @@ def run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
 
 
 def load_thresholds(path: str | Path | None) -> dict[str, dict[str, float]]:
-    """Load an explicitly selected calibration artifact, or use argmax."""
+    """Load the paper's per-class thresholds, or ``{}`` for the argmax rule.
+
+    Only files written by ``scripts/calibrate_thresholds.py`` (one threshold per
+    finding and per class, META-CXR Eq. 22) are accepted. Binary positive-only
+    and mention-gate threshold files were retired on 2026-09-29 (D-023) and are
+    refused rather than half-read.
+    """
     if path is None:
         return {}
-    threshold_path = Path(path)
-    payload = json.loads(threshold_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or not payload:
-        raise ValueError(f"threshold file must contain a non-empty JSON object: {threshold_path}")
-    calibrated: dict[str, dict[str, float]] = {}
-    for abnormality, values in payload.items():
-        if not isinstance(values, dict):
-            raise ValueError(f"threshold entry for {abnormality!r} must be an object")
-        class_thresholds = {}
-        for class_name, value in values.items():
-            if class_name not in CLASS_MAP and class_name not in CUE_THRESHOLD_KEYS:
-                raise ValueError(f"unknown threshold class {class_name!r} for {abnormality!r}")
-            numeric = float(value)
-            if not 0.0 <= numeric <= 1.0:
-                raise ValueError(f"threshold for {abnormality!r}/{class_name!r} is outside [0, 1]")
-            if class_name == POSITIVE_ENABLED_KEY and numeric not in (0.0, 1.0):
-                raise ValueError("positive_enabled must be 0 or 1")
-            class_thresholds[class_name] = numeric
-        calibrated[str(abnormality)] = class_thresholds
-    return calibrated
+    from training.evaluation.threshold_calibration import (
+        load_thresholds as load_class_thresholds,
+    )
+
+    return load_class_thresholds(path)
 
 
 def assert_private_gcs_destination(gcs_path: str) -> str:
@@ -391,29 +380,22 @@ def field_value(field, index: int = 0) -> str:
         return str(field)
 
 
-#: Extra per-abnormality keys for cue emission: validation-fit thresholds and
-#: an explicit binary enable flag for selective positive cues.
-MENTION_THRESHOLD_KEY = "mention"
-MARGINAL_THRESHOLD_KEY = "marginal_positive"
-POSITIVE_ENABLED_KEY = "positive_enabled"
-CUE_THRESHOLD_KEYS = frozenset({MENTION_THRESHOLD_KEY, MARGINAL_THRESHOLD_KEY, POSITIVE_ENABLED_KEY})
-DEFAULT_MENTION_THRESHOLD = 0.5
-DEFAULT_MARGINAL_THRESHOLD = 0.5
-
-#: How MHCAC predictions become P/N/U cues.
-CUE_RULE_CONDITIONAL = "conditional_positive"
-CUE_RULE_MENTION_GATED = "mention_gated"
-CUE_RULE_MARGINAL = "marginal_positive"
+#: How MHCAC's three-class predictions become the prompt's P/N/U groups.
+#: Always three classes; there is no binary / mention-gated rule (D-023).
+CUE_RULE_ARGMAX = "argmax"
+#: Paper Sec. III-E-3 / Fig. 11: list a finding under a class only when that
+#: class's probability reaches its per-class threshold; otherwise leave it out.
+CUE_RULE_PAPER = "paper_thresholds"
 #: Withhold structured predictions; retain the visual inputs and task instruction.
 CUE_RULE_NONE = "none"
-CUE_RULES = (CUE_RULE_CONDITIONAL, CUE_RULE_MENTION_GATED, CUE_RULE_MARGINAL,
-             CUE_RULE_NONE)
+CUE_RULES = (CUE_RULE_ARGMAX, CUE_RULE_PAPER, CUE_RULE_NONE)
+DEFAULT_CUE_RULE = CUE_RULE_ARGMAX
 
 
 def with_cue_state(record: dict, cue_rule: str) -> dict:
     """Annotate fresh/legacy cached groups without changing cached tensors."""
     if cue_rule not in CUE_RULES:
-        raise ValueError(f"unknown cue_rule: {cue_rule!r}")
+        raise ValueError(f"unknown cue_rule: {cue_rule!r}; expected one of {CUE_RULES}")
     groups = record.get("pred_groups", {})
     if cue_rule == CUE_RULE_NONE:
         groups = {"positive": [], "negative": [], "uncertain": []}
@@ -423,117 +405,62 @@ def with_cue_state(record: dict, cue_rule: str) -> dict:
     return {**record, "pred_groups": groups, "cue_rule": cue_rule, "cue_state": state}
 
 
-def validate_selective_thresholds(context: Stage1Context, cue_rule: str) -> None:
-    """Selective artifacts must explicitly enable/disable every reportable label."""
-    if not any(POSITIVE_ENABLED_KEY in values for values in context.thresholds.values()):
+def validate_cue_thresholds(context: Stage1Context, cue_rule: str) -> None:
+    """``paper_thresholds`` needs a per-class threshold for every reportable finding."""
+    if cue_rule != CUE_RULE_PAPER:
         return
-    if cue_rule != CUE_RULE_MARGINAL:
-        raise ValueError("selective thresholds require cue_rule=marginal_positive")
+    if not context.thresholds:
+        raise ValueError(
+            "cue_rule=paper_thresholds needs --threshold-path: a file from "
+            "scripts/calibrate_thresholds.py fitted on the Stage-1 VALIDATION "
+            "predictions"
+        )
     for name in ABNORMALITIES_14:
         if name == "No Finding":
             continue
-        values = context.threshold_for(name)
-        if values.get(POSITIVE_ENABLED_KEY) not in (0, 1) or MARGINAL_THRESHOLD_KEY not in values:
-            raise ValueError(f"selective thresholds need positive_enabled and marginal_positive for {name}")
+        missing = [c for c in CLASS_MAP if c not in context.threshold_for(name)]
+        if missing:
+            raise ValueError(f"threshold file lacks {missing} for {name}")
 
 
 def classify_with_thresholds(
     context: Stage1Context,
     logits: torch.Tensor,
-    mention_logits: torch.Tensor | None = None,
     *,
-    cue_rule: str = CUE_RULE_CONDITIONAL,
+    cue_rule: str = DEFAULT_CUE_RULE,
 ) -> dict[str, list[str]]:
-    """Turn MHCAC predictions into the P/N/U cue lists the prompt carries.
+    """Turn MHCAC's three-class predictions into the prompt's P/N/U groups.
 
-    ``logits`` is ``q``: polarity CONDITIONAL on the finding having been
-    mentioned. 79.5% of the CheXpert matrix is blank and those cells are masked
-    out of the classification loss, so this head never saw "absent from the
-    report" and cannot say whether a finding is present at all.
-
-    Three rules, measured on val/test of ``run_20260820_ft`` (macro over the 13
-    reportable findings, ``study_presence`` truth, thresholds fitted on val):
-
-    ==========================  =========  ======  ==========
-    rule                        precision  recall  cues/study
-    ==========================  =========  ======  ==========
-    conditional_positive         0.1887    0.8097     8.46
-    mention_gated (m>=0.60)      0.2357*   0.4364*    2.30*
-    marginal_positive            0.4069    0.3135     1.46
-    ==========================  =========  ======  ==========
-
-    Rows marked val-only are the middle one. About 1.6 findings are actually present per study, so
-    ``conditional_positive`` -- the rule every recorded run used -- asserts
-    roughly five times more than exists. For the rare findings it degenerates
-    into a constant: Fracture and Pleural Other come out at recall 1.000 with
-    precision equal to their prevalence, i.e. "always say yes". Support Devices,
-    the most common finding at 34.4%, is never called positive at all.
-
-    ``marginal_positive`` thresholds ``sigmoid(m) * q_pos`` per label and emits
-    ONLY the positive group. Nothing is asserted absent: a wrong negative cue
-    can suppress a real finding, and this repo has measured nothing about
-    negative-cue quality. Emitting fewer, better cues is the point -- MedGemma
-    still has the image, so a missing cue costs little while a false one is
-    injected straight into the prompt.
-
-    ``mention_gated`` opens the gate per label, then reads the class off ``q``.
-    Kept because it is the rule CLAUDE.md prescribes, but it measured worse
-    than thresholding the marginal, so it is not the recommendation.
-
-    ⚠ Deliberately never an argmax over the marginal. With 79.5% of cells blank
-    that makes Positive mathematically unwinnable even for a perfect
-    conditional classifier, and once drove validation F1 to exactly 0.000000.
-
-    ⚠ ``m`` is not calibrated -- the gate trains with inverse-frequency weights
-    capped at 10 -- so both thresholds must be fitted on validation and passed
-    in the threshold JSON under ``"mention"`` / ``"marginal_positive"``.
-
-    Default is ``conditional_positive``, so every recorded run keeps emitting
-    exactly what it emitted.
+    ``argmax``: every reportable finding goes to its most probable class, as the
+    reference code classifies. ``paper_thresholds``: a finding goes to a class
+    only when that class's probability reaches its validation-fitted threshold
+    (the one furthest above its threshold if several do); a finding with no
+    class above threshold is left out of the prompt, as the paper describes.
+    ``none``: no structured cues. ``No Finding`` is never listed.
     """
     if cue_rule not in CUE_RULES:
         raise ValueError(f"cue_rule must be one of {CUE_RULES}, got {cue_rule!r}")
-    validate_selective_thresholds(context, cue_rule)
-    if cue_rule == CUE_RULE_NONE:
-        return {"positive": [], "negative": [], "uncertain": []}
-    probs = torch.softmax(logits, dim=-1).tolist()
-    gate = None
-    if cue_rule != CUE_RULE_CONDITIONAL:
-        if mention_logits is None:
-            raise ValueError(
-                f"cue_rule={cue_rule!r} needs mention_logits. Stage-1 records "
-                "built before the gate was threaded through carry none; rebuild "
-                "them rather than silently falling back to q-only cues."
-            )
-        gate = torch.sigmoid(mention_logits.reshape(-1).float()).tolist()
-        if len(gate) != len(ABNORMALITIES_14):
-            raise ValueError(
-                f"mention_logits has {len(gate)} entries, expected "
-                f"{len(ABNORMALITIES_14)}"
-            )
-    positive_index = list(CLASS_MAP).index("positive")
+    validate_cue_thresholds(context, cue_rule)
     out = {"positive": [], "negative": [], "uncertain": []}
-    for index, (abn, p) in enumerate(zip(ABNORMALITIES_14, probs)):
+    if cue_rule == CUE_RULE_NONE:
+        return out
+    probs = torch.softmax(logits.float(), dim=-1).tolist()
+    classes = list(CLASS_MAP)
+    for abn, p in zip(ABNORMALITIES_14, probs):
         if abn == "No Finding":
             continue
-        thresholds = context.threshold_for(abn)
-        if cue_rule == CUE_RULE_MARGINAL:
-            if not thresholds.get(POSITIVE_ENABLED_KEY, 1):
-                continue
-            score = gate[index] * float(p[positive_index])
-            floor = float(
-                thresholds.get(MARGINAL_THRESHOLD_KEY, DEFAULT_MARGINAL_THRESHOLD)
-            )
-            if score >= floor:
-                out["positive"].append(abn)
+        if cue_rule == CUE_RULE_ARGMAX:
+            out[classes[max(range(len(p)), key=lambda i: p[i])]].append(abn)
             continue
-        if cue_rule == CUE_RULE_MENTION_GATED:
-            floor = float(
-                thresholds.get(MENTION_THRESHOLD_KEY, DEFAULT_MENTION_THRESHOLD)
-            )
-            if gate[index] < floor:
-                continue
-        out[select_threshold_class(p, thresholds, tuple(CLASS_MAP))].append(abn)
+        thresholds = context.threshold_for(abn)
+        margins = [
+            (float(p[i]) - float(thresholds[c]), c)
+            for i, c in enumerate(classes)
+            if thresholds.get(c) is not None and not math.isnan(float(thresholds[c]))
+            and float(p[i]) >= float(thresholds[c])
+        ]
+        if margins:
+            out[max(margins)[1]].append(abn)
     return out
 
 
@@ -620,7 +547,7 @@ def stage1_cohort_fingerprint(
     checkpoint_root: Path,
     split: str,
     sample_limit: int | None,
-    cue_rule: str = CUE_RULE_CONDITIONAL,
+    cue_rule: str = DEFAULT_CUE_RULE,
     finding_tokens: str = FINDING_TOKENS_OFF,
 ) -> tuple[str, dict[str, Any]]:
     ckpt_path = stage1_checkpoint_path(context, checkpoint_root)
@@ -639,9 +566,9 @@ def stage1_cohort_fingerprint(
         "vis_root_name": Path(VIS_ROOT).name,
     }
     # Part of the identity because it changes `pred_groups`, which is cached.
-    # Omitted when off so every cache built before the gate existed still hits.
-    if cue_rule != CUE_RULE_CONDITIONAL:
-        payload["cue_rule"] = cue_rule
+    # Always present since the three-class cue rules replaced the gate-based
+    # ones (D-023), so no cache built under a retired rule can be reused.
+    payload["cue_rule"] = cue_rule
     # Same pattern for the experimental finding-token branch: it needs
     # `class_logits` on every record, which older caches do not carry. Omitted
     # when off so every existing cache still hits.
@@ -653,8 +580,8 @@ def stage1_cohort_fingerprint(
 def assert_class_logits_present(records: list[dict], finding_tokens: str) -> None:
     """Fail closed when a finding-token run is handed records without ``q``.
 
-    A cache built before this branch existed carries `mention_logits` and
-    `pred_groups` but no `class_logits`. Falling back would train the encoder on
+    A cache built before this branch existed carries `pred_groups` but no
+    `class_logits`. Falling back would train the encoder on
     whatever happened to be there; the cache identity is supposed to prevent
     this reaching us at all, so if it does, something is wrong upstream.
     """
@@ -684,7 +611,7 @@ def build_stage1_records(
     split: str,
     sample_limit: int | None,
     num_workers: int,
-    cue_rule: str = CUE_RULE_CONDITIONAL,
+    cue_rule: str = DEFAULT_CUE_RULE,
     finding_tokens: str = FINDING_TOKENS_OFF,
 ) -> list[dict]:
     """Build Q-Former records. Stage-1 only -- native MedGemma must not call this.
@@ -695,7 +622,7 @@ def build_stage1_records(
     ``MIMIC_CXR_Dataset``, so routing native mode through it would reintroduce
     exactly the Stage-1 coupling the pipeline split exists to remove.
     """
-    validate_selective_thresholds(context, cue_rule)
+    validate_cue_thresholds(context, cue_rule)
     validate_finding_token_mode(finding_tokens)
     cohort_id, cohort = stage1_cohort_fingerprint(
         context, checkpoint_root, split, sample_limit, cue_rule, finding_tokens
@@ -760,20 +687,13 @@ def build_stage1_records(
             for key, value in batch.items()
             if key in image_input_keys and torch.is_tensor(value)
         }
-        logits, qformer, mention = model.forward_image(
-            model_inputs, return_mention=True
-        )
-        mention_cpu = mention[0].detach().cpu().float()
-        # Stored raw and always, so a later analysis can re-derive cues under a
-        # different rule without another encode pass. 14 floats per study.
-        record["mention_logits"] = mention_cpu
+        logits, qformer = model.forward_image(model_inputs)
         # Stored raw and always, so the experimental finding-token branch and any
         # later analysis can read `q` without a second encode pass. 42 floats.
         record["class_logits"] = logits[0].detach().cpu().float()
         record["pred_groups"] = classify_with_thresholds(
             context,
             logits[0].detach().cpu(),
-            mention_cpu,
             cue_rule=cue_rule,
         )
         record["qformer_embs"] = qformer[0].detach().cpu().to(torch.float16)
@@ -1443,9 +1363,7 @@ class VariantLLM:
                 "--finding-tokens needs class_logits on the record; this one "
                 "predates the branch. Rebuild the Stage-1 records."
             )
-        features = finding_features(
-            class_logits, record.get("mention_logits"), self.finding_tokens
-        )
+        features = finding_features(class_logits, self.finding_tokens)
         return apply_finding_feature_ablation(features, self.finding_feature_ablation)
 
     def collate_train(self, records: list[dict], max_length: int = 768) -> dict[str, torch.Tensor]:

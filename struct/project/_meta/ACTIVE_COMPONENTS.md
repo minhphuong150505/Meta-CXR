@@ -4,6 +4,9 @@
 
 # Active Components
 
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Đã XÓA: `training/evaluation/label_framing.py`, `uncertain_policy.py`, `scripts/calibrate_cue_precision.py`, `configs/stage1_thresholds_f1_val.json`, `configs/stage2_cue_thresholds_marginal_pfit.json`, `MentionGateLoss`, `MentionConditionedClassificationLoss`, `mhcac.mention_heads`. Mới: `pretraining/retired_keys.py`, `training/evaluation/paper_protocol.py`, `scripts/evaluate_chexpert_crossdomain.py`, `scripts/evaluate_clinical_efficacy.py`. Xem [D-023](DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+
+
 Bản đồ những gì **thực sự đang chạy**. Mọi mục ở đây có caller cụ thể, kiểm chứng
 được — không có mục nào dựa trên giả định.
 

@@ -18,7 +18,11 @@ cannot either, and the extra channel is decoration.
 
   probe AUROC ~ 0.50   the readout collapsed; do NOT spend 70 h on arm C
   probe AUROC 0.60+    real signal survives; img_proj has something to learn
-  probe AUROC ~ 0.76   near MHCAC's own test macro AUROC (0.7643)
+
+The probe is THREE-class, like the paper: a multinomial logistic regression
+over Negative / Positive / Uncertain per finding (blank = Negative), scored as
+one-vs-rest AUROC per class (paper Fig. 5). Compare it with the Stage-1 run's
+own ``auroc_*_mean`` from scripts/evaluate_stage1.py on the same split.
 
 Two shape diagnostics run beside it, because a degenerate readout has a
 signature this repo has seen before: PubMedCLIP's raw patch tokens had a fixed
@@ -49,9 +53,9 @@ CHEXPERT_14 = [
     "No Finding", "Pleural Effusion", "Pleural Other", "Pneumonia",
     "Pneumothorax", "Support Devices",
 ]
-# Excluded from the macro exactly as the Stage-1 evaluator excludes them:
-# they are meta labels, not findings.
-META_LABELS = {"No Finding", "Support Devices"}
+CLASS_NAMES = ("negative", "positive", "uncertain")
+#: Raw CheXpert values -> class index; blank is Negative, as in the paper.
+RAW_TO_CLASS = {0.0: 0, 1.0: 1, -1.0: 2}
 
 
 def main() -> int:
@@ -166,49 +170,59 @@ def main() -> int:
     X = pooled.numpy()[keep]
     sub = lut.loc[[p for p, h in zip(paths, hit) if h]]
 
-    # `study_presence` framing: blank / negative / uncertain all mean "not
-    # present". This is the framing the project reports F1 and AUROC under, and
-    # the only one under which the number is comparable to MHCAC's 0.7643.
-    results: dict[str, float] = {}
-    shuffled: dict[str, float] = {}
+    # Three classes per finding, blank = Negative (paper). Per class, a
+    # one-vs-rest AUROC of the out-of-fold multinomial probability; classes
+    # with fewer than 20 studies are not scored.
+    results: dict[str, dict[str, float]] = {}
+    shuffled: dict[str, dict[str, float]] = {}
     rng = np.random.default_rng(fig9.SEED)
     for label in present:
-        y = (pd.to_numeric(sub[label], errors="coerce").fillna(0.0).to_numpy() == 1.0)
-        y = y.astype(int)
-        if y.sum() < 20 or (len(y) - y.sum()) < 20:
-            continue  # too few of one class for a stable per-label AUROC
+        raw = pd.to_numeric(sub[label], errors="coerce").fillna(0.0).to_numpy()
+        y = np.array([RAW_TO_CLASS.get(float(v), 0) for v in raw], dtype=int)
+        counts = np.bincount(y, minlength=3)
+        scored = [c for c in range(3) if counts[c] >= 20 and (len(y) - counts[c]) >= 20]
+        if len(scored) == 0 or (counts > 0).sum() < 2:
+            continue
         for name, target in (("real", y), ("shuffled", rng.permutation(y))):
-            oof = np.zeros(len(target), dtype=float)
+            oof = np.zeros((len(target), 3), dtype=float)
             skf = StratifiedKFold(n_splits=args.folds, shuffle=True,
                                   random_state=fig9.SEED)
             for tr, te in skf.split(X, target):
                 sc = StandardScaler().fit(X[tr])
-                # Strong L2: 768 features against ~1.5k rows overfits without it,
-                # and an overfitted probe reports the labels back to itself.
+                # Strong L2: 768 features against ~1.5k rows overfits without it.
                 clf = LogisticRegression(C=0.01, max_iter=2000, solver="lbfgs")
                 clf.fit(sc.transform(X[tr]), target[tr])
-                oof[te] = clf.predict_proba(sc.transform(X[te]))[:, 1]
-            (results if name == "real" else shuffled)[label] = float(
-                roc_auc_score(target, oof)
-            )
+                proba = clf.predict_proba(sc.transform(X[te]))
+                oof[np.ix_(te, clf.classes_)] = proba
+            (results if name == "real" else shuffled)[label] = {
+                CLASS_NAMES[c]: float(roc_auc_score(target == c, oof[:, c]))
+                for c in scored
+            }
 
     if not results:
-        print("[probe] no label had enough of both classes", file=sys.stderr)
+        print("[probe] no label had enough of two classes", file=sys.stderr)
         return 1
 
-    findings = {k: v for k, v in results.items() if k not in META_LABELS}
-    macro = float(np.mean(list(findings.values()))) if findings else float("nan")
-    macro_shuf = float(np.mean([shuffled[k] for k in findings])) if findings else float("nan")
+    def class_mean(table, cls):
+        values = [v[cls] for v in table.values() if cls in v]
+        return float(np.mean(values)) if values else float("nan")
 
-    print("\n[probe] per-label AUROC (5-fold CV, study_presence framing)")
-    for label in sorted(results, key=results.get, reverse=True):
-        tag = "  (meta, excluded from macro)" if label in META_LABELS else ""
-        print(f"    {label:<28} {results[label]:.4f}   "
-              f"shuffled {shuffled[label]:.4f}{tag}")
-    print(f"\n[probe] MACRO AUROC over {len(findings)} findings: {macro:.4f}")
-    print(f"[probe] same probe on SHUFFLED labels:      {macro_shuf:.4f}  "
+    per_class = {cls: class_mean(results, cls) for cls in CLASS_NAMES}
+    per_class_shuf = {cls: class_mean(shuffled, cls) for cls in CLASS_NAMES}
+    macro = float(np.nanmean(list(per_class.values())))
+    macro_shuf = float(np.nanmean(list(per_class_shuf.values())))
+
+    print("\n[probe] per-label one-vs-rest AUROC (5-fold CV, three classes)")
+    for label in sorted(results):
+        cells = "  ".join(
+            f"{cls[:3]} {results[label][cls]:.4f}/{shuffled[label][cls]:.4f}"
+            for cls in CLASS_NAMES if cls in results[label]
+        )
+        print(f"    {label:<28} {cells}   (real/shuffled)")
+    print("\n[probe] mean AUROC per class: " + ", ".join(
+        f"{cls} {per_class[cls]:.4f}" for cls in CLASS_NAMES))
+    print(f"[probe] mean over classes: {macro:.4f}   shuffled labels: {macro_shuf:.4f}  "
           f"(must be ~0.50, or the probe leaks)")
-    print(f"[probe] MHCAC's own test macro AUROC:        0.7643  (reference)")
 
     verdict = ("GO -- soft tokens carry signal" if macro >= 0.60 else
                "MARGINAL -- weak signal, arm C is a gamble" if macro >= 0.55 else
@@ -223,11 +237,11 @@ def main() -> int:
             "stage1_run": args.stage1_run,
             "cosine_across_studies": across_studies,
             "cosine_within_study": within_studies,
-            "auroc_per_label": results,
-            "auroc_per_label_shuffled": shuffled,
-            "macro_auroc_findings": macro,
-            "macro_auroc_findings_shuffled": macro_shuf,
-            "mhcac_reference_macro_auroc": 0.7643,
+            "auroc_per_label_per_class": results,
+            "auroc_per_label_per_class_shuffled": shuffled,
+            "auroc_mean_per_class": per_class,
+            "auroc_mean": macro,
+            "auroc_mean_shuffled": macro_shuf,
             "verdict": verdict,
         }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(f"[probe] wrote {args.report}")

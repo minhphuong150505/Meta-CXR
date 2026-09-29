@@ -174,171 +174,28 @@ model:
   max_txt_len: 256
 
   mhcac:
-    # BLANK CHEXPERT CELLS: `negative` (blank -> class 0) or `ignore` (blank ->
-    # IGNORE_LABEL, dropped per cell). A config WITHOUT this key gets `ignore`,
-    # so every older config and ablation reproduces exactly; an unknown value
-    # raises. See model/lavis/data/chexpert_labels.py.
+    # ⚠⚠ THREE CLASSES, NEVER BINARY (D-023, 2026-09-29). Every finding is
+    # Negative (0) / Positive (1) / Uncertain (2), trained with a three-class
+    # weighted CE and evaluated with the paper's three-class protocol. The
+    # mention gate, the mention-conditioned objective, uncertain_policy and the
+    # study_presence evaluation framing were REMOVED; naming any of their keys
+    # (gate_class_weights, mention_conditioned_pos_weights, uncertain_policy,
+    # lambda_gate, lambda_mention_conditioned_cls) now raises. See
+    # pretraining/retired_keys.py.
     #
-    # ⚠ REVERSED 2026-09-24, `ignore` -> `negative`, at the user's request. The
-    # original META-CXR paper (Edirisinghe et al., IEEE Access 2025) states
-    # "missing (NaN) values were treated as the negative class" and upstream
-    # uses fillna(0.0); the study_presence evaluation framing, the only one
-    # this repo quotes F1 under, already reads a blank as "not present". The
-    # 2026-08-13 reasoning for `ignore` -- a blank is absence of evidence, not
-    # evidence of absence -- still holds as a caveat, and `ignore` remains one
-    # line away for an ablation.
-    #
-    # Under both policies a study with no CheXpert information (no record, or a
-    # record with all fourteen cells blank) keeps IGNORE_LABEL everywhere and
-    # stays out of classification_valid. Mention-gate targets are taken before
-    # the fill and are identical under both; excluded_labels applies after.
-    #
-    # ⚠ The descriptions below of No Finding, the class weights and the "79.5%
-    # blank share" were written under `ignore`. The class weights have been
-    # recomputed for `negative`; the rest is kept as history.
+    # BLANK CHEXPERT CELLS: `negative` (blank -> class 0, as the paper: "missing
+    # (NaN) values were treated as the negative class") or `ignore` (blank ->
+    # IGNORE_LABEL, dropped per cell; the default when the key is absent). A
+    # study with no CheXpert information at all stays IGNORE_LABEL under both.
+    # See model/lavis/data/chexpert_labels.py.
     blank_label_policy: negative
-    # Labels masked out of training AND evaluation entirely, because they cannot
-    # be learned under the blank-masking policy. Counted on the source CheXpert
-    # export at study level, 2026-08-15:
-    #
-    #   No Finding   train 74,305 positive / 0 negative / 0 uncertain
-    #                val      582 / 0 / 0      test  568 / 0 / 0
-    #
-    # This is structural, not a data shortage: the labeler sets No Finding to
-    # 1.0 when the report describes no abnormality and leaves it blank
-    # otherwise -- it never emits 0.0. Every surviving cell is a positive, so
-    # the only thing the loss can teach is "always predict positive", with
-    # nothing to push back, while one expert token and one classification head
-    # are spent learning a constant.
-    #
-    # ⚠ IT IS NOT FREE. 22.3% of train studies (49,760) carry No Finding as
-    # their ONLY label; masking it leaves them with no usable cell, so they stop
-    # contributing to the classification loss and to the explanation loss, which
-    # needs at least one positive. Studies left with nothing: 50,484 of 227,827.
-    # They still feed lambda_mpc and view consistency, which need no labels.
-    #
-    # The alternative, NOT done here, is to derive No Finding negatives from the
-    # presence of any other positive finding. That would keep those 49,760
-    # studies and make the label learnable, at the cost of inventing labels the
-    # export does not contain. Set this to [] to train it as-is instead.
-    # PUT BACK 2026-08-15, at the user's request, now that the mention gate
-    # exists. The reasoning is sound and worth recording: only 33.4% of studies
-    # have `No Finding` written at all, so "was it mentioned" carries real
-    # information, and the 49,760 train studies that carry it as their only
-    # label are no longer stranded -- they train the gate across all fourteen
-    # cells regardless of what this list says.
-    #
-    # What it does NOT recover is a learnable Positive/Negative split: among the
-    # 74,305 mentioned cells, 74,305 are Positive and none are Negative, in all
-    # three splits. The classification head can only learn a constant for it,
-    # and it re-enters the per-pathology table at a free F1 of 1.0000. It stays
-    # out of the macro through run.include_meta_labels: false.
-    #
-    # A limitation to state rather than paper over: some of the 148,453
-    # not-mentioned studies genuinely are normal and simply were not described
-    # that way, so the gate's target for this label is noisy in one direction --
-    # missing positives, never spurious ones.
+    # No Finding is trained as a finding like the other thirteen, as the paper
+    # does (its Fig. 5 covers all 14). Under `negative` it has real negatives:
+    # 74,305 pos / 146,074 neg on train.
     excluded_labels: []
-    # ⚠ excluded_labels applies to the CLASSIFICATION head only. The mention
-    # gate below still covers No Finding, and deliberately: "was No Finding
-    # mentioned" is "did the radiologist call this study normal", 74,305 vs
-    # 148,453 -- a well-posed binary, unlike its P/N split which has no
-    # negatives at all.
-    #
-    # GATE WEIGHTS: w = (n_not_mentioned / n_mentioned) x kappa_gate, kappa 2,
-    # capped at 10. kappa 2 makes the gate wrongly silent -- the model hiding a
-    # finding the radiologist did write about -- cost twice a gate that speaks
-    # up needlessly. The cap is not cosmetic: five labels have raw ratios of
-    # 17-157 and applying those unclipped just relocates "always answer the
-    # majority class" into the gate. Measured on train, 2026-08-15.
-    #
-    # ⚠ kappa_gate LOWERED 2 -> 1 on 2026-08-20. Under the study_presence
-    # framing the gate carries most of the presence decision, and measured
-    # macro precision was 0.2776 with five labels below 0.25. kappa 2 charged a
-    # silent gate twice a talkative one on top of inverse-frequency weights
-    # that already correct the imbalance; at kappa 1 the two errors cost the
-    # same once frequency is accounted for. Three labels stay at the cap
-    # because their raw ratio alone exceeds 10.
-    gate_class_weights:
-      -  1.998   # No Finding                 mentioned  74,305 / not 148,453
-      -  9.498   # Enlarged Cardiomediastinum     21,219 / 201,539
-      -  2.423   # Cardiomegaly                   65,084 / 157,674
-      -  2.921   # Lung Opacity                   56,818 / 165,940
-      - 10.000   # Lung Lesion                     8,046 / 214,712  raw 26.69 CAPPED
-      -  2.480   # Edema                          64,003 / 158,755
-      -  8.910   # Consolidation                  22,479 / 200,279
-      -  2.854   # Pneumonia                      57,794 / 164,964
-      -  2.959   # Atelectasis                    56,261 / 166,497
-      -  3.239   # Pneumothorax                   52,548 / 170,210
-      -  1.620   # Pleural Effusion               85,013 / 137,745
-      - 10.000   # Pleural Other                   2,802 / 219,956  raw 78.50 CAPPED
-      - 10.000   # Fracture                        5,708 / 217,050  raw 38.03 CAPPED
-      -  2.251   # Support Devices                68,520 / 154,238
-    # WRONG-SILENCE WEIGHTS for the hierarchical mention-conditioned loss.
-    # Only read when loss.lambda_mention_conditioned_cls > 0.
-    #
-    # alpha = n_not_mentioned / n_mentioned per label, capped at 10. Pure class
-    # balancing -- NO clinical kappa here, unlike gate_class_weights above which
-    # carry kappa 2 on top.
-    #
-    # Without it the hierarchy charges hiding a finding the radiologist DID
-    # write about exactly as much as mentioning one they did not: measured 1.00x,
-    # against 4-10x in the gate BCE it replaces. With 79.5% of cells blank, that
-    # symmetry makes silence the majority answer.
-    #
-    # ⚠ This makes `m` no longer a calibrated mention probability: its odds are
-    # inflated by alpha, so a raw 0.5 threshold means a true probability of
-    # 1/(1+alpha). Recover with logit(p) = logit(m) - log(alpha), or fit the gate
-    # threshold on validation. The conditional class term stays unweighted.
-    mention_conditioned_pos_weights:
-      -  1.998   # No Finding                    74,305 / 148,453
-      -  9.498   # Enlarged Cardiomediastinum    21,219 / 201,539
-      -  2.423   # Cardiomegaly                  65,084 / 157,674
-      -  2.921   # Lung Opacity                  56,818 / 165,940
-      - 10.000   # Lung Lesion                    8,046 / 214,712  raw 26.69 CAPPED
-      -  2.480   # Edema                         64,003 / 158,755
-      -  8.910   # Consolidation                 22,479 / 200,279
-      -  2.854   # Pneumonia                     57,794 / 164,964
-      -  2.959   # Atelectasis                   56,261 / 166,497
-      -  3.239   # Pneumothorax                  52,548 / 170,210
-      -  1.620   # Pleural Effusion              85,013 / 137,745
-      - 10.000   # Pleural Other                  2,802 / 219,956  raw 78.50 CAPPED
-      - 10.000   # Fracture                       5,708 / 217,050  raw 38.03 CAPPED
-      -  2.251   # Support Devices               68,520 / 154,238
-    # CLASSIFICATION WEIGHTS: [w_negative, w_positive, w_uncertain].
-    # w_positive = (n_negative / n_positive) x kappa, capped at 10.
-    #
-    # The (n_neg/n_pos) part is FULL inverse frequency, not the square root the
-    # previous values used. sqrt deliberately under-corrects, and the residual
-    # was not small: it left 12 of 14 labels pushing toward Positive, by up to
-    # 5.36x for Atelectasis, and the measured specificity tracked it almost
-    # monotonically -- Atelectasis 0.000, Support Devices 0.000, Lung Opacity
-    # 0.017, against 0.675 for Edema whose ratio was already 1.02. Full inverse
-    # frequency brings every label to 1.00 before any clinical preference is
-    # applied.
-    #
-    # kappa is that clinical preference: how much worse a miss is than a false
-    # alarm. It is a medical judgement, not a tuning knob, and this table is a
-    # PROPOSAL that needs a clinician's sign-off before any published claim.
-    #   kappa 4  Pneumothorax
-    #   kappa 3  Pneumonia, Edema, Consolidation
-    #   kappa 2  Pleural Effusion, Cardiomegaly, Atelectasis, Lung Lesion,
-    #            Fracture, Pleural Other
-    #   kappa 1  Support Devices, Lung Opacity, Enlarged Cardiomediastinum
-    #
-    # ⚠ kappa does not create skill. AUROC is fixed at 0.7776; kappa only picks
-    # an operating point on that curve, trading specificity for sensitivity.
-    # What may actually improve the model here is the gate, which puts the 79.5%
-    # blank share of the label matrix to work for the first time.
-    #
-    # ⚠ EVERY kappa LOWERED TO 1 on 2026-08-20, i.e. pure inverse frequency
-    # with no clinical preference on top. Reason: measured macro precision of
-    # 0.2776 under study_presence, and the repo's own note above that kappa
-    # only picks an operating point rather than creating skill -- while
-    # thresholds are calibrated on validation afterwards anyway, which already
-    # picks that operating point and does it better. Nothing here is a
-    # clinical judgement any more, which also retires the un-signed-off kappa
-    # table. Pneumothorax leaves the cap entirely: 4.060 is its raw ratio.
+    # CLASSIFICATION WEIGHTS: [w_negative, w_positive, w_uncertain],
+    # w_c = n_negative / n_c, capped at 10 (paper Eq. 10 names class weights but
+    # gives no values; these are inverse frequency).
     #
     # ⚠ RECOMPUTED 2026-09-24 FOR `blank_label_policy: negative`. Same formula
     # as the table it replaces -- [1.0, n_neg/n_pos, n_neg/n_unc], kappa 1,
@@ -366,8 +223,7 @@ model:
     #
     # The imbalance flips back: negatives are the majority for every label, and
     # 7 of 14 w_pos sit at the cap. w_uncertain is 10 (capped) everywhere except
-    # No Finding (no uncertain cells, 1.0). It is LIVE since 2026-09-25 (D-022):
-    # uncertain_policy is three_class, so class-2 cells train as their own class.
+    # No Finding (no uncertain cells, 1.0). Live: Uncertain is its own class.
     # No Finding is in this head (excluded_labels: []) and, under `negative`,
     # has real negatives for the first time.
     #
@@ -414,11 +270,6 @@ model:
     layer_order: self_first
     text_mask: element
     text_dropout: 0.2
-    # ⚠ three_class, 2026-09-25 (user decision, D-022), as the paper: Uncertain
-    # is the third class of the P/N/U softmax, weighted by w_uncertain above,
-    # and AbnormalitySpecificLoss adds its uncertain-alignment term. Was
-    # ignore_uncertain (class-2 cells dropped) from 2026-08 to 2026-09-24.
-    uncertain_policy: three_class
     # Defaults are sqrt inverse-frequency weights derived from the full
     # study-level train split; [] disables weighting for an ablation.
     label_smoothing: 0.05
@@ -669,61 +520,8 @@ model:
     # scalar, so neither term is observable on its own).
     lambda_explanation: 0.0
     lambda_explanation_strong: 0.0
-    # Mention gate. 0.0 disables it entirely (no gradient reaches the heads,
-    # though they are still built so the parameter set is stable).
-    # ⚠ MENTION GATE OFF, 2026-09-24 (user decision, "phuong an A"; D-019).
-    # The gate existed to give the model somewhere to put "not mentioned" while
-    # blank cells were MASKED out of the P/N/U loss. With
-    # mhcac.blank_label_policy: negative the blanks train the P/N/U head
-    # directly as negatives, so that reason is gone: P(finding present) is read
-    # straight from the P/N/U softmax (q_pos), as in the original paper.
-    # The code, the heads and gate_class_weights are KEPT for ablation -- set
-    # this back to 0.5 to re-enable. With it at 0 (and
-    # lambda_mention_conditioned_cls at 0) the heads never train, so the eval
-    # hook stops exporting mention_probabilities and 'marginal_presence'
-    # scoring raises. Was 0.5 from 2026-08-15.
-    lambda_gate: 0.0
-    # HIERARCHICAL ALTERNATIVE to (lambda_cls + lambda_gate). OFF by default.
-    #
-    # The gate and the classifier are two heads that never met: the gate could
-    # answer "never mentioned" while the classifier answered "Positive", and
-    # nothing reconciled them, because the gate's prediction fed its own BCE and
-    # nothing else. It was added to stop the model over-calling findings and it
-    # did not work -- measured on the run that finished 2026-08-16, test split,
-    # calibrated thresholds, ignore_uncertain:
-    #
-    #   macro_specificity 0.2637   recall 0.9021 vs precision 0.6835
-    #   specificity ~0 on Support Devices (0.000), Fracture (0.000),
-    #   Lung Opacity (0.017), Atelectasis (0.100)
-    #
-    # Setting this > 0 makes them one likelihood instead:
-    #
-    #   not mentioned      ->  -log(1 - m)
-    #   mentioned, class y ->  -log(m) - log(q[y])
-    #   P(Neg) = (1-m) + m*q_neg   P(Pos) = m*q_pos   P(Unc) = m*q_unc
-    #
-    # so silence multiplies the positive down inside the LOSS.
-    #
-    # ⚠ CORRECTED 2026-09-11: an earlier version of this comment said
-    # `classification_logits` becomes the log marginal. IT DOES NOT, and the
-    # code has never done that (blip2_qformer.py, the note beside the loss
-    # call). `classification_logits` stays `q`; the four-state joint is exported
-    # ALONGSIDE as `mention_marginal_log_probs`. Substituting the marginal there
-    # aliases blank onto Negative, makes Positive unwinnable under the
-    # validation argmax, and pinned val F1 at exactly 0.000000 for every epoch
-    # of the smoke. There is no `conditional_classification_logits` key.
-    #
-    # It deliberately carries NO inverse-frequency or clinical-kappa weights:
-    # an operating point belongs in the thresholds this project already
-    # calibrates on validation after training, not inside the likelihood. That
-    # also retires the kappa table that still lacks a clinician's sign-off.
-    #
-    # Enabling it REQUIRES lambda_cls: 0.0 and lambda_gate: 0.0 -- the
-    # constructor raises otherwise rather than let two objectives fight over the
-    # same heads.
-    #
-    # NOT YET RUN ON GPU.
-    lambda_mention_conditioned_cls: 0.0
+    # (lambda_gate / lambda_mention_conditioned_cls: REMOVED 2026-09-29, D-023.
+    # The model has no binary mention head; naming either key raises.)
     # 1024 -> 256 on 2026-08-16. The queue did not cause the collapse, but at
     # batch 16 a 1024 queue holds 64 microbatches of increasingly stale
     # embeddings; 256 still supplies plenty of negatives and refreshes every 16.
@@ -933,11 +731,10 @@ run:
   # KNOWN BIAS, stated so results are read correctly: validation loss is a
   # weighted sum dominated by the frequent labels, so a model that stops
   # predicting a rare finding altogether can score better than one that finds
-  # it sometimes. macro_auprc is per-label and threshold-free and does not have
-  # that failure mode; it was replaced because val is thin for two labels
-  # (Pleural Other 14 positives, Fracture 16), which made its rare-label terms
-  # noisy. Both numbers are logged every scored epoch -- compare which epoch
-  # each would have chosen before quoting either in a write-up.
+  # it sometimes. The paper's three-class metrics (weighted_f1,
+  # mean_weighted_f1_5, auroc_*_mean) are logged every scored epoch too -- any
+  # of them may be named here -- so compare which epoch each would have chosen
+  # before quoting either in a write-up.
   selection_metric: loss
   save_freq: 5
   # Write checkpoint_last this often *within* an epoch. 0 restores the old
@@ -1098,10 +895,6 @@ run:
   save_text_predictions: false
   # Enables offline per-pathology threshold calibration without another GPU pass.
   save_predictions: true
-  # Matches model.mhcac.uncertain_policy (D-022). study_presence metrics (sp_*)
-  # fold uncertain into "not present" whatever this says.
-  uncertain_policy: three_class
-  include_meta_labels: false
 
   device: cuda
   world_size: 1
@@ -1193,7 +986,6 @@ run:
         early_stop_patience: 0
         selection_metric: loss
         save_predictions: false
-        report_study_presence: false
         test_splits: []
     phase1b:
       description: hand-over to MHCAC; META-Former faded out and frozen
@@ -1244,7 +1036,6 @@ run:
         early_stop_patience: 0
         selection_metric: loss
         save_predictions: true
-        report_study_presence: true
         test_splits: []
     phase1c:
       description: joint classification + alignment (w_align = 1.0)
@@ -1317,5 +1108,4 @@ run:
         early_stop_patience: 0
         selection_metric: loss
         save_predictions: true
-        report_study_presence: true
         test_splits: [test]

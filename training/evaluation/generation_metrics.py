@@ -250,7 +250,11 @@ def _cider(predictions: list[str], references: list[str]) -> tuple[float, list[f
 
 
 def _bertscore(
-    predictions: list[str], references: list[str], model_type: str, device: str
+    predictions: list[str],
+    references: list[str],
+    model_type: str,
+    device: str,
+    rescale_with_baseline: bool = False,
 ) -> dict[str, list[float]]:
     try:
         from bert_score import score as bert_score_fn
@@ -263,7 +267,7 @@ def _bertscore(
         references,
         lang="en",
         model_type=model_type,
-        rescale_with_baseline=False,
+        rescale_with_baseline=rescale_with_baseline,
         verbose=False,
         device=device,
     )
@@ -312,6 +316,7 @@ def compute_generation_metrics(
     metrics: tuple[str, ...] = DEFAULT_METRICS,
     bertscore_model: str = "distilbert-base-uncased",
     bertscore_device: str = "cpu",
+    bertscore_rescale: bool = False,
     strict: bool = False,
 ) -> MetricSuite:
     """Compute the requested lexical metrics.
@@ -415,7 +420,8 @@ def compute_generation_metrics(
     if BERTSCORE in metrics:
         try:
             values = _bertscore(
-                predictions, references, bertscore_model, bertscore_device
+                predictions, references, bertscore_model, bertscore_device,
+                rescale_with_baseline=bertscore_rescale,
             )
         except MissingMetricDependency as exc:
             record_unavailable(exc)
@@ -427,7 +433,7 @@ def compute_generation_metrics(
                 "implementation": "bert_score.score",
                 "version": _package_version("bert-score"),
                 "model_type": bertscore_model,
-                "rescale_with_baseline": False,
+                "rescale_with_baseline": bool(bertscore_rescale),
                 "note": (
                     "absolute BERTScore values sit in a narrow high band even for "
                     "unrelated text; compare against a baseline, not against 0"

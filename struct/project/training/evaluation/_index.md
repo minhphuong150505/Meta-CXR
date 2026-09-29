@@ -1,6 +1,6 @@
 > Source: `training/evaluation/` (18 file Python)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-20
+> Last verified against source: 2026-09-29
 
 # `training/evaluation/`
 
@@ -13,7 +13,11 @@ Toàn bộ evaluator cho **cả hai Stage**. Nguyên tắc thiết kế trung t�
 > thuần NumPy, nhưng `scripts/evaluate_explanation.py` phải tạo CAM từ đồ thị
 > autograd sống.
 
-Đổi threshold hay đổi uncertain policy không được tốn một GPU-hour nào.
+Chấm lại không được tốn một GPU-hour nào.
+
+⚠⚠ **Ba lớp, không nhị phân (D-023, 2026-09-29).** `label_framing.py` và
+`uncertain_policy.py` đã XÓA; lõi phân loại chấm theo giao thức bài báo; hai bảng
+nhị phân của chính bài báo nằm ở `paper_protocol.py`.
 
 ⚠ **Không có thư mục top-level `evaluation/`.** Tài liệu cũ nào nhắc tới
 `evaluation/eval_final_200.py` đều đã lỗi thời.
@@ -21,7 +25,8 @@ Toàn bộ evaluator cho **cả hai Stage**. Nguyên tắc thiết kế trung t�
 ## Role in project
 
 ```text
-Stage 1 → .npz ──► calibrate_thresholds.py → evaluate_stage1.py ──► metrics
+Stage 1 → .npz ──► evaluate_stage1.py ──► metrics (ba lớp, paper)
+   val .npz ──► calibrate_thresholds.py ──► ngưỡng theo lớp (prompt Stage 2)
 Stage 2 → .jsonl ─────────────────────────► evaluate_stage2.py ──► metrics
 Stage 1 checkpoint + split ───────────────► evaluate_explanation.py ──► XAI
 ```
@@ -37,11 +42,10 @@ Stage 1 checkpoint + split ───────────────► eval
 | Module | LOC | Doc | Vai trò |
 |---|---|---|---|
 | `schemas.py` | 334 | [📄](schemas.py.doc.md) | `ClassificationPredictions`, `load_generation_records`, `CLASS_NAMES` |
-| `classification_metrics.py` | 662 | [📄](classification_metrics.py.doc.md) | P/R/F1 macro, per-pathology, AUROC, AUPRC |
-| `uncertain_policy.py` | — | [📄](uncertain_policy.py.doc.md) | `POLICIES`, `binarize_labels`, `DEFAULT_POLICY` |
-| `label_framing.py` | 178 | [📄](label_framing.py.doc.md) | ★ `FRAMINGS`, `apply_framing` — quyết định F1 có nghĩa hay không |
-| `threshold_calibration.py` | 345 | [📄](threshold_calibration.py.doc.md) | Calibrate — **chỉ validation** |
-| `baselines.py` | 204 | [📄](baselines.py.doc.md) | All-negative và các baseline |
+| `classification_metrics.py` | 347 | [📄](classification_metrics.py.doc.md) | ★ Giao thức bài báo: weighted P/R/F1 ba lớp, F1 5 bệnh, AUROC theo lớp |
+| `threshold_calibration.py` | 160 | [📄](threshold_calibration.py.doc.md) | Ngưỡng theo (bệnh, lớp), Eq. 22 — **chỉ validation** |
+| `paper_protocol.py` | 139 | [📄](paper_protocol.py.doc.md) | Bảng 4 (CheXpert, Eq. 21) và Bảng 3 (CE) — hai chỗ nhị phân của bài báo |
+| `baselines.py` | 127 | [📄](baselines.py.doc.md) | Baseline ba lớp |
 | `bootstrap.py` | 221 | [📄](bootstrap.py.doc.md) | Khoảng tin cậy |
 | `generation_metrics.py` | 437 | [📄](generation_metrics.py.doc.md) | BLEU, ROUGE-L (tự implement), `normalize`, `tokenize` |
 | `error_analysis.py` | 356 | [📄](error_analysis.py.doc.md) | Per-sample; → `safety/claims.py` |

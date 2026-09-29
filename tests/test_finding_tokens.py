@@ -29,7 +29,6 @@ from training.medgemma.finding_tokens import (  # noqa: E402
     FEATURE_ABLATION_SHUFFLE,
     FEATURE_ABLATION_ZERO,
     FINDING_TOKEN,
-    FINDING_TOKENS_FULL,
     FINDING_TOKENS_OFF,
     FINDING_TOKENS_Q_ONLY,
     NUM_FINDING_TOKENS,
@@ -47,18 +46,12 @@ def _logits(seed: int = 0) -> torch.Tensor:
     return torch.randn(N_LABELS, 3, generator=torch.Generator().manual_seed(seed))
 
 
-def _mention(seed: int = 1) -> torch.Tensor:
-    return torch.randn(N_LABELS, generator=torch.Generator().manual_seed(seed))
-
-
 # -- features ---------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "mode,width", [(FINDING_TOKENS_Q_ONLY, 3), (FINDING_TOKENS_FULL, 4)]
-)
+@pytest.mark.parametrize("mode,width", [(FINDING_TOKENS_Q_ONLY, 3)])
 def test_feature_shape_is_thirteen_by_width(mode, width):
-    features = finding_features(_logits(), _mention(), mode)
+    features = finding_features(_logits(), mode)
     assert features.shape == (NUM_FINDING_TOKENS, width)
     assert feature_width(mode) == width
 
@@ -79,68 +72,34 @@ def test_no_finding_is_dropped_and_the_rest_keep_classifier_order():
     for k in range(1, N_LABELS):
         logits = torch.zeros(N_LABELS, 3)
         logits[k, 1] = 20.0  # positive, essentially probability 1
-        features = finding_features(logits, None, FINDING_TOKENS_Q_ONLY)
+        features = finding_features(logits, FINDING_TOKENS_Q_ONLY)
         hot = int(features[:, 1].argmax())
         assert hot == k - 1, f"label {k} landed on row {hot}"
 
 
 def test_q_only_rows_are_a_probability_distribution():
-    features = finding_features(_logits(), _mention(), FINDING_TOKENS_Q_ONLY)
+    features = finding_features(_logits(), FINDING_TOKENS_Q_ONLY)
     assert torch.allclose(features.sum(dim=-1), torch.ones(NUM_FINDING_TOKENS), atol=1e-5)
     assert (features >= 0).all()
 
 
-def test_full_features_decompose_the_mention_gate():
-    """m*q_pos + m*q_neg + m*q_unc == m, exactly the identity that makes m redundant."""
-    features = finding_features(_logits(), _mention(), FINDING_TOKENS_FULL)
-    m, pos, neg, unc = features.unbind(dim=-1)
-    assert torch.allclose(pos + neg + unc, m, atol=1e-5)
-    assert ((m >= 0) & (m <= 1)).all()
-
-
-def test_full_features_match_sigmoid_times_softmax():
-    logits, mention = _logits(3), _mention(4)
-    features = finding_features(logits, mention, FINDING_TOKENS_FULL)
-    q = torch.softmax(logits, dim=-1)
-    m = torch.sigmoid(mention)
-    for row, label in enumerate(range(1, N_LABELS)):
-        assert features[row, 0].item() == pytest.approx(m[label].item(), abs=1e-6)
-        assert features[row, 1].item() == pytest.approx(
-            (m[label] * q[label, 1]).item(), abs=1e-6
-        )
-
-
-def test_low_mention_never_becomes_a_negative_assertion():
-    """A near-zero gate must shrink all three polarity numbers, not flip one.
-
-    "Not mentioned" is not "absent" -- q is undefined when the finding was never
-    mentioned, and encoding that as a confident negative is the single most
-    harmful thing this channel could do.
-    """
-    logits = torch.zeros(N_LABELS, 3)
-    logits[:, 0] = 10.0  # q says negative
-    mention = torch.full((N_LABELS,), -20.0)  # but it was almost certainly not mentioned
-    features = finding_features(logits, mention, FINDING_TOKENS_FULL)
-    assert features.abs().max() < 1e-6
-
-
-def test_q_only_refuses_nothing_and_full_refuses_missing_mention():
-    logits = _logits()
-    finding_features(logits, None, FINDING_TOKENS_Q_ONLY)  # no mention needed
-    with pytest.raises(ValueError, match="mention_logits"):
-        finding_features(logits, None, FINDING_TOKENS_FULL)
-
-
 def test_wrong_label_count_raises():
     with pytest.raises(ValueError, match="labels"):
-        finding_features(torch.randn(13, 3), torch.randn(13), FINDING_TOKENS_FULL)
-    with pytest.raises(ValueError, match="mention_logits has"):
-        finding_features(_logits(), torch.randn(13), FINDING_TOKENS_FULL)
+        finding_features(torch.randn(13, 3), FINDING_TOKENS_Q_ONLY)
+
+
+def test_the_mention_gated_full_variant_is_gone():
+    """Removed with the binary mention gate (D-023)."""
+    import training.medgemma.finding_tokens as ft
+
+    assert not hasattr(ft, "FINDING_TOKENS_" + "FULL")
+    with pytest.raises(ValueError):
+        finding_features(_logits(), "full")
 
 
 def test_off_has_no_features():
     with pytest.raises(ValueError):
-        finding_features(_logits(), _mention(), FINDING_TOKENS_OFF)
+        finding_features(_logits(), FINDING_TOKENS_OFF)
     with pytest.raises(ValueError):
         feature_width(FINDING_TOKENS_OFF)
 
@@ -149,8 +108,8 @@ def test_off_has_no_features():
 
 
 def test_encoder_maps_to_the_language_hidden_size():
-    encoder = FindingTokenEncoder(FINDING_TOKENS_FULL, hidden=32)
-    out = encoder(torch.rand(2, NUM_FINDING_TOKENS, 4))
+    encoder = FindingTokenEncoder(FINDING_TOKENS_Q_ONLY, hidden=32)
+    out = encoder(torch.rand(2, NUM_FINDING_TOKENS, 3))
     assert out.shape == (2, NUM_FINDING_TOKENS, 32)
 
 
@@ -168,8 +127,8 @@ def test_identical_features_still_give_distinct_tokens():
     If two findings share their Stage-1 numbers the tokens must still differ,
     or the model cannot tell which finding a token is about.
     """
-    encoder = FindingTokenEncoder(FINDING_TOKENS_FULL, hidden=16)
-    flat = torch.full((1, NUM_FINDING_TOKENS, 4), 0.25)
+    encoder = FindingTokenEncoder(FINDING_TOKENS_Q_ONLY, hidden=16)
+    flat = torch.full((1, NUM_FINDING_TOKENS, 3), 0.25)
     out = encoder(flat)[0]
     pairwise = torch.cdist(out, out) + torch.eye(NUM_FINDING_TOKENS) * 1e3
     assert pairwise.min() > 1e-4
@@ -181,9 +140,9 @@ def test_the_numbers_change_the_token():
     Without the LayerNorm this is the test that fails once the identity
     embedding grows during training.
     """
-    encoder = FindingTokenEncoder(FINDING_TOKENS_FULL, hidden=16)
-    a = encoder(torch.zeros(1, NUM_FINDING_TOKENS, 4))
-    b = encoder(torch.full((1, NUM_FINDING_TOKENS, 4), 0.9))
+    encoder = FindingTokenEncoder(FINDING_TOKENS_Q_ONLY, hidden=16)
+    a = encoder(torch.zeros(1, NUM_FINDING_TOKENS, 3))
+    b = encoder(torch.full((1, NUM_FINDING_TOKENS, 3), 0.9))
     assert (a - b).abs().max() > 1e-4
 
 
@@ -199,18 +158,18 @@ def test_output_scale_calibrates_to_the_embedding_output_not_its_weight():
 
     scaled = Scaled(64, 32)
     scaled.weight.data.copy_(table.weight.data)
-    encoder = FindingTokenEncoder(FINDING_TOKENS_FULL, hidden=32)
+    encoder = FindingTokenEncoder(FINDING_TOKENS_Q_ONLY, hidden=32)
     rms = encoder.calibrate_output_scale(scaled, torch.arange(64))
     weight_rms = table.weight.pow(2).mean().sqrt().item()
     assert rms == pytest.approx(weight_rms * multiplier, rel=1e-3)
-    out = encoder(torch.rand(1, NUM_FINDING_TOKENS, 4))
+    out = encoder(torch.rand(1, NUM_FINDING_TOKENS, 3))
     assert out.pow(2).mean().sqrt().item() == pytest.approx(rms, rel=0.05)
 
 
 def test_gradient_reaches_the_encoder_and_stops_at_the_features():
     """Stage 1 is frozen: the features are data, not a differentiable input."""
-    encoder = FindingTokenEncoder(FINDING_TOKENS_FULL, hidden=8)
-    features = finding_features(_logits(), _mention(), FINDING_TOKENS_FULL).unsqueeze(0)
+    encoder = FindingTokenEncoder(FINDING_TOKENS_Q_ONLY, hidden=8)
+    features = finding_features(_logits(), FINDING_TOKENS_Q_ONLY).unsqueeze(0)
     assert features.grad_fn is None and not features.requires_grad
     encoder(features).sum().backward()
     for name, param in encoder.named_parameters():
@@ -316,8 +275,8 @@ def test_composition_with_the_soft_token_wrapper_substitutes_both():
 def test_gradient_flows_through_the_substituted_positions():
     base, token_id = _Base(), 50
     ids = _ids_with_findings(batch=1, token_id=token_id)
-    encoder = FindingTokenEncoder(FINDING_TOKENS_FULL, hidden=8)
-    projected = encoder(torch.rand(1, NUM_FINDING_TOKENS, 4))
+    encoder = FindingTokenEncoder(FINDING_TOKENS_Q_ONLY, hidden=8)
+    projected = encoder(torch.rand(1, NUM_FINDING_TOKENS, 3))
     FindingTokenEmbeddingWrapper(base, token_id, projected)(ids).sum().backward()
     assert encoder.proj.weight.grad is not None
     assert encoder.proj.weight.grad.abs().sum() > 0
@@ -327,14 +286,14 @@ def test_gradient_flows_through_the_substituted_positions():
 
 
 def test_zero_ablation_keeps_the_shape_and_drops_the_numbers():
-    features = finding_features(_logits(), _mention(), FINDING_TOKENS_FULL)
+    features = finding_features(_logits(), FINDING_TOKENS_Q_ONLY)
     out = apply_finding_feature_ablation(features, FEATURE_ABLATION_ZERO)
     assert out.shape == features.shape
     assert out.abs().max() == 0
 
 
 def test_shuffle_ablation_permutes_rows_and_is_deterministic():
-    features = finding_features(_logits(), _mention(), FINDING_TOKENS_FULL)
+    features = finding_features(_logits(), FINDING_TOKENS_Q_ONLY)
     a = apply_finding_feature_ablation(features, FEATURE_ABLATION_SHUFFLE, seed=16)
     b = apply_finding_feature_ablation(features, FEATURE_ABLATION_SHUFFLE, seed=16)
     assert torch.equal(a, b)
@@ -345,7 +304,7 @@ def test_shuffle_ablation_permutes_rows_and_is_deterministic():
 
 
 def test_no_ablation_is_the_identity():
-    features = finding_features(_logits(), _mention(), FINDING_TOKENS_FULL)
+    features = finding_features(_logits(), FINDING_TOKENS_Q_ONLY)
     assert torch.equal(apply_finding_feature_ablation(features, None), features)
 
 
@@ -444,7 +403,7 @@ def _fake_adapter(tmp_path: Path, *, with_finding_encoder: bool) -> Path:
     torch.save({}, adapter / "trainer_state.pt")
     torch.save({}, adapter / "img_proj.pt")
     if with_finding_encoder:
-        torch.save({"mode": FINDING_TOKENS_FULL, "state_dict": {}}, adapter / "finding_tokens.pt")
+        torch.save({"mode": FINDING_TOKENS_Q_ONLY, "state_dict": {}}, adapter / "finding_tokens.pt")
     return adapter
 
 
@@ -454,17 +413,17 @@ def test_an_adapter_without_the_encoder_is_incomplete_only_when_the_branch_is_on
 
     adapter = _fake_adapter(tmp_path, with_finding_encoder=False)
     assert adapter_is_complete(adapter, "native_qformer", FINDING_TOKENS_OFF)
-    assert not adapter_is_complete(adapter, "native_qformer", FINDING_TOKENS_FULL)
+    assert not adapter_is_complete(adapter, "native_qformer", FINDING_TOKENS_Q_ONLY)
 
     full = _fake_adapter(tmp_path / "b", with_finding_encoder=True)
-    assert adapter_is_complete(full, "native_qformer", FINDING_TOKENS_FULL)
+    assert adapter_is_complete(full, "native_qformer", FINDING_TOKENS_Q_ONLY)
 
 
 def test_resume_refuses_a_checkpoint_without_the_encoder(tmp_path):
     run = pytest.importorskip("training.run_medgemma_qlora")
     adapter = _fake_adapter(tmp_path, with_finding_encoder=False)
     assert run.resumable_adapter(adapter, "native_qformer", FINDING_TOKENS_OFF)
-    assert not run.resumable_adapter(adapter, "native_qformer", FINDING_TOKENS_FULL)
+    assert not run.resumable_adapter(adapter, "native_qformer", FINDING_TOKENS_Q_ONLY)
 
 
 def test_cache_identity_changes_only_when_the_branch_is_on(tmp_path):
@@ -479,28 +438,25 @@ def test_cache_identity_changes_only_when_the_branch_is_on(tmp_path):
     context = Stage1Context(run_name="mimic_cxr_full_blip2", thresholds={})
     args = (context, tmp_path, "val", None)
     off, off_payload = fig9.stage1_cohort_fingerprint(*args, "none", FINDING_TOKENS_OFF)
-    on, on_payload = fig9.stage1_cohort_fingerprint(*args, "none", FINDING_TOKENS_FULL)
+    on, on_payload = fig9.stage1_cohort_fingerprint(*args, "none", FINDING_TOKENS_Q_ONLY)
     assert off != on
     assert "record_features" not in off_payload
     assert on_payload["record_features"] == "with_class_logits"
-    # q_only and full read the same cached tensors, so they share an identity.
-    q_only, _ = fig9.stage1_cohort_fingerprint(*args, "none", FINDING_TOKENS_Q_ONLY)
-    assert q_only == on
 
 
 def test_records_without_class_logits_raise_for_a_finding_token_run():
     fig9 = pytest.importorskip("training.train_eval_figure9_llm_variants_200")
 
-    stale = [{"sample_key": "k", "mention_logits": torch.zeros(14)}]
+    stale = [{"sample_key": "k"}]
     fig9.assert_class_logits_present(stale, FINDING_TOKENS_OFF)  # off: no opinion
     with pytest.raises(RuntimeError, match="class_logits"):
-        fig9.assert_class_logits_present(stale, FINDING_TOKENS_FULL)
+        fig9.assert_class_logits_present(stale, FINDING_TOKENS_Q_ONLY)
 
     good = [{"sample_key": "k", "class_logits": torch.zeros(14, 3)}]
-    fig9.assert_class_logits_present(good, FINDING_TOKENS_FULL)
+    fig9.assert_class_logits_present(good, FINDING_TOKENS_Q_ONLY)
     wrong = [{"sample_key": "k", "class_logits": torch.zeros(13, 3)}]
     with pytest.raises(RuntimeError, match="expected"):
-        fig9.assert_class_logits_present(wrong, FINDING_TOKENS_FULL)
+        fig9.assert_class_logits_present(wrong, FINDING_TOKENS_Q_ONLY)
 
 
 def _gen_args(**overrides):
@@ -532,19 +488,19 @@ def test_generation_refuses_finding_tokens_without_a_trained_encoder(tmp_path):
 
     with pytest.raises(SystemExit, match="Stage-1 pipeline mode"):
         gen.validate_invocation(
-            _gen_args(finding_tokens=FINDING_TOKENS_FULL),
+            _gen_args(finding_tokens=FINDING_TOKENS_Q_ONLY),
             resolve_pipeline_modes("medgemma_direct")[0],
         )
     with pytest.raises(SystemExit, match="guided --prompt-config"):
-        gen.validate_invocation(_gen_args(finding_tokens=FINDING_TOKENS_FULL), mode)
+        gen.validate_invocation(_gen_args(finding_tokens=FINDING_TOKENS_Q_ONLY), mode)
     with pytest.raises(SystemExit, match="no zero-shot form"):
         gen.validate_invocation(
-            _gen_args(finding_tokens=FINDING_TOKENS_FULL, prompt_config=cfg), mode
+            _gen_args(finding_tokens=FINDING_TOKENS_Q_ONLY, prompt_config=cfg), mode
         )
     adapter = _fake_adapter(tmp_path, with_finding_encoder=False)
     with pytest.raises(SystemExit, match="finding_tokens.pt"):
         gen.validate_invocation(
-            _gen_args(finding_tokens=FINDING_TOKENS_FULL, prompt_config=cfg, adapter=adapter),
+            _gen_args(finding_tokens=FINDING_TOKENS_Q_ONLY, prompt_config=cfg, adapter=adapter),
             mode,
         )
 
@@ -556,7 +512,7 @@ def test_an_ablation_without_the_branch_is_refused(tmp_path):
     mode = resolve_pipeline_modes("meta_cxr_native_qformer_guided")[0]
     with pytest.raises(SystemExit, match="needs --finding-tokens"):
         gen.validate_invocation(
-            _gen_args(finding_feature_ablation="zero", cue_rule="conditional_positive"),
+            _gen_args(finding_feature_ablation="zero", cue_rule="argmax"),
             mode,
         )
 
@@ -565,8 +521,7 @@ def test_permute_across_gives_every_study_someone_elses_predictions():
     gen = pytest.importorskip("scripts.generate_stage2_reports")
 
     records = [
-        {"sample_key": str(i), "class_logits": torch.full((14, 3), float(i)),
-         "mention_logits": torch.full((14,), float(i))}
+        {"sample_key": str(i), "class_logits": torch.full((14, 3), float(i))}
         for i in range(5)
     ]
     out = gen.permute_finding_features_across_studies(records, seed=16)

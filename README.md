@@ -276,53 +276,54 @@ Temporal target policy mặc định vẫn là `keep`; guard trong prompt không
 
 Evaluator nằm trong [`training/evaluation/`](training/evaluation/) và được gọi qua CLI trong `scripts/`.
 
-### Stage 1
+### ⚠⚠ Ba lớp, không bao giờ nhị phân (D-023, 2026-09-29)
 
-- positive macro precision, recall và F1;
-- per-pathology metrics, AUROC và AUPRC;
-- threshold calibration chỉ trên validation;
-- bootstrap confidence intervals;
-- three-class confusion matrices, ROC/PR và các plot tùy chọn;
-- all-negative và các baseline comparisons.
+Mỗi bệnh trong CheXpert là bài toán **ba lớp**: Âm tính (0), Dương tính (1),
+Không chắc chắn (2). Mô hình được train và được chấm đúng như vậy, giống bài báo
+META-CXR. Trong tháng 8–9/2026 một AI (không được kiểm tra kỹ) đã biến bài toán
+thành nhị phân "có / không có": head mention gate (`lambda_gate`), loss
+mention-conditioned, `uncertain_policy` (bỏ hoặc gộp lớp Uncertain), framing
+đánh giá `study_presence` / `marginal_presence`, F1 chỉ lớp dương
+(`positive_macro_f1`), calibrate ngưỡng nhị phân, và các luật cue Stage 2 dựa trên
+gate. **Toàn bộ đã bị gỡ theo yêu cầu của người dùng.** Config nào còn nhắc tới
+các khóa đó sẽ bị từ chối (`pretraining/retired_keys.py`), và
+`tests/test_three_class_only.py` fail nếu chúng xuất hiện lại. Mọi con số Stage 1
+bên dưới có nhãn `study_presence` / `marginal_presence` / `positive_macro_f1` là
+**số lịch sử theo framing nhị phân**, không so được với bài báo.
 
-#### `--label-framing` — câu hỏi mà metric đang trả lời (từ 2026-08-20)
+### Stage 1 — giao thức của bài báo
 
-Ma trận nhãn CheXpert có hai cách đọc, và **F1 chỉ có nghĩa ở một trong hai**.
-`training/evaluation/label_framing.py` đặt tên cho cả hai và ghi lựa chọn vào mọi
-file kết quả, giống cách `uncertain_policy.py` xử lý lớp Uncertain.
+[`classification_metrics.py`](training/evaluation/classification_metrics.py),
+theo đúng code gốc (`META-CXR/mhcac/utils.py`):
 
-| | `masked_polarity` (mặc định, lịch sử) | `study_presence` |
+| Chỉ số | Cách tính | Bài báo |
 |---|---|---|
-| Ô trống nghĩa là | **bị mask** — chấm polarity *với điều kiện* đã được nhắc | **không có** |
-| Prevalence mỗi nhãn (test) | 0.13–1.00, 12/14 nhãn > 0.55 | **0.019–0.344** |
-| `all_positive` ăn được macro F1 | **0.8397** | **0.2280** |
-| `all_negative` / `majority_class` | 0.0000 / 0.8200 | 0.0000 / 0.0000 |
-| Nhãn suy biến trên test | 3 | **0** |
+| `weighted_precision` / `weighted_recall` / `weighted_f1` | argmax 3 lớp; mỗi bệnh tính P/R/F1 `average='weighted'` của sklearn (`zero_division=1`); trung bình đều 14 bệnh | 0.87 / 0.78 / 0.73 (Hình 10) |
+| `mean_weighted_f1_5` | cùng F1 đó, trung bình trên Atelectasis, Cardiomegaly, Consolidation, Edema, Pleural Effusion | 0.701 (Bảng 5, 7) |
+| `auroc_{positive,negative,uncertain}_mean` | ROC một-lớp-với-phần-còn-lại cho từng lớp, từng bệnh (đủ 14 bệnh, kể cả No Finding) | Hình 5 |
 
-`masked_polarity` đúng cho **hàm loss** nhưng hỏng cho **F1**: một hằng số hơn model
-0.032, và calibrate ngưỡng chỉ mua thêm 0.0004 so với ngưỡng 0.5. **Chỉ trích dẫn F1
-dưới `study_presence`.**
+⚠ Code gốc lấy trung bình theo **batch** rồi trung bình các batch; ở đây tính trên
+cả split — đúng đại lượng mà trung bình batch xấp xỉ, nên có thể lệch nhẹ.
 
-`--score marginal_presence` nhân thêm mention gate: `P(có) = sigmoid(mention) × q_pos`. ⚠ Không dùng được cho run có `lambda_gate: 0` (từ 2026-09-24) — sẽ báo lỗi.
-Cần `mention_probabilities` trong `.npz` (chỉ có ở run mà eval hook thu gate). Không có
-thì raise, **không** âm thầm rơi về `conditional_positive`.
+Ngưỡng theo từng lớp (Hình 11, Eq. 22: điểm trên ROC gần góc trên-trái nhất) được
+fit trên **val** bằng `scripts/calibrate_thresholds.py` và chỉ dùng cho prompt
+Stage 2 (`--cue-rule paper_thresholds`). Chỉ số phân loại luôn dùng argmax.
 
-⚠ Calibrate và evaluate phải dùng **cùng một cặp** `--label-framing` / `--score`;
-`evaluate_stage1.py` từ chối chạy nếu lệch.
+**Hai chỗ bài báo tự dùng nhị phân** nằm ở
+[`paper_protocol.py`](training/evaluation/paper_protocol.py):
 
-#### `--selection plateau` — chọn ngưỡng bền hơn (từ 2026-08-20)
+- **Bảng 4 — cross-domain trên CheXpert val**: `p_final = p1/(p0+p1)` (Eq. 21),
+  AUC và F1 trên 5 bệnh; `scripts/evaluate_chexpert_crossdomain.py`. ⚠ Repo chưa
+  có loader CheXpert val cho Stage 1 — mới có phần chấm điểm.
+- **Bảng 3 — Clinical Efficacy**: precision / recall / macro F1 trên nhãn mà
+  CheXpert labeler trích từ báo cáo sinh ra và báo cáo tham chiếu;
+  `scripts/evaluate_clinical_efficacy.py`. ⚠ Labeler (CheXpert/CheXbert) không có
+  trong repo — script nhận CSV nhãn đã trích sẵn.
 
-Đứng ở **trung vị vùng đạt ≥ 95% đỉnh** thay vì đúng đỉnh đường cong mục tiêu. Trên val
-1,808 study, đỉnh phụ thuộc study nào tình cờ rơi vào val. Kết hợp `--min-positive 5`
-để hai nhãn hiếm (`Pleural Other` 15 dương, `Fracture` 18) được calibrate thật thay vì
-rơi về ngưỡng mặc định 0.5 — ở mặc định cũ **`Fracture` không bao giờ được dự đoán dương,
-F1 = 0.0000**, và riêng hai nhãn đó chiếm **59%** khoảng cách tới trần.
-
-```bash
---selection plateau --plateau-fraction 0.95 --min-positive 5
-```
-
-Chọn bằng CV 5-fold × 10 lần **bên trong val** (0.3246 vs 0.3202) trước khi chạm test.
+BERTScore của bài báo (0.426) gần như chắc chắn là bản **rescale theo baseline**
+(`distilroberta-base`, như bộ CXR-Report-Metric mà bài báo trích cho RadCliQ);
+thêm `--paper-bertscore` vào `evaluate_stage2.py` để so được. BERTScore thô (~0.8)
+không so được. RadGraph F1 và RadCliQ chưa có.
 
 ### XAI / Grad-CAM
 
@@ -559,24 +560,16 @@ Smoke GPU 1 epoch (2.000 study) sạch ngày 2026-09-24: 0,36 s/it, `max mem`
 Stage-1 trong README đều đo dưới `ignore`. Chi tiết:
 `docs/handoff/PLAN-2026-09-24-blank-as-negative.md`.
 
-Hệ quả cho evaluator (đọc code, chưa đo): `study_presence` cho ra cùng ma trận
-ground truth dưới cả hai policy; `masked_polarity` dưới `negative` không còn
-phân biệt được ô trống với âm tính tường minh, vì `.npz` không mang mask ô trống.
 Caveat cần nêu trong luận văn: ô trống là *không được nhắc tới*, không phải bác sĩ
 loại trừ — nên một phần "âm tính" là thiếu bằng chứng.
 
-**Mention gate TẮT (2026-09-24, `lambda_gate: 0.0`).** Gate sinh ra để bù cho
-việc mask ô trống; khi ô trống đã là âm tính thì lý do đó không còn. P(có bệnh)
-lấy thẳng `q_pos` từ softmax 3 lớp của head P/N/U, giống bài gốc. Code gate giữ
-lại cho ablation. Khi gate tắt, eval hook không xuất `mention_probabilities` và
-`--score marginal_presence` báo lỗi — chấm run mới bằng `conditional_positive`
-(mặc định). Mọi số Stage-1 cũ trong README dùng `marginal_presence`, nên so cũ
-với mới là so hai quy tắc chấm khác nhau. No Finding nằm trong head (nhãn 0/1
-thật, `excluded_labels: []`); `uncertain_policy` là `three_class` từ 2026-09-25 (D-022).
-Evaluator báo thêm `<metric>_13labels` (bỏ No Finding) và `<metric>_14labels`;
-macro chính vẫn là 12 nhãn. ⚠ Stage 2 (cue `marginal_positive`, finding tokens
-`full`) vẫn đọc gate và **chưa được sửa** — không chạy Stage 2 từ checkpoint
-Stage-1 train với gate tắt trước khi xử lý.
+**Mention gate: ĐÃ GỠ HẲN (2026-09-29, D-023)** — trước đó tắt từ 2026-09-24
+(`lambda_gate: 0.0`). Head gate, loss mention-conditioned, `uncertain_policy`,
+framing `study_presence` / `marginal_presence`, các chỉ số `_13labels` /
+`_14labels` / macro 12 nhãn và cue Stage 2 dựa trên gate không còn trong code.
+No Finding nằm trong head như mọi bệnh khác (`excluded_labels: []`), và lớp
+Uncertain được học như lớp thứ ba (D-022). Checkpoint cũ vẫn nạp được: các trọng
+số của head gate bị bỏ qua khi nạp.
 
 ## Dữ liệu
 
@@ -637,14 +630,13 @@ CUDA_VISIBLE_DEVICES=0 python -m pretraining.train \
   --options run.batch_size_train=6 run.batch_size_eval=6 run.accum_grad_iters=11
 ```
 
-Sau khi train, calibrate threshold chỉ trên prediction của validation từ
-`checkpoint_best` (các bệnh có dưới 20 positive giữ threshold 0.5):
+Sau khi train, fit ngưỡng theo từng lớp (Eq. 22) chỉ trên prediction của
+validation từ `checkpoint_best`:
 
 ```bash
 python scripts/calibrate_thresholds.py \
   --predictions pretraining/outputs/<run>/result/val_predictions_epoch_best.npz \
-  --objective f1 --uncertain-policy ignore_uncertain --min-positive 20 \
-  --output pretraining/outputs/<run>/result/f1_thresholds.json
+  --output pretraining/outputs/<run>/result/class_thresholds.json
 ```
 
 ### 3. Stage 2 smoke test và training
@@ -671,13 +663,13 @@ CUDA_VISIBLE_DEVICES=0 python training/run_medgemma_qlora.py \
 ### 4. Evaluation
 
 ```bash
-python scripts/calibrate_thresholds.py \
-  --predictions <validation_predictions.npz> --split validation \
-  --output <thresholds.json>
-
+# Giao thức bài báo, ba lớp:
 python scripts/evaluate_stage1.py \
-  --predictions <test_predictions.npz> --thresholds <thresholds.json> \
-  --output-dir <stage1_eval_dir>
+  --predictions <test_predictions.npz> --output-dir <stage1_eval_dir>
+
+# Ngưỡng theo từng lớp cho prompt Stage 2 (chỉ fit trên val):
+python scripts/calibrate_thresholds.py \
+  --predictions <validation_predictions.npz> --output <class_thresholds.json>
 
 CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
   --checkpoint <checkpoint_best.pth> \
@@ -687,8 +679,13 @@ CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
 
 python scripts/evaluate_stage2.py \
   --predictions <generated_reports.jsonl> \
-  --metrics bleu,rouge,meteor,cider,bertscore \
+  --metrics bleu,rouge,meteor,cider,bertscore --paper-bertscore \
   --skip-clinical-metrics --output-dir <stage2_eval_dir>
+
+# Bảng 4 và Bảng 3 của bài báo (xem mục Evaluation):
+python scripts/evaluate_chexpert_crossdomain.py --predictions <chexpert_val.npz>
+python scripts/evaluate_clinical_efficacy.py \
+  --generated-labels <gen_labels.csv> --reference-labels <ref_labels.csv>
 ```
 
 ## Hỗ trợ nhiều GPU
@@ -717,6 +714,11 @@ baseline có sẵn: `test_native_independence` ×4 thiếu
 phát sinh từ Phase 3. Test CPU không thay thế smoke Stage-1/Stage-2/XAI trên GPU.
 
 ## Kết quả và cảnh báo metric
+
+⚠⚠ **Mọi số Stage 1 trong mục này được đo theo framing nhị phân đã gỡ bỏ
+(`study_presence` / `marginal_presence` / `positive_macro_f1`, D-023).** Chúng là
+lịch sử, không so được với bài báo. Muốn so, chấm lại file `.npz` của run bằng
+`scripts/evaluate_stage1.py` (giao thức ba lớp).
 
 ### Stage 1 — test split, `run_20260820_ft` (2026-08-21) — PHIÊN BẢN HIỆN TẠI
 
@@ -1038,11 +1040,11 @@ python scripts/generate_stage2_reports.py \
     --adapter <ft_guided_full>/adapters/medgemma_qlora_meta_cxr_native_qformer_guided \
     --checkpoint-root <run_20260820_ft> --stage1-cache-dir <cache> \
     --split val --limit 100 --max-new-tokens 160 \
-    --cue-rule marginal_positive \
-    --threshold-path configs/stage2_cue_thresholds_marginal_pfit.json \
-    --output-dir <private>/marginal
-# đổi --cue-rule thành conditional_positive | none cho hai điều kiện còn lại
-# (none không cần --threshold-path)
+    --cue-rule argmax \
+    --output-dir <private>/argmax
+# ⚠ D-023 (2026-09-29): các rule nhị phân marginal_positive / conditional_positive
+# và file ngưỡng marginal_pfit đã bị XÓA. Lệnh gốc của các số trên không còn chạy
+# được; rule hiện có: argmax | paper_thresholds (--threshold-path, Eq. 22) | none.
 ```
 
 ### Original paper reference results
@@ -1222,7 +1224,9 @@ của model; chỉ fallback về tokenizer EOS nếu model không cấu hình. S
 lại stop IDs thực tế. Đây là lỗi dùng chung cho Arm A/C; cần đối chứng riêng
 để đo ảnh hưởng đến lặp câu và không quy toàn bộ chênh lệch A/C cho nó.
 
-Cả training và generation nhận `--cue-rule conditional_positive|mention_gated|marginal_positive|none`; training truyền cùng rule cho train/val/test và ghi vào summary/manifest. **Từ 2026-09-10, pipeline đưa findings Stage 1 vào prompt mặc định dùng `marginal_positive`: `sigmoid(mention_logits) × q_positive >= ngưỡng` mới cung cấp cue dương tính.** Nhãn dưới ngưỡng không cung cấp cue, không được coi là âm tính. Ngưỡng mỗi nhãn lấy từ `--threshold-path` nếu có khóa `marginal_positive`, nếu không dùng **0,5**; không tự nạp file hiệu chuẩn của checkpoint khác. Marginal/abstaining rules cần `--prompt-config` guided khớp visual mode. Muốn tái lập rule cũ, truyền rõ `--cue-rule conditional_positive`. Pipeline không dùng structured cues giữ hành vi cũ. Thay đổi mặc định này chưa phải bằng chứng cải thiện NLG; dùng output mới khi đổi rule.
+⚠ **ĐÃ THAY 2026-09-29 (D-023):** các luật `conditional_positive` / `mention_gated` / `marginal_positive` / selective đã bị gỡ cùng mention gate. `--cue-rule` giờ là `argmax` (mặc định: mỗi bệnh vào lớp có xác suất cao nhất) | `paper_thresholds` (ngưỡng theo từng lớp của bài báo, Eq. 22, cần `--threshold-path` từ `scripts/calibrate_thresholds.py`; bệnh không lớp nào vượt ngưỡng thì không đưa vào prompt) | `none`. Phần dưới đây giữ làm lịch sử.
+
+(Lịch sử) Cả training và generation nhận `--cue-rule conditional_positive|mention_gated|marginal_positive|none`; training truyền cùng rule cho train/val/test và ghi vào summary/manifest. **Từ 2026-09-10, pipeline đưa findings Stage 1 vào prompt mặc định dùng `marginal_positive`: `sigmoid(mention_logits) × q_positive >= ngưỡng` mới cung cấp cue dương tính.** Nhãn dưới ngưỡng không cung cấp cue, không được coi là âm tính. Ngưỡng mỗi nhãn lấy từ `--threshold-path` nếu có khóa `marginal_positive`, nếu không dùng **0,5**; không tự nạp file hiệu chuẩn của checkpoint khác. Marginal/abstaining rules cần `--prompt-config` guided khớp visual mode. Muốn tái lập rule cũ, truyền rõ `--cue-rule conditional_positive`. Pipeline không dùng structured cues giữ hành vi cũ. Thay đổi mặc định này chưa phải bằng chứng cải thiện NLG; dùng output mới khi đổi rule.
 
 Ba trạng thái được tách rõ: `not_provided` (chủ động bỏ cues), `abstained` (không chọn được cue), `predicted` (có dự đoán P/N/U). Hai trạng thái đầu không sinh structured block hay câu normal. Âm tính cho một phần nhãn chỉ được nêu cụ thể; chỉ đủ 13 nhãn âm tính mới được tóm tắt normal. Ảnh, soft tokens và instruction được giữ nguyên. Cache cũ được bổ sung trạng thái khi đọc, không đổi embedding. Template hash thay đổi để nhận diện semantics mới.
 
