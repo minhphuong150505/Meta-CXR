@@ -57,23 +57,10 @@ java:
 # so an unknown metric name fails immediately instead of after hours of training.
 # ---------------------------------------------------------------------------
 evaluation:
-  # three_class | uncertain_as_positive | uncertain_as_negative | ignore_uncertain
-  # Default reproduces the existing pipeline's behaviour.
-  uncertain_policy: three_class
-
-  # Stage 1. f1_positive_macro is the legacy key and stays the default so
-  # existing checkpoints remain comparable; f1_positive_macro_defined_only is
-  # the corrected variant that excludes pathologies with no positive samples.
-  selection_metric: f1_positive_macro
-
-  # default = 0.5 everywhere; calibrated = read scripts/calibrate_thresholds.py
-  # output. Thresholds are only ever fitted on validation.
-  threshold_mode: default
-  threshold_objective: f1        # f1|youden_j|balanced_accuracy|recall_at_precision|precision_at_recall
-
-  # "No Finding" and "Support Devices" are not pathologies; excluded from macro
-  # averages by default, always reported per-label.
-  include_meta_labels: false
+  # Three classes, never binary (D-023): uncertain_policy, threshold_mode,
+  # threshold_objective and include_meta_labels were REMOVED 2026-09-29.
+  # Stage 1 selects on validation loss, as mimic_cxr_full.yaml does.
+  selection_metric: loss
 
   bootstrap:
     enabled: true
@@ -81,15 +68,14 @@ evaluation:
     confidence: 0.95
     seed: 42
 
+  # The paper's protocol: argmax over Negative/Positive/Uncertain, per-finding
+  # sklearn-weighted P/R/F1 averaged over all 14 findings, one-vs-rest AUROC.
   classification_metrics:
-    - accuracy
-    - balanced_accuracy
-    - macro_f1
-    - micro_f1
-    - positive_macro_f1
-    - positive_macro_recall
-    - macro_auroc
-    - macro_auprc
+    - weighted_precision
+    - weighted_recall
+    - weighted_f1
+    - mean_weighted_f1_5
+    - auroc_mean
 
   generation_metrics: [bleu, rouge, meteor, cider, bertscore]
 
