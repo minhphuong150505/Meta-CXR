@@ -4,7 +4,7 @@
 
 # `pretraining/configs/mimic_cxr_full.yaml`
 
-> ⚠ **D-025 (2026-10-01) — `model.mhcac.logit_adjustment` thay `class_weights`.** `{tau: 1.0, class_counts: 14×[neg, pos, unc]}` đếm trên train (mỗi dòng 220.379 study). Bảng `class_weights` cũ được giữ dạng comment cho ablation. Xem [D-025](../../_meta/DECISIONS.md#d-025--logit-adjusted-loss-thay-trọng-số-lớp-bị-chặn-2026-10-01).
+> ⚠ **D-025 (2026-10-01) — `model.mhcac.logit_adjustment` đã cài nhưng KHÔNG bật.** Production vẫn dùng `class_weights`. Khóa thay thế: `{tau, class_counts: 14×[neg, pos, unc]}` đếm trên train; hai khóa loại trừ nhau. Xem [D-025](../../_meta/DECISIONS.md#d-025--logit-adjusted-loss-thay-trọng-số-lớp-bị-chặn-2026-10-01).
 
 > ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Đã XÓA khỏi YAML: `gate_class_weights`, `mention_conditioned_pos_weights`, `uncertain_policy` (model và run), `include_meta_labels`, `lambda_gate`, `lambda_mention_conditioned_cls`, `report_study_presence`. Viết lại chúng sẽ bị `pretraining/retired_keys.py` từ chối. Xem [D-023](../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
 

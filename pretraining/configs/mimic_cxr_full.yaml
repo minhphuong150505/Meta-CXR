@@ -243,57 +243,30 @@ model:
     #   - [1.0,  0.065, 0.170]  # Pleural Other               k=1  (was k=2 0.130)
     #   - [1.0,  0.205, 1.600]  # Fracture                    k=1  (was k=2 0.410)
     #   - [1.0,  0.053, 10.000] # Support Devices             k=1  (was k=1 0.053)
-    # LOGIT-ADJUSTED LOSS, 2026-10-01 (user decision, D-025). Replaces the
-    # capped inverse-frequency class_weights below. Menon et al., "Long-tail
-    # learning via logit adjustment", ICLR 2021, Eq. 10: cross entropy over
-    # logits + tau * log(prior), argmax over the raw logits at inference. It is
-    # Fisher-consistent for the balanced error = 1 - macro_recall, the Stage-1
-    # selection metric (D-024). Motivation, measured on run_20260930_3class
-    # test: the cap at 10 left rare positives almost never predicted
-    # (Fracture recall 0.01, Pleural Other 0.05), while full inverse frequency
-    # on common findings over-predicted them (Cardiomegaly negative recall
-    # 0.21). PromptMRG (Jin et al., AAAI 2024) uses this loss on MIMIC-CXR.
-    #
-    # class_counts: [n_negative, n_positive, n_uncertain] per finding, train
-    # split, study level, blank_label_policy: negative -- the table above,
-    # reordered. Every row sums to 220,379 (222,758 studies minus the 2,379
-    # with no CheXpert information). No Finding has no uncertain cell; a zero
-    # count gets offset 0 (mhcac.loss.logit_adjustment_offsets).
-    # Mutually exclusive with class_weights: the model raises if both are set.
-    logit_adjustment:
-      tau: 1.0
-      class_counts:
-        - [146074, 74305,     0]  # No Finding
-        - [204328,  6968,  9083]  # Enlarged Cardiomediastinum
-        - [170908, 43602,  5869]  # Cardiomegaly
-        - [166554, 50099,  3726]  # Lung Opacity
-        - [213174,  6091,  1114]  # Lung Lesion
-        - [181509, 26093, 12777]  # Edema
-        - [205717, 10476,  4186]  # Consolidation
-        - [186489, 16093, 17797]  # Pneumonia
-        - [165620, 44718, 10041]  # Atelectasis
-        - [209102, 10171,  1106]  # Pneumothorax
-        - [161981, 52759,  5639]  # Pleural Effusion
-        - [217703,  1933,   743]  # Pleural Other
-        - [215548,  4283,   548]  # Fracture
-        - [155281, 64868,   230]  # Support Devices
-    # SUPERSEDED 2026-10-01 by logit_adjustment above; kept for the ablation
-    # that reproduces run_20260930_3class (remove logit_adjustment, restore):
-    # class_weights:
-    #   - [1.0,  1.966,  1.000]  # No Finding  n_unc = 0 (CheXpert never marks it -1) -> w_uncertain 1.0, not n_neg/0
-    #   - [1.0, 10.000, 10.000]  # Enlarged Cardiomediastinum  raw pos 29.32 CAPPED
-    #   - [1.0,  3.920, 10.000]  # Cardiomegaly
-    #   - [1.0,  3.324, 10.000]  # Lung Opacity
-    #   - [1.0, 10.000, 10.000]  # Lung Lesion                 raw pos 35.00 CAPPED
-    #   - [1.0,  6.956, 10.000]  # Edema
-    #   - [1.0, 10.000, 10.000]  # Consolidation               raw pos 19.64 CAPPED
-    #   - [1.0, 10.000, 10.000]  # Pneumonia                   raw pos 11.59 CAPPED
-    #   - [1.0,  3.704, 10.000]  # Atelectasis
-    #   - [1.0, 10.000, 10.000]  # Pneumothorax                raw pos 20.56 CAPPED
-    #   - [1.0,  3.070, 10.000]  # Pleural Effusion
-    #   - [1.0, 10.000, 10.000]  # Pleural Other               raw pos 112.62 CAPPED
-    #   - [1.0, 10.000, 10.000]  # Fracture                    raw pos 50.33 CAPPED
-    #   - [1.0,  2.394, 10.000]  # Support Devices
+    # LOGIT ADJUSTMENT (D-025, 2026-10-01): implemented, NOT adopted. The
+    # alternative to class_weights is model.mhcac.logit_adjustment
+    # {tau, class_counts: 14 x [n_neg, n_pos, n_unc] train counts} (Menon et al.,
+    # ICLR 2021; mhcac.loss.ClassificationLoss). A post-hoc simulation on
+    # run_20260930_3class test predicted tau 1.0 collapses to Uncertain
+    # (weighted F1 0.77 -> 0.32) and tau 0.5 trades ~0.015 macro_recall for
+    # +0.03 weighted F1; the user declined the trade. Record:
+    # docs/handoff/PLAN-2026-10-01-logit-adjusted-loss.md. The two keys are
+    # mutually exclusive; the model raises if both are set.
+    class_weights:
+      - [1.0,  1.966,  1.000]  # No Finding  n_unc = 0 (CheXpert never marks it -1) -> w_uncertain 1.0, not n_neg/0
+      - [1.0, 10.000, 10.000]  # Enlarged Cardiomediastinum  raw pos 29.32 CAPPED
+      - [1.0,  3.920, 10.000]  # Cardiomegaly
+      - [1.0,  3.324, 10.000]  # Lung Opacity
+      - [1.0, 10.000, 10.000]  # Lung Lesion                 raw pos 35.00 CAPPED
+      - [1.0,  6.956, 10.000]  # Edema
+      - [1.0, 10.000, 10.000]  # Consolidation               raw pos 19.64 CAPPED
+      - [1.0, 10.000, 10.000]  # Pneumonia                   raw pos 11.59 CAPPED
+      - [1.0,  3.704, 10.000]  # Atelectasis
+      - [1.0, 10.000, 10.000]  # Pneumothorax                raw pos 20.56 CAPPED
+      - [1.0,  3.070, 10.000]  # Pleural Effusion
+      - [1.0, 10.000, 10.000]  # Pleural Other               raw pos 112.62 CAPPED
+      - [1.0, 10.000, 10.000]  # Fracture                    raw pos 50.33 CAPPED
+      - [1.0,  2.394, 10.000]  # Support Devices
     distill_temperature: 2.0
     # ⚠ PAPER MHCAC, 2026-09-24 (user decision, D-020). One MHCAC, no
     # teacher/student: during training its first num_text_teacher_layers (2 of
