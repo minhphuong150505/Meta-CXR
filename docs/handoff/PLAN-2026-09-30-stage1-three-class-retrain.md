@@ -89,3 +89,31 @@ affected**: it was launched on `f419e0c` and selected 1b epoch 3 on `loss`.
 `auroc_mean` would have chosen the same epoch; `weighted_f1` and
 `mean_weighted_f1_5` would have chosen epoch 2 (+0.002 / +0.017 on val).
 Do not `git pull` on the host until this run and its scorer have finished.
+
+### 2026-10-01 09:23 — finished and scored
+
+Phase 1c done 09:13 (`rc` clean, `checkpoint_phase1c.pth` present); scorer DONE
+09:23. Test n=3,269, paired bootstrap (1,000 resamples, seed 16) against the
+D-022 run `run_20260925b_3phase`, same studies, labels verified identical:
+
+| metric | D-022 | this run | delta, 95% CI |
+|---|---:|---:|:---|
+| weighted_precision | 0.8387 | 0.8379 | -0.0008 [-0.0030, +0.0052] |
+| weighted_recall (= accuracy) | 0.7653 | 0.7685 | +0.0032 [+0.0015, +0.0051] |
+| weighted_f1 | 0.7658 | 0.7658 | +0.0000 [-0.0016, +0.0017] |
+| mean_weighted_f1_5 | 0.6434 | 0.6438 | +0.0004 [-0.0030, +0.0041] |
+| macro_recall | 0.4600 | 0.4560 | -0.0039 [-0.0070, -0.0007] |
+| auroc_positive_mean | 0.7774 | 0.7755 | -0.0018 [-0.0049, +0.0014] |
+| auroc_negative_mean | 0.7708 | 0.7691 | -0.0017 [-0.0049, +0.0014] |
+| auroc_uncertain_mean | 0.5904 | 0.5737 | -0.0167 [-0.0524, +0.0308] |
+
+Paper: 0.87 / 0.78 / 0.73, five-finding F1 0.701.
+
+Reading: the two runs are the same model to within noise. Only weighted_recall
+(+0.003) and macro_recall (-0.004) clear zero, in opposite directions and by
+amounts too small to act on: the usual operating-point shift. Expected, since
+D-022 already trained three-class and D-023 changed scoring, not training.
+macro_recall 0.456 against a 0.333 chance level says the model rarely predicts
+Uncertain and misses many Positives; the weighted numbers ride on the majority
+Negative class. Artifacts: `~/eval_20260930_3class/{test,val,test_v2}`,
+`thresholds_eq22_val.json`, `~/paired_3class.log`.
