@@ -64,8 +64,18 @@ Không.
 ## Từng loss làm gì
 
 ### `ClassificationLoss(logits, true_labels, sample_mask=None)`
-Cross-entropy 3 lớp cho 14 bệnh lý, có `class_weights` (14×3), `label_smoothing`,
-và `uncertain_policy`.
+Cross-entropy 3 lớp cho 14 bệnh lý, có `class_weights` (14×3) **hoặc**
+`logit_adjust_counts` + `logit_adjust_tau`, và `label_smoothing`.
+(`uncertain_policy` đã gỡ ở D-023.)
+
+**Logit-adjusted loss (2026-10-01, D-025, bản production).** Truyền
+`logit_adjust_counts` (14×3 số ca train `[neg, pos, unc]`) thì loss tính CE trên
+`logits + tau·log(prior)` (Menon et al., ICLR 2021, Eq. 10); logit của mô hình,
+argmax và mọi metric vẫn dùng logit gốc. Tối ưu đúng balanced error = 1 −
+`macro_recall`. Loại trừ với `class_weights` (raise nếu có cả hai). Lớp có số ca
+0 (Uncertain của No Finding) nhận offset 0. Offset là buffer `persistent=False`
+nên checkpoint không đổi. Hàm phụ `logit_adjustment_offsets`. Test:
+`tests/test_logit_adjustment.py`.
 
 **`sample_mask` là điểm mấu chốt:** dòng không có nhãn CheXpert đóng góp **0**.
 Không phải "một giá trị nhỏ", không phải "được điền mặc định".

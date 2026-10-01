@@ -104,6 +104,10 @@ Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/
 
 - Entrypoint: [`pretraining/train.py`](pretraining/train.py)
 - Config production (một GPU, recipe duy nhất): [`pretraining/configs/mimic_cxr_full.yaml`](pretraining/configs/mimic_cxr_full.yaml)
+- Loss phân loại (từ 2026-10-01, D-025): **logit-adjusted cross entropy** (Menon et al., ICLR 2021)
+  thay cho trọng số lớp bị chặn ở 10. Config `model.mhcac.logit_adjustment` gồm `tau: 1.0` và số ca train
+  `[neg, pos, unc]` của từng bệnh. Lúc dự đoán vẫn lấy argmax trên logit gốc. Không đặt cùng lúc với
+  `class_weights` (mô hình sẽ báo lỗi).
 - Checkpoint selection (từ 2026-10-01): **`macro_recall`** trên validation cho pha 1b và 1c; pha 1a vẫn dùng
   `loss` vì không chạy bộ phân loại. `macro_recall` là trung bình không trọng số của recall ba lớp
   Negative / Positive / Uncertain (sau argmax, như `balanced_accuracy_score` của sklearn) cho từng bệnh,

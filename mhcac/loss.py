@@ -32,6 +32,30 @@ import torch.nn.functional as F
 
 #         return total_loss
 
+def logit_adjustment_offsets(class_counts, num_abnormalities=14, tau=1.0):
+    """``[A, 3]`` offsets ``tau * log(prior)`` for the logit-adjusted loss.
+
+    ``class_counts`` holds one ``[n_negative, n_positive, n_uncertain]`` vector
+    per abnormality, counted on the TRAIN split under the configured blank
+    policy. A zero count gets offset 0 (see :class:`ClassificationLoss`).
+    """
+    counts = torch.as_tensor(class_counts, dtype=torch.float64)
+    if counts.shape != (num_abnormalities, 3):
+        raise ValueError(
+            f"logit adjustment needs [{num_abnormalities}, 3] class counts, "
+            f"got {tuple(counts.shape)}"
+        )
+    if (counts < 0).any() or (counts.sum(dim=1) <= 0).any():
+        raise ValueError("class counts must be non-negative with a positive total per row")
+    if tau <= 0:
+        raise ValueError("logit_adjust_tau must be positive")
+    prior = counts / counts.sum(dim=1, keepdim=True)
+    offsets = torch.where(
+        prior > 0, float(tau) * torch.log(prior.clamp_min(1e-300)), torch.zeros_like(prior)
+    )
+    return offsets.float()
+
+
 class ClassificationLoss(nn.Module):
     """Per-abnormality weighted cross entropy over the paper's THREE classes.
 
@@ -45,6 +69,16 @@ class ClassificationLoss(nn.Module):
     ``penalty_weight`` remains in the signature for old configs.  The previous
     implementation computed that penalty and then discarded it, so it is no
     longer evaluated.
+
+    ``logit_adjust_counts`` (one ``[n_negative, n_positive, n_uncertain]``
+    train count vector per abnormality) switches to the logit-adjusted loss of
+    Menon et al. (ICLR 2021, Eq. 10): the cross entropy is taken over
+    ``logits + tau * log(prior)``, while the model's own logits -- what argmax,
+    the exported probabilities and every metric read -- stay unadjusted. It is
+    Fisher-consistent for the balanced error, i.e. ``1 - macro_recall``, and
+    replaces ``class_weights`` (the two are mutually exclusive). A class with
+    zero train count gets offset 0: it is never a target, so cross entropy
+    already keeps its raw logit below the present classes'.
     """
 
     def __init__(
@@ -53,9 +87,25 @@ class ClassificationLoss(nn.Module):
         class_weights=None,
         num_abnormalities=14,
         label_smoothing=0.0,
+        logit_adjust_counts=None,
+        logit_adjust_tau=1.0,
     ):
         super().__init__()
         self.penalty_weight = float(penalty_weight)
+        if logit_adjust_counts is not None:
+            if class_weights is not None:
+                raise ValueError(
+                    "logit adjustment replaces class_weights; configure one or the other"
+                )
+            self.register_buffer(
+                "logit_offsets",
+                logit_adjustment_offsets(
+                    logit_adjust_counts, num_abnormalities, logit_adjust_tau
+                ),
+                persistent=False,
+            )
+        else:
+            self.logit_offsets = None
         if class_weights is not None:
             if not isinstance(class_weights, (list, tuple)):
                 raise TypeError("class_weights must contain one tensor per abnormality")
@@ -100,7 +150,10 @@ class ClassificationLoss(nn.Module):
             # Also accept -100 for future partially-labelled annotations.
             valid = sample_mask & (labels_i >= 0) & (labels_i < logits.shape[-1])
             if valid.any():
-                losses.append(loss_fn(logits[valid, abnormality_idx], labels_i[valid]))
+                logits_i = logits[valid, abnormality_idx]
+                if self.logit_offsets is not None:
+                    logits_i = logits_i + self.logit_offsets[abnormality_idx].to(logits_i.dtype)
+                losses.append(loss_fn(logits_i, labels_i[valid]))
 
         if not losses:
             # Keep the zero connected to the graph for backward/DDP.
