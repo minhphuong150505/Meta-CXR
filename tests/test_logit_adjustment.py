@@ -94,3 +94,34 @@ def test_offsets_are_not_saved_in_checkpoints():
 def test_bad_counts_are_refused(counts, match):
     with pytest.raises(ValueError, match=match):
         logit_adjustment_offsets(counts, num_abnormalities=2)
+
+
+def test_class_weights_are_used_but_not_saved_in_checkpoints():
+    weights = [[1.0, 3.0, 10.0], [1.0, 2.0, 5.0]]
+    module = ClassificationLoss(num_abnormalities=2, class_weights=weights)
+    assert not any("weight" in k for k in module.state_dict())
+    logits = torch.randn(4, 2, 3)
+    labels = torch.tensor([[0, 1], [1, 2], [2, 0], [1, 1]])
+    expected = torch.stack([
+        F.cross_entropy(logits[:, i], labels[:, i], weight=torch.tensor(weights[i]))
+        for i in range(2)
+    ]).mean()
+    assert module(logits, labels).item() == pytest.approx(expected.item(), rel=1e-6)
+
+
+def test_old_checkpoint_loss_buffers_are_dropped_on_load():
+    from collections import OrderedDict
+
+    from mhcac.loss import drop_loss_config_state
+
+    state = OrderedDict(
+        [
+            ("mhcac.head.weight", torch.zeros(1)),
+            ("cls_loss_fn.cross_entropy_loss_list.0.weight", torch.ones(3)),
+            ("cls_loss_fn.cross_entropy_loss_list.13.weight", torch.ones(3)),
+        ]
+    )
+    state._metadata = {"": {"version": 1}}
+    kept = drop_loss_config_state(state)
+    assert list(kept) == ["mhcac.head.weight"]
+    assert kept._metadata == state._metadata

@@ -32,6 +32,26 @@ import torch.nn.functional as F
 
 #         return total_loss
 
+#: State-dict prefix of the classification loss inside ``Blip2Qformer``.
+CLASSIFICATION_LOSS_STATE_PREFIX = "cls_loss_fn."
+
+
+def drop_loss_config_state(state_dict, prefix=CLASSIFICATION_LOSS_STATE_PREFIX):
+    """``state_dict`` without the classification loss's buffers.
+
+    Checkpoints written before 2026-10-01 carry the CE class-weight vectors as
+    ``cls_loss_fn.cross_entropy_loss_list.<i>.weight``. They are configuration,
+    not learned state, and now come from the YAML only.
+    """
+    kept = type(state_dict)(
+        (name, value) for name, value in state_dict.items() if not name.startswith(prefix)
+    )
+    metadata = getattr(state_dict, "_metadata", None)
+    if metadata is not None:
+        kept._metadata = metadata
+    return kept
+
+
 def logit_adjustment_offsets(class_counts, num_abnormalities=14, tau=1.0):
     """``[A, 3]`` offsets ``tau * log(prior)`` for the logit-adjusted loss.
 
@@ -123,6 +143,12 @@ class ClassificationLoss(nn.Module):
                 for w in weights
             ]
         )
+        # Loss configuration comes from the YAML, never from a checkpoint
+        # (2026-10-01): a checkpoint written with class_weights must load into
+        # a logit-adjusted model and vice versa. See drop_loss_config_state.
+        for loss_fn, w in zip(self.cross_entropy_loss_list, weights):
+            if w is not None:
+                loss_fn.register_buffer("weight", w, persistent=False)
 
     def forward(self, logits, true_labels, sample_mask=None):
         if logits.ndim != 3 or true_labels.ndim != 2:

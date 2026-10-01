@@ -48,6 +48,7 @@ VISUAL_DIM = 1408
 from mhcac.loss import (
     ClassificationLoss,
     MultiPositiveContrastiveLoss,
+    drop_loss_config_state,
     siglip_loss,
     smoothed_cross_entropy,
     soft_target_kl_loss,
@@ -638,10 +639,15 @@ class Blip2Qformer(Blip2Base):
 
         Checkpoints written before 2026-09-29 carry ``mhcac.mention_heads.*``
         and the gate losses' ``pos_weight`` buffers (D-023). Everything else in
-        them is unchanged, so they still restore.
+        them is unchanged, so they still restore. The classification loss's
+        class-weight buffers are dropped too (2026-10-01): loss configuration
+        comes from the YAML, so a weighted checkpoint loads into a
+        logit-adjusted model and vice versa.
         """
         return super().load_state_dict(
-            drop_retired_state(state_dict), strict=strict, assign=assign
+            drop_loss_config_state(drop_retired_state(state_dict)),
+            strict=strict,
+            assign=assign,
         )
 
     def set_epoch(self, epoch):
