@@ -177,3 +177,89 @@ def load_thresholds(path: str | Path) -> dict[str, dict[str, float]]:
             for cls in CLASS_NAMES
         }
     return out
+
+
+# ---------------------------------------------------------------------------
+# Supplementary: ordinal cutpoints on the positive-vs-negative axis (2026-10-01)
+# ---------------------------------------------------------------------------
+#
+# NOT the paper's protocol. Uncertain cases sit BETWEEN negatives and positives
+# on s = p_pos / (p_pos + p_neg) (docs/handoff/PLAN-2026-09-30-...), so a
+# finding can be decided by two cutpoints on s: Negative below t1, Uncertain in
+# [t1, t2), Positive at or above t2. One cutpoint (t1 == t2) never calls
+# Uncertain. Fit on VALIDATION, report beside argmax, never instead of it.
+
+CUTPOINT_OBJECTIVES = ("weighted_f1", "macro_recall")
+
+
+def severity_scores(probabilities: np.ndarray) -> np.ndarray:
+    """``p_pos / (p_pos + p_neg)`` per cell -- the paper's Eq. 21 score."""
+    probabilities = np.asarray(probabilities, dtype=np.float64)
+    pos, neg = probabilities[..., 1], probabilities[..., 0]
+    return pos / np.maximum(pos + neg, 1e-12)
+
+
+def decide_with_cutpoints(severity: np.ndarray, t1: float, t2: float) -> np.ndarray:
+    """0 below ``t1``, 2 (Uncertain) in ``[t1, t2)``, 1 at or above ``t2``."""
+    if t2 < t1:
+        raise CalibrationError(f"cutpoints must satisfy t1 <= t2, got {t1} > {t2}")
+    severity = np.asarray(severity, dtype=np.float64)
+    return np.where(severity >= t2, 1, np.where(severity >= t1, 2, 0))
+
+
+def fit_severity_cutpoints(
+    predictions: ClassificationPredictions,
+    *,
+    objective: str = "weighted_f1",
+    allow_uncertain: bool = True,
+    grid_size: int = 121,
+    min_uncertain: int = 5,
+) -> dict[str, tuple[float, float]]:
+    """``{finding: (t1, t2)}`` maximising ``objective`` per finding.
+
+    Candidates are ``grid_size`` quantiles of the finding's own severity scores.
+    A finding with fewer than ``min_uncertain`` Uncertain cells, or
+    ``allow_uncertain=False``, gets a single cutpoint (``t1 == t2``).
+    Ties keep the first (lowest) candidate, so the result is deterministic.
+    """
+    from training.evaluation.classification_metrics import macro_recall, weighted_prf
+
+    if objective not in CUTPOINT_OBJECTIVES:
+        raise CalibrationError(f"objective must be one of {CUTPOINT_OBJECTIVES}")
+    severity = severity_scores(predictions.probabilities)
+    out: dict[str, tuple[float, float]] = {}
+    for index, name in enumerate(predictions.pathology_names):
+        valid = predictions.labels[:, index] != MISSING
+        y = predictions.labels[valid, index].astype(int)
+        s = severity[valid, index]
+        if y.size == 0:
+            out[name] = (0.5, 0.5)
+            continue
+        grid = np.unique(np.quantile(s, np.linspace(0.0, 1.0, grid_size)))
+        two = allow_uncertain and int((y == 2).sum()) >= min_uncertain
+        best, arg = -np.inf, (float(grid[0]), float(grid[0]))
+        for i, t1 in enumerate(grid):
+            for t2 in (grid[i:] if two else (t1,)):
+                d = decide_with_cutpoints(s, t1, t2)
+                value = (weighted_prf(y, d)["f1"] if objective == "weighted_f1"
+                         else macro_recall(y, d))
+                if value > best + 1e-12:
+                    best, arg = value, (float(t1), float(t2))
+        out[name] = arg
+    return out
+
+
+def apply_cutpoints(
+    probabilities: np.ndarray,
+    cutpoints: dict[str, tuple[float, float]],
+    pathology_names: tuple[str, ...],
+) -> np.ndarray:
+    """``[N, P]`` decisions from per-finding cutpoints on the severity score."""
+    severity = severity_scores(probabilities)
+    decisions = np.empty(severity.shape, dtype=int)
+    for index, name in enumerate(pathology_names):
+        if name not in cutpoints:
+            raise CalibrationError(f"no cutpoints for finding {name!r}")
+        t1, t2 = cutpoints[name]
+        decisions[:, index] = decide_with_cutpoints(severity[:, index], t1, t2)
+    return decisions

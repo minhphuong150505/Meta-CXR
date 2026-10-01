@@ -693,6 +693,11 @@ python scripts/calibrate_thresholds.py --predictions <val.npz> --output <thresho
 # the argmax numbers, never instead. This is NOT the binary --thresholds removed
 # by D-023; load_thresholds refuses that old format.
 python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresholds.json> --output-dir <dir>
+# SUPPLEMENTARY, not the paper's protocol (user chose this over retraining,
+# 2026-10-01): one/two cutpoints on p_pos/(p_pos+p_neg) fitted on val, test
+# scored with a paired bootstrap against argmax. Uncertain sits between N and P
+# on that score but a middle band adds ~nothing; the gain is the P/N cutpoint.
+python scripts/evaluate_stage1_cutpoints.py --val <val.npz> --test <test.npz> --output-dir <dir>
 # Paper Table 4 (CheXpert val, p1/(p0+p1)) and Table 3 CE (labeler output):
 python scripts/evaluate_chexpert_crossdomain.py --predictions <chexpert_val.npz>
 python scripts/evaluate_clinical_efficacy.py --generated-labels <csv> --reference-labels <csv>
