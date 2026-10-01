@@ -68,7 +68,7 @@ Cross-entropy 3 lớp cho 14 bệnh lý, có `class_weights` (14×3) **hoặc**
 `logit_adjust_counts` + `logit_adjust_tau`, và `label_smoothing`.
 (`uncertain_policy` đã gỡ ở D-023.)
 
-**Logit-adjusted loss (2026-10-01, D-025, bản production).** Truyền
+**Logit-adjusted loss (2026-10-01, D-025; đã cài, KHÔNG bật trong production).** Truyền
 `logit_adjust_counts` (14×3 số ca train `[neg, pos, unc]`) thì loss tính CE trên
 `logits + tau·log(prior)` (Menon et al., ICLR 2021, Eq. 10); logit của mô hình,
 argmax và mọi metric vẫn dùng logit gốc. Tối ưu đúng balanced error = 1 −

@@ -1250,8 +1250,15 @@ Ghim bởi `tests/test_selection_metric.py`.
 
 ## D-025 — Logit-adjusted loss thay trọng số lớp bị chặn (2026-10-01)
 
-**Quyết định của người dùng.** `model.mhcac.logit_adjustment` (Menon et al.,
-ICLR 2021, Eq. 10) thay `model.mhcac.class_weights` trong
+**TRẠNG THÁI: đã cài, KHÔNG áp dụng.** Mô phỏng post-hoc trên dự đoán test của
+`run_20260930_3class` cho thấy τ = 1 làm mô hình đoán Uncertain 24.902 lần
+(1.516 ô thật), weighted F1 0,77 → 0,32, macro_recall cũng giảm (0,456 → 0,434);
+τ = 0,5 cho weighted F1 0,797, F1_5 0,705, macro_recall 0,441. Người dùng không
+chấp nhận đổi F1 lấy recall với tỉ lệ đó; production quay lại `class_weights`.
+Phần dưới là thiết kế đã cài.
+
+**Thiết kế.** `model.mhcac.logit_adjustment` (Menon et al.,
+ICLR 2021, Eq. 10) thay được `model.mhcac.class_weights` trong
 `mimic_cxr_full.yaml`. CE tính trên `logits + tau·log(prior)`, `tau = 1`, prior
 lấy từ số ca train `[neg, pos, unc]` theo từng bệnh; dự đoán vẫn là argmax trên
 logit gốc. Vẫn ba lớp (D-023).

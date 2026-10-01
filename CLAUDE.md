@@ -3295,17 +3295,20 @@ pinned by `tests/test_blank_label_masking.py`:
 - `preprocess_mimic_cxr.py --blank-label-policy` mirrors it but writes no label
   column, so no manifest rebuild is needed.
 
-⚠ **SUPERSEDED 2026-10-01 (D-025): `mimic_cxr_full.yaml` no longer sets
-`class_weights`.** It sets `model.mhcac.logit_adjustment` (`tau: 1.0`,
-`class_counts` = the train `[neg, pos, unc]` counts below, every row 220,379):
-cross entropy over `logits + tau*log(prior)` (Menon et al., ICLR 2021, Eq. 10),
-argmax over the raw logits. The two keys are mutually exclusive and the model
-raises if both are set; the old table survives as a comment for the ablation
-that reproduces `run_20260930_3class`. Why: on that run's test split the cap at
-10 left rare positives almost never predicted (Fracture recall 0.01, Pleural
-Other 0.05) while common findings were over-called (Cardiomegaly negative
-recall 0.21). Pinned by `tests/test_logit_adjustment.py`. The paragraph below
-is the history of the weights it replaced.
+⚠ **D-025 (2026-10-01): logit-adjusted loss implemented, NOT adopted —
+`class_weights` below are still the production setting.**
+`model.mhcac.logit_adjustment` (`tau`, `class_counts` = train `[neg, pos, unc]`)
+switches `ClassificationLoss` to Menon et al.'s loss (ICLR 2021, Eq. 10); it is
+mutually exclusive with `class_weights`. A post-hoc simulation on
+`run_20260930_3class` test predictions (Menon Eq. 9 after undoing the weights)
+predicted: tau 1.0 collapses to Uncertain (24,902 calls for 1,516 true cells,
+weighted F1 0.77 -> 0.32, macro_recall 0.456 -> 0.434); tau 0.5 gives weighted F1
+0.797 / F1_5 0.705 / macro_recall 0.441; plain CE (no weights) 0.805 / 0.730 /
+0.419. The user declined to trade F1 for recall. Do not re-enable tau 1.0.
+Side effect kept: CE class weights are no longer saved in checkpoints and
+`cls_loss_fn.*` keys are dropped on load (`drop_loss_config_state`), because an
+old `checkpoint_phase1a` carrying them blocked the smoke. Record:
+`docs/handoff/PLAN-2026-10-01-logit-adjusted-loss.md`.
 
 `class_weights` were recomputed for `negative` on the host 2026-09-24 with
 `scripts/count_chexpert_blank_policy.py` (train, study level, same formula,
