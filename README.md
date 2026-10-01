@@ -319,6 +319,7 @@ Có thể chấm thêm tập test bằng chính các ngưỡng val này
 (`scripts/evaluate_stage1.py --thresholds <file>`, thêm 2026-10-01). Đó là phân
 tích bổ sung, không phải giao thức của bài báo, nên luôn báo cạnh số argmax chứ
 không thay thế.
+
 Phân tích bổ sung thứ hai (2026-10-01): `scripts/evaluate_stage1_cutpoints.py` quyết định theo một hoặc
 hai ngưỡng trên điểm `p_pos/(p_pos+p_neg)` fit trên val. Trên `run_20260930_3class` (test): weighted F1
 0,766 → 0,815, F1 5 bệnh 0,644 → 0,743, macro recall 0,456 → 0,437. Gần như toàn bộ cải thiện đến từ
