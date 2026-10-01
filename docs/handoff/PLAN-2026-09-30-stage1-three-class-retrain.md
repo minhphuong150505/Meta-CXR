@@ -117,3 +117,25 @@ macro_recall 0.456 against a 0.333 chance level says the model rarely predicts
 Uncertain and misses many Positives; the weighted numbers ride on the majority
 Negative class. Artifacts: `~/eval_20260930_3class/{test,val,test_v2}`,
 `thresholds_eq22_val.json`, `~/paired_3class.log`.
+
+### 2026-10-01 — supplementary: test scored with val Eq. 22 thresholds
+
+`evaluate_stage1.py --thresholds ~/eval_20260930_3class/thresholds_eq22_val.json`
+(code `30a101c`; host tests for the touched files pass, sklearn pins included).
+NOT the paper's protocol. Test n=3,269, 95% bootstrap CI (1,000):
+
+| metric | argmax (paper) | Eq. 22 thresholds |
+|---|---:|---:|
+| weighted_precision | 0.8379 [0.8344, 0.8452] | 0.8278 [0.8236, 0.8325] |
+| weighted_recall | 0.7685 [0.7641, 0.7728] | 0.6383 [0.6320, 0.6442] |
+| weighted_f1 | 0.7658 [0.7612, 0.7705] | 0.6966 [0.6910, 0.7023] |
+| mean_weighted_f1_5 | 0.6438 [0.6352, 0.6525] | 0.6547 [0.6457, 0.6637] |
+| macro_recall | 0.4560 [0.4513, 0.4688] | 0.5027 [0.4914, 0.5206] |
+
+Pooled over 14 findings, recall N/P/U 0.802/0.747/0.046 -> 0.637/0.728/0.254;
+precision 0.924/0.409/0.170 -> 0.929/0.338/0.080; Uncertain predicted 411 ->
+4,810 times for 1,516 true cells. Rare positives recovered (Fracture 0.01 ->
+0.53, Pleural Other 0.05 -> 0.86, Enlarged Cardiomediastinum 0.04 -> 0.36),
+Cardiomegaly negative recall 0.21 -> 0.50. Weighted F1 falls because Negative
+recall falls. Uncertain precision 0.08 confirms AUROC_unc 0.57: thresholds can
+buy Uncertain recall only with mostly-wrong Uncertain calls.
