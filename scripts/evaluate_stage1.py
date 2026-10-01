@@ -11,6 +11,12 @@ were removed on 2026-09-29 (D-023).
 
 No model, GPU or dataset is needed -- only the ``.npz`` the run wrote.
 
+``--thresholds <val thresholds.json>`` (from ``scripts/calibrate_thresholds.py``)
+scores the same predictions with per-(finding, class) Eq. 22 thresholds instead
+of argmax. That is a SUPPLEMENTARY analysis, not the paper's protocol: report
+it beside the argmax numbers, never in their place. A file fitted on the split
+being scored is refused.
+
     python scripts/evaluate_stage1.py \\
         --predictions <run>/result/test_predictions_epoch_best.npz \\
         --output-dir <private dir>/stage1_test
@@ -21,6 +27,7 @@ Exit codes: 0 success, 1 evaluation failed, 2 bad arguments or input.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -62,6 +69,7 @@ from training.evaluation.subgroup_analysis import (  # noqa: E402
     subgroup_table,
     view_subgroups,
 )
+from training.evaluation.threshold_calibration import load_thresholds  # noqa: E402
 
 logger = logging.getLogger("evaluate_stage1")
 
@@ -83,6 +91,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--split", default=None)
     parser.add_argument("--checkpoint", default="unknown")
     parser.add_argument("--config", default="unknown")
+    parser.add_argument(
+        "--thresholds", type=Path, default=None,
+        help="per-class Eq. 22 threshold JSON fitted on validation; replaces "
+        "argmax (supplementary, not the paper's protocol)",
+    )
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args(argv)
 
@@ -118,7 +131,29 @@ def main(argv: list[str] | None = None) -> int:
         predictions.num_samples, predictions.num_pathologies, args.predictions,
     )
 
-    report = evaluate_classification(predictions)
+    thresholds = None
+    if args.thresholds is not None:
+        try:
+            thresholds = load_thresholds(args.thresholds)
+            fitted_on = json.loads(args.thresholds.read_text(encoding="utf-8")).get(
+                "metadata", {}
+            ).get("split")
+        except Exception as exc:  # noqa: BLE001 - surfaced to the user
+            logger.error("could not read thresholds %s: %s", args.thresholds, exc)
+            return 2
+        scored = args.split or str(predictions.metadata.get("split", "unknown"))
+        if fitted_on is None or fitted_on == "test" or fitted_on == scored:
+            logger.error(
+                "thresholds in %s were fitted on %r; they must come from validation "
+                "and be applied to a different split (scoring %r)",
+                args.thresholds, fitted_on, scored,
+            )
+            return 2
+
+    def score(p: ClassificationPredictions):
+        return evaluate_classification(p, thresholds=thresholds)
+
+    report = score(predictions)
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     payload: dict = {
@@ -132,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("bootstrapping %d replicates by study", args.bootstrap_samples)
 
         def getter(name: str):
-            return lambda idx: evaluate_classification(_subset(predictions, idx)).aggregates[name]
+            return lambda idx: score(_subset(predictions, idx)).aggregates[name]
 
         intervals = bootstrap_many(
             {name: getter(name) for name in HEADLINE_CLASSIFICATION_METRICS},
@@ -157,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     subgroups.extend(label_subgroups(predictions.labels, predictions.pathology_names))
     if subgroups:
         def subgroup_metrics(indices: np.ndarray) -> dict[str, float]:
-            aggregates = evaluate_classification(_subset(predictions, indices)).aggregates
+            aggregates = score(_subset(predictions, indices)).aggregates
             return {k: aggregates[k] for k in SUBGROUP_COLUMNS}
 
         results = evaluate_subgroups(subgroups, subgroup_metrics)
@@ -177,7 +212,10 @@ def main(argv: list[str] | None = None) -> int:
         checkpoint=args.checkpoint or str(predictions.metadata.get("checkpoint", "unknown")),
         config=args.config,
         seed=args.evaluation_seed,
-        threshold_source="argmax (paper)",
+        threshold_source=(
+            "argmax (paper)" if thresholds is None
+            else f"per-class Eq. 22 thresholds from {args.thresholds} (NOT the paper's protocol)"
+        ),
     )
     write_json({"metadata": metadata.to_dict(), "classification": payload},
                output_dir / "metrics.json")
@@ -190,7 +228,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     agg = report.aggregates
-    print("\nPaper protocol (three classes, argmax), mean over the 14 findings:")
+    if thresholds is None:
+        print("\nPaper protocol (three classes, argmax), mean over the 14 findings:")
+    else:
+        print("\nSUPPLEMENTARY -- per-class Eq. 22 thresholds from validation, NOT the "
+              "paper's argmax protocol; mean over the 14 findings:")
     print(f"  weighted precision / recall / F1 : {agg['weighted_precision']:.4f} / "
           f"{agg['weighted_recall']:.4f} / {agg['weighted_f1']:.4f}   (paper 0.87 / 0.78 / 0.73)")
     print(f"  mean weighted F1, 5 findings     : {agg['mean_weighted_f1_5']:.4f}   (paper Table 5: 0.701)")

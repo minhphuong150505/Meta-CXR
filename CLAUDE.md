@@ -688,6 +688,11 @@ python scripts/evaluate_stage1.py --predictions <test.npz> --output-dir <dir>
 # five-finding mean F1 (paper 0.701) and one-vs-rest AUROC per class (Fig. 5).
 # Per-class prompt thresholds (Eq. 22), fitted on VALIDATION only:
 python scripts/calibrate_thresholds.py --predictions <val.npz> --output <thresholds.json>
+# SUPPLEMENTARY, not the paper's protocol: score test with those val thresholds
+# instead of argmax (refuses a file fitted on the scored split). Report it beside
+# the argmax numbers, never instead. This is NOT the binary --thresholds removed
+# by D-023; load_thresholds refuses that old format.
+python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresholds.json> --output-dir <dir>
 # Paper Table 4 (CheXpert val, p1/(p0+p1)) and Table 3 CE (labeler output):
 python scripts/evaluate_chexpert_crossdomain.py --predictions <chexpert_val.npz>
 python scripts/evaluate_clinical_efficacy.py --generated-labels <csv> --reference-labels <csv>

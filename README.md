@@ -310,7 +310,11 @@ cả split — đúng đại lượng mà trung bình batch xấp xỉ, nên có
 
 Ngưỡng theo từng lớp (Hình 11, Eq. 22: điểm trên ROC gần góc trên-trái nhất) được
 fit trên **val** bằng `scripts/calibrate_thresholds.py` và chỉ dùng cho prompt
-Stage 2 (`--cue-rule paper_thresholds`). Chỉ số phân loại luôn dùng argmax.
+Stage 2 (`--cue-rule paper_thresholds`). Chỉ số phân loại chính luôn dùng argmax.
+Có thể chấm thêm tập test bằng chính các ngưỡng val này
+(`scripts/evaluate_stage1.py --thresholds <file>`, thêm 2026-10-01). Đó là phân
+tích bổ sung, không phải giao thức của bài báo, nên luôn báo cạnh số argmax chứ
+không thay thế.
 
 **Hai chỗ bài báo tự dùng nhị phân** nằm ở
 [`paper_protocol.py`](training/evaluation/paper_protocol.py):

@@ -178,6 +178,38 @@ def test_metrics_json_is_parseable_and_has_no_nan_token(workspace: Path):
     assert per_pathology["Fracture"]["auroc_uncertain"] is None
 
 
+def test_stage1_cli_scores_test_with_validation_thresholds(workspace: Path):
+    validation = synthetic_predictions(400, seed=1, split="validation")
+    test = synthetic_predictions(300, seed=2, split="test")
+    validation_path = validation.save(workspace / "validation_predictions.npz")
+    test_path = test.save(workspace / "test_predictions.npz")
+    thresholds_path = workspace / "thresholds.json"
+    assert calibrate_cli.main(
+        ["--predictions", str(validation_path), "--output", str(thresholds_path)]
+    ) == 0
+    out = workspace / "with_thresholds"
+    assert stage1_cli.main([
+        "--predictions", str(test_path), "--thresholds", str(thresholds_path),
+        "--no-bootstrap", "--no-plots", "--output-dir", str(out),
+    ]) == 0
+    payload = json.loads((out / "metrics.json").read_text())
+    assert "NOT the paper" in payload["classification"]["settings"]["decision"]
+    assert "Eq. 22" in payload["metadata"]["threshold_source"]
+
+
+def test_stage1_cli_refuses_thresholds_fitted_on_the_scored_split(workspace: Path):
+    validation = synthetic_predictions(400, seed=1, split="validation")
+    validation_path = validation.save(workspace / "validation_predictions.npz")
+    thresholds_path = workspace / "thresholds.json"
+    assert calibrate_cli.main(
+        ["--predictions", str(validation_path), "--output", str(thresholds_path)]
+    ) == 0
+    assert stage1_cli.main([
+        "--predictions", str(validation_path), "--thresholds", str(thresholds_path),
+        "--no-bootstrap", "--no-plots", "--output-dir", str(workspace / "x"),
+    ]) == 2
+
+
 def test_calibration_cli_refuses_a_test_split(workspace: Path):
     predictions = synthetic_predictions(100, seed=4, split="test")
     path = predictions.save(workspace / "test.npz")
