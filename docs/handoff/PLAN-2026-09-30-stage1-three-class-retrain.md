@@ -139,3 +139,31 @@ precision 0.924/0.409/0.170 -> 0.929/0.338/0.080; Uncertain predicted 411 ->
 Cardiomegaly negative recall 0.21 -> 0.50. Weighted F1 falls because Negative
 recall falls. Uncertain precision 0.08 confirms AUROC_unc 0.57: thresholds can
 buy Uncertain recall only with mostly-wrong Uncertain calls.
+
+### 2026-10-01 — is Uncertain visible in the image? (analysis, no training)
+
+Score s = p_pos/(p_pos+p_neg) from run_20260930_3class; AUROC between label
+groups, 95% CI from 1,000 bootstrap resamples per group; findings with >= 30
+Uncertain and Positive cells. Test split:
+
+| finding | nN / nU / nP | s: U>N | s: P>U | s: P>N | p_unc: U>N | p_unc: U>P | median s N / U / P |
+|---|---|---|---|---|---|---|---|
+| Enl. Cardiomediastinum | 2893 / 204 / 151 | 0.59 [0.54,0.63] | 0.56 [0.50,0.63] | 0.65 | 0.60 | 0.51 | 0.27 / 0.30 / 0.31 |
+| Cardiomegaly | 2267 / 115 / 866 | 0.60 [0.56,0.65] | 0.67 [0.61,0.73] | 0.75 | 0.44 | 0.68 | 0.77 / 0.83 / 0.92 |
+| Lung Opacity | 2131 / 79 / 1038 | 0.63 [0.57,0.69] | 0.61 [0.55,0.67] | 0.73 | 0.46 | 0.60 | 0.46 / 0.60 / 0.68 |
+| Edema | 2276 / 289 / 683 | 0.77 [0.74,0.79] | 0.69 [0.65,0.72] | 0.87 | 0.68 | 0.65 | 0.27 / 0.64 / 0.87 |
+| Consolidation | 2931 / 97 / 220 | 0.64 [0.59,0.69] | 0.66 [0.60,0.72] | 0.76 | 0.44 | 0.61 | 0.29 / 0.40 / 0.52 |
+| Pneumonia | 2563 / 350 / 335 | 0.73 [0.70,0.76] | 0.53 [0.48,0.57] | 0.74 | 0.70 | 0.57 | 0.32 / 0.50 / 0.52 |
+| Atelectasis | 2326 / 191 / 731 | 0.73 [0.70,0.77] | 0.58 [0.53,0.62] | 0.78 | 0.60 | 0.61 | 0.39 / 0.70 / 0.76 |
+| Pleural Effusion | 2044 / 130 / 1074 | 0.78 [0.75,0.82] | 0.74 [0.70,0.78] | 0.90 | 0.45 | 0.74 | 0.25 / 0.76 / 0.92 |
+
+Val shows the same pattern. Reading: on every finding the median s orders
+N < U < P and U>N excludes 0.5, so Uncertain cases ARE visibly different from
+negatives — as an intermediate on the positive/negative axis, not a distinct
+appearance. Pneumonia U vs P is indistinguishable (0.53 [0.48,0.57]): uncertain
+pneumonia looks like positive pneumonia, consistent with the report hedging on
+cause rather than appearance. The dedicated Uncertain output does not capture
+this: p_unc ranks Uncertain BELOW negatives for Cardiomegaly, Lung Opacity,
+Consolidation and Pleural Effusion (0.44-0.46). A middle class is structurally
+hard for argmax and for one-vs-rest AUROC. Caveats: labels are labeler
+output (noisy), and part of the signal may come from co-occurring findings.
