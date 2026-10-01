@@ -167,3 +167,27 @@ this: p_unc ranks Uncertain BELOW negatives for Cardiomegaly, Lung Opacity,
 Consolidation and Pleural Effusion (0.44-0.46). A middle class is structurally
 hard for argmax and for one-vs-rest AUROC. Caveats: labels are labeler
 output (noisy), and part of the signal may come from co-occurring findings.
+
+### 2026-10-01 — ordinal decision rule: two cutpoints on s (analysis, no training)
+
+Per finding, cutpoints t1 <= t2 on s = p_pos/(p_pos+p_neg) fitted on val
+(121 quantile grid): N below t1, U in [t1, t2), P at or above t2. Scored on test
+(n=3,269), paired bootstrap vs argmax (1,000, seed 16). NOT the paper's protocol.
+
+| rule | wF1 | F1_5 | macro_recall | U predicted (1,516 true) | U recall / precision |
+|---|---:|---:|---:|---:|---|
+| argmax (paper) | 0.7658 | 0.6438 | 0.4560 | 411 | 0.046 / 0.170 |
+| 1 cutpoint (no U), fit wF1 | 0.8143 | 0.7440 | 0.4320 | 0 | 0 / - |
+| 2 cutpoints, fit wF1 | 0.8151 | 0.7425 | 0.4372 | 579 | 0.062 / 0.162 |
+| 2 cutpoints, fit macro_recall | 0.6275 | 0.5342 | 0.4826 | 13,296 | 0.538 / 0.061 |
+
+2 cutpoints (wF1) - argmax: wF1 +0.0493 [+0.0459, +0.0524], F1_5 +0.0987
+[+0.0916, +0.1055], macro_recall -0.0188 [-0.0237, -0.0143].
+1 cutpoint - argmax: wF1 +0.0485 [+0.0451, +0.0519], F1_5 +0.1003 [+0.0934, +0.1074].
+
+Reading: the Uncertain band adds almost nothing (+0.0008 wF1 over one
+cutpoint, U precision 0.16). The whole gain is moving the Positive/Negative
+cutpoint, i.e. undoing the over-calling that the class weights put into argmax.
+The intermediate image signal for Uncertain is real but overlaps both
+neighbours too much to be called as a class. Consistent with the earlier
+simulation that plain (unweighted) CE gives wF1 0.805 / F1_5 0.730 at argmax.
