@@ -39,6 +39,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `evaluate_clinical_efficacy.py` | [📄](evaluate_clinical_efficacy.py.doc.md) | ✅ Bảng 3 CE của bài báo (chấm nhãn labeler có sẵn) |
 | `count_chexpert_blank_policy.py` | [📄](count_chexpert_blank_policy.py.doc.md) | ✅ CPU, đếm nhãn study-level dưới hai `blank_label_policy`, in class weight cho `negative`, kiểm nguồn gốc ô -100 |
 | `evaluate_stage1.py` (236) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz`, giao thức ba lớp của bài báo |
+| `evaluate_stage1_cutpoints.py` | [📄](evaluate_stage1_cutpoints.py.doc.md) | ✅ **Bổ sung, không phải giao thức bài báo**: fit 1 hoặc 2 ngưỡng trên `p_pos/(p_pos+p_neg)` ở val, chấm test, bootstrap ghép cặp so với argmax (2026-10-01) |
 | `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |
 | `generate_stage2_reports.py` (381) | [📄](generate_stage2_reports.py.doc.md) | ✅ Sinh `.jsonl` cho dòng trên. `--pipeline-mode` chọn nguồn record: CSV (native) hay Stage-1 (soft token). ⚠ Hai cohort khác nhau — dùng `--restrict-to` mới so sánh được |
 | `evaluate_explanation.py` | [📄](evaluate_explanation.py.doc.md) | ✅ XAI — load checkpoint, cần autograd sống, không train |

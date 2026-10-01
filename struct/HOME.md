@@ -274,6 +274,7 @@ Meta-CXR-source/
 │   ├── vm_preflight.py             🧰 chạy TRƯỚC mọi run dài
 │   ├── train_healthcheck.sh         🧰 monitor chỉ đọc Stage 1/2; cron dùng exit code
 │   ├── calibrate_thresholds.py     ✅ ngưỡng theo (bệnh, lớp), Eq. 22   evaluate_stage1.py ✅ giao thức bài báo
+│   ├── evaluate_stage1_cutpoints.py ✅ BỔ SUNG (không phải giao thức bài báo): ngưỡng trên p_pos/(p_pos+p_neg)
 │   ├── evaluate_chexpert_crossdomain.py ✅ Bảng 4   evaluate_clinical_efficacy.py ✅ Bảng 3 CE
 │   ├── evaluate_explanation.py     ✅ XAI, checkpoint + autograd, không train
 │   ├── evaluate_stage2.py          ✅   check_notebook_privacy.py ✅ pre-commit
