@@ -26,6 +26,7 @@ from training.evaluation.classification_metrics import (  # noqa: E402
     confusion_matrix,
     decide,
     evaluate_classification,
+    macro_recall,
     roc_auc,
     weighted_prf,
 )
@@ -118,6 +119,43 @@ def test_weighted_prf_matches_sklearn(seed):
     ):
         expected = fn(y_true, y_pred, average="weighted", zero_division=1)
         assert ours[key] == pytest.approx(expected), key
+
+
+def test_macro_recall_hand_computed():
+    y_true = np.array([0, 0, 0, 0, 1, 2])
+    y_pred = np.array([0, 0, 0, 0, 0, 2])
+    # recalls: negative 4/4, positive 0/1, uncertain 1/1 -> mean 2/3
+    assert macro_recall(y_true, y_pred) == pytest.approx(2 / 3)
+    # accuracy (= weighted recall) is 5/6: it barely notices the missed Positive
+    assert weighted_prf(y_true, y_pred)["recall"] == pytest.approx(5 / 6)
+
+
+def test_macro_recall_ignores_classes_absent_from_the_truth():
+    # Uncertain is never true here; predicting it once must not add a 1.0 term.
+    assert macro_recall(np.array([0, 0, 1, 1]), np.array([0, 2, 1, 1])) == pytest.approx(
+        (0.5 + 1.0) / 2
+    )
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_macro_recall_matches_sklearn_balanced_accuracy(seed):
+    metrics = pytest.importorskip("sklearn.metrics")
+    rng = np.random.default_rng(seed)
+    y_true = rng.choice(3, size=200, p=[0.7, 0.2, 0.1])
+    y_pred = rng.choice(3, size=200, p=[0.5, 0.45, 0.05])
+    assert macro_recall(y_true, y_pred) == pytest.approx(
+        metrics.balanced_accuracy_score(y_true, y_pred)
+    )
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_weighted_recall_is_identically_accuracy(seed):
+    """Why macro_recall, not weighted_recall, is the selection metric."""
+    rng = np.random.default_rng(seed)
+    y_true = rng.choice(3, size=200, p=[0.7, 0.2, 0.1])
+    y_pred = rng.choice(3, size=200, p=[0.5, 0.45, 0.05])
+    out = weighted_prf(y_true, y_pred)
+    assert out["recall"] == pytest.approx(out["accuracy"])
 
 
 def test_confusion_matrix_rows_are_truth():

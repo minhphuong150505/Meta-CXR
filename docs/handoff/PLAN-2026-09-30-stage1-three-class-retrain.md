@@ -53,3 +53,39 @@ Paper references: weighted P/R/F1 over 14 findings 0.87 / 0.78 / 0.73;
 ## Execution report
 
 _(executor appends here)_
+
+### 2026-09-30 21:31 — launched
+
+- Host on `f419e0c`; full suite `tests/ training/`: **1,106 tests, 0 failed,
+  2 skipped**, rc 0 (after replacing the retired `evaluation:` block of the
+  host's private `env_config.yaml`; backup `~/env_config.yaml.bak_20260930`).
+- `/mnt/drive1tb` ntfs3, GPU idle (119 MiB) before launch.
+- `checkpoint_phase1a.pth` copied from `run_20260925b_3phase`, sha256 prefix
+  `e4683e642ad1bccd` identical on both.
+- `ROOT=~/run_20260930_3class PHASES="phase1b phase1c"`, log `~/run_20260930_3class.log`.
+- Phase 1b init: 765 tensors loaded from 1a, the rest are the frozen encoders.
+- Iter 850/13,922: `loss_cls` 1.04, `loss_mpc` 1.66, ITC/ITM/LM 0 as intended,
+  0.36 s/it, `max mem` 6,476 MiB, GPU 98%. Epoch ETA ~1h25m.
+
+### 2026-09-30 22:22 — automatic scoring armed
+
+`~/eval_after_3class.sh` (pid 14780, setsid) waits for pid 13476 to exit, checks
+`checkpoint_phase1c.pth`, then runs `evaluate_stage1.py` on the phase-1c
+`test`/`val_predictions_epoch_best.npz` into `~/eval_20260930_3class/{test,val}`
+and `calibrate_thresholds.py` on val (Eq. 22). State in
+`~/eval_20260930_3class/STATUS` (WAITING / SCORING / DONE / FAILED).
+
+Evaluator dry run on the D-022 run (`run_20260925b_3phase`, which already
+trained three-class; only its old scoring was binary), test n=3,269:
+weighted P/R/F1 **0.8387 / 0.7653 / 0.7658** (paper 0.87 / 0.78 / 0.73),
+`mean_weighted_f1_5` **0.6434** (paper 0.701), AUROC Pos/Neg/Unc
+**0.7774 / 0.7708 / 0.5904**. Output `~/eval_20260925b_rescored/test`.
+
+### 2026-10-01 — selection metric changed for FUTURE runs (D-024)
+
+At the user's request, `mimic_cxr_full.yaml` phases 1b/1c now select on
+`macro_recall` (three-class balanced recall, new aggregate). **This run is not
+affected**: it was launched on `f419e0c` and selected 1b epoch 3 on `loss`.
+`auroc_mean` would have chosen the same epoch; `weighted_f1` and
+`mean_weighted_f1_5` would have chosen epoch 2 (+0.002 / +0.017 on val).
+Do not `git pull` on the host until this run and its scorer have finished.

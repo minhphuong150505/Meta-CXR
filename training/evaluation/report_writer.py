@@ -36,6 +36,8 @@ HEADLINE_CLASSIFICATION_METRICS = (
     "weighted_recall",
     "weighted_f1",
     "mean_weighted_f1_5",
+    # Not in the paper: three-class balanced recall, the Stage-1 selection metric.
+    "macro_recall",
     "auroc_positive_mean",
     "auroc_negative_mean",
     "auroc_uncertain_mean",

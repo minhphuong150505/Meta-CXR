@@ -28,6 +28,17 @@ What the paper reports, and where each number comes from here
   including No Finding: per-finding ``auroc`` dict, summarised as
   ``auroc_negative_mean`` / ``auroc_positive_mean`` / ``auroc_uncertain_mean``.
 
+Not in the paper
+----------------
+* **Macro recall over the three classes (``macro_recall``).** Per finding, the
+  unweighted mean of the Negative / Positive / Uncertain recalls over the
+  classes present in the ground truth -- sklearn's ``balanced_accuracy_score``
+  -- averaged over the 14 findings. Added 2026-10-01 as the Stage-1
+  checkpoint-selection metric at the user's request. ``weighted_recall`` cannot
+  serve: support-weighted recall is identically ``accuracy``, so it rewards the
+  majority Negative class; here a missed Positive or Uncertain cell costs as
+  much as a missed Negative one. Still three classes, still argmax.
+
 Numpy only, so the core runs on the CPU development box. The weighted P/R/F1
 follow sklearn's semantics exactly and are pinned against sklearn on the host
 (``tests/test_classification_metrics.py``).
@@ -172,6 +183,21 @@ def weighted_prf(
     return out
 
 
+def macro_recall(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Unweighted mean recall over the classes present in ``y_true``.
+
+    sklearn's ``balanced_accuracy_score``: a class with no true support is left
+    out rather than scored by ``zero_division``, so predicting a class that
+    never occurs cannot raise it.
+    """
+    y_true = np.asarray(y_true, dtype=int)
+    y_pred = np.asarray(y_pred, dtype=int)
+    if y_true.size == 0:
+        return float("nan")
+    present = np.unique(y_true)
+    return float(np.mean([np.mean(y_pred[y_true == c] == c) for c in present]))
+
+
 @dataclass
 class PathologyMetrics:
     """Three-class metrics for one finding."""
@@ -182,6 +208,7 @@ class PathologyMetrics:
     weighted_recall: float
     weighted_f1: float
     accuracy: float
+    macro_recall: float
     per_class: dict[str, dict[str, float]]
     auroc: dict[str, float]
     auprc: dict[str, float]
@@ -194,6 +221,7 @@ class PathologyMetrics:
             "weighted_recall": self.weighted_recall,
             "weighted_f1": self.weighted_f1,
             "accuracy": self.accuracy,
+            "macro_recall": self.macro_recall,
         }
         for cls in CLASS_NAMES:
             row[f"n_{cls}"] = self.support.get(cls, 0)
@@ -285,6 +313,7 @@ def evaluate_classification(
                 weighted_recall=weighted["recall"],
                 weighted_f1=weighted["f1"],
                 accuracy=weighted["accuracy"],
+                macro_recall=macro_recall(y_true, y_pred),
                 per_class=per_class,
                 auroc=auroc,
                 auprc=auprc,
@@ -298,6 +327,8 @@ def evaluate_classification(
         "weighted_recall": _nanmean(m.weighted_recall for m in per_pathology),
         "weighted_f1": _nanmean(m.weighted_f1 for m in per_pathology),
         "accuracy": _nanmean(m.accuracy for m in per_pathology),
+        # Not in the paper: three-class balanced recall, the selection metric.
+        "macro_recall": _nanmean(m.macro_recall for m in per_pathology),
         # Paper Tables 5 and 7.
         "mean_weighted_f1_5": _nanmean(
             m.weighted_f1 for m in per_pathology if m.name in PAPER_FIVE_FINDINGS
@@ -336,6 +367,7 @@ AGGREGATE_METRICS = (
     "weighted_recall",
     "weighted_f1",
     "accuracy",
+    "macro_recall",
     "mean_weighted_f1_5",
     "auroc_negative_mean",
     "auroc_positive_mean",

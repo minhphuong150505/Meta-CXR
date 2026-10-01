@@ -104,9 +104,12 @@ Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/
 
 - Entrypoint: [`pretraining/train.py`](pretraining/train.py)
 - Config production (một GPU, recipe duy nhất): [`pretraining/configs/mimic_cxr_full.yaml`](pretraining/configs/mimic_cxr_full.yaml)
-- Checkpoint selection: **`loss`** (tổng val loss) trên validation; test được giữ ngoài quá trình chọn checkpoint.
-  `macro_auprc` vẫn được log mỗi epoch được chấm để đối chiếu — val loss bị các nhãn phổ biến chi phối,
-  nên một model bỏ hẳn nhãn hiếm có thể ăn điểm hơn model đôi khi tìm ra nó.
+- Checkpoint selection (từ 2026-10-01): **`macro_recall`** trên validation cho pha 1b và 1c; pha 1a vẫn dùng
+  `loss` vì không chạy bộ phân loại. `macro_recall` là trung bình không trọng số của recall ba lớp
+  Negative / Positive / Uncertain (sau argmax, như `balanced_accuracy_score` của sklearn) cho từng bệnh,
+  rồi lấy trung bình 14 bệnh. Không có trong paper. Không dùng `weighted_recall` vì nó trùng hoàn toàn
+  với accuracy, tức là thiên về lớp Negative chiếm đa số. Test được giữ ngoài quá trình chọn checkpoint.
+  `run_20260930_3class` chạy trước thay đổi này nên vẫn chọn theo val loss.
 
 #### Khối vision-language (ITC/ITM/LM) ĐÃ TẮT từ 2026-08-19
 

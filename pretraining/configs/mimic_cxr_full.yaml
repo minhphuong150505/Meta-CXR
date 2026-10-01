@@ -723,19 +723,19 @@ run:
   # means the value is currently inert. To make it live, set it to 4 or less.
   early_stop_patience: 5
   early_stop_min_delta: 1.0e-4
-  # Select on total validation loss -- the quantity actually optimised, and
-  # independent of any decision threshold. ``selection_mode`` is deliberately
-  # absent: RunnerBase infers "min" from the metric name containing "loss", and
-  # leaving an explicit "max" here would silently keep the worst epoch.
-  #
-  # KNOWN BIAS, stated so results are read correctly: validation loss is a
-  # weighted sum dominated by the frequent labels, so a model that stops
-  # predicting a rare finding altogether can score better than one that finds
-  # it sometimes. The paper's three-class metrics (weighted_f1,
-  # mean_weighted_f1_5, auroc_*_mean) are logged every scored epoch too -- any
-  # of them may be named here -- so compare which epoch each would have chosen
-  # before quoting either in a write-up.
-  selection_metric: loss
+  # Select on macro_recall (user decision 2026-10-01): per finding, the
+  # unweighted mean of the Negative / Positive / Uncertain recalls (sklearn
+  # balanced_accuracy_score), averaged over the 14 findings, after argmax.
+  # Replaces `loss`, which is a weighted sum dominated by the frequent labels:
+  # a model that stops predicting a rare finding can score better on it.
+  # NOT weighted_recall: support-weighted recall is identically accuracy, so it
+  # rewards the majority Negative class even more than the loss does.
+  # ``selection_mode`` is deliberately absent: RunnerBase infers "max" for any
+  # name without "loss" in it; an explicit "min" left here would keep the worst
+  # epoch. Every other three-class aggregate (weighted_f1, mean_weighted_f1_5,
+  # auroc_*_mean) and the val loss are still logged each scored epoch.
+  # Phase 1a keeps `loss`: it runs no classifier, so macro_recall is absent.
+  selection_metric: macro_recall
   save_freq: 5
   # Write checkpoint_last this often *within* an epoch. 0 restores the old
   # behaviour of only writing when an epoch finishes.
@@ -1034,7 +1034,7 @@ run:
         min_lr: 1.0e-5
         eval_start_epoch: 0
         early_stop_patience: 0
-        selection_metric: loss
+        selection_metric: macro_recall
         save_predictions: true
         test_splits: []
     phase1c:
@@ -1106,6 +1106,6 @@ run:
         min_lr: 1.0e-5
         eval_start_epoch: 0
         early_stop_patience: 0
-        selection_metric: loss
+        selection_metric: macro_recall
         save_predictions: true
         test_splits: [test]

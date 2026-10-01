@@ -196,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  mean weighted F1, 5 findings     : {agg['mean_weighted_f1_5']:.4f}   (paper Table 5: 0.701)")
     print(f"  AUROC one-vs-rest  Pos/Neg/Unc   : {agg['auroc_positive_mean']:.4f} / "
           f"{agg['auroc_negative_mean']:.4f} / {agg['auroc_uncertain_mean']:.4f}")
+    print(f"  macro recall, 3 classes          : {agg['macro_recall']:.4f}   (not in the paper; selection metric)")
     print(f"  report                           : {output_dir / 'evaluation_report.md'}")
     return 0
 
