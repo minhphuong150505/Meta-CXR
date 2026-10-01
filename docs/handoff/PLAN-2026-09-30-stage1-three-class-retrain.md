@@ -191,3 +191,10 @@ cutpoint, i.e. undoing the over-calling that the class weights put into argmax.
 The intermediate image signal for Uncertain is real but overlaps both
 neighbours too much to be called as a class. Consistent with the earlier
 simulation that plain (unweighted) CE gives wF1 0.805 / F1_5 0.730 at argmax.
+
+### 2026-10-01 — user chose B: no retrain; argmax headline, cutpoints supplementary
+
+Reproduced with the committed script (`8809995`,
+`scripts/evaluate_stage1_cutpoints.py`, host tests pass): point estimates
+identical to the ad-hoc run above, CIs within 0.0004 (different bootstrap
+stream). Report: `~/eval_20260930_3class/cutpoints/cutpoints_report.json`.
