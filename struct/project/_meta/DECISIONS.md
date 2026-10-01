@@ -1224,3 +1224,27 @@ Cả hai nằm trong `training/evaluation/paper_protocol.py`.
 - Không có RadGraph/RadCliQ.
 
 Handoff: `docs/handoff/PLAN-2026-09-29-three-class-only.md`.
+
+## D-024 — Chọn checkpoint Stage 1 theo `macro_recall` (2026-10-01)
+
+**Quyết định của người dùng.** Pha 1b và 1c chọn `checkpoint_best` theo
+`macro_recall` trên val, thay cho `loss`. Pha 1a giữ `loss` vì không chạy bộ
+phân loại.
+
+**Định nghĩa.** Với từng bệnh: argmax ba lớp, rồi trung bình không trọng số
+recall của Negative / Positive / Uncertain trên các lớp có trong ground truth
+(sklearn `balanced_accuracy_score`). Trung bình đều 14 bệnh. Không có trong bài
+báo; vẫn là ba lớp, không vi phạm D-023.
+
+**Vì sao không phải `weighted_recall`.** Recall trọng số theo support trùng
+hoàn toàn với accuracy (test ghim lại; trên val của `run_20260930_3class` hai số
+trùng tới 16 chữ số), nên nó thưởng lớp Negative đa số còn nặng hơn val loss.
+
+**Vì sao bỏ `loss`.** Val loss là tổng có trọng số, bị các nhãn phổ biến chi
+phối; mô hình bỏ hẳn một bệnh hiếm vẫn có thể có loss tốt hơn.
+
+**Hệ quả.** `run_20260930_3class` khởi chạy trước thay đổi này, chọn theo
+`loss` (epoch 3 của 1b; `auroc_mean` cũng chọn epoch 3, các metric F1 chọn
+epoch 2). `selection_mode` vẫn vắng trong YAML để RunnerBase tự suy ra `max`.
+Ghim bởi `tests/test_selection_metric.py`.
+

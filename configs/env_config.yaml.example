@@ -59,8 +59,9 @@ java:
 evaluation:
   # Three classes, never binary (D-023): uncertain_policy, threshold_mode,
   # threshold_objective and include_meta_labels were REMOVED 2026-09-29.
-  # Stage 1 selects on validation loss, as mimic_cxr_full.yaml does.
-  selection_metric: loss
+  # Stage 1 selects on macro_recall (three-class balanced recall), as
+  # mimic_cxr_full.yaml does since 2026-10-01.
+  selection_metric: macro_recall
 
   bootstrap:
     enabled: true
@@ -74,6 +75,7 @@ evaluation:
     - weighted_precision
     - weighted_recall
     - weighted_f1
+    - macro_recall
     - mean_weighted_f1_5
     - auroc_mean
 

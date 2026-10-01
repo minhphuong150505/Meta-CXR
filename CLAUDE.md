@@ -898,7 +898,7 @@ study (not image) → anchor + ≤1 auxiliary view
   resumed into it. Attaching the loss *after* fusion would be self-defeating, since
   the fused anchor already contains the auxiliary view.
 - Production config `mimic_cxr_full.yaml`: **10 epochs**, `selection_metric:
-  macro_auprc` on **validation only**, bf16 AMP, `save_freq: 5`, `warmup_steps:
+  macro_recall` (phases 1b/1c; 1a uses `loss`) on **validation only**, bf16 AMP, `save_freq: 5`, `warmup_steps:
   300` counted in **optimizer updates, not microbatches**. Thresholds are
   calibrated post-hoc from `checkpoint_best` validation logits. The test split is
   held out of checkpoint selection entirely.
@@ -3425,14 +3425,22 @@ then dies in `assert_columns`). v2 reconciles exactly against the source —
 official MIMIC split, `findings_clean` empty iff `target_valid` is False, and
 length bounds taken from train only.
 
-**`selection_metric: loss`, and it has a known bias.** Validation loss is a
+**`selection_metric: macro_recall` in phases 1b and 1c, as of 2026-10-01 (user
+decision).** Per finding, the unweighted mean of the Negative / Positive /
+Uncertain recalls after argmax (sklearn `balanced_accuracy_score`), averaged over
+the 14 findings. Not in the paper; still three classes. It replaced `loss`, a
 weighted sum dominated by the frequent labels, so a model that stops predicting a
-rare finding entirely can outscore one that finds it sometimes. `macro_auprc` is
-per-label and threshold-free and does not have that failure mode; it was replaced
-because val is thin for two labels (Pleural Other 14 positives, Fracture 16).
-Both are logged every scored epoch — check which epoch each would pick before
-quoting either. `selection_mode` is deliberately absent from the YAML so
-RunnerBase infers `min`; an explicit `max` left behind would keep the worst epoch.
+rare finding entirely can outscore one that finds it sometimes.
+⚠ **Do not use `weighted_recall` for this.** Support-weighted recall is
+identically `accuracy` (pinned by `tests/test_classification_metrics.py`; on
+`run_20260930_3class` val they agree to 16 digits), so it rewards the majority
+Negative class even more than the loss does. Phase 1a keeps `loss` — it runs no
+classifier, so `macro_recall` would be absent and the runner would raise.
+`run_20260930_3class` was launched before this change and selected on `loss`
+(epoch 3 of 1b; `auroc_mean` agreed, F1-based metrics would have picked epoch 2).
+`selection_mode` is deliberately absent from the YAML so RunnerBase infers `max`
+from a name without "loss"; an explicit `min` left behind would keep the worst
+epoch. Pinned by `tests/test_selection_metric.py`.
 
 ⚠⚠ **An evaluate-only run used to score RANDOM WEIGHTS, silently. Fixed
 2026-08-20 — `run.resume_ckpt_path` is now mandatory for `run.evaluate=True`.**
