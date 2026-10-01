@@ -74,7 +74,13 @@ Cross-entropy 3 lớp cho 14 bệnh lý, có `class_weights` (14×3) **hoặc**
 argmax và mọi metric vẫn dùng logit gốc. Tối ưu đúng balanced error = 1 −
 `macro_recall`. Loại trừ với `class_weights` (raise nếu có cả hai). Lớp có số ca
 0 (Uncertain của No Finding) nhận offset 0. Offset là buffer `persistent=False`
-nên checkpoint không đổi. Hàm phụ `logit_adjustment_offsets`. Test:
+nên checkpoint không đổi. Hàm phụ `logit_adjustment_offsets`.
+Cũng từ 2026-10-01, vector `class_weights` là buffer `persistent=False` (không còn
+lưu vào checkpoint), và `Blip2Qformer.load_state_dict` bỏ mọi khóa `cls_loss_fn.*`
+của checkpoint cũ qua `drop_loss_config_state`. Cấu hình loss luôn lấy từ YAML,
+nên checkpoint có trọng số load được vào mô hình logit-adjusted và ngược lại. Phát
+hiện qua smoke: `checkpoint_phase1a` cũ mang 14 vector trọng số làm phase loader
+từ chối. Test:
 `tests/test_logit_adjustment.py`.
 
 **`sample_mask` là điểm mấu chốt:** dòng không có nhãn CheXpert đóng góp **0**.
