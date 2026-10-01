@@ -19,7 +19,8 @@ Thay hoàn toàn bản calibrate ngưỡng dương tính nhị phân cũ (D-023)
 |---|---|---|
 | `roc_distance_threshold(scores, y)` | 45 | Eq. 22 cho một lớp |
 | `fit_class_thresholds(predictions)` | 70 | ★ `{bệnh: {lớp: ngưỡng}}` |
-| `apply_thresholds(probs, thresholds, names)` | 86 | Quyết định theo ngưỡng; lớp vượt ngưỡng xa nhất thắng; không lớp nào → `ABSTAIN` |
+| `apply_thresholds(probs, thresholds, names)` | 86 | Quyết định theo ngưỡng; lớp vượt ngưỡng xa nhất thắng; không lớp nào → `ABSTAIN` (prompt Stage 2) |
+| `decide_with_thresholds(probs, thresholds, names)` | 116 | Như trên nhưng không lớp nào vượt → argmax; cho `evaluate_classification(..., thresholds=)` và `evaluate_stage1.py --thresholds` (phân tích bổ sung, 2026-10-01) |
 | `ThresholdFile.save` / `load_thresholds` | 117 / 138 | File JSON có `format = meta_cxr_per_class_roc_distance_v1`; file định dạng khác bị từ chối |
 
 ## Callers

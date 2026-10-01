@@ -263,11 +263,19 @@ def evaluate_classification(
     predictions: ClassificationPredictions,
     *,
     zero_division: float = PAPER_ZERO_DIVISION,
+    thresholds: dict[str, dict[str, float]] | None = None,
 ) -> ClassificationReport:
     """Score one split with the paper's three-class protocol.
 
     Cells labelled ``MISSING`` (-1: a study with no CheXpert information) are
     skipped per finding; nothing else is dropped or merged.
+
+    ``thresholds`` (per finding and class, fitted on VALIDATION by
+    ``scripts/calibrate_thresholds.py``) replaces argmax with
+    ``threshold_calibration.decide_with_thresholds``. That is NOT the paper's
+    protocol -- the paper uses these thresholds only for the Stage-2 prompt --
+    and is reported beside the argmax numbers, never instead of them. AUROC and
+    AUPRC do not depend on the decision rule and are identical either way.
     """
     if predictions.num_classes != NUM_CLASSES:
         raise SchemaError(
@@ -276,7 +284,14 @@ def evaluate_classification(
         )
     labels = predictions.labels
     probabilities = predictions.probabilities
-    predicted = decide(probabilities)
+    if thresholds is None:
+        predicted = decide(probabilities)
+    else:
+        from training.evaluation.threshold_calibration import decide_with_thresholds
+
+        predicted = decide_with_thresholds(
+            probabilities, thresholds, tuple(predictions.pathology_names)
+        )
 
     per_pathology: list[PathologyMetrics] = []
     for index, name in enumerate(predictions.pathology_names):
@@ -353,7 +368,10 @@ def evaluate_classification(
             "protocol": "META-CXR paper: three-class argmax, per-finding "
             "sklearn-weighted P/R/F1 (zero_division=1), mean over findings; "
             "one-vs-rest AUROC per class",
-            "decision": "argmax",
+            "decision": "argmax" if thresholds is None else (
+                "per-class Eq. 22 thresholds (largest margin above threshold; "
+                "argmax when no class clears) -- NOT the paper's protocol"
+            ),
             "zero_division": zero_division,
             "five_findings": list(PAPER_FIVE_FINDINGS),
             "num_findings": len(per_pathology),

@@ -20,6 +20,7 @@ from training.evaluation.threshold_calibration import (  # noqa: E402
     CalibrationError,
     ThresholdFile,
     apply_thresholds,
+    decide_with_thresholds,
     fit_class_thresholds,
     load_thresholds,
     roc_distance_threshold,
@@ -72,6 +73,37 @@ def test_apply_thresholds_takes_largest_margin_and_abstains_below_all():
     ])
     out = apply_thresholds(probs, thresholds, ("Edema",))
     assert out[:, 0].tolist() == [0, 1, ABSTAIN]
+
+
+def test_decide_with_thresholds_falls_back_to_argmax_instead_of_abstaining():
+    thresholds = {"Edema": {"negative": 0.6, "positive": 0.3, "uncertain": 0.9}}
+    probs = np.array([
+        [[0.65, 0.30, 0.05]],   # as apply_thresholds -> negative
+        [[0.20, 0.50, 0.30]],   # as apply_thresholds -> positive
+        [[0.50, 0.20, 0.30]],   # nothing clears -> argmax -> negative
+    ])
+    assert decide_with_thresholds(probs, thresholds, ("Edema",))[:, 0].tolist() == [0, 1, 0]
+
+
+def test_thresholds_change_the_decision_but_not_the_auroc():
+    from training.evaluation.classification_metrics import evaluate_classification
+
+    # Uncertain never wins argmax, but clears a low uncertain threshold.
+    probs = np.array([[[0.50, 0.30, 0.20]], [[0.50, 0.30, 0.20]], [[0.6, 0.35, 0.05]]])
+    preds = ClassificationPredictions(
+        labels=np.array([[2], [2], [0]]),
+        probabilities=probs,
+        pathology_names=("Edema",),
+        sample_keys=np.array(["a", "b", "c"]),
+    )
+    thresholds = {"Edema": {"negative": 0.55, "positive": 0.9, "uncertain": 0.1}}
+    argmax = evaluate_classification(preds)
+    tuned = evaluate_classification(preds, thresholds=thresholds)
+    assert argmax.pathology("Edema").per_class["uncertain"]["recall"] == 0.0
+    assert tuned.pathology("Edema").per_class["uncertain"]["recall"] == 1.0
+    assert tuned.aggregates["auroc_mean"] == argmax.aggregates["auroc_mean"]
+    assert "NOT the paper" in tuned.settings["decision"]
+    assert argmax.settings["decision"] == "argmax"
 
 
 def test_round_trip_and_format_guard(tmp_path):

@@ -113,6 +113,25 @@ def apply_thresholds(
     return decision
 
 
+def decide_with_thresholds(
+    probabilities: np.ndarray,
+    thresholds: dict[str, dict[str, float]],
+    pathology_names: tuple[str, ...],
+) -> np.ndarray:
+    """``[N, P]`` class decisions for EVALUATION under per-class thresholds.
+
+    :func:`apply_thresholds`, except that a cell where no class clears its
+    threshold falls back to argmax instead of ``ABSTAIN``: a metric needs a
+    class for every cell. Supplementary to the paper's argmax protocol, never a
+    replacement for it (``scripts/evaluate_stage1.py --thresholds``).
+    """
+    probabilities = np.asarray(probabilities, dtype=np.float64)
+    decision = apply_thresholds(probabilities, thresholds, pathology_names)
+    abstained = decision == ABSTAIN
+    decision[abstained] = probabilities.argmax(axis=-1)[abstained]
+    return decision
+
+
 @dataclass
 class ThresholdFile:
     thresholds: dict[str, dict[str, float]]

@@ -13,7 +13,8 @@ model, không GPU, không dataset.
 ## Entry point
 ```bash
 python scripts/evaluate_stage1.py --predictions <test.npz> --output-dir <dir> \
-    [--no-bootstrap] [--no-plots] [--no-baselines] [--split test]
+    [--no-bootstrap] [--no-plots] [--no-baselines] [--split test] \
+    [--thresholds <val_thresholds_eq22.json>]
 ```
 
 ## Làm gì
@@ -24,9 +25,15 @@ python scripts/evaluate_stage1.py --predictions <test.npz> --output-dir <dir> \
   14 bệnh → so với Fig 10 của bài báo (0,87 / 0,78 / 0,73).
 - `mean_weighted_f1_5` (5 bệnh Bảng 5/7, bài báo 0,701); AUROC one-vs-rest mỗi lớp (Fig 5).
 - Bootstrap CI theo study, baseline ba lớp, bảng từng bệnh, và `plots/{cls}_vs_rest`.
+- `--thresholds` (thêm 2026-10-01): **phân tích bổ sung, không phải giao thức của bài
+  báo.** Thay argmax bằng ngưỡng Eq. 22 theo (bệnh, lớp) fit trên val
+  (`decide_with_thresholds`: lớp vượt ngưỡng xa nhất thắng, không lớp nào vượt thì
+  dùng argmax). Từ chối file fit trên chính split đang chấm hoặc trên test. AUROC
+  không đổi. Khác hẳn cờ `--thresholds` nhị phân đã gỡ ở D-023: `load_thresholds`
+  từ chối định dạng cũ.
 
 ## Đã gỡ (D-023)
-`--thresholds`, `--uncertain-policy`, `--label-framing`, `--score`,
+`--thresholds` nhị phân (cờ cùng tên hiện tại là ngưỡng ba lớp, xem trên), `--uncertain-policy`, `--label-framing`, `--score`,
 `positive_macro_f1`. Các số cũ trong CLAUDE.md dùng chúng; chấm lại từ `.npz` cũ
 bằng lệnh trên để so với bài báo.
 
