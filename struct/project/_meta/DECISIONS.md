@@ -1248,3 +1248,25 @@ phối; mô hình bỏ hẳn một bệnh hiếm vẫn có thể có loss tốt 
 epoch 2). `selection_mode` vẫn vắng trong YAML để RunnerBase tự suy ra `max`.
 Ghim bởi `tests/test_selection_metric.py`.
 
+## D-025 — Logit-adjusted loss thay trọng số lớp bị chặn (2026-10-01)
+
+**Quyết định của người dùng.** `model.mhcac.logit_adjustment` (Menon et al.,
+ICLR 2021, Eq. 10) thay `model.mhcac.class_weights` trong
+`mimic_cxr_full.yaml`. CE tính trên `logits + tau·log(prior)`, `tau = 1`, prior
+lấy từ số ca train `[neg, pos, unc]` theo từng bệnh; dự đoán vẫn là argmax trên
+logit gốc. Vẫn ba lớp (D-023).
+
+**Vì sao.** Đo trên test của `run_20260930_3class`: trọng số nghịch đảo tần suất
+bị chặn ở 10 làm bệnh hiếm gần như không bao giờ được đoán dương (Fracture
+recall Positive 0,01, Pleural Other 0,05), còn bệnh phổ biến không bị chặn thì bị
+đoán dương quá tay (Cardiomegaly recall Negative 0,21). Menon chứng minh loss này
+Fisher-consistent cho balanced error = 1 − `macro_recall` (metric chọn checkpoint,
+D-024) và chỉ ra re-weighting 1/P(y) ít tác dụng với mạng nơ-ron (Sec. 2).
+PromptMRG (Jin et al., AAAI 2024) dùng loss này trên MIMIC-CXR: macro F1 CE
+0,319 → 0,381.
+
+**Hệ quả.** Không tương thích ngược về mặt cấu hình: `class_weights` và
+`logit_adjustment` không được đặt cùng lúc. Checkpoint cũ vẫn load (offset không
+lưu vào state dict). Val loss không còn so được với các run dùng `class_weights`.
+Kết quả GPU: xem `docs/handoff/PLAN-2026-10-01-logit-adjusted-loss.md`.
+

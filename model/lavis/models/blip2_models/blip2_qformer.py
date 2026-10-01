@@ -224,6 +224,8 @@ class Blip2Qformer(Blip2Base):
         mhcac_text_dropout=0.2,
         class_weights=None,
         cls_label_smoothing=0.05,
+        logit_adjust_counts=None,
+        logit_adjust_tau=1.0,
         itc_queue_size=1024,
         itc_temp=0.07,
         itc_temp_learnable=True,
@@ -609,14 +611,26 @@ class Blip2Qformer(Blip2Base):
             [1.0, 0.23, 3.86],  # Support Devices
         ]
 
-        if class_weights is None:
+        if logit_adjust_counts is not None:
+            # Logit-adjusted loss (Menon et al. 2021) replaces class weights,
+            # including the default table above (2026-10-01).
+            if class_weights:
+                raise ValueError(
+                    "model.mhcac.logit_adjustment replaces model.mhcac.class_weights; "
+                    "remove class_weights from the config"
+                )
+            class_weights = None
+        elif class_weights is None:
             class_weights = default_class_weights
         elif len(class_weights) == 0:
             class_weights = None
-        # The paper's weighted cross entropy over three classes (Eq. 10).
+        # The paper's weighted cross entropy over three classes (Eq. 10), or its
+        # logit-adjusted form when model.mhcac.logit_adjustment is set.
         self.cls_loss_fn = ClassificationLoss(
             class_weights=class_weights,
             label_smoothing=cls_label_smoothing,
+            logit_adjust_counts=logit_adjust_counts,
+            logit_adjust_tau=logit_adjust_tau,
         )
         
     def load_state_dict(self, state_dict, strict=True, assign=False):
@@ -2356,6 +2370,16 @@ class Blip2Qformer(Blip2Base):
         if class_weights is not None:
             class_weights = [list(weights) for weights in class_weights]
         cls_label_smoothing = float(mhcac_cfg.get("label_smoothing", 0.05))
+        # Absent key = weighted CE (historical). Present: {tau, class_counts}
+        # with one [n_negative, n_positive, n_uncertain] train row per finding.
+        logit_adjustment_cfg = mhcac_cfg.get("logit_adjustment", None)
+        logit_adjust_counts = None
+        logit_adjust_tau = 1.0
+        if logit_adjustment_cfg is not None:
+            logit_adjust_counts = [
+                list(row) for row in logit_adjustment_cfg.get("class_counts")
+            ]
+            logit_adjust_tau = float(logit_adjustment_cfg.get("tau", 1.0))
         # Absent keys reproduce the historical MHCAC exactly.
         mhcac_text_guidance = str(mhcac_cfg.get("text_guidance", "teacher_student"))
         mhcac_layer_order = str(mhcac_cfg.get("layer_order", "text_first"))
@@ -2407,6 +2431,8 @@ class Blip2Qformer(Blip2Base):
             mhcac_text_dropout=mhcac_text_dropout,
             class_weights=class_weights,
             cls_label_smoothing=cls_label_smoothing,
+            logit_adjust_counts=logit_adjust_counts,
+            logit_adjust_tau=logit_adjust_tau,
             itc_queue_size=itc_queue_size,
             itc_temp=itc_temp,
             itc_temp_learnable=itc_temp_learnable,

@@ -3295,6 +3295,18 @@ pinned by `tests/test_blank_label_masking.py`:
 - `preprocess_mimic_cxr.py --blank-label-policy` mirrors it but writes no label
   column, so no manifest rebuild is needed.
 
+⚠ **SUPERSEDED 2026-10-01 (D-025): `mimic_cxr_full.yaml` no longer sets
+`class_weights`.** It sets `model.mhcac.logit_adjustment` (`tau: 1.0`,
+`class_counts` = the train `[neg, pos, unc]` counts below, every row 220,379):
+cross entropy over `logits + tau*log(prior)` (Menon et al., ICLR 2021, Eq. 10),
+argmax over the raw logits. The two keys are mutually exclusive and the model
+raises if both are set; the old table survives as a comment for the ablation
+that reproduces `run_20260930_3class`. Why: on that run's test split the cap at
+10 left rare positives almost never predicted (Fracture recall 0.01, Pleural
+Other 0.05) while common findings were over-called (Cardiomegaly negative
+recall 0.21). Pinned by `tests/test_logit_adjustment.py`. The paragraph below
+is the history of the weights it replaced.
+
 `class_weights` were recomputed for `negative` on the host 2026-09-24 with
 `scripts/count_chexpert_blank_policy.py` (train, study level, same formula,
 kappa 1, cap 10): negatives are now the majority for every label and 7 of 14
