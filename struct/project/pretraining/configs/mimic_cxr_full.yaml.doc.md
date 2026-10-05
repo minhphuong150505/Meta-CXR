@@ -38,7 +38,8 @@ run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba ov
 | `num_query_token` / `cross_attention_freq` | 32 / 2 | |
 | `max_txt_len` | 256 | |
 | `mhcac.uncertain_policy` | `ignore_uncertain` | Cặp mơ hồ không phải target đáng tin |
-| `mhcac.label_smoothing` | 0.05 | |
+| `mhcac.label_smoothing` | **0.0** (từ 2026-10-05, D-026; trước đó 0.05) | Eq. 10 bài báo |
+| `mhcac.num_common_tokens` | **8** (từ 2026-10-05, D-026; trước đó 14 cứng trong code) | Fig. 10 bài báo. Đánh giá run cũ cần `--options model.mhcac.num_common_tokens=14` |
 | `multi_view` | **`true`** | |
 | `view_fusion.p_view_drop` | 0.15 | |
 | `data.study_sampling` | `true` | ★ Một dòng = một study |

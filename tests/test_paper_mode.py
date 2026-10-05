@@ -300,3 +300,45 @@ def test_phase1a_does_not_run_mhcac():
     assert cls.needs_mhcac(SimpleNamespace(**lambdas)) is False
     lambdas["lambda_cls"] = 1.0
     assert cls.needs_mhcac(SimpleNamespace(**lambdas)) is True
+
+
+# --------------------------------------------------------------------------
+# MHCAC hyperparameters set to the paper's values (2026-10-05, D-026)
+# --------------------------------------------------------------------------
+
+
+def test_the_shipped_config_uses_the_papers_mhcac_values():
+    import yaml
+
+    mhcac = yaml.safe_load((REPO / "pretraining/configs/mimic_cxr_full.yaml").read_text())[
+        "model"
+    ]["mhcac"]
+    assert mhcac["num_common_tokens"] == 8  # paper Fig. 10
+    assert mhcac["label_smoothing"] == 0.0  # paper Eq. 10: plain weighted CE
+    assert mhcac["text_dropout"] == pytest.approx(0.2)
+
+
+def test_common_token_count_sets_the_expert_token_parameter():
+    model = AbnormalityClassificationModel(
+        embed_dim=64, num_heads=4, num_layers=2, num_commmon_tokens=8, visual_dim=96, txt_dim=64,
+    )
+    assert tuple(model.expert_tokens.shape) == (8, 64)
+
+
+def test_mhcac_dropout_is_the_papers_0_2_by_default():
+    model = AbnormalityClassificationModel(
+        embed_dim=64, num_heads=4, num_layers=2, num_commmon_tokens=8, visual_dim=96, txt_dim=64,
+    )
+    rates = {m.p for m in model.attention_layers.modules() if isinstance(m, torch.nn.Dropout)}
+    rates |= {m.dropout for m in model.attention_layers.modules()
+              if isinstance(m, torch.nn.MultiheadAttention)}
+    rates |= {m.p for m in model.classifiers.modules() if isinstance(m, torch.nn.Dropout)}
+    assert rates == {0.2}
+
+
+def test_a_keyless_config_keeps_fourteen_common_tokens():
+    # Older checkpoints carry mhcac.expert_tokens of shape [14, 768]; a config
+    # without the key must still build that shape so they load.
+    src = (REPO / "model/lavis/models/blip2_models/blip2_qformer.py").read_text()
+    assert 'mhcac_cfg.get("num_common_tokens", 14)' in src
+    assert "num_commmon_tokens=mhcac_num_common_tokens" in src

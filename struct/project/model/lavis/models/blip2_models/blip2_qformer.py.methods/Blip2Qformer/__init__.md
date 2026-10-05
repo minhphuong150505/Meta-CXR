@@ -50,7 +50,8 @@ Dựng 6 khối con theo đúng thứ tự phụ thuộc, và đăng ký ITC que
 12 Pubmedclip(project=False) / SwinEncoder / RadDinoEncoder  (.eval())
 13 IF multi_view: ViewFusionModule cho từng encoder + MultiPositiveContrastiveLoss
 14 SharedVisualTokenProjector(shared_stream_dims, VISUAL_DIM)
-15 AbnormalityClassificationModel(embed_dim=768, ..., visual_dim=1408)
+15 AbnormalityClassificationModel(embed_dim=768, ..., num_commmon_tokens=mhcac_num_common_tokens, visual_dim=1408)
+   # mhcac_num_common_tokens <- model.mhcac.num_common_tokens (from_config, mặc định 14, prod 8; D-026)
 16 ClassificationLoss(class_weights, label_smoothing, uncertain_policy)
 17 IF lambda_explanation > 0: ExplanationLoss(top_k); current_epoch = 0
 ```

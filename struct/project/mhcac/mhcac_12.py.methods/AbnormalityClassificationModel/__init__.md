@@ -17,7 +17,7 @@ Dựng expert token, alignment, pos-enc, 6 lớp attention, 14 classifier, và l
 ```python
 AbnormalityClassificationModel(
     embed_dim=768, num_abnormalities=14, num_classes=3, num_layers=6,
-    num_commmon_tokens=14,          # ⚠ typo: BA chữ m
+    num_commmon_tokens=<mhcac.num_common_tokens>,  # ⚠ typo: BA chữ m; 14 khi thiếu key, prod 8
     initial_expert_tokens=None, visual_dim=1408,
     text_dropout_rate=<mhcac.text_dropout>, use_cnn=<use_biovil>,
     uncertain_policy=<mhcac.uncertain_policy>,
@@ -31,7 +31,7 @@ AbnormalityClassificationModel(
 | `visual_dim=1408` | Chiều token vào — **phải khớp `VISUAL_DIM`** |
 | `num_abnormalities=14` / `num_classes=3` | 14 bệnh lý × P/N/U |
 | `num_layers=6` | Số lớp cross-attention |
-| `num_commmon_tokens=14` | ⚠ typo trong API công khai |
+| `num_commmon_tokens` | ⚠ typo trong API công khai. `Blip2Qformer` truyền `model.mhcac.num_common_tokens` (14 khi thiếu key, prod 8 từ 2026-10-05, D-026). Mặc định của chính hàm này là 8. `dropout` mặc định 0.2 = giá trị bài báo, `Blip2Qformer` không ghi đè |
 | `use_cnn` | Cho phép dựng `cnn_downsampler` — nhưng **bị `stream_layouts` phủ quyết** |
 | `stream_layouts` | `dict[str, StreamLayout]` hoặc `None`. Có → mỗi encoder giữ chuỗi token gốc và có pos-enc riêng; `None` → hành vi legacy |
 | `text_dropout_rate` | Dropout đường text (teacher) |

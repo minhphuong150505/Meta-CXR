@@ -29,6 +29,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-019](#d-019--tắt-mention-gate-phương-án-a) | Tắt mention gate; No Finding vào head P/N/U | ✅ Confirmed (quyết định của user) | 2026-09-24 |
 | [D-020](#d-020--meta-former-3-pha-theo-bài-báo-medclip-swin-mhcac-một-nhánh) | META-Former 3 pha theo bài báo; MedCLIP Swin; MHCAC một nhánh; bật lại ITC/ITM/LM | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
 | [D-021](#d-021--gradient-checkpointing-q-former-gradcache-pha-1a-siglip-mở-lại-khối-encoder-ở-1c) | Checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
+| [D-026](#d-026--siêu-tham-số-mhcac-theo-bài-báo-2026-10-05) | MHCAC: 8 common expert token, label smoothing 0 (theo bài báo) | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
 
 ---
 
@@ -1277,3 +1278,29 @@ PromptMRG (Jin et al., AAAI 2024) dùng loss này trên MIMIC-CXR: macro F1 CE
 lưu vào state dict). Val loss không còn so được với các run dùng `class_weights`.
 Kết quả GPU: xem `docs/handoff/PLAN-2026-10-01-logit-adjusted-loss.md`.
 
+## D-026 — Siêu tham số MHCAC theo bài báo (2026-10-05)
+
+Status: **Confirmed — quyết định của user; chưa chạy GPU**
+
+**Thay đổi.** Trong `mimic_cxr_full.yaml`: `model.mhcac.num_common_tokens: 8`
+(key mới, đọc ở `Blip2Qformer.from_config`, trước đây cứng 14 trong code) và
+`model.mhcac.label_smoothing: 0.0` (trước 0.05).
+
+**Vì sao.** Bài báo, Fig. 10 / mục IV-D.4: 8 common expert token là tối ưu trong
+ablation 4/6/8/10/12 (P/R/F1 0.87/0.78/0.73). Eq. 10 là CE có trọng số thuần,
+không label smoothing. Code gốc của tác giả dùng 14 token; user chọn theo bài
+báo. Dropout MHCAC đã là 0.2 (mặc định của `AbnormalityClassificationModel`,
+`Blip2Qformer` không ghi đè), đúng bài báo, nên không đổi.
+
+**Hệ quả.**
+- Config thiếu key vẫn ra 14 token và smoothing 0.05, nên mọi run cũ tái lập được.
+- `mhcac.expert_tokens` đổi shape `[14, 768] -> [8, 768]`. Runner **bỏ qua**
+  tensor lệch shape kèm warning, không báo lỗi: đánh giá checkpoint cũ bằng YAML
+  mới sẽ chấm expert token ngẫu nhiên. Phải thêm
+  `--options model.mhcac.num_common_tokens=14 model.mhcac.label_smoothing=0.05`.
+- `checkpoint_phase1a` cũ KHÔNG nạp thẳng được vào pha 1b mới:
+  `pretraining.train.prepare_phase_model` gọi `load_state_dict(strict=False)`
+  không lọc shape, nên `mhcac.expert_tokens` `[14, 768]` gây `RuntimeError: size
+  mismatch` (lỗi rõ ràng, không âm thầm). Pha 1a không train MHCAC, nên bỏ key đó
+  khỏi một BẢN SAO của checkpoint là đủ để dùng lại 1a; hoặc chạy lại 1a.
+- Ghim bởi `tests/test_paper_mode.py` (4 test mới).

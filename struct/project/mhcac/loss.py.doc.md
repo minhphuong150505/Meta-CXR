@@ -205,7 +205,7 @@ Ba loss phụ giữ expert token lành mạnh:
 | Key | Ảnh hưởng |
 |---|---|
 | `mhcac.class_weights` | 14×3; `[]` tắt |
-| `mhcac.label_smoothing` | prod 0.05 |
+| `mhcac.label_smoothing` | prod **0.0** từ 2026-10-05 (D-026); trước đó 0.05 |
 | `mhcac.uncertain_policy` | prod `three_class` (D-022, 2026-09-25; trước đó `ignore_uncertain`) |
 | `mhcac.distill_temperature` | prod 2.0 |
 | `loss.lambda_*` | Trọng số khi tổng hợp (ở `blip2_qformer`, không ở đây) |
