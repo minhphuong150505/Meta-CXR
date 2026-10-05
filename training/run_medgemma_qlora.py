@@ -40,9 +40,14 @@ from dataio.manifest import (  # noqa: E402
 from pipeline_modes import (  # noqa: E402
     CHOICES,
     DEFAULT_PIPELINE_MODE,
+    DEFAULT_PROMPT_STYLE,
     LEGACY_IMAGE_MODE_ALIASES,
+    PROMPT_STYLES,
     PipelineMode,
+    check_adapter_prompt_style,
+    resolve_lora_size,
     resolve_pipeline_modes,
+    validate_prompt_style,
 )
 from pipeline_modes import requires_stage1 as modes_require_stage1  # noqa: E402
 from run_context import Stage1Context  # noqa: E402
@@ -120,6 +125,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--prompt-style",
+        choices=PROMPT_STYLES,
+        default=DEFAULT_PROMPT_STYLE,
+        help=(
+            "Wording of the legacy prompt (no --prompt-config). fine (default): "
+            "the short instruction every recorded legacy run used. paper: the "
+            "META-CXR paper's instruction verbatim; requires --pipeline-mode "
+            "meta_cxr_qformer_with_mhcac_prompt, i.e. no native image, only the "
+            "32 Q-Former soft tokens plus MHCAC P/N/U text."
+        ),
+    )
+    parser.add_argument(
         "--require-image",
         action="store_true",
         help="Skip manifest rows whose JPG is absent instead of failing at load time.",
@@ -158,8 +175,12 @@ def parse_args() -> argparse.Namespace:
         help="0 auto-sizes: 512 for findings_and_impression, 256 for a single section.",
     )
     parser.add_argument("--patience", type=int, default=1)
-    parser.add_argument("--lora-rank", type=int, default=16)
-    parser.add_argument("--lora-alpha", type=int, default=32)
+    # None = the prompt style's default: r=16/alpha=32, or the paper's
+    # r=8/alpha=16 under --prompt-style paper (pipeline_modes.resolve_lora_size).
+    parser.add_argument("--lora-rank", type=int, default=None,
+                        help="default 16; 8 under --prompt-style paper (as the paper)")
+    parser.add_argument("--lora-alpha", type=int, default=None,
+                        help="default 32; 16 under --prompt-style paper (as the paper)")
     parser.add_argument("--num-workers", type=int, default=2, help="Stage-1 image-loading workers")
     parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--force-retrain", action="store_true")
@@ -183,6 +204,12 @@ def parse_args() -> argparse.Namespace:
             f"-> --pipeline-mode {args.pipeline_mode}",
             flush=True,
         )
+    try:
+        args.lora_rank, args.lora_alpha = resolve_lora_size(
+            args.prompt_style, args.lora_rank, args.lora_alpha
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.max_new_tokens <= 0:
         args.max_new_tokens = (
             512 if args.section_mode == FINDINGS_AND_IMPRESSION else 256
@@ -238,6 +265,18 @@ def upload_safe_run(root: Path, adapter_dirs: list[Path], gcs_output: str) -> No
                 fig9.upload_path(path, f"{gcs_output}/adapters/{adapter_dir.name}")
 
 
+def assert_adapter_prompt_style(adapter_dir: Path, prompt_style: str) -> None:
+    """Refuse to reuse or resume an adapter trained under another prompt style."""
+    manifest_path = Path(adapter_dir) / "manifest.json"
+    if not manifest_path.is_file():
+        return
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    try:
+        check_adapter_prompt_style(manifest, prompt_style)
+    except ValueError as exc:
+        raise SystemExit(f"{adapter_dir}: {exc}") from None
+
+
 def train_mode(
     context: Stage1Context,
     args: argparse.Namespace,
@@ -267,6 +306,8 @@ def train_mode(
     last_dir = adapter_dir / "checkpoints" / "last"
     training_summary: dict = {}
     complete = fig9.adapter_is_complete(adapter_dir, image_mode, args.finding_tokens)
+    if complete and not args.force_retrain:
+        assert_adapter_prompt_style(adapter_dir, args.prompt_style)
     if args.force_retrain or not complete:
         resume_dir = args.resume_from
         if (
@@ -279,6 +320,8 @@ def train_mode(
             Path(resume_dir), image_mode, args.finding_tokens
         ):
             raise RuntimeError(f"incomplete --resume-from checkpoint: {resume_dir}")
+        if resume_dir is not None:
+            assert_adapter_prompt_style(Path(resume_dir), args.prompt_style)
         print(f"[train:{mode.name}] adapter -> {adapter_dir}", flush=True)
         llm = fig9.VariantLLM(
             "medgemma",
@@ -290,6 +333,7 @@ def train_mode(
             lora_alpha=args.lora_alpha,
             prompt_config=mode_prompt_config,
             finding_tokens=args.finding_tokens,
+            legacy_prompt_style=args.prompt_style,
         )
         llm.load_img_proj_if_present(resume_dir)
         if resume_dir is not None:
@@ -328,6 +372,7 @@ def train_mode(
         image_mode=image_mode,
         prompt_config=mode_prompt_config,
         finding_tokens=args.finding_tokens,
+        legacy_prompt_style=args.prompt_style,
     )
     llm.load_img_proj_if_present(adapter_dir)
     llm.load_finding_encoder_if_present(adapter_dir)
@@ -343,7 +388,7 @@ def train_mode(
         val_eval_records,
         root / "eval",
         args.max_new_tokens,
-        "fine",
+        args.prompt_style,
         section_mode=args.section_mode,
         context=context,
         cohort_id=fig9.stable_fingerprint(
@@ -363,7 +408,7 @@ def train_mode(
             test_records,
             root / "eval",
             args.max_new_tokens,
-            "fine",
+            args.prompt_style,
             section_mode=args.section_mode,
             context=context,
             cohort_id=test_cohort,
@@ -460,15 +505,26 @@ def main() -> None:
             "--cue-rule paper_thresholds needs --threshold-path (per-class file "
             "from scripts/calibrate_thresholds.py)"
         )
+    try:
+        validate_prompt_style(
+            args.prompt_style, modes,
+            has_prompt_config=prompt_config is not None, cue_rule=args.cue_rule,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+    paper_prompt = args.prompt_style == fig9.PROMPT_STYLE_PAPER
     if args.cue_rule != fig9.DEFAULT_CUE_RULE:
         if not needs_stage1:
             raise SystemExit("--cue-rule requires a Stage-1 pipeline mode")
-        if prompt_config is None or any(
+        # The paper prompt renders the P/N/U groups straight from the record,
+        # listing only findings that cleared a threshold -- which is what the
+        # paper describes for Eq. 22 -- so it needs no v2 cue-state contract.
+        if not paper_prompt and (prompt_config is None or any(
             mode.requires_stage1 and (
                 prompt_config.visual_mode.image_mode != mode.image_mode
                 or not prompt_config.visual_mode.includes_structured
             ) for mode in modes
-        ):
+        )):
             raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
     if args.finding_tokens != fig9.FINDING_TOKENS_OFF:
         if not needs_stage1:
@@ -559,10 +615,17 @@ def main() -> None:
         "primary_model": modes[0].name,
         "ablation": [mode.name for mode in modes[1:]] or None,
         "prompt_config": str(args.prompt_config) if args.prompt_config else None,
-        "prompt_version": prompt_config.version if prompt_config else "legacy_build_instruction",
+        "prompt_version": (
+            prompt_config.version if prompt_config
+            else "paper_build_instruction" if paper_prompt
+            else "legacy_build_instruction"
+        ),
+        "prompt_style": None if prompt_config or not needs_stage1 else args.prompt_style,
         "stage1_checkpoint": context.run_name if needs_stage1 else None,
         "cue_rule": args.cue_rule if needs_stage1 else None,
         "finding_tokens": args.finding_tokens,
+        "lora_rank": args.lora_rank,
+        "lora_alpha": args.lora_alpha,
         "section_mode": args.section_mode,
         "target_section": args.section_mode.replace("_", " ").upper(),
         "max_new_tokens": args.max_new_tokens,
@@ -586,6 +649,7 @@ def main() -> None:
         "stage1_required": needs_stage1,
         "cue_rule": args.cue_rule if needs_stage1 else None,
         "finding_tokens": args.finding_tokens,
+        "prompt_style": None if prompt_config or not needs_stage1 else args.prompt_style,
     }
     (root / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2), encoding="utf-8")
     print("[done]", json.dumps(summary, indent=2), flush=True)

@@ -476,9 +476,20 @@ def image_block(img_token: str) -> str:
     return " ".join([img_token] * NUM_IMG_TOKENS)
 
 
-def build_instruction(groups: dict[str, list[str]], prompt_style: str = "fine") -> str:
+#: Legacy prompt wordings. ``paper`` is the META-CXR paper's instruction,
+#: byte-identical to the reference implementation's ``inference.py`` (pinned by
+#: ``tests/test_prompt_style.py``). Mirrors ``pipeline_modes.PROMPT_STYLES``.
+PROMPT_STYLE_FINE = "fine"
+PROMPT_STYLE_PAPER = "paper"
+LEGACY_PROMPT_STYLES = (PROMPT_STYLE_FINE, PROMPT_STYLE_PAPER)
+
+
+def build_instruction(groups: dict[str, list[str]], prompt_style: str = PROMPT_STYLE_FINE) -> str:
+    if prompt_style not in LEGACY_PROMPT_STYLES:
+        # Any other string used to fall through to the paper wording silently.
+        raise ValueError(f"prompt_style must be one of {LEGACY_PROMPT_STYLES}, got {prompt_style!r}")
     findings = format_findings(groups)
-    if prompt_style == "fine":
+    if prompt_style == PROMPT_STYLE_FINE:
         return (
             f"Abnormality information: {findings}\n\n"
             "Act as an expert radiologist. Write only the Findings section of a chest "
@@ -756,6 +767,9 @@ class VariantLLM:
     finding_encoder = None
     finding_token_id: int | None = None
     finding_feature_ablation: str | None = None
+    #: Which legacy string prompt this instance trains and generates with. The
+    #: class default keeps partial ``object.__new__`` instances on ``fine``.
+    legacy_prompt_style: str = PROMPT_STYLE_FINE
 
     def __init__(
         self,
@@ -769,6 +783,7 @@ class VariantLLM:
         gradient_checkpointing: bool = True,
         prompt_config: PromptConfig | None = None,
         finding_tokens: str = FINDING_TOKENS_OFF,
+        legacy_prompt_style: str = PROMPT_STYLE_FINE,
     ):
         if image_mode not in ALL_IMAGE_MODES:
             raise ValueError(f"image_mode must be one of {sorted(ALL_IMAGE_MODES)}")
@@ -813,6 +828,14 @@ class VariantLLM:
                     f"which does not match image_mode={image_mode!r}"
                 )
         self.prompt_config = prompt_config
+        if legacy_prompt_style not in LEGACY_PROMPT_STYLES:
+            raise ValueError(
+                f"legacy_prompt_style must be one of {LEGACY_PROMPT_STYLES}, "
+                f"got {legacy_prompt_style!r}"
+            )
+        if legacy_prompt_style != PROMPT_STYLE_FINE and prompt_config is not None:
+            raise ValueError("legacy_prompt_style applies only when prompt_config is None")
+        self.legacy_prompt_style = legacy_prompt_style
         # ``text_only`` is reachable only via the explicitly-named
         # text_only_language_prior_ablation pipeline mode. It is never a
         # fallback and never a default.
@@ -1074,9 +1097,19 @@ class VariantLLM:
     def _prompt_metadata(self) -> dict:
         """Reproducibility record for the prompt used by this run."""
         if self.prompt_config is None:
+            if self.legacy_prompt_style == PROMPT_STYLE_FINE:
+                # Byte-identical to what every earlier run recorded, so their
+                # evaluation-cache identities still match.
+                return {
+                    "builder": "legacy",
+                    "version": "legacy_build_instruction",
+                    "image_mode": self.image_mode,
+                    "num_img_tokens": NUM_IMG_TOKENS,
+                }
             return {
                 "builder": "legacy",
-                "version": "legacy_build_instruction",
+                "version": "paper_build_instruction",
+                "prompt_style": self.legacy_prompt_style,
                 "image_mode": self.image_mode,
                 "num_img_tokens": NUM_IMG_TOKENS,
             }
@@ -1220,6 +1253,13 @@ class VariantLLM:
         )
 
     def _chat_texts(self, record: dict, prompt_style: str) -> tuple[str, str]:
+        if self.prompt_config is None and prompt_style != self.legacy_prompt_style:
+            # The caller's literal and the instance's style must agree, or a run
+            # would train on one wording and generate (and record) another.
+            raise ValueError(
+                f"prompt_style {prompt_style!r} does not match this model's "
+                f"legacy_prompt_style {self.legacy_prompt_style!r}"
+            )
         target = str(record["ref"]).strip()
         if self.family != "medgemma":
             prompt = build_prompt(record["pred_groups"], self.img_token, prompt_style) + "\nASSISTANT:"
@@ -1367,7 +1407,10 @@ class VariantLLM:
         return apply_finding_feature_ablation(features, self.finding_feature_ablation)
 
     def collate_train(self, records: list[dict], max_length: int = 768) -> dict[str, torch.Tensor]:
-        items = [self.encode_train_example(record, "fine", max_length) for record in records]
+        items = [
+            self.encode_train_example(record, self.legacy_prompt_style, max_length)
+            for record in records
+        ]
         sequence_keys = {"input_ids", "attention_mask", "token_type_ids", "labels"}
         max_len = max(item["input_ids"].shape[0] for item in items)
         batch: dict[str, torch.Tensor] = {}

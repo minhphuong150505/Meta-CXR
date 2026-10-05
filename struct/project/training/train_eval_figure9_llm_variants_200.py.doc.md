@@ -184,3 +184,23 @@ thành 0 trước khi encoder kịp nhìn thấy.
 `build_stage1_records` giờ luôn lưu `class_logits` (42 float/study).
 `stage1_cohort_fingerprint` thêm `record_features` **chỉ khi** nhánh bật, nên
 mọi cache cũ vẫn hit; `assert_class_logits_present` fail-closed nếu không.
+
+## Prompt legacy: `fine` và `paper` (2026-10-05, D-027)
+
+`build_instruction(groups, prompt_style)` có hai chữ: `PROMPT_STYLE_FINE`
+(câu lệnh ngắn tự viết, mọi số legacy đã ghi đều dùng nó) và
+`PROMPT_STYLE_PAPER` — instruction của bài báo META-CXR, **trùng từng byte**
+với `inference.py` của mã gốc ("Do not invent findings. Only describe
+abnormalities explicitly provided in the 'Abnormality information'..."). Trước
+đây mọi chuỗi khác `"fine"` đều rơi im lặng vào chữ bài báo, nhưng runner viết
+cứng `"fine"` nên chữ đó không bao giờ chạy; nay chuỗi lạ → `ValueError`.
+`LEGACY_PROMPT_STYLES` phải bằng `pipeline_modes.PROMPT_STYLES` (test pin).
+
+`format_findings` giữ thứ tự Positive / Negative / Uncertain, nối bằng `". "`,
+rỗng → `"no common findings"` — như `format_findings_dict` của mã gốc. Khác
+biệt duy nhất so với mã gốc: `--cue-rule paper_thresholds` của repo **bỏ qua**
+finding không vượt ngưỡng lớp nào, còn mã gốc rơi về argmax. Repo theo mô tả
+Eq. 22 của bài báo.
+
+Xem `VariantLLM` [`__init__`](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/__init__.md),
+[`collate_train`](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/collate_train.md).

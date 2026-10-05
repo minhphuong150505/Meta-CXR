@@ -68,3 +68,17 @@ Thiếu HF token cho gated model → raise từ `transformers` ·
 
 ## Modification risk
 Đổi `num_img_tokens` phải khớp `num_query_token` của Stage 1 (32).
+
+## `legacy_prompt_style` (2026-10-05, D-027)
+
+Tham số mới, mặc định `"fine"`; có thêm class attribute cùng tên để các instance
+dựng dở bằng `object.__new__` vẫn là `fine`. Giá trị lạ → `ValueError`;
+`"paper"` cùng với `prompt_config` → `ValueError` (style chỉ áp dụng cho prompt
+legacy). `_prompt_metadata()` với `fine` trả về **đúng từng byte** dict cũ (để
+evaluation-cache identity của các run cũ không đổi); với `paper` trả về
+`version = "paper_build_instruction"` kèm `prompt_style`, và giá trị này được
+ghi vào `meta.json` / `manifest.json` của adapter.
+
+`_chat_texts(record, prompt_style)` nay **raise** khi `prompt_config is None` mà
+`prompt_style` truyền vào khác `self.legacy_prompt_style` — chặn trường hợp
+train bằng một chữ rồi sinh (và ghi kết quả) bằng chữ khác.

@@ -53,3 +53,12 @@ Vision tower không đóng băng → raise
 ## Cue identity (2026-09-08)
 
 Fingerprint val/test nhận args.cue_rule, khớp rule dùng tạo record. Không đổi optimizer, loss, YAML hay recipe. Experiment đổi cue rule cần output/adapter riêng.
+
+## Prompt style (2026-10-05, D-027)
+
+`args.prompt_style` được truyền vào CẢ HAI `VariantLLM` (train và eval) qua
+`legacy_prompt_style=`, và vào hai `evaluate_variant` thay cho chuỗi cứng
+`"fine"` trước đây. Trước khi dùng lại adapter đã xong hoặc resume từ
+`checkpoints/last`, `assert_adapter_prompt_style()` đọc `manifest.json` và
+**dừng** nếu style lúc train khác style hiện tại — nếu không, một adapter
+`fine` sẽ bị đánh giá trên prompt `paper` và ghi kết quả dưới tên `paper`.

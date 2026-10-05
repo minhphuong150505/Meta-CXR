@@ -205,3 +205,6 @@ access and rejects rule mismatches and fractional enable flags.
 Default-cue regression in `test_cue_contract.py` covers both omitted CLI flags
 through training/generation wiring, native/ablation compatibility, explicit
 legacy overrides, low-mention abstention and per-label threshold precedence.
+
+
+`test_prompt_style.py` (D-027, 15 test, CPU): lấy `format_findings`/`build_instruction` ra khỏi `train_eval_figure9_llm_variants_200.py` bằng `ast` (module đó import torch/nltk), ghim chữ `paper` trùng từng byte với instruction trong `inference.py` của mã gốc, ghim chữ `fine` không đổi, style lạ raise; `validate_prompt_style` chỉ nhận `paper` với `meta_cxr_qformer_with_mhcac_prompt`, không `--prompt-config`, cue rule khác `none`; `check_adapter_prompt_style` chặn dùng adapter khác style (manifest cũ = `fine`).

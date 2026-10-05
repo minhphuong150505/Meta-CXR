@@ -48,7 +48,14 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from scripts.evaluate_explanation import _assert_private_output_location  # noqa: E402
-from training.pipeline_modes import resolve_pipeline_modes  # noqa: E402
+from training.pipeline_modes import (  # noqa: E402
+    DEFAULT_PROMPT_STYLE,
+    PROMPT_STYLE_PAPER,
+    PROMPT_STYLES,
+    check_adapter_prompt_style,
+    resolve_pipeline_modes,
+    validate_prompt_style,
+)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -67,6 +74,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="Stage-2 LoRA adapter. Without it this is zero-shot.")
     parser.add_argument("--prompt-config", type=Path, default=None,
                         help="Prompt v2 config. REQUIRED by native_qformer.")
+    parser.add_argument("--prompt-style", choices=PROMPT_STYLES, default=DEFAULT_PROMPT_STYLE,
+                        help="Legacy prompt wording when no --prompt-config. fine "
+                             "(default) or paper (META-CXR's instruction verbatim; "
+                             "meta_cxr_qformer_with_mhcac_prompt only). Must match "
+                             "what the adapter was trained with.")
     parser.add_argument("--restrict-to", type=Path, default=None,
                         help="Earlier generated_*.jsonl; keep only its sample_keys "
                              "so two runs score the same studies.")
@@ -144,6 +156,22 @@ FINDING_TOKENS_OFF = "off"
 
 def validate_invocation(args: argparse.Namespace, mode) -> None:
     """Reject impossible combinations before anything expensive is imported."""
+    # Callers (tests included) may hand in a partial Namespace; absent means
+    # the default, which is what every invocation before the flag existed got.
+    args.prompt_style = getattr(args, "prompt_style", DEFAULT_PROMPT_STYLE)
+    try:
+        validate_prompt_style(
+            args.prompt_style, [mode],
+            has_prompt_config=args.prompt_config is not None, cue_rule=args.cue_rule,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+    if args.adapter is not None and (Path(args.adapter) / "manifest.json").is_file():
+        manifest = json.loads((Path(args.adapter) / "manifest.json").read_text(encoding="utf-8"))
+        try:
+            check_adapter_prompt_style(manifest, args.prompt_style)
+        except ValueError as exc:
+            raise SystemExit(f"{args.adapter}: {exc}") from None
     if args.cue_rule == "paper_thresholds" and args.threshold_path is None:
         raise SystemExit(
             "--cue-rule paper_thresholds needs --threshold-path (a per-class file "
@@ -152,13 +180,17 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
     if args.cue_rule != "argmax":
         if not mode.requires_stage1:
             raise SystemExit("--cue-rule requires a Stage-1 pipeline mode")
-        if args.prompt_config is None:
-            raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
-        from stage2.prompts import load_prompt_config
+        # The paper prompt lists only findings that cleared a threshold, as the
+        # paper describes for Eq. 22; it needs no v2 cue-state contract.
+        if args.prompt_style != PROMPT_STYLE_PAPER:
+            if args.prompt_config is None:
+                raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
+            from stage2.prompts import load_prompt_config
 
-        prompt = load_prompt_config(args.prompt_config)
-        if prompt.visual_mode.image_mode != mode.image_mode or not prompt.visual_mode.includes_structured:
-            raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
+            prompt = load_prompt_config(args.prompt_config)
+            if (prompt.visual_mode.image_mode != mode.image_mode
+                    or not prompt.visual_mode.includes_structured):
+                raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
     if args.finding_tokens != FINDING_TOKENS_OFF:
         if not mode.requires_stage1:
             raise SystemExit(
@@ -407,6 +439,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         quantize_4bit=False,
         prompt_config=prompt_config,
         finding_tokens=args.finding_tokens,
+        legacy_prompt_style=args.prompt_style,
     )
     # validate_invocation() has already established that img_proj.pt is there.
     if mode.image_mode in SOFT_TOKEN_IMAGE_MODES:
@@ -443,7 +476,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for index, record in enumerate(records):
             try:
                 generated = llm.generate(
-                    record, "fine", args.max_new_tokens,
+                    record, args.prompt_style, args.max_new_tokens,
                     no_repeat_ngram_size=args.no_repeat_ngram_size or None,
                     repetition_penalty=args.repetition_penalty or None,
                 )
@@ -472,6 +505,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "adapter": str(args.adapter) if args.adapter else None,
         "prompt_config": str(args.prompt_config) if args.prompt_config else None,
         "prompt_version": prompt_config.version if prompt_config else None,
+        "prompt_style": (
+            args.prompt_style if prompt_config is None and mode.image_mode == "qformer" else None
+        ),
         "prompt_visual_mode": (
             prompt_config.visual_mode.value if prompt_config else None
         ),

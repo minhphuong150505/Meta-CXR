@@ -115,3 +115,22 @@ và cue THÊM được gì*, chứ không đo *soft token có thay được visi
 `requires_stage1=True`, `uses_mhcac_prompt=True`. Record phải đến từ
 `build_stage1_records` (có cả `pred_groups`, `qformer_embs` và `image_path`
 tuyệt đối); record từ manifest native thiếu hai cái đầu và nay bị RAISE.
+
+## `--prompt-style` — prompt legacy kiểu bài báo (2026-10-05, D-027)
+
+Hằng: `PROMPT_STYLE_FINE = "fine"` (mặc định), `PROMPT_STYLE_PAPER = "paper"`,
+`PROMPT_STYLES`, `DEFAULT_PROMPT_STYLE`. Ba hàm, đều stdlib:
+
+| Hàm | Vai trò |
+|---|---|
+| `validate_prompt_style(style, modes, *, has_prompt_config, cue_rule)` | `paper` chỉ hợp lệ khi: KHÔNG có `--prompt-config`, MỌI mode là `meta_cxr_qformer_with_mhcac_prompt`, và `cue_rule != "none"`. `fine` luôn hợp lệ. Sai → `ValueError` |
+| `adapter_prompt_style(manifest)` | Style mà adapter đã được train. `None` nếu train bằng v2 `PromptBuilder`; manifest cũ không ghi style → `fine` (đó là chữ duy nhất runner từng sinh ra) |
+| `check_adapter_prompt_style(manifest, style)` | Raise khi dùng lại / resume adapter với style khác lúc train |
+
+Được gọi: `run_medgemma_qlora.main` / `assert_adapter_prompt_style`,
+`scripts/generate_stage2_reports.validate_invocation`. Test:
+`tests/test_prompt_style.py`.
+
+`resolve_lora_size(prompt_style, lora_rank, lora_alpha)` — giá trị `None` lấy mặc
+định theo style: `paper` → r=8/α=16 (bài báo), còn lại → r=16/α=32. Gọi từ
+`run_medgemma_qlora.parse_args`.

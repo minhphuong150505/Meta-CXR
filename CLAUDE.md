@@ -1415,6 +1415,27 @@ baseline beside it: 0.25 reads like a result and is chance.
 `google/medgemma-1.5-4b-it`, 4-bit NF4 QLoRA, single process / single GPU,
 checkpoint selected by validation cross-entropy.
 
+⚠ **D-027, 2026-10-05: `--prompt-style paper` reproduces the paper's Stage-2
+input — NO native image.** The paper feeds Vicuna only the 32 projected
+Q-Former tokens plus MHCAC's P/N/U lists as text. `--prompt-style paper` (both
+`run_medgemma_qlora.py` and `generate_stage2_reports.py`) uses the reference
+`inference.py` instruction byte for byte and is accepted ONLY with
+`--pipeline-mode meta_cxr_qformer_with_mhcac_prompt`, no `--prompt-config`, and
+a cue rule other than `none`; with it `--cue-rule paper_thresholds` (user's
+choice) needs no `--prompt-config`, and an unset `--lora-rank`/`--lora-alpha`
+becomes the paper's r=8/alpha=16 (other styles keep 16/32; explicit flags win).
+User kept MedGemma rather than Vicuna-7B.
+Default `fine` is byte-identical to before, prompt AND `_prompt_metadata()`, so
+old caches and adapters keep their identity. Traps: (1) before this flag the
+paper wording sat in `build_instruction` unreachable — `collate_train` and both
+`evaluate_variant` calls hardcoded `"fine"`, and any other string fell through
+to the paper text silently (now `ValueError`); (2) an adapter records its style
+in `manifest.json` and reuse/resume/generation under the other style is refused
+(old manifests = `fine`); (3) `uses_mhcac_prompt` is still read by nothing —
+under the legacy prompt `meta_cxr_qformer` gets `pred_groups` too, which is why
+`paper` is restricted to the `..._with_mhcac_prompt` mode. **Not yet run on
+GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the commands.
+
 ⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
 EPOCH. Every arm A number must be reported that way.** The planned
 `shutdown -h now` on 2026-09-03 09:33:31 killed it at 61h17m, batch
