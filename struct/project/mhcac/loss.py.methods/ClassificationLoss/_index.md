@@ -19,7 +19,7 @@ policy, và **`sample_mask`**.
 |---|---|---|
 | `class_weights` | 14×3 sqrt inverse-freq, cap 10 | `[]` → tắt (ablation) |
 | `num_abnormalities` | 14 | |
-| `label_smoothing` | 0.05 | |
+| `label_smoothing` | **0.0** từ 2026-10-05 (D-026); 0.05 khi config thiếu key | |
 | `uncertain_policy` | `three_class` (prod từ D-022; trước đó `ignore_uncertain`) | |
 
 `class_weights` mặc định (`blip2_qformer.py:357`) = `sqrt(prevalence_negative /

@@ -223,6 +223,7 @@ class Blip2Qformer(Blip2Base):
         explanation_cfg=None,
         distill_temperature=2.0,
         mhcac_text_dropout=0.2,
+        mhcac_num_common_tokens=14,
         class_weights=None,
         cls_label_smoothing=0.05,
         logit_adjust_counts=None,
@@ -567,7 +568,7 @@ class Blip2Qformer(Blip2Base):
             num_abnormalities=14,
             num_classes=3,
             num_layers=6,
-            num_commmon_tokens=14,
+            num_commmon_tokens=mhcac_num_common_tokens,
             initial_expert_tokens=None,
             visual_dim=VISUAL_DIM,
             text_dropout_rate=mhcac_text_dropout,
@@ -2372,6 +2373,16 @@ class Blip2Qformer(Blip2Base):
         mhcac_cfg = cfg.get("mhcac", {}) or {}
         distill_temperature = float(mhcac_cfg.get("distill_temperature", 2.0))
         mhcac_text_dropout = float(mhcac_cfg.get("text_dropout", 0.2))
+        # Common expert tokens. Absent key = 14, the reference code's value, so
+        # every checkpoint trained before 2026-10-05 still loads; the paper's
+        # Fig. 10 ablation picks 8. The count is the first dim of
+        # mhcac.expert_tokens, so a checkpoint only loads into the count it was
+        # trained with.
+        mhcac_num_common_tokens = int(mhcac_cfg.get("num_common_tokens", 14))
+        if mhcac_num_common_tokens < 1:
+            raise ValueError(
+                f"model.mhcac.num_common_tokens must be >= 1, got {mhcac_num_common_tokens}"
+            )
         class_weights = mhcac_cfg.get("class_weights", None)
         if class_weights is not None:
             class_weights = [list(weights) for weights in class_weights]
@@ -2435,6 +2446,7 @@ class Blip2Qformer(Blip2Base):
             explanation_cfg=explanation_cfg,
             distill_temperature=distill_temperature,
             mhcac_text_dropout=mhcac_text_dropout,
+            mhcac_num_common_tokens=mhcac_num_common_tokens,
             class_weights=class_weights,
             cls_label_smoothing=cls_label_smoothing,
             logit_adjust_counts=logit_adjust_counts,

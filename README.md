@@ -108,6 +108,11 @@ Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/
   loss (D-025, Menon et al.) đã được cài (`model.mhcac.logit_adjustment`) nhưng **không dùng**: mô phỏng trên
   test cho thấy τ = 1 khiến mô hình đoán Uncertain khắp nơi (weighted F1 0,77 → 0,32), còn τ thấp hơn thì đổi
   F1 lấy recall theo tỉ lệ không đáng.
+- MHCAC theo đúng bài báo (D-026, từ 2026-10-05): **8 common expert token** (Fig. 10 của bài báo; code gốc và
+  mọi run trước đó dùng 14) và **không label smoothing** cho CE phân loại (Eq. 10; trước đó 0,05). Dropout
+  MHCAC vốn đã là 0,2 như bài báo. **Chưa chạy GPU.** Khi đánh giá checkpoint cũ bằng YAML này phải thêm
+  `--options model.mhcac.num_common_tokens=14 model.mhcac.label_smoothing=0.05`, nếu không runner bỏ qua
+  `expert_tokens` lệch shape (chỉ cảnh báo) và chấm điểm token ngẫu nhiên.
 - Checkpoint selection (từ 2026-10-01): **`macro_recall`** trên validation cho pha 1b và 1c; pha 1a vẫn dùng
   `loss` vì không chạy bộ phân loại. `macro_recall` là trung bình không trọng số của recall ba lớp
   Negative / Positive / Uncertain (sau argmax, như `balanced_accuracy_score` của sklearn) cho từng bệnh,

@@ -279,9 +279,19 @@ model:
     layer_order: self_first
     text_mask: element
     text_dropout: 0.2
-    # Defaults are sqrt inverse-frequency weights derived from the full
-    # study-level train split; [] disables weighting for an ablation.
-    label_smoothing: 0.05
+    # PAPER VALUES, 2026-10-05 (user decision, D-026).
+    # num_common_tokens: 8 -- the paper's Fig. 10 ablation (4/6/8/10/12) picks
+    # 8. The reference code and every run before this date used 14; a key-less
+    # config still gets 14. Checkpoints load only into the count they were
+    # trained with: evaluate an older run with
+    # --options model.mhcac.num_common_tokens=14, or the shape-mismatched
+    # mhcac.expert_tokens is SKIPPED with a warning and the run scores random
+    # expert tokens.
+    num_common_tokens: 8
+    # label_smoothing: 0.0 -- the paper's Eq. 10 is plain class-weighted CE.
+    # Every run before this date trained with 0.05 (the code default, kept for
+    # key-less configs).
+    label_smoothing: 0.0
 
   # CLASSIFICATION-ONLY RECIPE (2026-08-13). The objective now matches upstream
   # META-CXR (DasithEdirisinghe/META-CXR @ e97d709, blip2_qformer.py:477):

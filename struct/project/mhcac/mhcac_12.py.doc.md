@@ -80,7 +80,7 @@ Khởi tạo tại `blip2_qformer.py:388`:
 
 ```python
 embed_dim=768, num_abnormalities=14, num_classes=3, num_layers=6,
-num_commmon_tokens=14,      # ⚠ typo: ba chữ 'm'
+num_commmon_tokens=<mhcac.num_common_tokens>,  # ⚠ typo: ba chữ 'm'; mặc định 14, prod 8 (D-026)
 visual_dim=1408, text_dropout_rate=<mhcac.text_dropout>,
 use_cnn=<use_biovil>, uncertain_policy=<mhcac.uncertain_policy>,
 stream_layouts=<Blip2Qformer._native_stream_layouts(img_size)>

@@ -114,7 +114,8 @@ Trong khối `model:` của run YAML:
 | `mhcac.uncertain_policy` | `three_class` (prod `three_class` từ 2026-09-25, D-022; trước đó `ignore_uncertain`) | Cách xử lý lớp Uncertain |
 | `mhcac.distill_temperature` | `2.0` | Nhiệt độ trong `soft_target_kl_loss` |
 | `mhcac.text_dropout` | `0.2` | Dropout trên đường text của teacher |
-| `mhcac.label_smoothing` | `0.05` | |
+| `mhcac.label_smoothing` | `0.05` khi thiếu key; **prod `0.0`** từ 2026-10-05 ([D-026](../_meta/DECISIONS.md#d-026--siêu-tham-số-mhcac-theo-bài-báo-2026-10-05)) | Eq. 10 của bài báo là CE có trọng số thuần |
+| `mhcac.num_common_tokens` | `14` khi thiếu key; **prod `8`** từ 2026-10-05 ([D-026](../_meta/DECISIONS.md#d-026--siêu-tham-số-mhcac-theo-bài-báo-2026-10-05)) | Số common expert token = chiều đầu của `mhcac.expert_tokens`; checkpoint chỉ load vào đúng số đã train |
 | `mhcac.class_weights` | 14×3 sqrt inverse-frequency | `[]` → tắt weighting (ablation) |
 | `multi_view` | `false` (prod: `true`) | Có dựng `ViewFusionModule` không |
 | `view_fusion.*` | heads 8, ffn_ratio 4, blocks 1, dropout 0.1, p_view_drop 0.15 | |

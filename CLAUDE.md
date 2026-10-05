@@ -768,6 +768,18 @@ record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
   `layer_order: self_first`, `text_mask: element`): teacher/student REMOVED,
   `lambda_teacher_cls`/`lambda_distill` must be 0 (the model raises otherwise).
 - `feature_mask_ratio: 0.1`, `itc_label_smoothing: 0.1`, `itc_queue_size: 0`.
+- ⚠ **D-026, 2026-10-05: MHCAC set to the paper's values** —
+  `model.mhcac.num_common_tokens: 8` (paper Fig. 10; the reference code and
+  every earlier run used 14, now the key-less default) and
+  `model.mhcac.label_smoothing: 0.0` (paper Eq. 10; earlier runs used 0.05).
+  MHCAC dropout was already the paper's 0.2 and is unchanged. **Not yet run on
+  GPU.** Two traps: (1) evaluating an OLD checkpoint with this YAML silently
+  scores random expert tokens — the eval loader skips shape-mismatched tensors
+  with only a warning — so pass
+  `--options model.mhcac.num_common_tokens=14 model.mhcac.label_smoothing=0.05`;
+  (2) an old `checkpoint_phase1a` does not load into a new 1b
+  (`prepare_phase_model` raises `size mismatch` on `mhcac.expert_tokens`);
+  drop that key from a COPY, or re-run 1a.
 - ✅ **Memory, 2026-09-24 (D-021): Q-Former gradient checkpointing (all
   phases), SigLIP ITC (`itc_loss: sigmoid`), GradCache in phase 1a (batch 128,
   chunk 16, `Blip2Qformer.forward_gradcache` runs its own backward), phase 1c at
@@ -1529,6 +1541,15 @@ sentences with `lexicon_v2`. Eight example overlays rendered by
 the host.
 
 ### Arm A — the first FINE-TUNED Stage-2 run, and its full evaluation (2026-09-03)
+
+⚠⚠ **BOTH STAGE-2 ADAPTERS WERE DELETED ON 2026-10-05, at the user's request.**
+`~/ft_only_full/adapters/medgemma_qlora_medgemma_direct` (arm A) and
+`~/ft_guided_full/adapters/medgemma_qlora_meta_cxr_native_qformer_guided`
+(arm C, soft tokens from `run_20260820_ft`) are gone, `checkpoints/last`
+included. The generated reports and scores survive (`~/thesis_eval_20260913/`,
+`~/paper_metrics_20261005/`), so every number below still stands, but none of
+them can be regenerated, explained or extended. No Stage-2 adapter exists on
+the host now; the next one should be trained from `run_20260930_3class`.
 
 `medgemma_direct` + `configs/experiment_native_anchor_only.yaml`, findings-only,
 batch 2 x accum 8. **It is 0.86 of one epoch, not one epoch, and every number

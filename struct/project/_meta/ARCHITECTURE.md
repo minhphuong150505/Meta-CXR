@@ -173,7 +173,7 @@ Tham số khởi tạo (từ `blip2_qformer.py:342`):
 ```python
 AbnormalityClassificationModel(
     embed_dim=768, num_abnormalities=14, num_classes=3,
-    num_layers=6, num_commmon_tokens=14,   # (sic — typo trong source)
+    num_layers=6, num_commmon_tokens=<mhcac.num_common_tokens>,   # (sic — typo); 14 khi thiếu key, prod 8 (D-026)
     visual_dim=1408, text_dropout_rate=..., use_cnn=use_biovil,
     uncertain_policy=...,
 )
