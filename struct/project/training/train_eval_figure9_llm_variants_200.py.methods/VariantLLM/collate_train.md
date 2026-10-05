@@ -41,3 +41,9 @@ Không.
 Với mode Q-Former, thứ tự hàng trong batch **phải** khớp thứ tự soft-token
 embedding. Lệch = mỗi study mô tả bằng ảnh study khác, hoàn toàn im lặng.
 `validate_soft_token_batch` là lưới an toàn duy nhất.
+
+## Prompt style (2026-10-05, D-027)
+
+Trước đây chuỗi `"fine"` được viết cứng ở đây, nên train luôn dùng prompt
+`fine` bất kể caller muốn gì. Nay là `self.legacy_prompt_style`. `evaluate_loss`
+đi qua cùng hàm này, nên val loss dùng đúng prompt lúc train.

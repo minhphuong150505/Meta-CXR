@@ -299,6 +299,7 @@ Meta-CXR-source/
 ├── tests/                          ✅ 48 file Python — enforce invariant kiến trúc
 │   ├── explainability/             ✅ 91 test CPU (namespace pkg, KHÔNG có __init__.py)
 │   ├── test_cue_contract.py          ✅ cue states, cache compatibility, train/generation parity
+│   ├── test_prompt_style.py          ✅ --prompt-style paper: prompt bài báo trùng byte mã gốc, mode/adapter guard (D-027)
 │   ├── test_selective_cues.py         ✅ precision/support fitting and disabled-label guards
 │   ├── test_generation_stop_tokens.py ✅ model chat stop IDs and tokenizer fallback
 │   └── fixtures/notebooks/*.fixture

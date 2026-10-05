@@ -256,6 +256,34 @@ Các `--pipeline-mode` mà CLI fine-tuning thực sự chấp nhận:
 
 Các mode Q-Former chỉ hỗ trợ target `findings_only`. Native route còn hỗ trợ `impression_only` và `findings_and_impression`; Prompt v2 được thiết kế để sinh FINDINGS.
 
+### Stage 2 theo bài báo: không ảnh gốc (`--prompt-style paper`, D-027, 2026-10-05)
+
+Bài báo META-CXR đưa vào LLM **đúng hai thứ**: 32 token Q-Former (chiếu sang không gian embedding của LLM, chèn vào vị trí các token ảnh) và danh sách Positive / Negative / Uncertain của MHCAC dạng chữ. LLM **không** có bộ mã hoá ảnh riêng. `--prompt-style paper` tái lập cách đó trên MedGemma:
+
+- chỉ nhận `--pipeline-mode meta_cxr_qformer_with_mhcac_prompt` (soft token **thay** ảnh, không có ảnh gốc);
+- instruction trùng từng byte với `inference.py` của mã gốc ("Do not invent findings. Only describe abnormalities explicitly provided in the 'Abnormality information'...");
+- không được kết hợp với `--prompt-config`, cũng không với `--cue-rule none`;
+- adapter ghi style đã dùng; dùng lại, resume hay sinh report bằng style khác sẽ bị từ chối.
+
+```bash
+# 1) Ngưỡng Eq. 22 theo (finding, lớp), fit trên VAL của checkpoint Stage 1
+python scripts/calibrate_thresholds.py --predictions <val.npz> --output <thresholds.json>
+# 2) Train + đánh giá Stage 2
+CUDA_VISIBLE_DEVICES=0 python training/run_medgemma_qlora.py \
+    --pipeline-mode meta_cxr_qformer_with_mhcac_prompt --prompt-style paper \
+    --section-mode findings_only \
+    --cue-rule paper_thresholds --threshold-path <thresholds.json> \
+    --checkpoint-root <thư mục chứa run Stage 1> --stage1-run <tên run> \
+    --output-dir /home/phuong/<run> --no-upload
+# 3) Sinh report test bằng adapter vừa train (phải cùng --prompt-style)
+python scripts/generate_stage2_reports.py --pipeline-mode meta_cxr_qformer_with_mhcac_prompt \
+    --prompt-style paper --cue-rule paper_thresholds --threshold-path <thresholds.json> \
+    --adapter /home/phuong/<run>/adapters/medgemma_qlora_meta_cxr_qformer_with_mhcac_prompt \
+    --checkpoint-root <...> --stage1-run <tên run> --split test --limit 0 --output-dir <dir>
+```
+
+Còn khác bài báo, cần ghi trong luận văn: LLM là MedGemma 1.5 4B (QLoRA NF4) thay vì Vicuna-7B; LoRA tự động r=8/α=16 như bài báo khi dùng `--prompt-style paper` (các chế độ khác vẫn mặc định r=16/α=32; `--lora-rank`/`--lora-alpha` tường minh luôn được ưu tiên); template hội thoại của MedGemma; với `paper_thresholds`, finding không vượt ngưỡng lớp nào bị bỏ khỏi danh sách (mã gốc rơi về argmax). Soft token chỉ có nghĩa khi checkpoint Stage 1 đã train Q-Former (pha 1a). **Chưa chạy trên GPU**; chỉ có 15 test CPU (`tests/test_prompt_style.py`).
+
 Prompt v2 định nghĩa riêng năm visual mode trong [`stage2/prompts/schemas.py`](stage2/prompts/schemas.py):
 
 - `native_anchor_only`

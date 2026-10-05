@@ -58,3 +58,10 @@ Chạy generate trên GPU.
 ## Modification risk
 Bỏ `bad_words_ids` → ký hiệu soft token lọt vào báo cáo output.
 Dùng đường prompt khác lúc generate → mất parity với train, chất lượng tụt âm thầm.
+
+## Prompt style (2026-10-05, D-027)
+
+`prompt_style` phải bằng `self.legacy_prompt_style` khi không có
+`prompt_config` (kiểm tra trong `_chat_texts`). `"paper"` sinh ra prompt
+nguyên văn của bài báo META-CXR — xem `build_instruction` trong
+[file doc](../../train_eval_figure9_llm_variants_200.py.doc.md).

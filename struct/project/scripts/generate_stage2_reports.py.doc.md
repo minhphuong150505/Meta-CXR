@@ -44,7 +44,7 @@ nó giữ lại đúng những `sample_key` đã có trong file cũ.
 **giống nhau trên cả hai nhánh** và giống hệt giá trị các lần chạy native cũ đã
 ghi — file `.jsonl` cũ vẫn join được.
 
-## Bốn refusal, tất cả xảy ra TRƯỚC khi import torch
+## Các refusal, tất cả xảy ra TRƯỚC khi import torch
 
 `validate_invocation()` chạy ngay sau khi resolve mode. Trước đây một cờ thiếu
 chỉ lộ ra **sau** khi đã import torch/transformers/nltk — trên training host là
@@ -55,6 +55,8 @@ mất một phút GPU cho mỗi lần gõ nhầm.
 | native thiếu `--manifest`/`--image-root` | không có nguồn record |
 | `meta_cxr_*` thiếu `--adapter` | **`img_proj` khởi tạo ngẫu nhiên** — sinh ra báo cáo trôi chảy nhưng mô tả nhiễu, không hề báo lỗi |
 | `--adapter` không có `img_proj.pt` | như trên. `load_img_proj_if_present()` **im lặng return** khi thiếu file, nên không thể dựa vào nó |
+| `--prompt-style paper` sai mode / có `--prompt-config` / `--cue-rule none` (D-027) | `validate_prompt_style`; prompt bài báo chỉ có nghĩa với soft token + text P/N/U, không ảnh gốc |
+| `--adapter` train bằng prompt style khác (D-027) | `check_adapter_prompt_style` đọc `manifest.json`; adapter `fine` sinh bằng prompt `paper` là sinh ngoài phân phối train |
 | `native_qformer` thiếu `--prompt-config` | placeholder soft token do prompt builder v2 sinh; instruction legacy không sinh cái nào → phép thay thế tìm thấy 0 vị trí và lặng lẽ chạy như native MedGemma thuần |
 
 `both_for_ablation` cũng bị từ chối: hai arm sẽ ghi đè cùng một
@@ -195,3 +197,11 @@ positive cue; missing thresholds use 0.5. Below threshold means no cue, never
 a negative assertion. Keep the matching guided prompt requirement. Explicit
 `conditional_positive` restores q-only behavior; no calibration file is loaded
 automatically. Low-level Figure-9 helper defaults remain historical compatibility.
+
+## `--prompt-style` (2026-10-05, D-027)
+
+`fine` (mặc định) hoặc `paper`. Truyền vào `VariantLLM(legacy_prompt_style=)` và
+`llm.generate(record, args.prompt_style, ...)` thay cho chuỗi cứng `"fine"`.
+Với `paper`, `--cue-rule paper_thresholds` không cần `--prompt-config`.
+`generation_summary.json` ghi `prompt_style` (chỉ khi mode `qformer` dùng prompt
+legacy; còn lại `None`). Một `Namespace` thiếu thuộc tính này được coi là `fine`.

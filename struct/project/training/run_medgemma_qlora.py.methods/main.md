@@ -73,3 +73,13 @@ Sau resolve mode và load prompt, non-default cue rule được kiểm tra trư�
 Stage-1 modes use marginal_positive; all splits, evaluation identities and
 summary/manifest receive that rule. Marginal/abstaining rules require a matching
 guided prompt, including when selected by default.
+
+## `--prompt-style` (2026-10-05, D-027)
+
+`validate_prompt_style` chạy ngay sau khi load prompt config; sai → `SystemExit`.
+Với `--prompt-style paper`, `--cue-rule paper_thresholds` KHÔNG cần
+`--prompt-config` nữa (prompt bài báo liệt kê thẳng các finding vượt ngưỡng từ
+`record["pred_groups"]`, không dùng hợp đồng `CueState` của v2). `summary.json`
+ghi `prompt_version = "paper_build_instruction"` và `prompt_style`;
+`run_manifest.json` ghi `prompt_style` (cả hai là `None` khi có
+`--prompt-config` hoặc mode không cần Stage 1).

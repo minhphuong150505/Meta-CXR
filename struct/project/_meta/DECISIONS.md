@@ -30,6 +30,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-020](#d-020--meta-former-3-pha-theo-bài-báo-medclip-swin-mhcac-một-nhánh) | META-Former 3 pha theo bài báo; MedCLIP Swin; MHCAC một nhánh; bật lại ITC/ITM/LM | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
 | [D-021](#d-021--gradient-checkpointing-q-former-gradcache-pha-1a-siglip-mở-lại-khối-encoder-ở-1c) | Checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
 | [D-026](#d-026--siêu-tham-số-mhcac-theo-bài-báo-2026-10-05) | MHCAC: 8 common expert token, label smoothing 0 (theo bài báo) | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
+| [D-027](#d-027--stage-2-theo-bài-báo-không-ảnh-gốc-prompt-nguyên-văn-2026-10-05) | Stage 2 `--prompt-style paper`: không ảnh gốc, 32 soft token + P/N/U, prompt nguyên văn bài báo | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
 
 ---
 
@@ -1304,3 +1305,43 @@ báo. Dropout MHCAC đã là 0.2 (mặc định của `AbnormalityClassification
   mismatch` (lỗi rõ ràng, không âm thầm). Pha 1a không train MHCAC, nên bỏ key đó
   khỏi một BẢN SAO của checkpoint là đủ để dùng lại 1a; hoặc chạy lại 1a.
 - Ghim bởi `tests/test_paper_mode.py` (4 test mới).
+
+## D-027 — Stage 2 theo bài báo: không ảnh gốc, prompt nguyên văn (2026-10-05)
+
+Status: **Confirmed — quyết định của user; chưa chạy GPU**
+
+**Thay đổi.** Cờ `--prompt-style {fine,paper}` trên `training/run_medgemma_qlora.py`
+và `scripts/generate_stage2_reports.py`, mặc định `fine`. `paper` dùng
+instruction của bài báo META-CXR, trùng từng byte với `inference.py` của mã gốc,
+và chỉ được nhận với `--pipeline-mode meta_cxr_qformer_with_mhcac_prompt`: LLM
+**không** nhận ảnh gốc, kênh thị giác duy nhất là 32 soft token Q-Former, kèm
+danh sách Positive / Negative / Uncertain của MHCAC dạng chữ. Đó là cách bài báo
+đưa đầu vào cho Vicuna-7B.
+
+**Lựa chọn của user.** (1) Giữ MedGemma 1.5 4B (QLoRA NF4) thay vì Vicuna-7B —
+chạy được trên card 16 GB và so được với các arm MedGemma đã có; LLM khác bài
+báo, phải nêu trong luận văn. (2) Luật cue `paper_thresholds` (ngưỡng Eq. 22 theo
+từng (finding, lớp), fit trên val bằng `scripts/calibrate_thresholds.py`).
+
+**Vì sao cần cờ.** Chữ của bài báo đã nằm sẵn trong `build_instruction` nhưng
+runner viết cứng `"fine"` ở train (`collate_train`) và eval, nên không bao giờ
+chạy được.
+
+**Hệ quả.**
+- `fine` giữ nguyên từng byte cả prompt lẫn `_prompt_metadata()`, nên mọi
+  evaluation cache và adapter cũ không đổi identity.
+- Adapter ghi `prompt.version = "paper_build_instruction"` + `prompt_style`.
+  Dùng lại / resume / sinh report bằng style khác lúc train → dừng
+  (`check_adapter_prompt_style`). Manifest cũ không có trường này = `fine`.
+- Với `paper`, `paper_thresholds` không cần `--prompt-config`: finding không vượt
+  ngưỡng lớp nào bị bỏ khỏi danh sách (mã gốc thì rơi về argmax). Nếu mọi
+  finding bị bỏ, prompt ghi `"no common findings"` như mã gốc.
+- LoRA: dưới `--prompt-style paper`, `--lora-rank`/`--lora-alpha` bỏ trống thì
+  là r=8/α=16 như bài báo (`pipeline_modes.resolve_lora_size`); các style khác
+  giữ r=16/α=32. Cờ tường minh luôn thắng. `summary.json` ghi `lora_rank`/`lora_alpha`.
+- Còn khác bài báo: LLM (MedGemma vs Vicuna-7B) và template hội thoại của
+  MedGemma thay cho template Vicuna.
+- ⚠ `uses_mhcac_prompt` của `PipelineMode` vẫn không được runner đọc: ở prompt
+  legacy, `meta_cxr_qformer` cũng nhận `pred_groups`. Đó là lý do `paper` chỉ cho
+  phép đúng mode `..._with_mhcac_prompt`, để tên mode khớp nội dung prompt.
+- Ghim bởi `tests/test_prompt_style.py` (15 test).
