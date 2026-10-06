@@ -43,7 +43,8 @@ study_sampling=false → mỗi hàng là một study (aux rỗng)
 mimic_cxr_utils.build_study_index(annotation, anchor_priority, max_aux_views, ...)
    ├─ nhóm theo study_id
    ├─ chọn anchor theo thứ tự ưu tiên ViewPosition
-   └─ lấy tối đa max_aux_views hàng còn lại làm aux
+   └─ lấy tối đa max_aux_views hàng có projection KHÁC anchor làm aux
+      (lateral thứ hai vẫn được lấy; 0 ≤ max_aux_views ≤ MAX_SUPPORTED_AUX_VIEWS = 3)
    ↓
 truncate → cắt danh sách study
 ```
@@ -63,4 +64,8 @@ test được mà không import LAVIS.
 
 ## Modification risk
 Đổi `anchor_priority` đổi ảnh nào là tín hiệu chính → **kết quả không so sánh được**
-với checkpoint cũ. Đổi `max_aux_views` đổi `N_max` và chi phí encode aux.
+với checkpoint cũ. Đổi `max_aux_views` đổi `N_max` và chi phí encode aux. Trước 2026-10-06 sampler
+từ chối mọi giá trị > 1; nay cho tới 3 cho ablation đa góc nhìn
+(`docs/handoff/PLAN-2026-10-06-multi-aux-views.md`). Đo trên `full_allviews_v2`:
+chỉ 4.2% train / 4.9% val / 5.3% test study có aux thứ hai, nên nâng cap chỉ đổi
+input của ~5% study. YAML ship vẫn là 1; chưa chạy trên GPU.

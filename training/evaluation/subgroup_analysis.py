@@ -106,6 +106,13 @@ def view_subgroups(
             subgroups.append(
                 Subgroup("multi_view", multi, "study has more than one view")
             )
+        # Only a run with model.data.max_aux_views >= 2 can see three images;
+        # under the shipped max of 1 this bucket is absent, not empty.
+        three_plus = np.where(counts >= 3)[0]
+        if three_plus.size:
+            subgroups.append(
+                Subgroup("views_3plus", three_plus, "model saw three or more views")
+            )
 
     return subgroups
 

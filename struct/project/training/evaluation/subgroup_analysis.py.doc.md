@@ -20,7 +20,7 @@ hoặc báo cáo rất dài). Trung bình che giấu điều đó.
 | Tên | Dòng | Vai trò |
 |---|---|---|
 | `evaluate_subgroups(...)` | 160 | ★ |
-| `view_subgroups(...)` | 75 | Theo `ViewPosition` |
+| `view_subgroups(...)` | 75 | Theo `ViewPosition` và `num_views` (`single_view`, `multi_view`, `views_3plus` — nhóm cuối chỉ có khi `max_aux_views ≥ 2`) |
 | `label_subgroups(...)` | 113 | Theo nhãn |
 | `length_subgroups(...)` | 134 | Theo độ dài |
 | `subgroup_table(results, columns)` | 193 | Bảng |

@@ -63,6 +63,7 @@ class ImageTextPretrainTask(BaseTask):
         collected_logits = []
         collected_labels = []
         collected_keys = []
+        collected_num_views = []
 
         for batch in data_loader:
             if cuda_enabled:
@@ -102,6 +103,7 @@ class ImageTextPretrainTask(BaseTask):
             collected_logits.append(logits.detach().float().cpu())
             collected_labels.append(masked_labels.detach().cpu())
             collected_keys.extend(_sample_keys(batch, labels.shape[0]))
+            collected_num_views.append(_num_views(batch, labels.shape[0]))
 
         device = next(model.parameters()).device
         loss_names = sorted(loss_sums)
@@ -126,7 +128,8 @@ class ImageTextPretrainTask(BaseTask):
             )
 
             predictions = self._build_predictions(
-                collected_logits, collected_labels, collected_keys
+                collected_logits, collected_labels, collected_keys,
+                collected_num_views,
             )
             predictions.metadata["split"] = self.eval_split
             report = evaluate_classification(predictions)
@@ -138,7 +141,7 @@ class ImageTextPretrainTask(BaseTask):
         return stats
 
     @staticmethod
-    def _build_predictions(logits_chunks, label_chunks, keys):
+    def _build_predictions(logits_chunks, label_chunks, keys, num_view_chunks=None):
         from model.lavis.models.blip2_models.blip2_qformer import chexpert_cols
         from training.evaluation.schemas import (
             ClassificationPredictions,
@@ -165,6 +168,7 @@ class ImageTextPretrainTask(BaseTask):
             logits=logits,
             pathology_names=names,
             sample_keys=build_sample_keys(list(keys[: labels.shape[0]])),
+            num_views=_concat_num_views(num_view_chunks, labels.shape[0]),
         )
 
     def _save_predictions(self, predictions):
@@ -190,6 +194,25 @@ class ImageTextPretrainTask(BaseTask):
             logger.info("saved %d predictions to %s", predictions.num_samples, path)
         except Exception as exc:  # noqa: BLE001
             logger.warning("could not save predictions (metrics unaffected): %s", exc)
+
+
+def _num_views(batch, batch_size):
+    """Images the model actually saw per study: the anchor plus real auxiliaries.
+
+    ``None`` when the batch carries no ``aux_mask`` (multi-view off), so the
+    exported file then has no ``num_views`` rather than a fabricated all-ones.
+    """
+    aux_mask = batch.get("aux_mask")
+    if aux_mask is None:
+        return None
+    return (1 + aux_mask.detach().to(torch.long).sum(dim=1)).cpu()[:batch_size]
+
+
+def _concat_num_views(chunks, total):
+    if not chunks or any(chunk is None for chunk in chunks):
+        return None
+    counts = torch.cat(chunks).numpy()
+    return counts if counts.shape[0] == total else None
 
 
 def _sample_keys(batch, batch_size):

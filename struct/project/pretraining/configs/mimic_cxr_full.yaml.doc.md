@@ -44,7 +44,7 @@ run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba ov
 | `view_fusion.p_view_drop` | 0.15 | |
 | `data.study_sampling` | `true` | ★ Một dòng = một study |
 | `data.anchor_priority` | `[PA, AP, lateral]` | |
-| `data.max_aux_views` | 1 | |
+| `data.max_aux_views` | 1 | 0..3 hợp lệ từ 2026-10-06 (ablation đa góc nhìn); chỉ ~5% study có aux thứ hai |
 | `explanation.mask_cache_dir` | private mask cache | Dataset đọc JSON + memmap theo split |
 
 ⚠ **`data:` nằm TRONG `model:`** — `Config` chỉ merge `run`/`model`/`datasets`.

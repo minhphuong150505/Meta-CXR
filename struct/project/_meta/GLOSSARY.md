@@ -34,7 +34,7 @@ Area Under Precision-Recall Curve. `selection_metric` của config production
 định hơn khi lớp mất cân bằng nặng.
 
 ### Auxiliary view
-View **bổ trợ**, tối đa `max_aux_views: 1`. Nó là Key/Value trong view fusion.
+View **bổ trợ**, tối đa `max_aux_views` (ship 1, sampler cho tới 3). Nó là Key/Value trong view fusion.
 Study không có auxiliary view bị **gate về 0**, không bị loại khỏi batch.
 
 ---

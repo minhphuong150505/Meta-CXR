@@ -9,6 +9,14 @@ from typing import Any
 VIEW_ID_MAP = {"PA": 0, "AP": 1, "LATERAL": 2, "LL": 2}
 UNKNOWN_VIEW_ID = 3
 
+# Upper bound on auxiliary views per study. One was the only value ever trained
+# (and stays the shipped default); 2-3 exist for the multi-view ablation
+# (docs/handoff/PLAN-2026-10-06-multi-aux-views.md). Measured on
+# full_allviews_v2: a second complementary view exists for 4.2% of train /
+# 4.9% val / 5.3% test studies, a third for 0.1% or fewer, so 3 already covers
+# every study that has one.
+MAX_SUPPORTED_AUX_VIEWS = 3
+
 
 def view_id(view_position: Any) -> int:
     """Map a MIMIC view label to the compact IDs used by view fusion."""
@@ -25,14 +33,16 @@ def build_study_index(
     anchor_priority: Iterable[str] = ("PA", "AP", "LATERAL"),
     max_aux_views: int = 1,
 ) -> list[dict[str, Any]]:
-    """Choose one anchor and at most one complementary view per study.
+    """Choose one anchor and up to ``max_aux_views`` complementary views per study.
 
     Positions in the returned dictionaries index the input row order.  Study
     identity includes both ``subject_id`` and ``study_id`` so malformed inputs
     cannot mix patients that happen to share an identifier.
     """
-    if not 0 <= max_aux_views <= 1:
-        raise ValueError("MIMIC-CXR supports at most one auxiliary view per study.")
+    if not 0 <= max_aux_views <= MAX_SUPPORTED_AUX_VIEWS:
+        raise ValueError(
+            f"max_aux_views must be in 0..{MAX_SUPPORTED_AUX_VIEWS}; got {max_aux_views}"
+        )
 
     records = list(rows)
     ranks: dict[int, int] = {}

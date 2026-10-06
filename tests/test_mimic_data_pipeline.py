@@ -164,9 +164,35 @@ class StudySamplingTest(unittest.TestCase):
         studies = sampling.build_study_index(rows)
         self.assertEqual(len(studies), 2)
 
-    def test_at_most_one_auxiliary(self):
+    def test_multiple_auxiliaries_follow_priority(self):
+        rows = [
+            {"subject_id": 1, "study_id": 10, "ViewPosition": "LATERAL"},
+            {"subject_id": 1, "study_id": 10, "ViewPosition": "PA"},
+            {"subject_id": 1, "study_id": 10, "ViewPosition": "PA"},
+            {"subject_id": 1, "study_id": 10, "ViewPosition": "AP"},
+            {"subject_id": 1, "study_id": 10, "ViewPosition": "LL"},
+        ]
+        [two] = sampling.build_study_index(rows, max_aux_views=2)
+        self.assertEqual(two["anchor"], 1)
+        # The repeated PA never becomes an auxiliary; AP outranks lateral.
+        self.assertEqual(two["aux"], [3, 0])
+        [three] = sampling.build_study_index(rows, max_aux_views=3)
+        # A second lateral-type image is kept: only the anchor projection is skipped.
+        self.assertEqual(three["aux"], [3, 0, 4])
+        self.assertEqual(
+            three["aux_view_ids"],
+            [sampling.VIEW_ID_MAP["AP"], sampling.VIEW_ID_MAP["LATERAL"],
+             sampling.VIEW_ID_MAP["LL"]],
+        )
+        # max=1 is unchanged by the relaxed cap.
+        [one] = sampling.build_study_index(rows, max_aux_views=1)
+        self.assertEqual(one["aux"], [3])
+
+    def test_aux_view_cap(self):
         with self.assertRaises(ValueError):
-            sampling.build_study_index([], max_aux_views=2)
+            sampling.build_study_index([], max_aux_views=sampling.MAX_SUPPORTED_AUX_VIEWS + 1)
+        with self.assertRaises(ValueError):
+            sampling.build_study_index([], max_aux_views=-1)
 
 
 if __name__ == "__main__":
