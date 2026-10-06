@@ -74,7 +74,8 @@ Dict metric cho `RunnerBase.validate` · file `.npz` khi `run.save_predictions: 
 |---|---|
 | `evaluation` (`:53`) | [📄](image_text_pretrain.py.methods/ImageTextPretrainTask/evaluation.md) ★ Vòng eval, thu logits, gọi evaluator |
 | `set_evaluation_context` (`:48`) | Đặt `split_name`/`epoch` để đặt tên file |
-| `_build_predictions` (`:257`) | Ghép chunk logits/label/key thành `ClassificationPredictions` |
+| `_build_predictions` | Ghép chunk logits/label/key (+ `num_views`) thành `ClassificationPredictions` |
+| `_num_views` / `_concat_num_views` | Số ảnh model thực sự thấy mỗi study = 1 + `aux_mask.sum(1)`; `None` khi batch không có `aux_mask` (2026-10-06) |
 | `_save_predictions` (`:286`) | Ghi `.npz` |
 | `setup_task` (`:44`), `__init__` (`:37`) | Dựng từ cfg |
 
@@ -106,7 +107,7 @@ Nó nằm **trong hàm**, không ở module scope, để `model/lavis/` vẫn im
 data_loader ─► model(samples) ─► BlipOutput.classification_logits [B,14,3]
                                           │  gom theo chunk
                                           ▼
-                          _build_predictions(logits, labels, keys)
+                          _build_predictions(logits, labels, keys, num_views)
                                           │
                      ┌────────────────────┴─────────────────┐
                      ▼                                      ▼

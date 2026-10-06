@@ -843,6 +843,16 @@ study (not image) → anchor + ≤1 auxiliary view
 ```
 
 - Sampling is **one row per study**, not per image (`study_sampling: true`).
+- **`model.data.max_aux_views` accepts 0..3 as of 2026-10-06** (the sampler used
+  to refuse anything but 0/1; shipped YAML still 1). Measured on
+  `full_allviews_v2`: a second complementary view exists for only **4.2% train /
+  4.9% val / 5.3% test** studies (mostly a repeated lateral), a third for <=0.1%,
+  so raising the cap changes the input of ~5% of studies and a whole-split delta
+  is diluted ~20x -- read the `views_3plus` subgroup. The eval hook now writes
+  `num_views` (anchor + real auxiliaries seen) into the prediction `.npz`;
+  `scripts/compare_stage1_predictions.py` does the paired bootstrap by view
+  count. Plan (inference-only probe first, retrain only on request):
+  `docs/handoff/PLAN-2026-10-06-multi-aux-views.md`. **Not yet run on GPU.**
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

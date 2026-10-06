@@ -100,7 +100,7 @@ phần DC cố định; nay chúng được đọc qua `post_layernorm` rồi tr
 
 ## Stage 1
 
-Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/lateral được chọn làm anchor và tối đa một view phụ được fuse trước projection. Nhánh student dùng ảnh để tạo abnormality predictions và Q-Former representations; report text chỉ tham gia teacher branch trong lúc train.
+Stage 1 nhận mẫu theo study. Với `multi_view: true`, view ưu tiên PA/AP/lateral được chọn làm anchor và tối đa `model.data.max_aux_views` view phụ (YAML ship = 1) được fuse trước projection. Từ 2026-10-06 sampler cho phép tới 3 view phụ để kiểm chứng đa góc nhìn, nhưng chỉ ~5% study (4.2% train, 5.3% test) thực sự có view phụ thứ hai; thí nghiệm nằm ở `docs/handoff/PLAN-2026-10-06-multi-aux-views.md` và **chưa chạy trên GPU**. So sánh hai file dự đoán theo nhóm số view bằng `scripts/compare_stage1_predictions.py`. Nhánh student dùng ảnh để tạo abnormality predictions và Q-Former representations; report text chỉ tham gia teacher branch trong lúc train.
 
 - Entrypoint: [`pretraining/train.py`](pretraining/train.py)
 - Config production (một GPU, recipe duy nhất): [`pretraining/configs/mimic_cxr_full.yaml`](pretraining/configs/mimic_cxr_full.yaml)

@@ -102,7 +102,7 @@ s5041, dicom_b, LATERAL ─┴──► anchor_view_id: id(PA),
                                aux_view_ids: [id(LATERAL)]}
 ```
 
-Anchor chọn theo `anchor_priority: [PA, AP, lateral]`. Tối đa `max_aux_views: 1`.
+Anchor chọn theo `anchor_priority: [PA, AP, lateral]`. Tối đa `max_aux_views: 1` trong YAML ship (sampler cho tới 3 từ 2026-10-06, chỉ ~5% study có aux thứ hai).
 
 → `__len__` trả về **số study**, không phải số ảnh. Một epoch là một lượt qua các
 study duy nhất.
