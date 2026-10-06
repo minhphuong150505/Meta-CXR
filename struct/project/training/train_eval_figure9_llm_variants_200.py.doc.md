@@ -204,3 +204,15 @@ Eq. 22 của bài báo.
 
 Xem `VariantLLM` [`__init__`](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/__init__.md),
 [`collate_train`](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/collate_train.md).
+
+## `STAGE1_IMAGE_INPUT_KEYS` (2026-10-06)
+
+Tập khoá batch mà `build_stage1_records` chuyển cho `Blip2Qformer.forward_image`.
+Trước 2026-10-06 nó là một set cục bộ thiếu `swin_image`, `aux_swin_image`,
+`pubmedclip_image`, `aux_pubmedclip_image` — các ảnh tiền xử lý riêng của MedCLIP
+Swin (D-020) và PubMedCLIP `native` (D-022). Dataset có phát ra chúng nhưng bộ lọc
+bỏ đi, nên checkpoint Stage 1 ba pha (`run_20261005_paper`) làm smoke Stage 2 chết
+ngay study đầu tiên: `model.pubmedclip.preprocess 'native' needs the dataset's
+pubmedclip_aux_image`. Mọi Stage-2 trước đó dùng checkpoint cũ (PubMedCLIP đọc tensor
+BioViL) nên không gặp. Ghim bởi `tests/test_stage1_record_inputs.py` (so với tuple
+own-input trong `forward_image`).

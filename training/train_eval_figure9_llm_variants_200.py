@@ -614,6 +614,33 @@ def assert_class_logits_present(records: list[dict], finding_tokens: str) -> Non
         )
 
 
+#: Batch keys ``build_stage1_records`` hands to ``Blip2Qformer.forward_image``.
+#: The four own-preprocessing inputs (MedCLIP Swin, native PubMedCLIP, D-020 /
+#: D-022) were missing until 2026-10-06, so a Stage-1 checkpoint trained with
+#: ``model.pubmedclip.preprocess: native`` failed on the first study with
+#: "needs the dataset's pubmedclip_image" -- the dataset emitted them and this
+#: filter dropped them. Pinned by ``tests/test_stage1_record_inputs.py``.
+STAGE1_IMAGE_INPUT_KEYS = frozenset({
+    "image",
+    "aux_image",
+    "aux_mask",
+    "anchor_view_id",
+    "aux_view_ids",
+    "swin_image",
+    "aux_swin_image",
+    "pubmedclip_image",
+    "aux_pubmedclip_image",
+    "biovil_feat",
+    "pubmedclip_feat",
+    "swin_feat",
+    "raddino_feat",
+    "aux_biovil_feat",
+    "aux_pubmedclip_feat",
+    "aux_swin_feat",
+    "aux_raddino_feat",
+})
+
+
 @torch.no_grad()
 def build_stage1_records(
     context: Stage1Context,
@@ -658,21 +685,7 @@ def build_stage1_records(
     loader = make_stage1_loader(cfg, split, sample_limit, num_workers)
     records = []
     skipped_invalid_targets = 0
-    image_input_keys = {
-        "image",
-        "aux_image",
-        "aux_mask",
-        "anchor_view_id",
-        "aux_view_ids",
-        "biovil_feat",
-        "pubmedclip_feat",
-        "swin_feat",
-        "raddino_feat",
-        "aux_biovil_feat",
-        "aux_pubmedclip_feat",
-        "aux_swin_feat",
-        "aux_raddino_feat",
-    }
+    image_input_keys = STAGE1_IMAGE_INPUT_KEYS
     for batch in tqdm(loader, desc=f"stage1 {split}"):
         generation_mask = batch.get("generation_mask")
         if not torch.is_tensor(generation_mask) or generation_mask.numel() != 1:
