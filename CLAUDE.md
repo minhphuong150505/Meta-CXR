@@ -1436,6 +1436,15 @@ under the legacy prompt `meta_cxr_qformer` gets `pred_groups` too, which is why
 `paper` is restricted to the `..._with_mhcac_prompt` mode. **Not yet run on
 GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the commands.
 
+⚠ **2026-10-06: Stage 2 had never run on a D-020/D-022 Stage-1 checkpoint, and
+the first attempt died on study 1.** `build_stage1_records` filtered batch keys
+through a local set that lacked `swin_image` / `pubmedclip_image` and their
+`aux_` forms, so a checkpoint with `model.pubmedclip.preprocess: native` raised
+`... needs the dataset's pubmedclip_aux_image`. Now the module constant
+`STAGE1_IMAGE_INPUT_KEYS`, pinned against `forward_image`'s own-input tuple by
+`tests/test_stage1_record_inputs.py`. Affects every soft-token / cue mode and
+`generate_stage2_reports.py`; `medgemma_direct` never builds Stage-1 records.
+
 ⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
 EPOCH. Every arm A number must be reported that way.** The planned
 `shutdown -h now` on 2026-09-03 09:33:31 killed it at 61h17m, batch

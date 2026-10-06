@@ -58,4 +58,14 @@ runner, and a 3-phase (D-020/D-026) Stage-1 checkpoint feeding
 
 ## Execution report
 
-_(to be appended)_
+- 2026-10-06 02:27 Stage 1 phase 1c finished (`Training time 4:39:49`; 1b was
+  7:08:00). `eval_after_paper.sh` DONE 02:44:44, thresholds written.
+- 02:45:38 chain started the smoke at `755e9a6`; **02:45:57 ABORT, rc=1**, on
+  the first train study of the Stage-1 record pass:
+  `ValueError: model.pubmedclip.preprocess 'native' needs the dataset's
+  pubmedclip_aux_image`. Stage-1 checkpoint loaded fine (`missing=758
+  unexpected=0`). Cause: `build_stage1_records` dropped the own-preprocessing
+  inputs (see `STAGE1_IMAGE_INPUT_KEYS`). Nothing was trained; the failed smoke
+  directory `~/stage2_paper_20261006/smoke` holds only its log.
+- Fixed in the next commit; relaunched into a fresh `~/stage2_paper_20261006b`
+  (same script, new paths), so the failed directory is left untouched.
