@@ -147,3 +147,12 @@ ROOT=$NEW PHASES="phase1b phase1c" EXTRA_OPTS="model.data.max_aux_views=3" \
 ## Execution report
 
 (executor appends here)
+
+### Launch, 2026-10-07 00:24
+
+`~/multiaux_chain.sh` (pid 42003, `setsid`) runs A then B unattended. It waits for
+the Stage-2 paper full run (pid 33294), checks guards, pulls, runs pytest, then
+writes Experiment A to `~/aux_probe_20261007/` and Experiment B to
+`~/run_20261007_aux3/` (log `~/run_20261007_aux3.log`). Progress and every abort
+reason: `~/multiaux_chain.log`. B's test comparison against `run_20261005_paper`
+lands in `~/aux_probe_20261007/B_compare.log`.
