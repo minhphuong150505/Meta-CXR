@@ -140,6 +140,41 @@ class ReportParserTest(unittest.TestCase):
         self.assertEqual(impression, "Normal chest.")
         self.assertEqual(parser.count_lexical_tokens(findings), 4)
 
+    def test_header_only_narrative_is_not_a_generation_target(self):
+        # The exam line was the whole "narrative"; the content is in IMPRESSION.
+        findings, impression, method = parser.get_target_text(
+            "FINAL REPORT\nAP CHEST, 10:11 A.M., ___\n\nHISTORY: Line placement.\n\n"
+            "IMPRESSION: Tip in the SVC. No pneumothorax."
+        )
+        self.assertEqual(findings, "")
+        self.assertEqual(impression, "Tip in the SVC. No pneumothorax.")
+        self.assertEqual(method, "IMPRESSION_ONLY")
+
+    def test_exam_header_and_reason_are_stripped_from_narrative(self):
+        findings, _, method = parser.get_target_text(
+            "FINAL REPORT\nSINGLE FRONTAL VIEW OF THE CHEST\n\nREASON FOR EXAM: fever\n\n"
+            "The lungs are clear. No effusion."
+        )
+        self.assertEqual(findings, "The lungs are clear. No effusion.")
+        self.assertEqual(method, "NARRATIVE_BODY")
+
+    def test_header_prefix_keeps_the_content_after_it(self):
+        findings, _, _ = parser.get_target_text(
+            "CLINICAL INDICATION: cough\n\nFRONTAL AND LATERAL VIEWS OF THE CHEST: "
+            "The lungs are clear."
+        )
+        self.assertEqual(findings, "The lungs are clear.")
+
+    def test_exam_header_recognition_is_narrow(self):
+        for header in ("AP CHEST, 10:11 A.M., ___", "PA AND LATERAL CHEST RADIOGRAPHS:",
+                       "CHEST, SINGLE AP PORTABLE VIEW.",
+                       "PORTABLE SUPINE CHEST FILM ___ AT 1:23 A.M."):
+            self.assertTrue(parser.is_exam_header(header), header)
+        # All-caps findings and sentence-case text must never be dropped.
+        for text in ("CHEST TUBE IN PLACE.", "THE LUNGS ARE CLEAR.",
+                     "Chest radiograph shows no change.", "NO PNEUMOTHORAX."):
+            self.assertFalse(parser.is_exam_header(text), text)
+
 
 class StudySamplingTest(unittest.TestCase):
     def test_anchor_priority_and_complementary_auxiliary(self):
