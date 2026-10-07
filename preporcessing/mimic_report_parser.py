@@ -56,7 +56,7 @@ _EXAM_HEADER_WORDS = frozenset({
     "THREE", "FRONTAL", "LATERAL", "PORTABLE", "SUPINE", "UPRIGHT", "ERECT",
     "SEMI", "SEMIUPRIGHT", "SEMI-UPRIGHT", "SEMIERECT", "SEMI-ERECT", "RADIOGRAPH",
     "RADIOGRAPHS", "FILM", "FILMS", "X-RAY", "X-RAYS", "XRAY", "BEDSIDE", "ON",
-    "AT",
+    "AT", "ONE", "FROM", "AM", "PM", "LAT", "VW", "VWS", "STUDY", "REPORT",
 })
 _EXAM_HEADER_NOISE_RE = re.compile(r"_+|\b\d{1,2}:\d{2}\b|\b[AP]\.\s?M\.?|\d+|[^\w\s-]")
 # A colon that is not part of a clock time ("10:11").
@@ -72,12 +72,21 @@ def is_exam_header(text: str) -> bool:
 
 
 def _strip_exam_header(line: str) -> str:
-    """Drop a whole exam-header line, or its "<HEADER>:" prefix."""
+    """Drop a whole exam-header line, or the exam-header prefix of a line.
+
+    The prefix ends at a ":" , "." or "," followed by a space (never a clock
+    time such as "10:11"), so "CHEST, TWO VIEWS. The lungs are clear." keeps its sentence. The
+    LONGEST qualifying prefix wins, which keeps "A.M." inside the header.
+    """
     if is_exam_header(line):
         return ""
     match = _HEADER_PREFIX_RE.match(line)
     if match and is_exam_header(match.group("header")):
         return match.group("content").strip()
+    lead = re.match(r"[^a-z]*", line).group(0)
+    for end in range(len(lead) - 1, 0, -1):
+        if lead[end] in ".,:" and line[end + 1:end + 2] in (" ", "") and is_exam_header(lead[:end + 1]):
+            return line[end + 1:].strip()
     return line
 
 

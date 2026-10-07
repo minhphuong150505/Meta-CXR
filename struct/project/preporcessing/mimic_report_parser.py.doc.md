@@ -33,7 +33,7 @@ mục COMPARISON mà không có tag FINDINGS.
 `is_exam_header(text)` / `_strip_exam_header(line)`: một dòng không có chữ thường,
 có chữ CHEST, và mọi từ còn lại thuộc từ vựng projection/view (AP, PA, LATERAL,
 PORTABLE, VIEW(S), RADIOGRAPH(S), FILM, ...; giờ `10:11`, `A.M.`, `___`, số và dấu
-bị bỏ qua) bị loại khỏi narrative; dạng `<TIÊU ĐỀ>: nội dung` giữ lại phần nội dung.
+bị bỏ qua) bị loại khỏi narrative; tiền tố tiêu đề kết thúc bằng `:`, `.` hoặc `,` rồi dấu cách (tiền tố DÀI NHẤT thắng, để giữ `A.M.` trong tiêu đề) bị cắt và giữ phần nội dung cùng dòng, vd. `CHEST, TWO VIEWS. The lungs...`. Từ vựng mở rộng lần 2 cùng ngày (ONE, FROM, AM, PM, LAT, VW(S), STUDY, REPORT) sau khi đo phần còn sót trên manifest v3.
 `reason for exam` thêm vào alias → `indication`. Lý do: trước đó 9.8% target train
 của `full_allviews_v2` bắt đầu bằng tiêu đề ("AP CHEST, 10:11 A.M., ___") và 3.4%
 CHỈ là tiêu đề, khiến Stage 2 paper-mode sinh tiêu đề rồi dừng ở 57% study test.
