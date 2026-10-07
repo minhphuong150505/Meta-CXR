@@ -156,3 +156,33 @@ writes Experiment A to `~/aux_probe_20261007/` and Experiment B to
 `~/run_20261007_aux3/` (log `~/run_20261007_aux3.log`). Progress and every abort
 reason: `~/multiaux_chain.log`. B's test comparison against `run_20261005_paper`
 lands in `~/aux_probe_20261007/B_compare.log`.
+
+### Experiment A result, 2026-10-07 10:34 (test only; see the trap below)
+
+⚠ Ran on **test only**. The `phase1c` block sets `run.test_splits: [test]` and
+phase blocks are merged AFTER `--options`, so `[val,test]` was silently reduced
+to `[test]`; the first chain aborted on the missing val file and was relaunched
+test-only into `~/aux_probe_20261007b/`. Phase blocks do NOT touch `model.data`,
+so `max_aux_views` from `--options` did take effect (logged).
+
+Sanity: `aux1` re-evaluation reproduces the training-time test file exactly
+(`changed_argmax_fraction` 0, every delta 0). Studies whose input is unchanged
+(`views_1`, `views_2`) changed 0 argmax cells under `aux2`/`aux3`.
+
+Paired bootstrap, 1,000 resamples, seed 16, `aux2` vs `aux1` (`aux3` is
+identical to 4 decimals: only 2 test studies have a third auxiliary):
+
+| group | n | metric | aux1 | aux2 | delta [95% CI] |
+|---|---:|---|---:|---:|---|
+| all | 3,269 | weighted F1 | 0.7795 | 0.7797 | +0.0002 [-0.0001, +0.0005] |
+| all | 3,269 | macro recall | 0.4609 | 0.4613 | +0.0004 [+0.0001, +0.0009] |
+| views_3plus | 176 | weighted F1 | 0.8020 | 0.8048 | +0.0028 [-0.0029, +0.0082] |
+| views_3plus | 176 | F1 (5 findings) | 0.7196 | 0.7295 | +0.0100 [-0.0025, +0.0228] |
+| views_3plus | 176 | macro recall | 0.4972 | 0.5055 | +0.0083 [+0.0012, +0.0152] |
+| views_3plus | 176 | AUROC mean | 0.7583 | 0.7651 | +0.0069 [-0.0056, +0.0162] |
+
+Read: every point estimate in the affected subgroup is positive, 2.6% of its
+argmax cells change, but only macro recall clears zero, barely, at n = 176 with
+four metrics looked at. **Suggestive, not established.** Inference-only and out
+of distribution for a model trained with one auxiliary; Experiment B is the test
+that counts.
