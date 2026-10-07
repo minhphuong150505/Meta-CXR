@@ -3501,6 +3501,22 @@ Not fixed here: the length threshold lives in
 manifests, which is its own piece of work. Recorded so it is not rediscovered
 from scratch.
 
+⚠⚠ **The header half of this IS fixed in the parser as of 2026-10-07, and it
+mattered far more than the length half.** The Stage-2 paper-mode run
+(`stage2_paper_20261006b`) emitted a bare exam header ("AP CHEST, 10:11 A.M.,")
+and stopped for **57% of test studies** (1,709/2,984; median 4 words against a
+reference 55), which put paper-protocol BLEU-1 at 0.056 against the paper's
+0.390. Cause: 9.8% of `full_allviews_v2` train targets started with such a line
+and 3.4% were nothing else, all via the `NARRATIVE_BODY` fallback.
+`mimic_report_parser.is_exam_header` now drops them (narrow vocabulary: no
+lowercase, names CHEST, every other word is projection/view; "CHEST TUBE IN
+PLACE." is never dropped) and `reason for exam` is an `indication` alias.
+Over all 227,835 reports: 20,711 targets change, 6,177 become empty
+(-> `IMPRESSION_ONLY`). **`full_allviews_v2` on disk still has the old targets**;
+the rebuilt manifest is `full_allviews_v3` on `/home`, used through a separate
+checkout so `~/Meta-CXR` and every Stage-1 run keep v2. Plan:
+`docs/handoff/PLAN-2026-10-07-stage2-header-fix.md`.
+
 **Use `processed/full_allviews_v2`, nothing else.** Two stale exports sit beside
 it on the training host, and `meta-cxr-manifests-upgraded-20260806` was wired up
 despite the name. Tell a stale export by any of: `extraction_method` is a single

@@ -19,6 +19,7 @@ SECTION_ALIASES = {
     "procedure": "examination",
     "indication": "indication",
     "reason for examination": "indication",
+    "reason for exam": "indication",
     "clinical indication": "indication",
     "history": "history",
     "clinical history": "history",
@@ -42,6 +43,43 @@ INLINE_TARGET_HEADER_RE = re.compile(
 TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[./'-][A-Za-z0-9]+)*|[^\w\s]", re.UNICODE)
 BOILERPLATE_LINES = {"final report", "preliminary report", "wet read"}
 
+# Exam-description lines such as "AP CHEST, 10:11 A.M., ___" or "PA AND LATERAL
+# VIEWS OF THE CHEST:". Reports without a FINDINGS tag reach the target through
+# the narrative fallback, and before 2026-10-07 these lines rode along: 9.8% of
+# full_allviews_v2 train targets started with one and 3.4% were nothing else, so
+# Stage 2 learned to emit the header and stop (57% of the paper-mode test
+# generations). A line counts only when it has no lowercase letter, names CHEST,
+# and every remaining word is projection/view vocabulary -- so an all-caps
+# finding such as "CHEST TUBE IN PLACE" is never mistaken for one.
+_EXAM_HEADER_WORDS = frozenset({
+    "AP", "PA", "AND", "OF", "THE", "CHEST", "VIEW", "VIEWS", "SINGLE", "TWO",
+    "THREE", "FRONTAL", "LATERAL", "PORTABLE", "SUPINE", "UPRIGHT", "ERECT",
+    "SEMI", "SEMIUPRIGHT", "SEMI-UPRIGHT", "SEMIERECT", "SEMI-ERECT", "RADIOGRAPH",
+    "RADIOGRAPHS", "FILM", "FILMS", "X-RAY", "X-RAYS", "XRAY", "BEDSIDE", "ON",
+    "AT",
+})
+_EXAM_HEADER_NOISE_RE = re.compile(r"_+|\b\d{1,2}:\d{2}\b|\b[AP]\.\s?M\.?|\d+|[^\w\s-]")
+# A colon that is not part of a clock time ("10:11").
+_HEADER_PREFIX_RE = re.compile(r"^(?P<header>.+?)(?<!\d):(?!\d)[ \t]*(?P<content>.*)$")
+
+
+def is_exam_header(text: str) -> bool:
+    """True for a chest exam-description line, never for a sentence."""
+    if not text or re.search(r"[a-z]", text):
+        return False
+    words = re.findall(r"[A-Z]+(?:-[A-Z]+)*", _EXAM_HEADER_NOISE_RE.sub(" ", text))
+    return "CHEST" in words and all(word in _EXAM_HEADER_WORDS for word in words)
+
+
+def _strip_exam_header(line: str) -> str:
+    """Drop a whole exam-header line, or its "<HEADER>:" prefix."""
+    if is_exam_header(line):
+        return ""
+    match = _HEADER_PREFIX_RE.match(line)
+    if match and is_exam_header(match.group("header")):
+        return match.group("content").strip()
+    return line
+
 
 def _normalise_section_name(name: str) -> str:
     return SECTION_ALIASES[re.sub(r"\s+", " ", name.strip().lower())]
@@ -61,6 +99,10 @@ def _report_sections(report_text: str) -> tuple[dict[str, list[str]], list[str]]
             if not line:
                 if current not in {"findings", "findings_impression", "impression"}:
                     current = None
+                continue
+
+            line = _strip_exam_header(line)
+            if not line:
                 continue
 
             match = SECTION_HEADER_RE.match(line)

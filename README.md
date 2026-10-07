@@ -413,6 +413,15 @@ tên figure và không in identifier ra stdout.
 - BLEU và ROUGE-L được implement trong repository;
 - METEOR, CIDEr và BERTScore dùng package tham chiếu tùy chọn;
 - per-sample error analysis, subgroup analysis và cờ possible temporal hallucination;
+
+⚠ **2026-10-07: run Stage-2 paper (`stage2_paper_20261006b`) sinh ra dòng tiêu đề
+exam ("AP CHEST, 10:11 A.M.,") rồi dừng ở 57% study test**, nên theo đúng cách tính
+của bài báo chỉ đạt BLEU-1 0.056 / BLEU-4 0.017 / METEOR 0.065 / ROUGE-L 0.178 /
+CIDEr 0.137 / BERTScore (rescale) 0.073, so với bài báo 0.390 / 0.102 / 0.173 /
+0.280 / 0.291 / 0.426. Nguyên nhân: 9.8% target train của `full_allviews_v2` mở đầu
+bằng dòng tiêu đề, 3.4% chỉ có tiêu đề. Parser đã sửa (`is_exam_header`); manifest
+dựng lại là `full_allviews_v3` và Stage 2 train lại trên đó, xem
+`docs/handoff/PLAN-2026-10-07-stage2-header-fix.md`.
 - bootstrap intervals cho các per-sample metric khả dụng.
 
 #### Sinh báo cáo trước khi chấm — `scripts/generate_stage2_reports.py`
