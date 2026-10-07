@@ -857,7 +857,15 @@ study (not image) → anchor + ≤1 auxiliary view
   `num_views` (anchor + real auxiliaries seen) into the prediction `.npz`;
   `scripts/compare_stage1_predictions.py` does the paired bootstrap by view
   count. Plan (inference-only probe first, retrain only on request):
-  `docs/handoff/PLAN-2026-10-06-multi-aux-views.md`. **Not yet run on GPU.**
+  `docs/handoff/PLAN-2026-10-06-multi-aux-views.md`. **Measured 2026-10-07 --
+  no benefit; keep 1.** Inference-only (A): on the 176 test studies that gain a
+  view, every point estimate rose but only macro recall cleared zero (+0.0083
+  [+0.0012, +0.0152]). Retrained 1b+1c with the cap at 3 (B,
+  `run_20261007_aux3`) vs `run_20261005_paper`: overall AUROC mean -0.0085
+  [-0.0132, -0.0028] and five-finding F1 -0.0114 [-0.0151, -0.0078], and the
+  drop is as large on the 2,022 single-view studies whose input is identical,
+  while the view-gaining group is no better (AUROC -0.0152 [-0.0383, +0.0031]).
+  One run per arm, so seed variance is not separated.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

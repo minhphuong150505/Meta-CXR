@@ -186,3 +186,35 @@ argmax cells change, but only macro recall clears zero, barely, at n = 176 with
 four metrics looked at. **Suggestive, not established.** Inference-only and out
 of distribution for a model trained with one auxiliary; Experiment B is the test
 that counts.
+
+### Experiment B result, 2026-10-07 23:34 — no benefit; keep `max_aux_views: 1`
+
+`run_20261007_aux3`: phase 1b + 1c from `run_20261005_paper`'s
+`checkpoint_phase1a.pth`, `model.data.max_aux_views=3`, everything else
+identical; launched by `~/multiaux_chain.sh`, `ALL DONE` 23:34, no restarts.
+Test from each run's phase-1c `checkpoint_best` (selected on val
+`macro_recall`), paired bootstrap 1,000 x seed 16, groups by the B run's
+`num_views` (`~/aux_probe_20261007b/B_compare.log`):
+
+| group | n | weighted F1 | F1 (5) | macro recall | AUROC mean |
+|---|---:|---|---|---|---|
+| all | 3,269 | -0.0004 [-0.0024, +0.0014] | **-0.0114 [-0.0151, -0.0078]** | -0.0004 [-0.0035, +0.0025] | **-0.0085 [-0.0132, -0.0028]** |
+| views_1 (input identical) | 2,022 | **-0.0052** | **-0.0132** | -0.0004 | **-0.0081 [-0.0129, -0.0030]** |
+| views_2 (input identical) | 1,071 | **+0.0058** | **-0.0070** | -0.0030 | -0.0002 [-0.0088, +0.0108] |
+| views_3plus (gains views) | 176 | +0.0049 [-0.0060, +0.0152] | -0.0170 [-0.0367, +0.0020] | -0.0106 [-0.0246, +0.0040] | -0.0152 [-0.0383, +0.0031] |
+
+Reading:
+- Overall B is slightly **worse** on the paper's headline AUROC and five-finding
+  F1 (both CIs exclude zero) and flat on weighted F1 and macro recall.
+- The drop is just as large on `views_1`, whose input is **identical** in both
+  runs, so it measures retraining with a different fusion regime (or seed
+  variance), not the extra view.
+- The only group whose input changed, `views_3plus`, does no better than the
+  groups whose input did not: its AUROC delta (-0.0152) is if anything below
+  `views_1` (-0.0081). No sign that a second or third auxiliary helps.
+- One run per arm; the baseline has no second seed, so run-to-run variance is
+  not separated from the configuration change. That limits the negative claim
+  to "no detectable benefit at this budget", not "harmful".
+
+Decision suggested to the user: keep the shipped `max_aux_views: 1`. The cap
+raise stays in the sampler (default 1) for future ablations.
