@@ -165,6 +165,20 @@ class ReportParserTest(unittest.TestCase):
         )
         self.assertEqual(findings, "The lungs are clear.")
 
+    def test_same_line_header_prefix_keeps_the_sentence(self):
+        for line, kept in (
+            ("CHEST, SINGLE AP PORTABLE VIEW. The heart is normal.", "The heart is normal."),
+            ("AP CHEST 10:11 A.M. ___. The tube is unchanged.", "The tube is unchanged."),
+            ("STUDY: CHEST RADIOGRAPH. REPORT: Lungs clear.", "Lungs clear."),
+            ("ONE VIEW OF THE CHEST: No effusion.", "No effusion."),
+        ):
+            findings, _, _ = parser.get_target_text("INDICATION: x\n\n" + line)
+            self.assertEqual(findings, kept, line)
+        findings, _, _ = parser.get_target_text(
+            "INDICATION: x\n\nCHEST TUBE IN PLACE. No pneumothorax."
+        )
+        self.assertEqual(findings, "CHEST TUBE IN PLACE. No pneumothorax.")
+
     def test_exam_header_recognition_is_narrow(self):
         for header in ("AP CHEST, 10:11 A.M., ___", "PA AND LATERAL CHEST RADIOGRAPHS:",
                        "CHEST, SINGLE AP PORTABLE VIEW.",
