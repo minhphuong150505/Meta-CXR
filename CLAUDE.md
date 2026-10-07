@@ -819,6 +819,11 @@ record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
   test from 1c (`study_presence`, `q_pos`, val-calibrated): macro AUROC 0.7642,
   micro 0.8460, AUPRC 0.3220, pos. F1 0.3498 -- NOT yet a controlled comparison
   with `run_20260820_ft`. Record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
+  ⚠ Its 148 GB anchor-only feature cache
+  (`~/run_20260925b_3phase/feature_cache_anchor`) was **deleted 2026-10-07** at
+  the user's request to free `/home`; the run's checkpoints are kept. A new
+  phase 1a must rebuild the cache (`scripts/run_stage1_phases.sh` does it when
+  absent); phases 1b/1c never read it.
 - ⚠ MedCLIP was pretrained on MIMIC-CXR + CheXpert with a split that cannot be
   verified (paper says "training split", its own table counts all 377,111
   images). State it as a limitation.
