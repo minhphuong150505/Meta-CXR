@@ -79,3 +79,30 @@ then writes `compare_stage1_predictions.py` of its test file against
 Read the result like experiment B of the multi-aux plan: one run per arm, so
 a delta is only meaningful if it exceeds the seed noise measured below, and a
 drop that is as large on `views_1` (input unchanged) is training noise.
+
+### Smoke scoring and noise floor, 2026-10-09 16:00
+
+Test, 400 studies, `compare_stage1_predictions.py` (1,000 resamples, seed 16).
+`A_rep` = A re-run at seed 42; `A_s43` = A at seed 43; both commit cb62ce5
+(code identical to 8187363).
+
+- **`A_rep` vs A: 0 changed argmax cells, every delta exactly 0.** Training is
+  bit-deterministic at a fixed seed, so a flag's effect is not GPU noise.
+- **`A_s43` vs A (seed alone):** wF1 +0.0067 [+0.0003, +0.0129], F1-5
+  -0.0058 [-0.0200, +0.0083], AUROC mean +0.0127 [+0.0016, +0.0239]; on
+  `views_1` wF1 +0.0162, F1-5 +0.0204. A seed change alone produces
+  "significant" deltas of this size: the bootstrap CIs cover test sampling,
+  not training variance.
+
+| vs A (all, n=400) | wF1 | F1-5 | macro recall | AUROC mean |
+|---|---|---|---|---|
+| seed 43 (noise) | +0.007 | -0.006 | +0.000 | +0.013 |
+| B detach | **-0.032** | **-0.089** | -0.007 | +0.001 |
+| C tau 0.5 | -0.004 | -0.029 | -0.007 | +0.007 |
+| D both | -0.008 | -0.037 | -0.008 | +0.003 |
+
+Read: no config moves AUROC beyond the seed noise. B's F1 drop is ~4x the
+one-seed noise and is the only clear signal (detach at tau 0.07 looks
+harmful at this scale); C and D sit at ~1.5-2x on F1-5 only. One noise
+sample, ~125 updates per epoch: indicative, not a result. Full D launched
+15:55:26 (commit dd076f3).
