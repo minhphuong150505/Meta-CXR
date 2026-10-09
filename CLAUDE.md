@@ -3530,6 +3530,19 @@ the rebuilt manifest is `full_allviews_v3` on `/home`, used through a separate
 checkout so `~/Meta-CXR` and every Stage-1 run keep v2. Plan:
 `docs/handoff/PLAN-2026-10-07-stage2-header-fix.md`.
 
+✅ **v3 result, 2026-10-09 (test n = 2,800, paper protocol):** greedy
+0.285 / 0.073 / 0.120 / 0.250 / 0.084 / 0.361 (BLEU-1 / BLEU-4 / METEOR /
+ROUGE-L / CIDEr / BERTScore); **beam 4 + length_penalty 2: 0.357 / 0.098 /
+0.137 / 0.265 / 0.128 / 0.369** vs paper 0.390 / 0.102 / 0.173 / 0.280 / 0.291
+/ 0.426. 0 header-only outputs. The remaining gap is **omission**: BERTScore
+precision 0.424 ≈ paper, recall 0.299; beam fixes length, not content
+(`min_new_tokens` makes it worse). Zero-shot MedGemma rescored under the SAME
+protocol on 2,159 shared studies loses to v3 beam on every metric but METEOR —
+the "zero-shot looks better" impression came from `evaluate_stage2.py`'s
+METEOR/raw BERTScore, a different scale. ⚠ Beam is not in
+`generate_stage2_reports.py` (soft tokens must be repeated per beam); it ran
+from a host probe. Full record in the plan's execution report.
+
 **Use `processed/full_allviews_v2`, nothing else.** Two stale exports sit beside
 it on the training host, and `meta-cxr-manifests-upgraded-20260806` was wired up
 despite the name. Tell a stale export by any of: `extraction_method` is a single

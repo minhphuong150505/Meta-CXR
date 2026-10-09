@@ -422,6 +422,57 @@ CIDEr 0.137 / BERTScore (rescale) 0.073, so với bài báo 0.390 / 0.102 / 0.17
 bằng dòng tiêu đề, 3.4% chỉ có tiêu đề. Parser đã sửa (`is_exam_header`); manifest
 dựng lại là `full_allviews_v3` và Stage 2 train lại trên đó, xem
 `docs/handoff/PLAN-2026-10-07-stage2-header-fix.md`.
+
+✅ **2026-10-09: kết quả Stage-2 v3 (train lại trên `full_allviews_v3`, cùng
+Stage-1 `run_20261005_paper`, `--prompt-style paper`, `--cue-rule
+paper_thresholds`, MedGemma QLoRA r 8 / alpha 16, nạp NF4).** Chấm đúng cách của
+bài báo (nltk `word_tokenize` + lowercase, pycocoevalcap BLEU/METEOR/ROUGE-L/CIDEr,
+BERTScore distilroberta rescale), test n = 2.800:
+
+| | BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 | METEOR | ROUGE-L | CIDEr | BERTScore |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| v2 `20261006b` (header bug) | 0,056 | 0,034 | 0,023 | 0,017 | 0,065 | 0,178 | 0,137 | 0,073 |
+| v3 greedy, 256 token | 0,285 | 0,168 | 0,107 | 0,073 | 0,120 | 0,250 | 0,084 | 0,361 |
+| **v3 beam 4 + length_penalty 2** | **0,357** | **0,213** | **0,140** | **0,098** | **0,137** | **0,265** | **0,128** | **0,369** |
+| bài báo | 0,390 | 0,255 | 0,175 | 0,102 | 0,173 | 0,280 | 0,291 | 0,426 |
+
+Không còn study nào chỉ sinh header. Beam − greedy, paired bootstrap 2.000 lần
+trên cùng 2.800 study: BERTScore +0,008 [+0,004; +0,013], ROUGE-L +0,015
+[+0,011; +0,019], CIDEr +0,044 [+0,023; +0,065]. Độ dài trung vị 37 → 47 từ
+(tham chiếu 56); BERTScore precision / recall 0,424 / 0,299 → 0,390 / 0,349.
+Decoding được chọn trên **val** (300 study), không trên test; beam ≈ 4 s/study.
+`generate_stage2_reports.py` **chưa** có beam: beam cần lặp soft token theo
+`num_beams` (wrapper kiểm tra batch theo từng hàng), nên lần chạy này dùng script
+probe trên host (`~/test_beam.py`), chưa đưa vào repo.
+
+Ba probe trên val giải thích khoảng cách còn lại (chi tiết trong file plan):
+
+- **Ablation đầu vào** (n = 300): đổi soft token sang ảnh của study khác làm
+  BERTScore −0,072 [−0,094; −0,050], CIDEr −0,143 → soft token **có** mang thông
+  tin ảnh; đổi cue P/N/U chỉ −0,014 [−0,025; −0,003].
+- **Mô hình bỏ sót nội dung, không phải viết sai**: precision BERTScore greedy
+  0,424 gần bài báo nhưng recall 0,299; tổng điểm chỉ cao hơn baseline "lấy
+  report của bệnh nhân khác" +0,053. 2.800 study chỉ có ~1.500 report khác nhau.
+- **Ép dài không giúp**: `min_new_tokens=60` làm tệ hơn (BERTScore −0,018,
+  CIDEr −0,071, đều có ý nghĩa). Beam sửa độ dài và cách diễn đạt, không thêm
+  nội dung (trên val, BERTScore/ROUGE-L/CIDEr của beam − greedy có CI chứa 0).
+
+**So với MedGemma zero-shot (ảnh thật, không adapter)**, chấm lại bằng đúng
+protocol trên: trên 2.159 study chung (ghép theo text tham chiếu duy nhất, vì
+`sample_key` của file zero-shot thời v2 không trùng với run v3), cùng tham chiếu
+v3:
+
+| | BLEU-1 | BLEU-4 | METEOR | ROUGE-L | CIDEr | BERTScore (P / R) | từ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| zero-shot | 0,334 | 0,077 | **0,150** | 0,250 | 0,075 | 0,332 (0,334 / 0,329) | 61 |
+| v3 greedy | 0,284 | 0,075 | 0,122 | 0,254 | 0,082 | 0,371 (0,436 / 0,308) | 36 |
+| v3 beam | **0,364** | **0,104** | 0,141 | **0,273** | **0,126** | **0,380** (0,400 / 0,361) | 47 |
+
+Beam − zero-shot: BERTScore +0,049 [+0,044; +0,054], ROUGE-L +0,023
+[+0,019; +0,027], CIDEr +0,051 [+0,036; +0,067]. Zero-shot chỉ hơn ở METEOR (và
+BLEU-1 so với greedy) vì nó viết dài hơn. Các con số zero-shot cũ trong README
+(METEOR 0,26, BERTScore 0,81) dùng METEOR của `evaluate_stage2.py` và BERTScore
+raw — **thang đo khác, không so được với bảng bài báo**.
 - bootstrap intervals cho các per-sample metric khả dụng.
 
 #### Sinh báo cáo trước khi chấm — `scripts/generate_stage2_reports.py`
