@@ -37,7 +37,7 @@ Nó chạy cho **từng encoder** rồi lấy trung bình (`torch.stack(terms).m
 ## Config dependencies
 `loss.lambda_mpc` — prod **0.02** (ramp `mpc_warmup_steps`; 0.1 là giá trị cũ).
 `loss.mpc_temperature` — mặc định và prod **0.07**; EVOKE dùng **0.5**
-(`region_temp`). Thêm 2026-10-09, `from_config` kiểm `> 0`. Chưa chạy GPU ở 0.5.
+(`region_temp`). Thêm 2026-10-09, `from_config` kiểm `> 0`. Smoke GPU 2026-10-09 sạch ở 0.5, chưa full run.
 Chỉ dựng khi `lambda_mpc > 0`.
 
 ## Called by

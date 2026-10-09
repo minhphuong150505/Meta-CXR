@@ -75,7 +75,7 @@ model:
 view embedding, đúng như code EVOKE (arXiv 2411.10224,
 `multiview_image_embed.detach()`): ảnh phụ chỉ học qua MPC, không qua fusion.
 Chỉ đặc trưng aux bị detach — `view_emb` vẫn train. Output forward giống hệt,
-chỉ gradient khác. Mặc định `false` = mọi run đã ghi nhận. **Chưa chạy trên GPU.**
+chỉ gradient khác. Mặc định `false` = mọi run đã ghi nhận. Smoke GPU 2026-10-09 sạch, chưa full run.
 Thêm key mới mà quên thêm dòng đọc = key không có hiệu lực.
 
 ## Main classes

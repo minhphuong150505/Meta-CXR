@@ -874,7 +874,9 @@ study (not image) → anchor + ≤1 auxiliary view
   only through MPC -- the view-type embedding still trains, and the forward
   value is unchanged. `model.loss.mpc_temperature` (default 0.07, every recorded
   run) is EVOKE's `region_temp` 0.5. Pinned by
-  `tests/test_evoke_multiview_flags.py`. **Not yet run on GPU.** Differences
+  `tests/test_evoke_multiview_flags.py`. **Smoke-tested on GPU 2026-10-09, all four
+  combinations clean; no full run, so nothing is known about quality**
+  (`docs/handoff/PLAN-2026-10-09-evoke-flags.md`). Differences
   that remain on purpose: EVOKE makes EVERY image of a study the anchor in turn
   (`*_multiview_individual_*.json`, report repeated per image) -- this repo
   keeps one anchor per study (PA > AP > lateral); EVOKE's alignment loss sees
