@@ -483,6 +483,9 @@ model:
     # or the ramp silently covers half an epoch instead of one. Rescaled back
     # 2026-08-19 with the batch, when the VL block went to 0.0.
     mpc_warmup_steps: 13922
+    # MPC softmax temperature. 0.07 reproduces every recorded run; EVOKE uses
+    # 0.5 (`region_temp`, τ1 in the paper). Not yet run on GPU at 0.5.
+    mpc_temperature: 0.07
     lambda_view_consistency: 0.05
     # TWO explanation terms, split 2026-08-16 because they are not the same
     # kind of evidence and must not carry the same weight.
@@ -649,6 +652,10 @@ model:
     num_view_types: 4
     dropout: 0.1
     p_view_drop: 0.15
+    # true = detach the auxiliary-view K/V inside fusion, as EVOKE's released
+    # code does (arXiv 2411.10224): aux views then learn only through MPC.
+    # false reproduces every recorded run. Not yet run on GPU.
+    detach_aux: false
   data:
     study_sampling: true
     anchor_priority: [PA, AP, lateral]

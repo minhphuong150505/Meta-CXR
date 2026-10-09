@@ -207,6 +207,7 @@ class Blip2Qformer(Blip2Base):
         view_fusion_cfg=None,
         lambda_mpc=0.0,
         mpc_warmup_steps=0,
+        mpc_temperature=0.07,
         lambda_view_consistency=0.0,
         view_consistency_cfg=None,
         lambda_itc=1.0,
@@ -525,7 +526,9 @@ class Blip2Qformer(Blip2Base):
                 name: StreamAdapter(dim=dim) for name, dim in stream_dims.items()
             })
             self.mpc_loss_fn = (
-                MultiPositiveContrastiveLoss() if self.lambda_mpc > 0 else None
+                MultiPositiveContrastiveLoss(temperature=mpc_temperature)
+                if self.lambda_mpc > 0
+                else None
             )
             # SimCLR-style g(.), training-only, one per stream so the contrastive
             # objective gets its own space instead of pulling on the features
@@ -2322,10 +2325,17 @@ class Blip2Qformer(Blip2Base):
             "num_view_types": int(view_fusion_cfg_raw.get("num_view_types", 4)),
             "dropout": float(view_fusion_cfg_raw.get("dropout", 0.1)),
             "p_view_drop": float(view_fusion_cfg_raw.get("p_view_drop", 0.2)),
+            "detach_aux": cfg_bool(view_fusion_cfg_raw.get("detach_aux", False)),
         }
         loss_cfg = cfg.get("loss", {}) or {}
         lambda_mpc = float(loss_cfg.get("lambda_mpc", 0.0))
         mpc_warmup_steps = int(loss_cfg.get("mpc_warmup_steps", 0))
+        # 0.07 reproduces every recorded run; EVOKE uses 0.5 (`region_temp`).
+        mpc_temperature = float(loss_cfg.get("mpc_temperature", 0.07))
+        if mpc_temperature <= 0:
+            raise ValueError(
+                f"model.loss.mpc_temperature must be > 0; got {mpc_temperature}"
+            )
         lambda_view_consistency = float(loss_cfg.get("lambda_view_consistency", 0.0))
         view_consistency_cfg = cfg.get("view_consistency", {}) or {}
         lambda_itc = float(loss_cfg.get("lambda_itc", 1.0))
@@ -2430,6 +2440,7 @@ class Blip2Qformer(Blip2Base):
             view_fusion_cfg=view_fusion_cfg,
             lambda_mpc=lambda_mpc,
             mpc_warmup_steps=mpc_warmup_steps,
+            mpc_temperature=mpc_temperature,
             lambda_view_consistency=lambda_view_consistency,
             view_consistency_cfg=view_consistency_cfg,
             lambda_itc=lambda_itc,

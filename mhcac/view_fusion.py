@@ -85,9 +85,16 @@ class ViewFusionModule(nn.Module):
     """
 
     def __init__(self, dim, num_heads=8, ffn_ratio=4, num_view_types=4,
-                 dropout=0.1, num_blocks=1, p_view_drop=0.2):
+                 dropout=0.1, num_blocks=1, p_view_drop=0.2, detach_aux=False):
         super().__init__()
         self.p_view_drop = p_view_drop
+        # EVOKE (arXiv 2411.10224, released code) calls the fusion attention
+        # with `multiview_image_embed.detach()` as K/V, so the auxiliary views
+        # learn only through the multi-view contrastive loss, never through
+        # fusion. Off by default: every recorded run let gradient through.
+        # Only the aux FEATURES are detached; the view-type embedding added on
+        # top of them still trains.
+        self.detach_aux = bool(detach_aux)
         self.view_emb = nn.Embedding(num_view_types, dim)
         nn.init.normal_(self.view_emb.weight, std=0.02)
         self.blocks = nn.ModuleList([
@@ -128,7 +135,7 @@ class ViewFusionModule(nn.Module):
                 anchor_view_id.to(device=device, dtype=torch.long)
             ).unsqueeze(1)
 
-        aux_tokens = aux
+        aux_tokens = aux.detach() if self.detach_aux else aux
         if aux_view_ids is not None:
             aux_tokens = aux_tokens + self.view_emb(
                 aux_view_ids.to(device=device, dtype=torch.long)
