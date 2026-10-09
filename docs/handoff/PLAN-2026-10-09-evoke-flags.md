@@ -59,3 +59,23 @@ scale, as it must; `detach_aux` costs neither memory nor time. The val numbers
 are 400 studies after ~125 updates per epoch: noise, not a comparison. A real
 comparison needs full 1b+1c runs (~12 h each, see the multi-aux plan) and is
 the user's call.
+
+### Full run D, chained 2026-10-09 15:45 (user's choice)
+
+Config A is the default and its full run already exists: `run_20261005_paper`
+(logged config: seed 42, `max_aux_views` 1, `lambda_mpc` 0.02,
+`lambda_view_consistency` 0.05, `p_view_drop` 0.15, no `detach_aux` /
+`mpc_temperature` key, i.e. false / 0.07). So only D needs a full run.
+
+`~/evoke_d_full.sh` (setsid, log `~/evoke_d_full.log`) waits for the
+noise-floor smoke, re-checks ntfs3 / idle GPU / fresh dir, pulls, copies
+`run_20261005_paper/checkpoint_phase1a.pth` into `~/run_20261009_evoke_d`, runs
+`PHASES="phase1b phase1c"` with `model.view_fusion.detach_aux=true
+model.loss.mpc_temperature=0.5` (training log `~/run_20261009_evoke_d.log`),
+then writes `compare_stage1_predictions.py` of its test file against
+`run_20261005_paper`'s into `~/run_20261009_evoke_d/compare_vs_paper.log`
+(1,000 resamples, seed 16). Expected ~12 h (paper run: 1b 7h08m, 1c 4h40m).
+
+Read the result like experiment B of the multi-aux plan: one run per arm, so
+a delta is only meaningful if it exceeds the seed noise measured below, and a
+drop that is as large on `views_1` (input unchanged) is training noise.
