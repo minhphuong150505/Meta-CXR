@@ -106,3 +106,21 @@ one-seed noise and is the only clear signal (detach at tau 0.07 looks
 harmful at this scale); C and D sit at ~1.5-2x on F1-5 only. One noise
 sample, ~125 updates per epoch: indicative, not a result. Full D launched
 15:55:26 (commit dd076f3).
+
+### Decision rule, fixed 2026-10-09 BEFORE the D result exists (user)
+
+User decision: compare D against A (`run_20261005_paper`) only; B and C will
+not get full runs. Pick the better one by this rule, on the test comparison
+(`compare_vs_paper.log`, group `all`, n = 3,269):
+
+1. **Adopt D** only if `auroc_mean` OR `mean_weighted_f1_5` improves with a CI
+   that excludes zero AND by more than the smoke seed noise (AUROC 0.013,
+   F1-5 0.006 -- one sample, so treat ~0.015 as the bar), and neither of
+   `weighted_f1` / `macro_recall` gets significantly worse.
+2. Otherwise **keep A** (the shipped defaults): simpler, matches every
+   recorded run, and a tie is not worth a config change.
+3. If D wins only on `views_2plus` (the ~1/3 of studies with a lateral) and
+   loses or ties on `views_1`, report it, but do not adopt on that alone.
+
+Adopting D means setting `detach_aux: true` and `mpc_temperature: 0.5` in the
+shipped YAML and updating CLAUDE.md / README / struct in the same commit.
