@@ -35,8 +35,10 @@ cùng lúc thay vì chọn một.
 Nó chạy cho **từng encoder** rồi lấy trung bình (`torch.stack(terms).mean()`).
 
 ## Config dependencies
-`loss.lambda_mpc` — prod **0.1**.
-Chỉ dựng khi `lambda_mpc > 0` (`blip2_qformer.py:319`).
+`loss.lambda_mpc` — prod **0.02** (ramp `mpc_warmup_steps`; 0.1 là giá trị cũ).
+`loss.mpc_temperature` — mặc định và prod **0.07**; EVOKE dùng **0.5**
+(`region_temp`). Thêm 2026-10-09, `from_config` kiểm `> 0`. Chưa chạy GPU ở 0.5.
+Chỉ dựng khi `lambda_mpc > 0`.
 
 ## Called by
 `Blip2Qformer.forward:949` — chỉ khi `multi_view` và `aux_mask.any()`.
@@ -45,7 +47,7 @@ Chỉ dựng khi `lambda_mpc > 0` (`blip2_qformer.py:319`).
 Không.
 
 ## Tests
-`tests/test_multiview_losses.py`
+`tests/test_multiview_losses.py`, `tests/test_evoke_multiview_flags.py` (temperature)
 
 ## Modification risk
 Chạy trên tensor **sau** fusion sẽ vô nghĩa — fusion đã trộn chúng rồi.

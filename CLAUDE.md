@@ -866,6 +866,23 @@ study (not image) → anchor + ≤1 auxiliary view
   drop is as large on the 2,022 single-view studies whose input is identical,
   while the view-gaining group is no better (AUROC -0.0152 [-0.0383, +0.0031]).
   One run per arm, so seed variance is not separated.
+- **Two EVOKE-alignment flags, 2026-10-09, both OFF by default.** Compared
+  against EVOKE's paper (arXiv 2411.10224) AND its released code
+  (`github.com/mk-runner/EVOKE`, `models/model_pretrain_finetune_v0425_ori.py`):
+  `model.view_fusion.detach_aux: true` detaches the auxiliary-view K/V inside
+  fusion, as EVOKE does (`multiview_image_embed.detach()`), so aux views learn
+  only through MPC -- the view-type embedding still trains, and the forward
+  value is unchanged. `model.loss.mpc_temperature` (default 0.07, every recorded
+  run) is EVOKE's `region_temp` 0.5. Pinned by
+  `tests/test_evoke_multiview_flags.py`. **Not yet run on GPU.** Differences
+  that remain on purpose: EVOKE makes EVERY image of a study the anchor in turn
+  (`*_multiview_individual_*.json`, report repeated per image) -- this repo
+  keeps one anchor per study (PA > AP > lateral); EVOKE's alignment loss sees
+  fused features from the start, while phase 1a here is anchor-only; EVOKE
+  trains with `RandomHorizontalFlip` on chest X-rays -- do not copy that.
+  EVOKE's `main_224.py` imports `..._v0425_ablation.py`, whose `forward` reads
+  an `args['pretrain_loss']` that argparse never defines; the full loss is in
+  `_ori.py` (read, not run).
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

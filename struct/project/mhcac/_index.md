@@ -83,6 +83,7 @@ thuộc `vision_encoders/` (nhận `SharedVisualTokens` như một duck-typed ob
 | `tests/test_stage1_objectives.py` | `mhcac_12`, `loss` |
 | `tests/test_explanation_loss.py` | `explanation`, `mhcac_12` |
 | `tests/test_view_fusion.py` | `view_fusion` |
+| `tests/test_evoke_multiview_flags.py` | `view_fusion.detach_aux`, `MultiPositiveContrastiveLoss` temperature |
 | `tests/test_multiview_losses.py` | `loss.MultiPositiveContrastiveLoss`, `view_consistency_loss` (gồm margin + confidence gate) |
 
 ## Execution flow
@@ -118,7 +119,8 @@ Trong khối `model:` của run YAML:
 | `mhcac.num_common_tokens` | `14` khi thiếu key; **prod `8`** từ 2026-10-05 ([D-026](../_meta/DECISIONS.md#d-026--siêu-tham-số-mhcac-theo-bài-báo-2026-10-05)) | Số common expert token = chiều đầu của `mhcac.expert_tokens`; checkpoint chỉ load vào đúng số đã train |
 | `mhcac.class_weights` | 14×3 sqrt inverse-frequency | `[]` → tắt weighting (ablation) |
 | `multi_view` | `false` (prod: `true`) | Có dựng `ViewFusionModule` không |
-| `view_fusion.*` | heads 8, ffn_ratio 4, blocks 1, dropout 0.1, p_view_drop 0.15 | |
+| `view_fusion.*` | heads 8, ffn_ratio 4, blocks 1, dropout 0.1, p_view_drop 0.15, detach_aux false | `detach_aux` từ 2026-10-09 (EVOKE) |
+| `loss.mpc_temperature` | 0.07 | Từ 2026-10-09; EVOKE dùng 0.5 |
 | `loss.lambda_*` | xem [ARCHITECTURE.md §2.6](../_meta/ARCHITECTURE.md#26-tổng-hợp-loss) | Trọng số loss, gồm `lambda_explanation` conditional |
 | `explanation.*` | top-k, warmup, danh sách stream | Chỉ có hiệu lực khi lambda > 0 |
 

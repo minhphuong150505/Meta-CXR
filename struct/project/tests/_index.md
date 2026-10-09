@@ -86,6 +86,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | `test_explanation_mask_pipeline.py` | RLE row-major round-trip, union phổi, bbox override, Dice gate, memmap lazy, affine dùng chung params, geometry 512→448 và no-cache regression |
 | `test_view_fusion.py` | `ViewFusionBlock` là **identity chính xác tại step 0** (zero-init `W_O` + FFN cuối) → checkpoint single-view load không hỏng |
 | `test_multiview_losses.py` | `MultiPositiveContrastiveLoss`, `view_consistency_loss` |
+| `test_evoke_multiview_flags.py` | Hai cờ theo EVOKE (2026-10-09): `view_fusion.detach_aux` cắt gradient vào aux nhưng giữ output và `view_emb`; `loss.mpc_temperature` được dùng; YAML ship giữ `false`/`0.07`; `from_config` đọc cả hai key |
 | `test_shared_visual_tokens.py` (209) | Thứ tự stream chuẩn hóa, `spans` đúng, `without()` zero-out mà không đổi shape, gradient chảy đúng luồng |
 | `test_encoder_ablation.py` (72) | `active_encoders` zero đúng span, all-three giữ đường gốc, tên lạ fail-closed, ablation bị cấm khi training |
 | `test_blip2_negative_sampling.py` | Hard negative sampling ⚠ cần torchvision |
