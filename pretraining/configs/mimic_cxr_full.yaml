@@ -484,7 +484,7 @@ model:
     # 2026-08-19 with the batch, when the VL block went to 0.0.
     mpc_warmup_steps: 13922
     # MPC softmax temperature. 0.07 reproduces every recorded run; EVOKE uses
-    # 0.5 (`region_temp`, τ1 in the paper). Smoke only on GPU (2026-10-09); no full run at 0.5.
+    # 0.5 (`region_temp`, τ1 in the paper). Measured 2026-10-10 (with detach_aux): worse; keep 0.07.
     mpc_temperature: 0.07
     lambda_view_consistency: 0.05
     # TWO explanation terms, split 2026-08-16 because they are not the same
@@ -654,7 +654,8 @@ model:
     p_view_drop: 0.15
     # true = detach the auxiliary-view K/V inside fusion, as EVOKE's released
     # code does (arXiv 2411.10224): aux views then learn only through MPC.
-    # false reproduces every recorded run. Smoke only on GPU (2026-10-09).
+    # false reproduces every recorded run. Measured 2026-10-10: true together
+    # with mpc_temperature 0.5 LOSES to the defaults on test -- keep false.
     detach_aux: false
   data:
     study_sampling: true
