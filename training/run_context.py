@@ -34,6 +34,11 @@ class Stage1Context:
     thresholds: Mapping[str, Mapping[str, float]] = field(
         default_factory=lambda: MappingProxyType({})
     )
+    # Per-finding (t1, t2) on p_pos / (p_pos + p_neg) for --cue-rule cutpoints
+    # (2026-10-10). Empty for every other rule.
+    cutpoints: Mapping[str, tuple[float, float]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     def __post_init__(self) -> None:
         if not str(self.run_name).strip():
@@ -53,6 +58,14 @@ class Stage1Context:
                 }
             ),
         )
+        object.__setattr__(
+            self,
+            "cutpoints",
+            MappingProxyType(
+                {str(name): (float(t1), float(t2))
+                 for name, (t1, t2) in dict(self.cutpoints).items()}
+            ),
+        )
 
     def resolve_config_path(self, default: Path) -> Path:
         """Explicit --stage1-config wins; otherwise the caller's default."""
@@ -69,7 +82,7 @@ class Stage1Context:
 
     def fingerprint_payload(self) -> dict:
         """JSON-safe view for cohort/eval fingerprints."""
-        return {
+        payload = {
             "run_name": self.run_name,
             "config_path": str(self.config_path) if self.config_path else None,
             "checkpoint_path": (
@@ -79,3 +92,10 @@ class Stage1Context:
                 name: dict(values) for name, values in self.thresholds.items()
             },
         }
+        # Only when set, so every fingerprint computed before the field existed
+        # (and every Stage-1 record cache keyed on it) is unchanged.
+        if self.cutpoints:
+            payload["cutpoints"] = {
+                name: list(pair) for name, pair in self.cutpoints.items()
+            }
+        return payload

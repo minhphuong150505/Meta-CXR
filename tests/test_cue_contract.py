@@ -128,7 +128,7 @@ def test_paper_thresholds_refuse_to_run_without_a_threshold_file():
 
 def test_retired_binary_cue_rules_are_gone():
     fig9 = pytest.importorskip("training.train_eval_figure9_llm_variants_200")
-    assert set(fig9.CUE_RULES) == {"argmax", "paper_thresholds", "none"}
+    assert set(fig9.CUE_RULES) == {"argmax", "paper_thresholds", "none", "cutpoints"}
 
 
 def test_legacy_cache_hit_gets_cue_state_without_loading_a_model(monkeypatch, tmp_path):

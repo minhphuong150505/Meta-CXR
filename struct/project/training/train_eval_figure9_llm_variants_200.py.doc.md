@@ -4,7 +4,7 @@
 
 # `training/train_eval_figure9_llm_variants_200.py`
 
-> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Cue rule: `CUE_RULE_ARGMAX`, `CUE_RULE_PAPER` (ngưỡng theo lớp, biên lớn nhất thắng, No Finding bỏ qua), `CUE_RULE_NONE`; record không còn `mention_logits`; `load_thresholds` ủy quyền cho `evaluation.threshold_calibration`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Cue rule: `CUE_RULE_ARGMAX`, `CUE_RULE_PAPER` (ngưỡng theo lớp, biên lớn nhất thắng, No Finding bỏ qua), `CUE_RULE_NONE`, `CUE_RULE_CUTPOINTS` (2026-10-10: mọi bệnh xếp theo hai ngưỡng val trên `p_pos/(p_pos+p_neg)`; `load_cue_cutpoints` đọc file và từ chối file fit trên test; `stage1_cohort_fingerprint` thêm hash cutpoints chỉ khi có); `NON_ABSTAINING_CUE_RULES` = argmax, cutpoints; record không còn `mention_logits`; `load_thresholds` ủy quyền cho `evaluation.threshold_calibration`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
 
 
 ## ⚠ Tên file gây hiểu nhầm nghiêm trọng

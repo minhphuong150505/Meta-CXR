@@ -274,6 +274,21 @@ def run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(args, check=check, text=True, capture_output=True)
 
 
+def load_cue_cutpoints(path: str | Path | None) -> dict[str, tuple[float, float]]:
+    """Cutpoints for ``--cue-rule cutpoints``; refuses a test-fitted file."""
+    if path is None:
+        return {}
+    from training.evaluation.threshold_calibration import load_cutpoint_file
+
+    cutpoints, metadata = load_cutpoint_file(path)
+    if metadata.get("split") in (None, "test"):
+        raise ValueError(
+            f"{path}: cutpoints must be fitted on Stage-1 validation, got split "
+            f"{metadata.get('split')!r}"
+        )
+    return cutpoints
+
+
 def load_thresholds(path: str | Path | None) -> dict[str, dict[str, float]]:
     """Load the paper's per-class thresholds, or ``{}`` for the argmax rule.
 
@@ -388,7 +403,14 @@ CUE_RULE_ARGMAX = "argmax"
 CUE_RULE_PAPER = "paper_thresholds"
 #: Withhold structured predictions; retain the visual inputs and task instruction.
 CUE_RULE_NONE = "none"
-CUE_RULES = (CUE_RULE_ARGMAX, CUE_RULE_PAPER, CUE_RULE_NONE)
+#: 2026-10-10: the Stage-1 headline decision rule -- per finding, two cutpoints
+#: (t1, t2) on p_pos / (p_pos + p_neg) fitted on validation
+#: (``scripts/calibrate_thresholds.py --rule cutpoints``). Every reportable
+#: finding gets a class, as with argmax; nothing is left out.
+CUE_RULE_CUTPOINTS = "cutpoints"
+CUE_RULES = (CUE_RULE_ARGMAX, CUE_RULE_PAPER, CUE_RULE_NONE, CUE_RULE_CUTPOINTS)
+#: Rules that list every reportable finding, so no abstention state exists.
+NON_ABSTAINING_CUE_RULES = (CUE_RULE_ARGMAX, CUE_RULE_CUTPOINTS)
 DEFAULT_CUE_RULE = CUE_RULE_ARGMAX
 
 
@@ -406,7 +428,19 @@ def with_cue_state(record: dict, cue_rule: str) -> dict:
 
 
 def validate_cue_thresholds(context: Stage1Context, cue_rule: str) -> None:
-    """``paper_thresholds`` needs a per-class threshold for every reportable finding."""
+    """``paper_thresholds`` / ``cutpoints`` need a value for every reportable finding."""
+    if cue_rule == CUE_RULE_CUTPOINTS:
+        if not context.cutpoints:
+            raise ValueError(
+                "cue_rule=cutpoints needs --threshold-path: a cutpoint file from "
+                "scripts/calibrate_thresholds.py --rule cutpoints fitted on the "
+                "Stage-1 VALIDATION predictions"
+            )
+        missing = [n for n in ABNORMALITIES_14
+                   if n != "No Finding" and n not in context.cutpoints]
+        if missing:
+            raise ValueError(f"cutpoint file lacks {missing}")
+        return
     if cue_rule != CUE_RULE_PAPER:
         return
     if not context.thresholds:
@@ -436,6 +470,9 @@ def classify_with_thresholds(
     only when that class's probability reaches its validation-fitted threshold
     (the one furthest above its threshold if several do); a finding with no
     class above threshold is left out of the prompt, as the paper describes.
+    ``cutpoints``: every reportable finding goes to Negative below t1,
+    Uncertain in [t1, t2), Positive at or above t2, on
+    ``p_pos / (p_pos + p_neg)`` -- the Stage-1 headline rule since 2026-10-10.
     ``none``: no structured cues. ``No Finding`` is never listed.
     """
     if cue_rule not in CUE_RULES:
@@ -451,6 +488,12 @@ def classify_with_thresholds(
             continue
         if cue_rule == CUE_RULE_ARGMAX:
             out[classes[max(range(len(p)), key=lambda i: p[i])]].append(abn)
+            continue
+        if cue_rule == CUE_RULE_CUTPOINTS:
+            t1, t2 = context.cutpoints[abn]
+            p_neg, p_pos = float(p[CLASS_MAP["negative"]]), float(p[CLASS_MAP["positive"]])
+            s = p_pos / max(p_pos + p_neg, 1e-12)
+            out["positive" if s >= t2 else "uncertain" if s >= t1 else "negative"].append(abn)
             continue
         thresholds = context.threshold_for(abn)
         margins = [
@@ -576,6 +619,11 @@ def stage1_cohort_fingerprint(
         "thresholds": stable_fingerprint(context.fingerprint_payload()["thresholds"], length=32),
         "vis_root_name": Path(VIS_ROOT).name,
     }
+    # Only when set, so every cache built before cutpoints existed still hits.
+    if context.cutpoints:
+        payload["cutpoints"] = stable_fingerprint(
+            context.fingerprint_payload()["cutpoints"], length=32
+        )
     # Part of the identity because it changes `pred_groups`, which is cached.
     # Always present since the three-class cue rules replaced the gate-based
     # ones (D-023), so no cache built under a retired rule can be reused.

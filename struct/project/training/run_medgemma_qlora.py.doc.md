@@ -4,7 +4,7 @@
 
 # `training/run_medgemma_qlora.py`
 
-> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `--cue-rule` ∈ {`argmax` (mặc định), `paper_thresholds` (cần `--threshold-path`), `none`}; `--finding-tokens` ∈ {`off`, `q_only`}. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `--cue-rule` ∈ {`argmax` (mặc định), `paper_thresholds` (cần `--threshold-path`), `none`, `cutpoints` (2026-10-10: luật của số chính Stage 1, hai ngưỡng/bệnh trên `p_pos/(p_pos+p_neg)`, cần `--threshold-path` là file từ `calibrate_thresholds.py --rule cutpoints`; mọi bệnh đều được xếp lớp như argmax)}; `--finding-tokens` ∈ {`off`, `q_only`}. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
 
 
 ## Purpose
