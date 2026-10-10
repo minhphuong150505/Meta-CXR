@@ -79,6 +79,19 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   findings, lost on rare ones (Fracture at chance, Pleural Other 0.83 -> 0.64).
   So the soft-token bottleneck is collapse (one effective token), not missing
   14-label signal. Record: `docs/handoff/PLAN-2026-10-11-soft-token-probe.md`.
+  **Mechanism and consequences (2026-10-11, `docs/TONG_HOP_2026-10-11.md`):** the
+  collapse happens in PHASE 1a -- in the first two cross-attention layers every
+  query attends PubMedCLIP's CLS token (index 196, 100% of studies), the 32 states
+  become identical and stay identical (shared weights cannot break the symmetry);
+  ITM sits at chance all of 1a. Phase 1b then moves the frozen Q-Former's inputs
+  (StreamAdapter norms 19.6 -> 1,713 PubMedCLIP, 12 -> 413 Swin; no LayerNorm after
+  them) and 1c (1 epoch, batch 8) drops ITC R@5 0.65 -> 0.17 without improving test
+  AUROC (1b best vs 1c: +0.0037 [-0.0012, +0.0095]). Stage 2 v3 IGNORES its cues:
+  oracle cues from the true labels (1,000 test studies) change no metric. Copying
+  the patient's previous FINDINGS alone matches the paper's BLEU-1/BLEU-4 and beats
+  the model by 0.12 lexicon CE. Novelty index vs the paper:
+  `docs/CHI_MUC_TINH_MOI.md`; pilot awaiting approval:
+  `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

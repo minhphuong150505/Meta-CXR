@@ -1,7 +1,7 @@
 # PLAN 2026-10-11 — Pilot trước khi train lại toàn bộ (CHỜ USER DUYỆT)
 
 Trạng thái: **đề xuất, chưa sửa code, chưa train.** Căn cứ:
-`docs/RESEARCH-2026-10-11-stage1-stage2-diagnosis.md`, `docs/CHI_MUC_TINH_MOI.md`.
+`docs/TONG_HOP_2026-10-11.md`, `docs/CHI_MUC_TINH_MOI.md`.
 
 ## Mục tiêu
 
@@ -14,9 +14,12 @@ tắc chọn chốt trước**, rồi train toàn bộ dữ liệu **đúng mộ
   BLEU-4 9,5 → 14,8) và lần chụp trước (MAIRA-2 ROUGE-L −28,9% khi bỏ). Dữ liệu
   dự án có sẵn: 91,7% study test có INDICATION/HISTORY; 89,6% test và 64,1% train
   có lần chụp trước với FINDINGS (khoảng cách trung vị 7–9 ngày).
-- Kênh thị giác hiện tại là một vector (soft token sụp, TM-11). Kênh ảnh gốc của
-  MedGemma đã được train trên MIMIC-CXR; tài liệu cho thấy MedGemma 4B đạt RadGraph
-  F1 29,5 không cần fine-tune.
+- Chép FINDINGS lần chụp trước (không học gì) đã ngang bài báo ở BLEU-1/BLEU-4 và hơn
+  mô hình 0,12 CE lexicon — bằng chứng tại chỗ mạnh nhất cho bối cảnh.
+- Cue oracle (nhãn THẬT làm cue) không đổi báo cáo: mô hình hiện tại bỏ qua cue. Muốn
+  phân loại tốt hơn có ích cho báo cáo thì phải train để mô hình dựa vào cue.
+- Kênh ảnh gốc MedGemma: probe (AUROC 0,690 so với soft token 0,725) và truy hồi tại
+  chỗ không ủng hộ → chỉ là arm tùy chọn.
 - Sửa Q-Former đòi train lại 1a cần cache đặc trưng ~148 GB trong khi `/home` còn
   59 GB; và RaDialog-align (Q-Former 32 query hoạt động bình thường) chỉ đạt BLEU-4
   9,5 / ROUGE-L 27,1 — ngang mức hiện tại. Vì vậy sửa Q-Former **không** nằm trong
@@ -28,7 +31,8 @@ tắc chọn chốt trước**, rồi train toàn bộ dữ liệu **đúng mộ
 |---|---|---|---|---|
 | P0 | 32 soft token (như v3) | Eq. 22 | không | ~1 h train + ~35 phút chấm |
 | P1 | 32 soft token | Eq. 22 | indication + FINDINGS lần trước | ~1,1 h + ~35 phút |
-| P2 | ảnh gốc MedGemma (256 token) | ngưỡng hai mức | indication + FINDINGS lần trước | ~4,5 h + ~1 h |
+| P2 | 32 soft token | lúc train: nhãn thật có nhiễu; lúc suy luận: MHCAC ngưỡng hai mức | indication + FINDINGS lần trước | ~1,1 h + ~35 phút |
+| P3 (tùy chọn) | ảnh gốc MedGemma (256 token) | ngưỡng hai mức | indication + FINDINGS lần trước | ~4,5 h + ~1 h |
 
 Chấm trên **500 study val cố định** (cùng `sample_key`, cùng thứ tự), beam 4 +
 length penalty 2 và greedy, giao thức bài báo (BLEU/METEOR/ROUGE-L/CIDEr/
@@ -38,8 +42,10 @@ BERTScore) + CE lexicon; bootstrap ghép cặp 2.000 lần, seed 16.
 
 1. **Bối cảnh:** chấp nhận nếu P1 − P0 có ROUGE-L **và** BERTScore với cận dưới
    khoảng tin cậy > 0.
-2. **Kênh ảnh gốc:** vì đắt gấp ~4 lần, chấp nhận nếu P2 − P1 đạt BERTScore ≥ +0,01
-   hoặc CE lexicon ≥ +0,02, cận dưới > 0, và không chỉ số nào giảm có ý nghĩa.
+2. **Train để dùng cue:** chấp nhận nếu P2 − P1 có CE lexicon ≥ +0,02 với cận dưới > 0
+   và không chỉ số NLG nào giảm có ý nghĩa.
+2b. **Kênh ảnh gốc (nếu chạy P3):** vì đắt gấp ~4 lần, chấp nhận nếu P3 − (arm thắng
+   giữa P1/P2) đạt BERTScore ≥ +0,01 hoặc CE lexicon ≥ +0,02, cận dưới > 0.
 3. Không arm nào thỏa: giữ v3, chỉ thêm beam vào bộ sinh.
 4. Sau đó train toàn bộ **một lần** với cấu hình thắng (paper-mode ~19 h/epoch;
    ảnh gốc ~80 h/epoch toàn bộ, hoặc tập con ~80k study ~37 h — user chọn).
@@ -50,7 +56,8 @@ BERTScore) + CE lexicon; bootstrap ghép cặp 2.000 lần, seed 16.
    `prior_interval_days` vào manifest → `full_allviews_v4` (không đổi target).
 2. Prompt: kiểu `paper_context` = prompt bài báo + dòng Indication + dòng FINDINGS
    lần trước (có số ngày); thiếu thì ghi "None".
-3. Chế độ ảnh gốc + cue không kèm soft token (hiện chỉ có kèm soft token).
+3. Cue lúc train lấy từ nhãn thật có nhiễu (tỉ lệ lật cố định, seed cố định); lúc
+   suy luận vẫn là cue MHCAC. (P3: chế độ ảnh gốc + cue không kèm soft token.)
 4. Beam search trong `generate_stage2_reports.py` (port từ probe).
 5. Test CPU cho cả bốn; smoke 200 study trên GPU trước pilot.
 

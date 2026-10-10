@@ -374,6 +374,11 @@ python scripts/evaluate_stage1.py --predictions <test.npz> \
     --cutpoints configs/stage1_cutpoints/<run>.json --output-dir <dir>
 ```
 
+**Tổng hợp chẩn đoán 2026-10-11** (soft token META-Former sụp thành một vector ở pha 1a,
+pha 1c không giúp phân loại, Stage 2 bỏ qua cue, giá trị của báo cáo lần chụp trước, đề
+xuất chờ duyệt): [`docs/TONG_HOP_2026-10-11.md`](docs/TONG_HOP_2026-10-11.md); chỉ mục khác
+biệt so với bài báo: [`docs/CHI_MUC_TINH_MOI.md`](docs/CHI_MUC_TINH_MOI.md).
+
 Test `run_20261005_paper` (n = 3.269, CI 95% bootstrap 1.000 lần):
 
 | | Hai ngưỡng (số chính) | argmax (giao thức bài báo) | Bài báo |

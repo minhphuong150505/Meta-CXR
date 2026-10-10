@@ -134,7 +134,7 @@ nhóm con theo số ảnh, kiểm tra không fit ngưỡng trên test.
 
 Số đo bằng `scripts/diagnose_qformer_collapse.py`, `probe_soft_tokens_cached.py`,
 `retrieval_report_baselines.py`, `analyze_stage2_generations.py`,
-`prior_report_baseline.py`. Chi tiết: `docs/RESEARCH-2026-10-11-stage1-stage2-diagnosis.md`.
+`prior_report_baseline.py`. Chi tiết: `docs/TONG_HOP_2026-10-11.md`.
 
 **TM-11 — Soft token META-Former sụp thành một vector, ngay ở pha 1a.** Cosine
 trung bình giữa 32 token của một study 0,9989 sau 1a (khởi tạo BLIP-2 0,445), số
@@ -154,7 +154,9 @@ StreamAdapter (không có LayerNorm phía sau ở PubMedCLIP, Swin) đẩy norm 
 Pha 1c (1 epoch, batch 8): R@5 0,65 → 0,17; val AUROC 0,778 (1b tốt nhất) → 0,771,
 macro recall 0,492 → 0,486; gradient căn chỉnh lớn gấp 7–35 lần gradient phân loại
 trên projector chung, cosine ≈ 0. Pha 1b đạt tốt nhất ở epoch thứ ba (chỉ số 2) trong 5
-epoch; hai epoch cuối không cải thiện.
+epoch; hai epoch cuối không cải thiện. Trên test (3.269 study, argmax), 1b tốt nhất so
+với 1c: AUROC +0,0037 [−0,0012; +0,0095] (không có ý nghĩa), macro recall +0,0050,
+weighted F1 −0,0074, F1 5 bệnh −0,0144 — 1c không cải thiện khả năng phân biệt.
 
 **TM-13 — Thông tin bệnh trong soft token.** Linear probe (fit 50.000 study train,
 chấm 2.780 study test): AUROC trung bình 0,713 so với MHCAC 0,745 trên cùng study;
@@ -168,7 +170,11 @@ nhãn khớp dự đoán MHCAC đạt CE lexicon 0,294, cao hơn báo cáo LLM s
 LLM không chuyển thông tin phân loại vào văn bản. Mô hình không bao giờ nhắc
 Fracture, Lung Lesion, Pleural Other, Enlarged Cardiomediastinum. Khớp với tài
 liệu: PromptMRG (CE F1 0,370 → 0,444, BLEU-4 0,116 → 0,106), RaDialog (CE 26,1 →
-39,4, BLEU-4 9,0 → 9,5).
+39,4, BLEU-4 9,0 → 9,5). **Cue oracle:** thay cue Eq. 22 bằng cue từ nhãn THẬT
+(1.000 study test, đổi ở 977) — BERTScore −0,0024 [−0,0079; +0,0032], ROUGE-L −0,0021,
+CIDEr +0,0050 (đều không có ý nghĩa), CE lexicon 0,269 → 0,249, 153 báo cáo giống hệt:
+mô hình Stage 2 hiện tại bỏ qua kênh cue, nên phân loại tốt hơn không thể làm báo cáo
+của nó tốt hơn.
 
 **TM-15 — Thiếu bối cảnh lâm sàng.** 90,0% FINDINGS test có ngôn ngữ so sánh thời
 gian; 89,6% study test có lần chụp trước với FINDINGS; 91,7% có INDICATION/HISTORY.
@@ -209,9 +215,10 @@ luận ROUGE-L −28,9%. Kế hoạch pilot: `docs/handoff/PLAN-2026-10-11-stage
 liệu ủng hộ (MedGemma 4B PT RadGraph F1 29,5, MedGemma 1.5 4B 27,2 không fine-tune;
 MAIRA-2/LLaVA-Rad dùng toàn bộ patch token qua MLP), nhưng đo tại chỗ thì truy hồi
 bằng embedding ảnh MedGemma (trung bình 256 token) không hơn soft token về nội dung
-(CE lexicon 0,240 so với 0,259; ROUGE-L 0,226 so với 0,220), và MedGemma zero-shot
-thua v3 beam trên mọi chỉ số trừ METEOR. Chỉ train mới kiểm chứng được; train ảnh
-gốc đắt gấp ~4 lần.
+(CE lexicon 0,240 so với 0,259; ROUGE-L 0,226 so với 0,220); linear probe cùng giao
+thức: ảnh MedGemma AUROC 0,690 so với soft token 0,725 và MHCAC 0,745 (thấp hơn soft
+token ở 12/14 bệnh); MedGemma zero-shot thua v3 beam trên mọi chỉ số trừ METEOR. Chỉ
+train mới kiểm chứng được; train ảnh gốc đắt gấp ~4 lần. Không ưu tiên.
 
 **TM-25 — Sửa Stage 1 nếu giữ META-Former:** chuẩn hóa từng luồng trước Q-Former và
 sau StreamAdapter, phạt độ giống nhau giữa các query, bỏ ITM, 1a 2 epoch, thay 1c
