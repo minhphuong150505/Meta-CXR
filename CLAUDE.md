@@ -37,8 +37,25 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   Cardiomegaly, Consolidation, Edema, Pleural Effusion (Tables 5/7: 0.701);
   one-vs-rest AUROC per class per finding (Fig. 5). All 14 findings count,
   No Finding and Support Devices included.
-- **Thresholds (`threshold_calibration.py`)** are the paper's per-(finding,
-  class) ROC-distance thresholds (Eq. 22, Fig. 11), used only for the Stage-2
+- ⚠ **HEADLINE DECISION RULE SINCE 2026-10-10 (user decision): two
+  validation-fitted cutpoints per finding, NOT argmax.** On
+  `s = p_pos/(p_pos+p_neg)`: Negative < t1 <= Uncertain < t2 <= Positive, fitted
+  on val (1,808) to maximise each finding's weighted F1 -- still three classes.
+  The file for the reported model is
+  `configs/stage1_cutpoints/run_20261005_paper.json` (4 findings get an
+  Uncertain band: Atelectasis, Consolidation, Edema, Pneumonia). Score with
+  `scripts/evaluate_stage1.py --cutpoints <file>`, which also writes and prints
+  the argmax numbers as the paper-protocol reference. Test, n=3,269
+  (`~/eval_20261010_cutpoints/test`): weighted P/R/F1 **0.827 / 0.834 / 0.820**,
+  F1-5 **0.749** [0.741, 0.757], macro recall 0.446, AUROC unchanged
+  (0.784 / 0.778 / 0.663); argmax reference 0.839 / 0.781 / 0.780, F1-5 0.669,
+  macro recall 0.461. **Say "not the paper's protocol" beside every headline
+  number**: the paper reports argmax and never says which split its Eq. 22
+  thresholds were fitted on (its Fig. 5 ROC curves are on test). A new
+  checkpoint needs its own file (`calibrate_thresholds.py --rule cutpoints` on
+  ITS val predictions); never reuse another run's cutpoints.
+- **Eq. 22 thresholds (`threshold_calibration.py`)** are the paper's per-(finding,
+  class) ROC-distance thresholds (Fig. 11), used only for the Stage-2
   prompt (`--cue-rule paper_thresholds`). Stage-2 cue rules: `argmax` (default),
   `paper_thresholds`, `none`.
 - **The only binary computations left are the two the paper itself uses**, in
@@ -698,6 +715,12 @@ python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresho
 # scored with a paired bootstrap against argmax. Uncertain sits between N and P
 # on that score but a middle band adds ~nothing; the gain is the P/N cutpoint.
 python scripts/evaluate_stage1_cutpoints.py --val <val.npz> --test <test.npz> --output-dir <dir>
+# HEADLINE since 2026-10-10 (user decision): fit two cutpoints per finding on
+# val, commit the file, score test with it (argmax is printed beside it):
+python scripts/calibrate_thresholds.py --rule cutpoints --predictions <val.npz> \
+    --checkpoint <run> --output configs/stage1_cutpoints/<run>.json
+python scripts/evaluate_stage1.py --predictions <test.npz> \
+    --cutpoints configs/stage1_cutpoints/<run>.json --output-dir <dir>
 # Paper Table 4 (CheXpert val, p1/(p0+p1)) and Table 3 CE (labeler output):
 python scripts/evaluate_chexpert_crossdomain.py --predictions <chexpert_val.npz>
 python scripts/evaluate_clinical_efficacy.py --generated-labels <csv> --reference-labels <csv>

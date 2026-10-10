@@ -17,6 +17,14 @@ of argmax. That is a SUPPLEMENTARY analysis, not the paper's protocol: report
 it beside the argmax numbers, never in their place. A file fitted on the split
 being scored is refused.
 
+``--cutpoints <file>`` (from ``scripts/calibrate_thresholds.py --rule
+cutpoints``, fitted on validation) is this project's HEADLINE decision rule
+since 2026-10-10 (user decision): per finding, Negative / Uncertain band /
+Positive by two cutpoints on ``p_pos / (p_pos + p_neg)``. It is still not the
+paper's protocol, so the argmax numbers are computed and printed beside it as
+the paper-protocol reference. The fitted file for the reported model is
+``configs/stage1_cutpoints/run_20261005_paper.json``.
+
     python scripts/evaluate_stage1.py \\
         --predictions <run>/result/test_predictions_epoch_best.npz \\
         --output-dir <private dir>/stage1_test
@@ -69,7 +77,10 @@ from training.evaluation.subgroup_analysis import (  # noqa: E402
     subgroup_table,
     view_subgroups,
 )
-from training.evaluation.threshold_calibration import load_thresholds  # noqa: E402
+from training.evaluation.threshold_calibration import (  # noqa: E402
+    load_cutpoint_file,
+    load_thresholds,
+)
 
 logger = logging.getLogger("evaluate_stage1")
 
@@ -95,6 +106,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--thresholds", type=Path, default=None,
         help="per-class Eq. 22 threshold JSON fitted on validation; replaces "
         "argmax (supplementary, not the paper's protocol)",
+    )
+    parser.add_argument(
+        "--cutpoints", type=Path, default=None,
+        help="per-finding two-cutpoint file fitted on validation; the project's "
+        "headline decision rule (argmax is reported beside it)",
     )
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args(argv)
@@ -131,6 +147,26 @@ def main(argv: list[str] | None = None) -> int:
         predictions.num_samples, predictions.num_pathologies, args.predictions,
     )
 
+    if args.thresholds is not None and args.cutpoints is not None:
+        logger.error("pass --thresholds or --cutpoints, not both")
+        return 2
+    scored = args.split or str(predictions.metadata.get("split", "unknown"))
+    cutpoints = None
+    if args.cutpoints is not None:
+        try:
+            cutpoints, cut_meta = load_cutpoint_file(args.cutpoints)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the user
+            logger.error("could not read cutpoints %s: %s", args.cutpoints, exc)
+            return 2
+        fitted_on = cut_meta.get("split")
+        if fitted_on is None or fitted_on == "test" or fitted_on == scored:
+            logger.error(
+                "cutpoints in %s were fitted on %r; they must come from validation "
+                "and be applied to a different split (scoring %r)",
+                args.cutpoints, fitted_on, scored,
+            )
+            return 2
+
     thresholds = None
     if args.thresholds is not None:
         try:
@@ -141,7 +177,6 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 - surfaced to the user
             logger.error("could not read thresholds %s: %s", args.thresholds, exc)
             return 2
-        scored = args.split or str(predictions.metadata.get("split", "unknown"))
         if fitted_on is None or fitted_on == "test" or fitted_on == scored:
             logger.error(
                 "thresholds in %s were fitted on %r; they must come from validation "
@@ -151,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     def score(p: ClassificationPredictions):
-        return evaluate_classification(p, thresholds=thresholds)
+        return evaluate_classification(p, thresholds=thresholds, cutpoints=cutpoints)
 
     report = score(predictions)
     output_dir = args.output_dir
@@ -162,6 +197,13 @@ def main(argv: list[str] | None = None) -> int:
         "confusion": {m.name: m.confusion for m in report.per_pathology},
         "settings": report.settings,
     }
+    argmax_agg = None
+    if cutpoints is not None:
+        argmax_agg = evaluate_classification(predictions).aggregates
+        payload["argmax_reference"] = {
+            "note": "paper protocol (argmax), reported beside the headline cutpoints",
+            "aggregates": argmax_agg,
+        }
 
     if not args.no_bootstrap and args.bootstrap_samples > 0:
         logger.info("bootstrapping %d replicates by study", args.bootstrap_samples)
@@ -213,7 +255,9 @@ def main(argv: list[str] | None = None) -> int:
         config=args.config,
         seed=args.evaluation_seed,
         threshold_source=(
-            "argmax (paper)" if thresholds is None
+            f"per-finding validation cutpoints from {args.cutpoints} (project headline; "
+            "NOT the paper's argmax protocol)" if cutpoints is not None
+            else "argmax (paper)" if thresholds is None
             else f"per-class Eq. 22 thresholds from {args.thresholds} (NOT the paper's protocol)"
         ),
     )
@@ -228,7 +272,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     agg = report.aggregates
-    if thresholds is None:
+    if cutpoints is not None:
+        print("\nHEADLINE -- three classes, per-finding validation cutpoints "
+              "(NOT the paper's argmax protocol), mean over the 14 findings:")
+    elif thresholds is None:
         print("\nPaper protocol (three classes, argmax), mean over the 14 findings:")
     else:
         print("\nSUPPLEMENTARY -- per-class Eq. 22 thresholds from validation, NOT the "
@@ -239,6 +286,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  AUROC one-vs-rest  Pos/Neg/Unc   : {agg['auroc_positive_mean']:.4f} / "
           f"{agg['auroc_negative_mean']:.4f} / {agg['auroc_uncertain_mean']:.4f}")
     print(f"  macro recall, 3 classes          : {agg['macro_recall']:.4f}   (not in the paper; selection metric)")
+    if argmax_agg is not None:
+        print(f"  argmax reference (paper protocol): wF1 {argmax_agg['weighted_f1']:.4f}  "
+              f"F1_5 {argmax_agg['mean_weighted_f1_5']:.4f}  "
+              f"macro recall {argmax_agg['macro_recall']:.4f}")
     print(f"  report                           : {output_dir / 'evaluation_report.md'}")
     return 0
 

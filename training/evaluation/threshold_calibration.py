@@ -180,14 +180,18 @@ def load_thresholds(path: str | Path) -> dict[str, dict[str, float]]:
 
 
 # ---------------------------------------------------------------------------
-# Supplementary: ordinal cutpoints on the positive-vs-negative axis (2026-10-01)
+# Ordinal cutpoints on the positive-vs-negative axis (2026-10-01; HEADLINE
+# decision rule since 2026-10-10, user decision)
 # ---------------------------------------------------------------------------
 #
-# NOT the paper's protocol. Uncertain cases sit BETWEEN negatives and positives
-# on s = p_pos / (p_pos + p_neg) (docs/handoff/PLAN-2026-09-30-...), so a
-# finding can be decided by two cutpoints on s: Negative below t1, Uncertain in
-# [t1, t2), Positive at or above t2. One cutpoint (t1 == t2) never calls
-# Uncertain. Fit on VALIDATION, report beside argmax, never instead of it.
+# NOT the paper's protocol (the paper reports argmax). Uncertain cases sit
+# BETWEEN negatives and positives on s = p_pos / (p_pos + p_neg)
+# (docs/handoff/PLAN-2026-09-30-...), so a finding can be decided by two
+# cutpoints on s: Negative below t1, Uncertain in [t1, t2), Positive at or above
+# t2. One cutpoint (t1 == t2) never calls Uncertain. Fit on VALIDATION only.
+# Since 2026-10-10 this project's headline Stage-1 numbers use the two-cutpoint
+# rule (scripts/evaluate_stage1.py --cutpoints); argmax is still reported
+# beside them as the paper-protocol reference.
 
 CUTPOINT_OBJECTIVES = ("weighted_f1", "macro_recall")
 
@@ -263,3 +267,56 @@ def apply_cutpoints(
         t1, t2 = cutpoints[name]
         decisions[:, index] = decide_with_cutpoints(severity[:, index], t1, t2)
     return decisions
+
+
+#: Written into every cutpoint file; :func:`load_cutpoints` refuses any other
+#: value, so an Eq. 22 threshold file can never be read as cutpoints.
+CUTPOINT_FORMAT = "meta_cxr_severity_cutpoints_v1"
+
+
+@dataclass
+class CutpointFile:
+    """Per-finding ``(t1, t2)`` on ``p_pos / (p_pos + p_neg)``, fitted on validation."""
+
+    cutpoints: dict[str, tuple[float, float]]
+    metadata: dict
+
+    def save(self, path: str | Path) -> Path:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "format": CUTPOINT_FORMAT,
+            "cutpoints": {name: [float(t1), float(t2)]
+                          for name, (t1, t2) in self.cutpoints.items()},
+            "metadata": self.metadata,
+        }
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8")
+        return path
+
+
+def load_cutpoint_file(path: str | Path) -> tuple[dict[str, tuple[float, float]], dict]:
+    """``(cutpoints, metadata)`` from a cutpoint file. Refuses any other format."""
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"cutpoint file not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("format") != CUTPOINT_FORMAT:
+        raise CalibrationError(
+            f"{path} is not a cutpoint file (format {payload.get('format')!r}, "
+            f"expected {CUTPOINT_FORMAT!r}); fit one with "
+            "scripts/calibrate_thresholds.py --rule cutpoints"
+        )
+    out: dict[str, tuple[float, float]] = {}
+    for name, pair in payload["cutpoints"].items():
+        if len(pair) != 2:
+            raise CalibrationError(f"{path}: {name} needs [t1, t2], got {pair!r}")
+        t1, t2 = float(pair[0]), float(pair[1])
+        if t2 < t1:
+            raise CalibrationError(f"{path}: {name} has t1 {t1} > t2 {t2}")
+        out[name] = (t1, t2)
+    return out, dict(payload.get("metadata", {}))
+
+
+def load_cutpoints(path: str | Path) -> dict[str, tuple[float, float]]:
+    return load_cutpoint_file(path)[0]

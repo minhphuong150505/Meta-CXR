@@ -21,7 +21,7 @@ F1 chỉ lớp dương, không còn `uncertain_policy`, không còn loại nhãn
 
 | Tên | Dòng | Vai trò |
 |---|---|---|
-| `evaluate_classification(predictions, thresholds=None)` | 262 | [📄](classification_metrics.py.methods/evaluate_classification.md) ★ Điểm vào |
+| `evaluate_classification(predictions, thresholds=None, cutpoints=None)` | 262 | [📄](classification_metrics.py.methods/evaluate_classification.md) ★ Điểm vào |
 | `weighted_prf(y_true, y_pred)` | 159 | sklearn `average='weighted'`, `zero_division=1` |
 | `macro_recall(y_true, y_pred)` | 186 | recall ba lớp không trọng số = sklearn `balanced_accuracy_score` (D-024) |
 | `per_class_prf(matrix)` | 138 | P/R/F1 từng lớp, ngữ nghĩa sklearn |

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""SUPPLEMENTARY Stage-1 analysis: decide by cutpoints on p_pos / (p_pos + p_neg).
+"""Stage-1 analysis: decide by cutpoints on p_pos / (p_pos + p_neg), vs argmax.
 
-NOT the paper's protocol -- the paper decides by argmax, and that stays the
-headline. Uncertain cases sit between negatives and positives on the score
+NOT the paper's protocol -- the paper decides by argmax. Since 2026-10-10 the
+two-cutpoint rule is this project's HEADLINE (user decision; the fitted file is
+committed under configs/stage1_cutpoints/ and scored by
+``scripts/evaluate_stage1.py --cutpoints``); this script remains the paired
+comparison of both rules against argmax. Uncertain cases sit between negatives and positives on the score
 s = p_pos / (p_pos + p_neg), so this script fits, on VALIDATION, per finding:
 
 * one cutpoint (Negative / Positive, never Uncertain), and
@@ -117,8 +120,9 @@ def main(argv: list[str] | None = None) -> int:
     base = rules["argmax (paper)"]["decisions"]
     draws = [rng.integers(0, n, n) for _ in range(args.bootstrap_samples)]
     report: dict = {
-        "note": "SUPPLEMENTARY, not the paper's argmax protocol; cutpoints fitted "
-                "on validation, maximising per-finding weighted F1",
+        "note": "not the paper's argmax protocol; cutpoints fitted on validation, "
+                "maximising per-finding weighted F1 (two cutpoints = project "
+                "headline since 2026-10-10)",
         "val": str(args.val), "test": str(args.test), "num_test": n,
         "bootstrap_samples": args.bootstrap_samples, "seed": args.seed, "rules": {},
     }
@@ -144,7 +148,8 @@ def main(argv: list[str] | None = None) -> int:
     (args.output_dir / "cutpoints_report.json").write_text(
         json.dumps(report, indent=2), encoding="utf-8"
     )
-    print("\nSUPPLEMENTARY -- not the paper's protocol (argmax is the headline):")
+    print("\nCutpoints vs argmax -- argmax is the paper's protocol; two cutpoints is "
+          "the project headline since 2026-10-10:")
     for tag, entry in report["rules"].items():
         m = entry["metrics"]
         print(f"  {tag:15s} wF1 {m['weighted_f1']:.4f}  F1_5 {m['mean_weighted_f1_5']:.4f}  "

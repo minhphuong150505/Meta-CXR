@@ -1,6 +1,6 @@
 > Source: `configs/`
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-10-10
 
 # `configs/`
 
@@ -24,6 +24,7 @@ Siêu tham số Stage 1 nằm ở [`pretraining/configs/`](../pretraining/config
 | `stage2_prompt_v2.yaml` | [📄](stage2_prompt_v2.yaml.doc.md) | ✅ | Prompt v2 — **opt-in** |
 | `experiments/pretrained_medgemma_findings_first.yaml` | [📄](experiments/pretrained_medgemma_findings_first.yaml.doc.md) | ✅ | Baseline P8 |
 | `prompt_ablation/P1..P9.yaml` | [📄](prompt_ablation/_index.md) | 🧪 | 9 biến thể prompt |
+| `stage1_cutpoints/run_20261005_paper.json` | [threshold_calibration](../training/evaluation/threshold_calibration.py.doc.md) | ✅ ★ | Hai ngưỡng/bệnh fit trên val (1.808) cho model Stage 1 báo cáo — luật của **số chính** từ 2026-10-10. Chỉ 28 số thực + metadata, không có dữ liệu bệnh nhân. Ghi bởi `calibrate_thresholds.py --rule cutpoints`, đọc bởi `evaluate_stage1.py --cutpoints` |
 
 ## `env_config.yaml` — bắt buộc trước mọi thứ
 
