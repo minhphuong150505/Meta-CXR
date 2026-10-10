@@ -11,6 +11,10 @@ Stage 1 nên mỗi encoder nhận đúng tiền xử lý của nó; dùng cùng 
 với các probe khác. `--checkpoint none` = encoder pretrained; một checkpoint Stage 1 = encoder
 đã tinh chỉnh của checkpoint đó.
 
+`biovil_grid2`: lưới 14×14 của BioViL gộp thành 2×2 vùng rồi nối lại (4 × 1408) — so với
+trung bình toàn ảnh để xem vị trí vùng có thêm thông tin bệnh không (liên quan tới việc soft
+token sụp thành một vector toàn cục).
+
 `--softtok` ghi thêm trung bình 32 soft token Q-Former từ `Blip2Qformer.forward_image` —
 đúng thứ Stage 2 cache — để so thông tin soft token giữa checkpoint 1a / 1b / 1c.
 `--no-encoder-features` bỏ ba đặc trưng encoder khi chỉ cần `softtok`.
