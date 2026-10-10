@@ -124,3 +124,24 @@ not get full runs. Pick the better one by this rule, on the test comparison
 
 Adopting D means setting `detach_aux: true` and `mpc_temperature: 0.5` in the
 shipped YAML and updating CLAUDE.md / README / struct in the same commit.
+
+### Full D result, 2026-10-10 03:51 — D loses; keep A (defaults)
+
+`run_20261009_evoke_d`: 1b 7h07m + 1c 4h39m, `rc=0`, no NaN/OOM/Traceback,
+logged config `detach_aux: true`, `mpc_temperature: 0.5`; host not rebooted
+(up since 2026-10-04). Test vs `run_20261005_paper`, each from its phase-1c
+`checkpoint_best`, paired bootstrap 1,000 x seed 16:
+
+| group | n | weighted F1 | F1-5 | macro recall | AUROC mean |
+|---|---:|---|---|---|---|
+| all | 3,269 | -0.0033 [-0.0052, -0.0015] | **-0.0160 [-0.0193, -0.0122]** | -0.0039 [-0.0067, -0.0009] | -0.0044 [-0.0102, +0.0018] |
+| views_1 | 2,022 | -0.0087 [-0.0108, -0.0067] | -0.0197 [-0.0239, -0.0152] | -0.0040 [-0.0070, -0.0011] | -0.0053 [-0.0109, -0.0002] |
+| views_2 | 1,247 | +0.0046 [+0.0016, +0.0080] | -0.0107 [-0.0171, -0.0044] | -0.0023 [-0.0100, +0.0045] | -0.0079 [-0.0151, +0.0053] |
+
+Decision rule (fixed beforehand): D needed a gain in AUROC or F1-5 beyond
+~0.015; both fell, and weighted F1 and macro recall fell significantly.
+**Keep A.** The only gain, weighted F1 +0.005 on studies with a lateral, comes
+with lower F1-5 and AUROC in the same group (rule 3: not adopted on that).
+Phase-1b validation already pointed the same way (D's AUROC below A's at all
+5 epochs). One run per arm: this rules out D as configured, not every
+EVOKE-style variant. B and C were not run in full (user decision).
