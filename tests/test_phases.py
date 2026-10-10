@@ -343,13 +343,13 @@ def test_runner_optimizer_holds_only_trainable_parameters_and_hands_over():
     for g in runner.optimizer.param_groups:
         assert g["phase_lr_mult"] == {"fade_in": 0.0, "fade_out": 1.0, "steady": 1.0}[g["phase_role"]]
 
-    steps = runner._phase_transition_steps()  # 10% of 5 x 100 = 50
-    assert steps == 50
-    runner._on_phase_update(0, 25)
+    steps = runner._phase_transition_steps()  # 10% of 3 epochs x 100 = 30
+    assert steps == 30
+    runner._on_phase_update(0, 15)
     mult = {g["phase_role"]: g["phase_lr_mult"] for g in runner.optimizer.param_groups}
     assert mult["fade_in"] == pytest.approx(0.5) and mult["fade_out"] == pytest.approx(0.5)
 
-    runner._on_phase_update(0, 50)
+    runner._on_phase_update(0, 30)
     assert runner._phase_transition_done
     remaining = {id(p) for g in runner.optimizer.param_groups for p in g["params"]}
     frozen = {id(p) for p in model.parameters() if not p.requires_grad}
