@@ -1186,6 +1186,11 @@ python scripts/generate_stage2_reports.py \
 # và file ngưỡng marginal_pfit đã bị XÓA. Lệnh gốc của các số trên không còn chạy
 # được; rule hiện có: argmax | paper_thresholds (--threshold-path, Eq. 22) | none
 # | cutpoints (2026-10-10; --threshold-path là file từ calibrate_thresholds.py --rule cutpoints).
+# Đo 2026-10-11 trên test v3 (2.800 study, cùng adapter, chỉ đổi cue): KHÔNG cải thiện.
+# Beam 4: mọi chỉ số ngang (BERTScore +0,001, CIDEr +0,004, CI chứa 0); greedy
+# ROUGE-L -0,003 và BLEU-4 -0,003 (có ý nghĩa). Adapter được train với cue Eq. 22,
+# nên train lại Stage 2 với cue cutpoints (~22 giờ) mới là phép thử công bằng.
+# Số Stage 2 báo cáo vẫn là v3 / Eq. 22.
 ```
 
 ### Original paper reference results

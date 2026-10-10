@@ -61,3 +61,42 @@ Pleural Effusion 0.783 (0.750).
 Stage 2. Every recorded Stage-2 number (v3, `--cue-rule paper_thresholds`) used
 the Eq. 22 thresholds for its prompt cues; there is no cutpoint cue rule, so the
 NLG numbers are unaffected by this change.
+
+## Follow-up 2026-10-10/11 — `--cue-rule cutpoints` on the v3 Stage-2 test set
+
+User asked for a cutpoint cue rule and a test regeneration (commit `eb89324`).
+Same v3 adapter (trained with `paper_thresholds` cues), same 2,800 test
+studies, NF4, 256 tokens; only the P/N/U cues change. Host probe
+`~/cutcue_test.py` + `~/cutcue_run.sh` (from `~/Meta-CXR-v3` at `eb89324`),
+output `~/stage2_v3_test_cutcue_20261010/`, `CUTCUE_ALL_DONE`, 0 failures.
+
+Checks before scoring: soft tokens bit-identical 2,800/2,800; control arm (old
+cues, greedy, first 100 studies) reproduced the v3 training-eval outputs
+100/100, so greedy is like for like. Cue groups changed on 2,557/2,800 studies;
+mean P/N/U listed per study 4.37 / 7.07 / 1.53 (Eq. 22) -> 1.99 / 10.84 / 0.17
+(cutpoints, every finding listed).
+
+Paper protocol, test n = 2,800:
+
+| | BLEU-1 | BLEU-4 | METEOR | ROUGE-L | CIDEr | BERTScore |
+|---|---:|---:|---:|---:|---:|---:|
+| v3 greedy (Eq. 22 cues) | 0.285 | 0.073 | 0.120 | 0.250 | 0.084 | 0.361 |
+| greedy, cutpoint cues | 0.271 | 0.069 | 0.117 | 0.247 | 0.086 | 0.363 |
+| v3 beam 4, lp 2 (Eq. 22 cues) | 0.357 | 0.098 | 0.137 | 0.265 | 0.128 | 0.369 |
+| beam 4, lp 2, cutpoint cues | 0.351 | 0.097 | 0.135 | 0.265 | 0.132 | 0.370 |
+
+Paired per-study bootstrap (2,000, seed 16), cutpoints minus Eq. 22:
+greedy BERTScore +0.0016 [-0.0012, +0.0044], ROUGE-L -0.0030 [-0.0051, -0.0009],
+CIDEr +0.0021 [-0.0069, +0.0115], BLEU-4 -0.0031 [-0.0050, -0.0012];
+beam BERTScore +0.0010 [-0.0015, +0.0035], ROUGE-L +0.0004 [-0.0016, +0.0024],
+CIDEr +0.0040 [-0.0073, +0.0157], BLEU-4 +0.0007 [-0.0015, +0.0030].
+Identical outputs: greedy 651/2,800, beam 730/2,800. Median words 37 -> 34
+(greedy), 47 -> 46 (beam).
+
+Verdict: better Stage-1 decisions do NOT improve generation at inference.
+Beam (the reported decoding) is flat on every metric; greedy loses a little
+ROUGE-L and BLEU-4. Consistent with the v3 input ablation (swapping cues
+between studies moves BERTScore only -0.014). Caveat: the adapter was trained
+with Eq. 22 cues, so this is a train/test cue mismatch; a Stage-2 retrain with
+cutpoint cues (~22 h) is the untested fair version. Reported Stage-2 numbers
+stay the v3 Eq. 22 ones.
