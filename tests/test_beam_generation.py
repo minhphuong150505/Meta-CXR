@@ -93,7 +93,7 @@ def test_beam_repeats_soft_tokens_per_beam(monkeypatch):
     llm.img_token_id = 7
     llm.finding_encoder = None
     llm.finding_token_id = None
-    llm.img_proj = lambda x: x * 1.0
+    llm.img_proj = torch.nn.Identity()
     llm._chat_texts = lambda record, style: ("prompt", "prompt target")
 
     class Tok:
