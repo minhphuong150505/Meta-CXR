@@ -13,11 +13,16 @@ writes one ``.npz`` per encoder with ``keys`` (anchor image basename) and
 * ``swin``       -- MedCLIP-Swin's pooled token;
 * ``raddino``    -- RAD-DINO (``--raddino <local dir>``): [CLS ; mean patch], the
                     usual DINOv2 linear-probe read-out. Not used by the pipeline;
-                    measured to decide whether adding it is worth a Stage-1 run.
+                    measured to decide whether adding it is worth a Stage-1 run;
+* ``softtok``    -- (``--softtok``) the mean of the 32 Q-Former soft tokens from
+                    ``Blip2Qformer.forward_image``, exactly what Stage 2 caches.
+                    Run per checkpoint (1a / 1b / 1c) to see where the soft tokens
+                    gain or lose information.
 
 ``--checkpoint none`` reads the pretrained encoders (what any Stage-1 run starts
-from); a Stage-1 checkpoint reads the fine-tuned ones. Derived features --
-private, keep them on the training host. Prints counts only.
+from); a Stage-1 checkpoint reads the fine-tuned ones. ``--no-encoder-features``
+skips the per-encoder read-outs when only ``softtok`` is wanted. Derived
+features -- private, keep them on the training host. Prints counts only.
 """
 
 from __future__ import annotations
@@ -46,6 +51,10 @@ def main(argv=None) -> int:
     ap.add_argument("--config", type=Path,
                     default=_REPO_ROOT / "pretraining/configs/mimic_cxr_full.yaml")
     ap.add_argument("--raddino", type=Path, default=None, help="local microsoft/rad-dino dir")
+    ap.add_argument("--softtok", action="store_true",
+                    help="also write the mean Q-Former soft token (forward_image)")
+    ap.add_argument("--no-encoder-features", action="store_true",
+                    help="skip biovil/pubmedclip/swin read-outs")
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out-prefix", type=Path, required=True)
@@ -79,8 +88,14 @@ def main(argv=None) -> int:
 
         raddino = RadDinoEncoder(model_name=str(args.raddino)).to(device).eval()
 
+    # The train split would otherwise apply the random training augmentation
+    # (affine + jitter), so train and test features would come from different
+    # image distributions. Features are measured on clean images only.
+    cfg.datasets_cfg.mimic_cxr.vis_processor.train.augmentation.enabled = False
     dataset = L.MIMIC_CXR_Dataset(vis_processor=None, text_processor=None, vis_root=L.VIS_ROOT,
                                   split=args.split, cfg=cfg)
+    if getattr(dataset, "augmentation_enabled", False):
+        raise RuntimeError("training augmentation is still on; features would be noisy")
     index_of = {str(dataset.annotation.iloc[s["anchor"]]["dicom_id"]): i
                 for i, s in enumerate(dataset.studies)}
     keep = [index_of[d] for d in wanted if d in index_of]
@@ -88,22 +103,36 @@ def main(argv=None) -> int:
           flush=True)
     loader = DataLoader(Subset(dataset, keep), batch_size=args.batch, num_workers=args.workers,
                         collate_fn=dataset.collater)
-    out: dict[str, list] = {"biovil": [], "pubmedclip": [], "swin": [], "raddino": []}
+    input_keys = ()
+    if args.softtok:
+        from training.train_eval_figure9_llm_variants_200 import STAGE1_IMAGE_INPUT_KEYS
+
+        input_keys = STAGE1_IMAGE_INPUT_KEYS
+    encoders = not args.no_encoder_features
+    out: dict[str, list] = {"biovil": [], "pubmedclip": [], "swin": [], "raddino": [],
+                            "softtok": []}
     keys: list[str] = []
     started = time.time()
     with torch.no_grad():
         for b, batch in enumerate(loader):
             image = batch["image"].to(device)
-            keys.extend(Path(str(p)).stem for p in batch["image_path"])
-            if model.use_biovil:
+            # basename WITH extension: probe_image_features.py joins on
+            # image_path.rsplit("/", 1)[-1] of the cached records.
+            keys.extend(Path(str(p)).name for p in batch["image_path"])
+            if args.softtok:
+                inputs = {k: v.to(device, non_blocking=True) for k, v in batch.items()
+                          if k in input_keys and torch.is_tensor(v)}
+                _logits, soft = model.forward_image(inputs)
+                out["softtok"].append(soft.float().mean(1).cpu().numpy())
+            if encoders and model.use_biovil:
                 patches = model.visual_encoder(image).projected_patch_embeddings
                 out["biovil"].append(patches.reshape(image.shape[0], -1, patches.shape[-1])
                                      .mean(1).float().cpu().numpy())
-            if model.use_pubmedclip:
+            if encoders and model.use_pubmedclip:
                 pmc = batch.get("pubmedclip_image")
                 tokens = model._pubmedclip_tokens(image, pmc.to(device) if pmc is not None else None)
                 out["pubmedclip"].append(tokens[:, 0].float().cpu().numpy())
-            if model.use_swin:
+            if encoders and model.use_swin:
                 swin_in = batch.get("swin_image")
                 tokens = model.swin(model._swin_input(image, swin_in.to(device) if swin_in is not None else None))
                 out["swin"].append(tokens[:, 0].float().cpu().numpy())

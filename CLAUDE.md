@@ -911,6 +911,12 @@ study (not image) → anchor + ≤1 auxiliary view
 ```
 
 - Sampling is **one row per study**, not per image (`study_sampling: true`).
+- **Training augmentation reaches the BioViL stream only** (observed
+  2026-10-11). `ReportDataset._row_visual` applies the random affine + jitter to
+  `image` (BioViL, and RAD-DINO when enabled, which reads the same tensor),
+  while `pubmedclip_image` / `swin_image` come from their own deterministic
+  preprocessing of the raw image. In training the streams therefore see
+  geometrically different crops of the same study. Not measured either way.
 - **`model.data.max_aux_views` accepts 0..3 as of 2026-10-06** (the sampler used
   to refuse anything but 0/1; shipped YAML still 1). Measured on
   `full_allviews_v2`: a second complementary view exists for only **4.2% train /
@@ -1579,6 +1585,15 @@ through a local set that lacked `swin_image` / `pubmedclip_image` and their
 `STAGE1_IMAGE_INPUT_KEYS`, pinned against `forward_image`'s own-input tuple by
 `tests/test_stage1_record_inputs.py`. Affects every soft-token / cue mode and
 `generate_stage2_reports.py`; `medgemma_direct` never builds Stage-1 records.
+
+⚠ **Stage-2 TRAIN records are computed from augmented images (observed
+2026-10-11, not changed).** `make_stage1_loader` builds `MIMIC_CXR_Dataset`
+with the run's YAML, and for `split="train"` that turns on the training
+augmentation (random affine + jitter, p=0.5 each) on the BioViL tensor. So the
+cached soft tokens and MHCAC cues of every train record come from one random
+augmented draw per study, while val/test records come from clean images.
+Mild, but it is a train/test difference in Stage 2's inputs; a measurement
+script must switch it off (`scripts/embed_cxr_encoders.py` does).
 
 ⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
 EPOCH. Every arm A number must be reported that way.** The planned
