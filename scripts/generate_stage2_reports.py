@@ -113,13 +113,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     stage1.add_argument("--threshold-path", type=Path, default=None)
     stage1.add_argument("--num-workers", type=int, default=4)
     stage1.add_argument("--cue-rule", default="argmax",
-                        choices=("argmax", "paper_thresholds", "none"),
+                        choices=("argmax", "paper_thresholds", "none", "cutpoints"),
                         help="How MHCAC's three-class predictions become the prompt's "
                              "P/N/U groups. argmax (default): every finding under its "
                              "most probable class. paper_thresholds: a finding is listed "
                              "only when a class clears its per-class threshold "
                              "(META-CXR Fig. 11; needs --threshold-path from "
                              "scripts/calibrate_thresholds.py). none: no cues. "
+                             "cutpoints: every finding by the Stage-1 headline rule, two "
+                             "validation cutpoints on p_pos/(p_pos+p_neg) (needs "
+                             "--threshold-path from calibrate_thresholds.py --rule "
+                             "cutpoints). "
                              "Changing this changes the Stage-1 cache identity.")
     stage1.add_argument("--finding-tokens", default="off",
                         choices=("off", "q_only"),
@@ -177,12 +181,20 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
             "--cue-rule paper_thresholds needs --threshold-path (a per-class file "
             "from scripts/calibrate_thresholds.py, fitted on Stage-1 validation)"
         )
+    if args.cue_rule == "cutpoints" and args.threshold_path is None:
+        raise SystemExit(
+            "--cue-rule cutpoints needs --threshold-path (a cutpoint file from "
+            "scripts/calibrate_thresholds.py --rule cutpoints, fitted on Stage-1 "
+            "validation)"
+        )
     if args.cue_rule != "argmax":
         if not mode.requires_stage1:
             raise SystemExit("--cue-rule requires a Stage-1 pipeline mode")
         # The paper prompt lists only findings that cleared a threshold, as the
         # paper describes for Eq. 22; it needs no v2 cue-state contract.
-        if args.prompt_style != PROMPT_STYLE_PAPER:
+        # cutpoints lists every finding, like argmax, so it has no abstention
+        # state that needs the v2 cue-state contract.
+        if args.prompt_style != PROMPT_STYLE_PAPER and args.cue_rule != "cutpoints":
             if args.prompt_config is None:
                 raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
             from stage2.prompts import load_prompt_config
@@ -314,7 +326,10 @@ def stage1_records(args: argparse.Namespace) -> list[dict]:
         config_path=args.stage1_config
         or (fig9.PROJECT_DIR / "pretraining/configs/mimic_cxr_full.yaml"),
         checkpoint_path=args.stage1_checkpoint,
-        thresholds=fig9.load_thresholds(args.threshold_path),
+        thresholds=(fig9.load_thresholds(args.threshold_path)
+                    if args.cue_rule != fig9.CUE_RULE_CUTPOINTS else {}),
+        cutpoints=(fig9.load_cue_cutpoints(args.threshold_path)
+                   if args.cue_rule == fig9.CUE_RULE_CUTPOINTS else {}),
     )
     fig9.set_seed(args.seed)
     cache_dir = args.stage1_cache_dir or args.output_dir

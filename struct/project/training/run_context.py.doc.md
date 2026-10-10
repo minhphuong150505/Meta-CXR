@@ -1,13 +1,14 @@
 > Source: `training/run_context.py` (81 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-08-12
+> Last verified against source: 2026-10-10
 
 # `training/run_context.py`
 
 ## Purpose
 
 `Stage1Context` — gói mọi thứ cần để định vị và tái tạo một Stage-1 run: tên run,
-đường config override, đường checkpoint override và threshold.
+đường config override, đường checkpoint override, threshold Eq. 22 và (từ 2026-10-10)
+`cutpoints` — `{bệnh: (t1, t2)}` cho `--cue-rule cutpoints`, đóng băng như threshold.
 
 ## Why it exists
 
@@ -52,6 +53,8 @@ Không.
 
 `fingerprint_payload()` là thứ cho phép truy vết một kết quả về đúng Stage-1 run
 sinh ra nó. `thresholds` phải tiếp tục được copy vào mapping chỉ đọc; nếu giữ lại
-dict từ caller, frozen dataclass vẫn có thể bị mutate gián tiếp.
+dict từ caller, frozen dataclass vẫn có thể bị mutate gián tiếp. `cutpoints` chỉ
+vào `fingerprint_payload()` khi khác rỗng, để mọi fingerprint/cache Stage-1 tính
+trước khi có trường này giữ nguyên (`tests/test_cue_rule_cutpoints.py`).
 
 ← [training/](_index.md) · [HOME](../../HOME.md)

@@ -57,7 +57,12 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
 - **Eq. 22 thresholds (`threshold_calibration.py`)** are the paper's per-(finding,
   class) ROC-distance thresholds (Fig. 11), used only for the Stage-2
   prompt (`--cue-rule paper_thresholds`). Stage-2 cue rules: `argmax` (default),
-  `paper_thresholds`, `none`.
+  `paper_thresholds`, `none`, and **`cutpoints`** (2026-10-10: the Stage-1
+  headline rule as cues -- every reportable finding placed by its two
+  validation cutpoints; `--threshold-path` takes the cutpoint file, loaded into
+  `Stage1Context.cutpoints`, which enters fingerprints only when non-empty so
+  existing Stage-1 record caches still hit; never abstains, so it needs no
+  guided `--prompt-config`). Pinned by `tests/test_cue_rule_cutpoints.py`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).
@@ -2153,7 +2158,7 @@ with no mention gate, while 0.7643 is **test** with calibrated thresholds and
 `marginal_positive`, `mention_gated`, selective) were REMOVED with the mention
 gate.** `--cue-rule` is now `argmax` (default) | `paper_thresholds` (per-class
 Eq. 22 thresholds, needs `--threshold-path` from `scripts/calibrate_thresholds.py`)
-| `none`; finding tokens are `q_only` only. The paragraphs are kept as history.
+| `none` | `cutpoints` (2026-10-10); finding tokens are `q_only` only. The paragraphs are kept as history.
 
 **Cue contract, corrected 2026-09-08.** Both `run_medgemma_qlora.py` and
 `generate_stage2_reports.py` accept `--cue-rule`; all train/val/test records and

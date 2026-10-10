@@ -3,7 +3,7 @@
 
 # `main()`
 
-> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `--cue-rule` ∈ {`argmax`, `paper_thresholds`, `none`}; `--finding-tokens full` đã bị XÓA. Xem [D-023](../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
+> ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `--cue-rule` ∈ {`argmax`, `paper_thresholds`, `none`, `cutpoints` (2026-10-10, không cần `--prompt-config` vì không bao giờ bỏ trống bệnh nào)}; `--finding-tokens full` đã bị XÓA. Xem [D-023](../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
 
 
 ## Located in

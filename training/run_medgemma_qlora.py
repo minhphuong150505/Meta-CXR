@@ -77,7 +77,8 @@ def parse_args() -> argparse.Namespace:
         "--threshold-path",
         type=Path,
         help="Per-class thresholds from scripts/calibrate_thresholds.py (fitted on "
-             "Stage-1 validation); required by --cue-rule paper_thresholds.",
+             "Stage-1 validation); required by --cue-rule paper_thresholds. With "
+             "--cue-rule cutpoints: a file from calibrate_thresholds.py --rule cutpoints.",
     )
     parser.add_argument(
         "--finding-tokens", choices=fig9.FINDING_TOKEN_MODES, default=fig9.FINDING_TOKENS_OFF,
@@ -90,7 +91,9 @@ def parse_args() -> argparse.Namespace:
         "--cue-rule", choices=fig9.CUE_RULES, default=fig9.DEFAULT_CUE_RULE,
         help="How MHCAC's three-class predictions become P/N/U cues, identical to "
              "generation --cue-rule. argmax (default) | paper_thresholds (needs "
-             "--threshold-path from scripts/calibrate_thresholds.py) | none. "
+             "--threshold-path from scripts/calibrate_thresholds.py) | none | "
+             "cutpoints (Stage-1 headline rule; --threshold-path from "
+             "calibrate_thresholds.py --rule cutpoints). "
              "Abstaining rules require a matching guided --prompt-config.",
     )
     parser.add_argument(
@@ -505,6 +508,11 @@ def main() -> None:
             "--cue-rule paper_thresholds needs --threshold-path (per-class file "
             "from scripts/calibrate_thresholds.py)"
         )
+    if args.cue_rule == fig9.CUE_RULE_CUTPOINTS and args.threshold_path is None:
+        raise SystemExit(
+            "--cue-rule cutpoints needs --threshold-path (cutpoint file from "
+            "scripts/calibrate_thresholds.py --rule cutpoints)"
+        )
     try:
         validate_prompt_style(
             args.prompt_style, modes,
@@ -519,12 +527,13 @@ def main() -> None:
         # The paper prompt renders the P/N/U groups straight from the record,
         # listing only findings that cleared a threshold -- which is what the
         # paper describes for Eq. 22 -- so it needs no v2 cue-state contract.
-        if not paper_prompt and (prompt_config is None or any(
+        if (not paper_prompt and args.cue_rule not in fig9.NON_ABSTAINING_CUE_RULES
+                and (prompt_config is None or any(
             mode.requires_stage1 and (
                 prompt_config.visual_mode.image_mode != mode.image_mode
                 or not prompt_config.visual_mode.includes_structured
             ) for mode in modes
-        )):
+        ))):
             raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
     if args.finding_tokens != fig9.FINDING_TOKENS_OFF:
         if not needs_stage1:
@@ -541,7 +550,10 @@ def main() -> None:
         run_name=args.stage1_run,
         config_path=args.stage1_config,
         checkpoint_path=args.stage1_checkpoint,
-        thresholds=fig9.load_thresholds(args.threshold_path),
+        thresholds=(fig9.load_thresholds(args.threshold_path)
+                    if args.cue_rule != fig9.CUE_RULE_CUTPOINTS else {}),
+        cutpoints=(fig9.load_cue_cutpoints(args.threshold_path)
+                   if args.cue_rule == fig9.CUE_RULE_CUTPOINTS else {}),
     )
     fig9.set_seed(fig9.SEED)
     root = Path(args.output_dir)

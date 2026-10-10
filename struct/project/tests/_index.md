@@ -126,6 +126,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | `test_classification_metrics.py` (377) | P/R/F1, per-pathology, uncertain policy |
 | `test_threshold_calibration.py` (256) | Calibrate + baseline + bootstrap |
 | `test_stage1_cutpoint_headline.py` (2026-10-10) | File hai ngưỡng/bệnh: ghi/đọc, từ chối file Eq. 22 và t1 > t2, `evaluate_classification(cutpoints=)`, CLI `--cutpoints` kèm `argmax_reference`, từ chối file fit trên split đang chấm, kiểm file đã ship (14 bệnh, từ val) |
+| `test_cue_rule_cutpoints.py` (2026-10-10) | `--cue-rule cutpoints`: fingerprint `Stage1Context` không đổi khi rỗng, CLI sinh báo cáo cần file / chấp nhận với prompt paper, xếp lớp theo severity, khớp `apply_cutpoints` của evaluator, từ chối file thiếu hoặc fit trên test (các test fig9 skip trên máy CPU) |
 | `test_generation_metrics.py` (314) | BLEU/ROUGE, error analysis |
 | `test_evaluation_integration.py` (379) | End-to-end evaluator |
 | `test_clinical_metrics.py` | ⚠ **Chỉ số thiếu báo unavailable, KHÔNG trả 0** |

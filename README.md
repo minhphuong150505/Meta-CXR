@@ -1184,7 +1184,8 @@ python scripts/generate_stage2_reports.py \
     --output-dir <private>/argmax
 # ⚠ D-023 (2026-09-29): các rule nhị phân marginal_positive / conditional_positive
 # và file ngưỡng marginal_pfit đã bị XÓA. Lệnh gốc của các số trên không còn chạy
-# được; rule hiện có: argmax | paper_thresholds (--threshold-path, Eq. 22) | none.
+# được; rule hiện có: argmax | paper_thresholds (--threshold-path, Eq. 22) | none
+# | cutpoints (2026-10-10; --threshold-path là file từ calibrate_thresholds.py --rule cutpoints).
 ```
 
 ### Original paper reference results
@@ -1364,7 +1365,7 @@ của model; chỉ fallback về tokenizer EOS nếu model không cấu hình. S
 lại stop IDs thực tế. Đây là lỗi dùng chung cho Arm A/C; cần đối chứng riêng
 để đo ảnh hưởng đến lặp câu và không quy toàn bộ chênh lệch A/C cho nó.
 
-⚠ **ĐÃ THAY 2026-09-29 (D-023):** các luật `conditional_positive` / `mention_gated` / `marginal_positive` / selective đã bị gỡ cùng mention gate. `--cue-rule` giờ là `argmax` (mặc định: mỗi bệnh vào lớp có xác suất cao nhất) | `paper_thresholds` (ngưỡng theo từng lớp của bài báo, Eq. 22, cần `--threshold-path` từ `scripts/calibrate_thresholds.py`; bệnh không lớp nào vượt ngưỡng thì không đưa vào prompt) | `none`. Phần dưới đây giữ làm lịch sử.
+⚠ **ĐÃ THAY 2026-09-29 (D-023):** các luật `conditional_positive` / `mention_gated` / `marginal_positive` / selective đã bị gỡ cùng mention gate. `--cue-rule` giờ là `argmax` (mặc định: mỗi bệnh vào lớp có xác suất cao nhất) | `paper_thresholds` (ngưỡng theo từng lớp của bài báo, Eq. 22, cần `--threshold-path` từ `scripts/calibrate_thresholds.py`; bệnh không lớp nào vượt ngưỡng thì không đưa vào prompt) | `none` | `cutpoints` (2026-10-10: luật của số chính Stage 1, hai ngưỡng fit trên val mỗi bệnh, mọi bệnh đều được xếp lớp). Phần dưới đây giữ làm lịch sử.
 
 (Lịch sử) Cả training và generation nhận `--cue-rule conditional_positive|mention_gated|marginal_positive|none`; training truyền cùng rule cho train/val/test và ghi vào summary/manifest. **Từ 2026-09-10, pipeline đưa findings Stage 1 vào prompt mặc định dùng `marginal_positive`: `sigmoid(mention_logits) × q_positive >= ngưỡng` mới cung cấp cue dương tính.** Nhãn dưới ngưỡng không cung cấp cue, không được coi là âm tính. Ngưỡng mỗi nhãn lấy từ `--threshold-path` nếu có khóa `marginal_positive`, nếu không dùng **0,5**; không tự nạp file hiệu chuẩn của checkpoint khác. Marginal/abstaining rules cần `--prompt-config` guided khớp visual mode. Muốn tái lập rule cũ, truyền rõ `--cue-rule conditional_positive`. Pipeline không dùng structured cues giữ hành vi cũ. Thay đổi mặc định này chưa phải bằng chứng cải thiện NLG; dùng output mới khi đổi rule.
 
