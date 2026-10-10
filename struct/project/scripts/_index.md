@@ -62,6 +62,12 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `diagnose_stream_scale.py` (231) | [📄](diagnose_stream_scale.py.doc.md) | 🔬 | Đo RMS token mỗi encoder tại điểm nối + attention mass của MHCAC. **Read-only** — đo được chênh lệch **32×**, xem trang doc |
 | `probe_soft_tokens.py` (215) | [📄](probe_soft_tokens.py.doc.md) | 🔬 | Linear probe trên 32 soft token của Q-Former, trước khi đốt ~70 h cho arm C. Đo được **macro AUROC 0,6847** (xáo trộn 0,4838; MHCAC 0,7643) — soft token có tín hiệu dù cross-attention chưa train |
 | `probe_soft_tokens_cached.py` | [📄](probe_soft_tokens_cached.py.doc.md) | 🔬 | Probe soft token từ cache Stage 2 (train→val→test), so với MHCAC trên cùng study. 2026-10-11: pooled 0,713 vs MHCAC 0,745; **32 token sụp thành một** (cosine trong study 0,9995) |
+| `diagnose_qformer_collapse.py` | [📄](diagnose_qformer_collapse.py.doc.md) | 🔬 | Q-Former sụp ở phase nào: cosine/PR theo tầng, entropy cross-attention, token "hút" attention, norm token ảnh. 2026-10-11: sụp ở **1a**, 1b làm lệch đầu vào |
+| `analyze_stage2_generations.py` | [📄](analyze_stage2_generations.py.doc.md) | 🔬 | Lỗi báo cáo sinh: độ dài, khuôn mẫu, ngôn ngữ so sánh thời gian, CE xấp xỉ bằng lexicon |
+| `retrieval_report_baselines.py` | [📄](retrieval_report_baselines.py.doc.md) | 🔬 | Mốc truy hồi theo soft token / nhãn MHCAC / nhãn thật / embedding ngoài |
+| `embed_medgemma_images.py` | [📄](embed_medgemma_images.py.doc.md) | 🔬 | Embedding ảnh của MedGemma cho mốc truy hồi |
+| `prior_report_baseline.py` | [📄](prior_report_baseline.py.doc.md) | 🔬 | Mốc chép FINDINGS lần chụp trước của cùng bệnh nhân |
+| `probe_image_features.py` | [📄](probe_image_features.py.doc.md) | 🔬 | Probe tuyến tính cùng giao thức cho soft token và embedding ngoài (vd. MedGemma), so với MHCAC |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |
 

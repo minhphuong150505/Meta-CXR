@@ -1,5 +1,9 @@
 # Repo này khác gì so với bài báo gốc
 
+> Bản tổng hợp mới nhất, phân loại theo tính mới / kết quả âm / đề xuất:
+> [`CHI_MUC_TINH_MOI.md`](CHI_MUC_TINH_MOI.md) (2026-10-11). File này giữ làm
+> đối chiếu chi tiết với code gốc tại mốc 2026-08-19.
+
 So sánh với `DasithEdirisinghe/META-CXR` (bản code đi kèm bài báo IEEE Access,
 09/2025), đối chiếu trực tiếp trên source ngày **2026-08-19**. Mọi khẳng định
 dưới đây đều lấy từ file thật của cả hai bên, không lấy từ mô tả trong paper.
