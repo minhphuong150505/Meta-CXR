@@ -1,6 +1,7 @@
 # Chỉ mục tính mới so với bài báo META-CXR
 
-Cập nhật 2026-10-11. Bài báo gốc: D. Edirisinghe et al., "Chest X-Ray Report
+Cập nhật 2026-10-11 (lần 2: thêm cơ chế sụp token, mốc chép báo cáo lần trước,
+truy hồi bằng embedding MedGemma). Bài báo gốc: D. Edirisinghe et al., "Chest X-Ray Report
 Generation Using Abnormality Guided Vision Language Model", IEEE Access, vol. 13,
 2025 (META-CXR). Mọi chi tiết "bài báo" dưới đây đã đối chiếu với văn bản PDF
 (mục III–V, Eq. 22, Bảng 2–7, Hình 10–11); chi tiết bài báo không nêu thì ghi
@@ -141,6 +142,11 @@ hướng hiệu dụng 1,002 (khởi tạo 2,94). Từ tầng cross-attention th
 query nhìn cùng một token ảnh (entropy 0,11, một token chiếm 0,79 attention). ITM
 ở mức ngẫu nhiên suốt 1a (val 0,644–0,670, ngẫu nhiên 0,6365). Run cũ cũng vậy
 (0,9999) — lỗi có tính hệ thống của thiết kế/huấn luyện, không phải một run.
+**Cơ chế:** ở hai tầng cross-attention đầu sau 1a, token nhận nhiều attention nhất
+là chỉ số 196 ở 100% study, tức **token CLS toàn cục của PubMedCLIP** (0,23 và 0,33
+tổng attention). Khi cả 32 query đọc cùng một token toàn cục, trạng thái của chúng
+trùng nhau (cosine 0,915 sau tầng 1, 1,000 từ tầng 3); các tầng sau dùng chung trọng
+số cho mọi query nên không còn gì phá được đối xứng — sụp không đảo ngược.
 
 **TM-12 — Pha 1b và 1c.** Q-Former bị đóng băng ở 10% đầu 1b, trong khi
 StreamAdapter (không có LayerNorm phía sau ở PubMedCLIP, Swin) đẩy norm token
@@ -167,7 +173,12 @@ liệu: PromptMRG (CE F1 0,370 → 0,444, BLEU-4 0,116 → 0,106), RaDialog (CE 
 **TM-15 — Thiếu bối cảnh lâm sàng.** 90,0% FINDINGS test có ngôn ngữ so sánh thời
 gian; 89,6% study test có lần chụp trước với FINDINGS; 91,7% có INDICATION/HISTORY.
 Mô hình không có những thông tin này và tự viết câu so sánh trong 51% báo cáo mà
-bản gốc không so sánh. Bài báo không dùng các nguồn này.
+bản gốc không so sánh. Bài báo không dùng các nguồn này. **Mốc chép FINDINGS lần
+chụp trước** (không học gì; 2.508/2.800 study test có lần trước): CE lexicon 0,356
+so với mô hình 0,236 trên cùng study; CIDEr +0,0459 [+0,0210; +0,0699], ROUGE-L
+−0,0067 [−0,0116; −0,0017]. Ghép "lần trước nếu có, không thì mô hình" trên cả 2.800
+study: BLEU-1 0,391, BLEU-4 0,106 — ngang bài báo (0,390 / 0,102). Phân bố lệch:
+89,6% study test có lần trước nhưng train chỉ 64,1% (khoảng cách trung vị 7–9 ngày).
 
 **TM-16 — Ngưỡng Eq. 22.** Bài báo không nêu ngưỡng fit trên tập nào (đường ROC duy
 nhất, Hình 5, vẽ trên test) và không công bố file ngưỡng. Dùng Eq. 22 fit trên val
@@ -188,13 +199,19 @@ của dự án, chấm test: weighted F1 0,702, F1 5 bệnh 0,637 — thấp hơ
 ## E — Đề xuất chưa làm (chờ duyệt)
 
 **TM-23 — Bối cảnh trong prompt Stage 2:** INDICATION/HISTORY và FINDINGS của lần
-chụp trước. Bằng chứng: TM-15; RaDialog thêm indication BLEU-4 9,5 → 14,8, ROUGE-L
-27,1 → 31,6; MAIRA-2 bỏ lần chụp trước lúc suy luận ROUGE-L −28,9%.
+chụp trước. Bằng chứng (mạnh nhất trong mọi thứ đã đo): TM-15 — chỉ chép FINDINGS
+lần trước đã ngang bài báo ở BLEU và hơn mô hình 0,12 CE lexicon; RaDialog thêm
+indication BLEU-4 9,5 → 14,8, ROUGE-L 27,1 → 31,6; MAIRA-2 bỏ lần chụp trước lúc suy
+luận ROUGE-L −28,9%. Kế hoạch pilot: `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
 
 **TM-24 — Kênh ảnh gốc của MedGemma** (MedSigLIP, 256 token, đã train trên 231k
-ảnh MIMIC-CXR) thay 32 soft token sụp. Bằng chứng: TM-11/TM-13; MedGemma 4B PT
-RadGraph F1 29,5, MedGemma 1.5 4B 27,2 không fine-tune; MAIRA-2/LLaVA-Rad dùng toàn
-bộ patch token qua MLP.
+ảnh MIMIC-CXR) thay 32 soft token sụp. **Bằng chứng yếu, chỉ là giả thuyết:** tài
+liệu ủng hộ (MedGemma 4B PT RadGraph F1 29,5, MedGemma 1.5 4B 27,2 không fine-tune;
+MAIRA-2/LLaVA-Rad dùng toàn bộ patch token qua MLP), nhưng đo tại chỗ thì truy hồi
+bằng embedding ảnh MedGemma (trung bình 256 token) không hơn soft token về nội dung
+(CE lexicon 0,240 so với 0,259; ROUGE-L 0,226 so với 0,220), và MedGemma zero-shot
+thua v3 beam trên mọi chỉ số trừ METEOR. Chỉ train mới kiểm chứng được; train ảnh
+gốc đắt gấp ~4 lần.
 
 **TM-25 — Sửa Stage 1 nếu giữ META-Former:** chuẩn hóa từng luồng trước Q-Former và
 sau StreamAdapter, phạt độ giống nhau giữa các query, bỏ ITM, 1a 2 epoch, thay 1c

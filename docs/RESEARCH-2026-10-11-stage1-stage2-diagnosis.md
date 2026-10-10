@@ -46,7 +46,14 @@ Script (đều chỉ đọc, chạy trên máy train): `scripts/diagnose_qformer
   0,635 vs 0,833, Lung Lesion 0,715 vs 0,748). Một vector toàn cục không chứa được
   bằng chứng khu trú, và các mục tiêu ở mức cả báo cáo (ITC/LM) bị bệnh phổ biến chi phối.
 
-_(thí nghiệm đang chạy trên máy train — mục này được cập nhật khi có kết quả)_
+**Cơ chế sụp (token "hút" attention).** Sau 1a, ở hai tầng cross-attention đầu,
+token nhận nhiều attention nhất là **chỉ số 196 ở 100% study — token CLS toàn cục
+của PubMedCLIP** (chiếm 0,23 và 0,33 tổng attention). Khi cả 32 query cùng đọc một
+token toàn cục, trạng thái của chúng trùng nhau (cosine 0,915 sau tầng 1, 1,000 từ
+tầng 3). Các tầng sau dùng chung trọng số cho mọi query (self-attention giữa các
+query giống nhau, FFN dùng chung), nên không còn gì phá được đối xứng: sụp **không
+đảo ngược**. Ở 1c không còn một token hút duy nhất (38–65 token khác nhau) nhưng
+bản đồ attention của các query vẫn gần như trùng nhau (cosine 0,90–0,99).
 
 ## 2. Stage 1: độ dài và config các phase
 
@@ -75,7 +82,13 @@ cả hai phía (xấp xỉ tương đối, không phải CheXbert).
 | chép theo nhãn dự đoán MHCAC | 0,057 | 0,213 | 0,052 | 0,304 | **0,294** | **0,455** |
 | chép theo nhãn THẬT (oracle) | 0,072 | 0,230 | 0,085 | 0,334 | **0,416** | **0,559** |
 
-_(thí nghiệm đang chạy trên máy train — mục này được cập nhật khi có kết quả)_
+**Truy hồi bằng embedding ảnh gốc của MedGemma** (trung bình 256 token mà LLM của
+MedGemma đọc; cùng 60.000 study train): BLEU-4 0,068, ROUGE-L 0,226, CIDEr 0,077,
+BERTScore 0,328, CE lexicon 0,240 / F1-5 0,336 — NLG nhích hơn truy hồi theo soft
+token (0,062 / 0,220 / 0,066 / 0,315) nhưng CE thấp hơn (0,259 / 0,362). Khi lấy
+trung bình, ảnh gốc MedGemma **không** mang nhiều thông tin báo cáo hơn soft token.
+Lợi thế (nếu có) của kênh ảnh gốc chỉ có thể đến từ 256 token không gian đưa thẳng
+vào LLM — điều này chỉ kiểm chứng được bằng train, nên là giả thuyết.
 
 Nguyên nhân, theo bằng chứng:
 
@@ -105,7 +118,18 @@ Nguyên nhân, theo bằng chứng:
    LR 3e-4. Kênh nhìn ảnh gốc của MedGemma (MedSigLIP, đã train trên 231k ảnh +
    báo cáo MIMIC-CXR) bị bỏ hoàn toàn ở chế độ paper.
 
-_(thí nghiệm đang chạy trên máy train — mục này được cập nhật khi có kết quả)_
+**Mốc "chép FINDINGS lần chụp trước"** (`prior_report_baseline.py`; 2.508/2.800
+study test có lần trước): so với v3 beam trên cùng 2.508 study, CIDEr +0,0459
+[+0,0210; +0,0699], ROUGE-L −0,0067 [−0,0116; −0,0017], BERTScore −0,0049
+[−0,0107; +0,0009], BLEU-4 +0,0032 (không có ý nghĩa); **CE lexicon 0,356 so với
+0,236** (F1-5 0,424 so với 0,382), mention recall 0,411 so với 0,337. Ghép "chép lần
+trước nếu có, không thì v3 beam" trên cả 2.800 study: BLEU-1 0,391, BLEU-4 0,106,
+METEOR 0,155, ROUGE-L 0,259, CIDEr 0,169, BERTScore 0,365 — **ngang bài báo ở
+BLEU-1/BLEU-4 (0,390 / 0,102) mà không học gì**, và nội dung lâm sàng tốt hơn hẳn mô
+hình. Bối cảnh lần chụp trước là đòn bẩy có bằng chứng mạnh nhất trong mọi thứ đã đo.
+Lưu ý phân bố: 89,6% study test có lần trước nhưng train chỉ 64,1% (khoảng cách
+trung vị 7–9 ngày, khoảng một nửa ≤ 7 ngày) — tập test MIMIC nghiêng về bệnh nhân
+chụp nhiều lần.
 
 _(thí nghiệm đang chạy trên máy train — mục này được cập nhật khi có kết quả)_
 
