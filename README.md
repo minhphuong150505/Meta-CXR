@@ -374,6 +374,14 @@ python scripts/evaluate_stage1.py --predictions <test.npz> \
     --cutpoints configs/stage1_cutpoints/<run>.json --output-dir <dir>
 ```
 
+**Thay đổi đã duyệt 2026-10-11** (chưa chạy trên GPU trừ khi có ghi chú): Stage 1 pha 1b
+còn 3 epoch và pha 1c không chạy mặc định (1b chấm test); Stage 2 có `--prompt-style
+paper_context` (thêm INDICATION/HISTORY và FINDINGS lần chụp trước vào prompt bài báo),
+`--train-cues oracle_mix` (cue lúc train lấy từ nhãn thật, 20% giữ cue MHCAC), beam
+(`--num-beams 4 --length-penalty 2.0`); chấm điểm bằng `scripts/score_stage2_paper_protocol.py`
+và CE thật bằng CheXbert `scripts/score_ce_chexbert.py` (venv riêng `~/.venvs/chexbert`).
+Pilot chọn công thức Stage 2: `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
+
 **Tổng hợp chẩn đoán 2026-10-11** (soft token META-Former sụp thành một vector ở pha 1a,
 pha 1c không giúp phân loại, Stage 2 bỏ qua cue, giá trị của báo cáo lần chụp trước, đề
 xuất chờ duyệt): [`docs/TONG_HOP_2026-10-11.md`](docs/TONG_HOP_2026-10-11.md); chỉ mục khác

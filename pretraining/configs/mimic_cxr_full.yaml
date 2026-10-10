@@ -1016,7 +1016,11 @@ run:
         test_splits: []
     phase1b:
       description: hand-over to MHCAC; META-Former faded out and frozen
-      epochs: 5
+      # 3, not the paper's 5 (user decision 2026-10-11): on run_20261005_paper
+      # val AUROC peaked at epoch index 2 (0.757/0.764/0.778/0.775/0.773) and
+      # macro recall likewise. A 3-epoch cosine is a different LR curve, so the
+      # first run with this value is its own measurement. docs/TONG_HOP_2026-10-11.md
+      epochs: 3
       init_from: {phase: phase1a}
       trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias,
                   shared_visual_projector, ln_vision, stream_adapters, view_fusion,
@@ -1063,7 +1067,13 @@ run:
         early_stop_patience: 0
         selection_metric: macro_recall
         save_predictions: true
-        test_splits: []
+        # 1b is the LAST phase run by default since 2026-10-11 (1c dropped: test
+        # AUROC 1b-best vs 1c +0.0037 [-0.0012, +0.0095], and 1c cut ITC R@5
+        # 0.65 -> 0.17), so the held-out test split is scored here, once, from
+        # checkpoint_best.
+        test_splits: [test]
+    # NOT RUN BY DEFAULT since 2026-10-11 (scripts/run_stage1_phases.sh runs
+    # "phase1a phase1b"); kept for ablation and to reproduce earlier runs.
     phase1c:
       description: joint classification + alignment (w_align = 1.0)
       epochs: 1

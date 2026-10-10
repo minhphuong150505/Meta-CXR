@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Stage 1 as the META-CXR paper trains it: phase 1a -> 1b -> 1c (D-020).
+# Stage 1 phases (D-020): 1a -> 1b by default; the paper's 1c is opt-in since
+# 2026-10-11 (see PHASES).
 #
 #   ROOT=$HOME/run_<date>_3phase bash scripts/run_stage1_phases.sh
 #
@@ -7,7 +8,9 @@
 #   ROOT        run root; each phase writes <ROOT>/<phase>/, and every
 #               checkpoint_<phase>.pth also lands in <ROOT>/ (run.phase_root)
 #   CACHE       phase-1a feature cache (anchor-only, train+val); built if absent
-#   PHASES      subset/order to run, default "phase1a phase1b phase1c"
+#   PHASES      subset/order to run, default "phase1a phase1b" (phase1c
+#               dropped 2026-10-11: no test AUROC gain, breaks the alignment;
+#               PHASES="phase1a phase1b phase1c" reproduces earlier runs)
 #   EXTRA_OPTS  extra --options for every phase (smoke: truncation, epochs)
 #   CACHE_OPTS  extra arguments for the cache build (smoke: --truncate N)
 #   PY, CFG     interpreter and YAML
@@ -27,7 +30,7 @@ set -euo pipefail
 
 ROOT=${ROOT:?set ROOT to a new directory on /home}
 CACHE=${CACHE:-$ROOT/feature_cache_anchor}
-PHASES=${PHASES:-"phase1a phase1b phase1c"}
+PHASES=${PHASES:-"phase1a phase1b"}
 EXTRA_OPTS=${EXTRA_OPTS:-}
 CACHE_OPTS=${CACHE_OPTS:-}
 PY=${PY:-$HOME/.venvs/meta-cxr-stage1-311/bin/python}

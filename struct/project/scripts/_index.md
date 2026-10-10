@@ -68,6 +68,8 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `embed_medgemma_images.py` | [📄](embed_medgemma_images.py.doc.md) | 🔬 | Embedding ảnh của MedGemma cho mốc truy hồi |
 | `prior_report_baseline.py` | [📄](prior_report_baseline.py.doc.md) | 🔬 | Mốc chép FINDINGS lần chụp trước của cùng bệnh nhân |
 | `probe_image_features.py` | [📄](probe_image_features.py.doc.md) | 🔬 | Probe tuyến tính cùng giao thức cho soft token và embedding ngoài (vd. MedGemma), so với MHCAC |
+| `score_stage2_paper_protocol.py` | [📄](score_stage2_paper_protocol.py.doc.md) | ✅ | Chấm Stage 2 theo giao thức bài báo + CE lexicon + so sánh ghép cặp (2026-10-11) |
+| `score_ce_chexbert.py` | [📄](score_ce_chexbert.py.doc.md) | ✅ | CE bằng CheXbert (`f1chexbert`, venv riêng) + so sánh ghép cặp (2026-10-11) |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |
 

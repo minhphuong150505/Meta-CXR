@@ -113,3 +113,9 @@ live microbatch plus the queue, not from gradient accumulation."* — tăng
 `accum_grad_iters` **không** làm ITC có thêm negative.
 
 ← [`_index.md`](_index.md) · [HOME](../../../HOME.md)
+
+## 2026-10-11 — rút gọn Stage 1 (quyết định của user)
+- `run.phases.phase1b.epochs: 3` (bài báo 5): trên `run_20261005_paper` val AUROC đỉnh ở epoch chỉ số 2.
+  Lịch cosine 3 epoch là một đường LR khác, nên run đầu với giá trị này là một phép đo mới.
+- `run.phases.phase1b.run.test_splits: [test]`: 1b là pha cuối mặc định, chấm test một lần.
+- `phase1c` giữ trong YAML nhưng không chạy mặc định (`scripts/run_stage1_phases.sh`).

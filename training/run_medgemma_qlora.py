@@ -97,6 +97,22 @@ def parse_args() -> argparse.Namespace:
              "Abstaining rules require a matching guided --prompt-config.",
     )
     parser.add_argument(
+        "--reports-root", type=Path, default=None,
+        help="Raw MIMIC-CXR report files (p1X/pXXXXXXXX/sYYYYYYY.txt), read for the "
+             "INDICATION/HISTORY of --prompt-style paper_context. Default: "
+             "<data_root>/mimic-cxr-reports/files from configs/env_config.yaml.",
+    )
+    parser.add_argument(
+        "--train-cues", choices=("predicted", "oracle_mix"), default="predicted",
+        help="Cues of the TRAINING records. predicted (default): MHCAC's, as at "
+             "inference. oracle_mix (2026-10-11): the true CheXpert class, except "
+             "with probability --train-cue-model-share MHCAC's -- so the model learns "
+             "to rely on cues. Validation/test keep MHCAC's cues.",
+    )
+    parser.add_argument("--train-cue-model-share", type=float, default=0.2,
+                        help="oracle_mix only: share of (study, finding) cues taken "
+                             "from MHCAC instead of the true label.")
+    parser.add_argument(
         "--pipeline-mode",
         choices=list(CHOICES),
         default=DEFAULT_PIPELINE_MODE,
@@ -489,6 +505,41 @@ def build_native_records(
     return tuple(records)  # type: ignore[return-value]
 
 
+def attach_prompt_inputs(args, train_records: list[dict], val_records: list[dict],
+                         test_records: list[dict]) -> dict:
+    """Study context (paper_context) and oracle-mix training cues. Returns counts only.
+
+    Both run AFTER the Stage-1 records are built or read from cache, so neither
+    changes the cohort fingerprint or a cached encode pass.
+    """
+    report: dict = {}
+    if args.prompt_style == fig9.PROMPT_STYLE_PAPER_CONTEXT:
+        from dataio.study_context import attach_study_context
+        from local_config import METADATA_CSV, PATH_TO_MIMIC_CXR
+
+        reports_root = args.reports_root or Path(PATH_TO_MIMIC_CXR) / "mimic-cxr-reports" / "files"
+        for split, records in (("train", train_records), ("val", val_records), ("test", test_records)):
+            if not records:
+                continue
+            counts = attach_study_context(
+                records, split_csv=fig9._split_csv_for(split), metadata_csv=METADATA_CSV,
+                reports_root=reports_root,
+            )
+            report[f"context_{split}"] = counts
+            print(f"[context] {split}: {counts}", flush=True)
+    if args.train_cues == "oracle_mix":
+        from dataio.oracle_cues import mix_oracle_cues, true_label_codes
+        from local_config import CHEXPERT_CSV
+
+        codes = true_label_codes(train_records, split_csv=fig9._split_csv_for("train"),
+                                 chexpert_csv=CHEXPERT_CSV, findings=fig9.ABNORMALITIES_14)
+        counts = mix_oracle_cues(train_records, codes, fig9.ABNORMALITIES_14,
+                                 model_share=args.train_cue_model_share, seed=fig9.SEED)
+        report["train_cues"] = counts
+        print(f"[cues] train oracle_mix share={args.train_cue_model_share}: {counts}", flush=True)
+    return report
+
+
 def main() -> None:
     args = parse_args()
     modes = resolve_pipeline_modes(args.pipeline_mode)
@@ -520,7 +571,13 @@ def main() -> None:
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from None
-    paper_prompt = args.prompt_style == fig9.PROMPT_STYLE_PAPER
+    paper_prompt = args.prompt_style in fig9.PAPER_PROMPT_STYLES
+    if args.train_cues == "oracle_mix":
+        if not needs_stage1 or args.cue_rule == fig9.CUE_RULE_NONE:
+            raise SystemExit("--train-cues oracle_mix needs a Stage-1 mode with cues "
+                             "(a --cue-rule other than none)")
+        if not 0.0 <= args.train_cue_model_share <= 1.0:
+            raise SystemExit("--train-cue-model-share must be in [0, 1]")
     if args.cue_rule != fig9.DEFAULT_CUE_RULE:
         if not needs_stage1:
             raise SystemExit("--cue-rule requires a Stage-1 pipeline mode")
@@ -611,6 +668,7 @@ def main() -> None:
         f"[data] train={len(train_records)} val={len(val_records)} test={len(test_records)}",
         flush=True,
     )
+    prompt_inputs = attach_prompt_inputs(args, train_records, val_records, test_records)
 
     results: dict[str, dict] = {}
     adapter_dirs: list[Path] = []
@@ -635,6 +693,11 @@ def main() -> None:
         "prompt_style": None if prompt_config or not needs_stage1 else args.prompt_style,
         "stage1_checkpoint": context.run_name if needs_stage1 else None,
         "cue_rule": args.cue_rule if needs_stage1 else None,
+        "train_cues": args.train_cues if needs_stage1 else None,
+        "train_cue_model_share": (
+            args.train_cue_model_share if args.train_cues == "oracle_mix" else None
+        ),
+        "prompt_inputs": prompt_inputs,
         "finding_tokens": args.finding_tokens,
         "lora_rank": args.lora_rank,
         "lora_alpha": args.lora_alpha,
@@ -660,6 +723,7 @@ def main() -> None:
         "section_mode": args.section_mode,
         "stage1_required": needs_stage1,
         "cue_rule": args.cue_rule if needs_stage1 else None,
+        "train_cues": args.train_cues if needs_stage1 else None,
         "finding_tokens": args.finding_tokens,
         "prompt_style": None if prompt_config or not needs_stage1 else args.prompt_style,
     }

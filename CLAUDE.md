@@ -801,6 +801,12 @@ Source of truth: the paper's "Model pre-training and fine tuning" section, NOT
 the upstream code (which comments out ITC/ITM/ITG in every commit). Plan and
 record: `docs/handoff/PLAN-2026-09-24-meta-former-3phase.md`.
 
+- ⚠ **2026-10-11 (user decision): phase 1b is 3 epochs and phase 1c is opt-in.**
+  `scripts/run_stage1_phases.sh` runs `"phase1a phase1b"` by default and 1b now
+  scores test (`test_splits: [test]`); the 1c block stays for ablation
+  (`PHASES="phase1a phase1b phase1c"`). Evidence: 1b val AUROC peaked at epoch index
+  2 of 5; 1b-best vs 1c on test AUROC +0.0037 [-0.0012, +0.0095]; 1c cut ITC R@5
+  0.65 -> 0.17. A 3-epoch cosine is a new LR curve -- not yet run.
 - `run.phases` in `mimic_cxr_full.yaml`: **phase1a** (Q-Former + shared
   projection, ITC+ITM+LM, MHCAC not run, anchor-only feature cache, batch 32,
   ≤ 4 epochs, ITC gate every epoch and STOP after 2 if `delta_nats < 0.10` or
@@ -1539,6 +1545,31 @@ in `manifest.json` and reuse/resume/generation under the other style is refused
 under the legacy prompt `meta_cxr_qformer` gets `pred_groups` too, which is why
 `paper` is restricted to the `..._with_mhcac_prompt` mode. **Not yet run on
 GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the commands.
+
+✅ **2026-10-11 (user-approved): context prompt, cue-aware training, beam, CheXbert CE.**
+- `--prompt-style paper_context` (both CLIs; same mode rules as `paper`, LoRA r8/a16):
+  the paper prompt plus `Indication:` and `Previous study findings (N days earlier):`
+  lines from `training/dataio/study_context.py` -- INDICATION/HISTORY of the current
+  report (`mimic_report_parser.clinical_context`) and the FINDINGS of the same
+  patient's latest STRICTLY EARLIER valid study (metadata StudyDate/StudyTime).
+  Attached after the Stage-1 records are built, so no cache is touched; a record
+  without context raises. `--reports-root` defaults to
+  `<data_root>/mimic-cxr-reports/files`. NOT the paper's protocol.
+- `run_medgemma_qlora.py --train-cues oracle_mix [--train-cue-model-share 0.2]`: TRAIN
+  records' cues come from the true CheXpert classes (D-018 mapping, re-implemented in
+  `training/dataio/oracle_cues.py` without LAVIS), except a deterministic 20% that
+  keep MHCAC's class; val/test keep MHCAC's cues. Because v3 ignores its cues.
+- Beam: `VariantLLM.generate(num_beams=, length_penalty=)` and
+  `generate_stage2_reports.py --num-beams 4 --length-penalty 2.0`; soft/finding
+  tokens are repeated per beam. Defaults stay greedy.
+- Scoring in git: `scripts/score_stage2_paper_protocol.py` (paper protocol + lexicon CE
+  + paired bootstrap; replaces the host-only `~/paper_nlg_gpu.py`/`~/pair_cmp.py`) and
+  `scripts/score_ce_chexbert.py` (real CE with CheXbert) in the SEPARATE venv
+  `~/.venvs/chexbert` (torch CPU, `f1chexbert`, `transformers==4.53.2`, run with
+  `HF_HUB_OFFLINE=1`; weights in `~/.cache/chexbert/chexbert.pth`, sha256 6550703c...,
+  copied in because the HF CDN gives this host ~9 KB/s).
+- Pilot P0/P1/P2 to choose the Stage-2 recipe before one full run:
+  `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`. Not yet run on GPU.
 
 ⚠ **2026-10-06: Stage 2 had never run on a D-020/D-022 Stage-1 checkpoint, and
 the first attempt died on study 1.** `build_stage1_records` filtered batch keys

@@ -524,14 +524,48 @@ def image_block(img_token: str) -> str:
 #: ``tests/test_prompt_style.py``). Mirrors ``pipeline_modes.PROMPT_STYLES``.
 PROMPT_STYLE_FINE = "fine"
 PROMPT_STYLE_PAPER = "paper"
-LEGACY_PROMPT_STYLES = (PROMPT_STYLE_FINE, PROMPT_STYLE_PAPER)
+#: 2026-10-11: the paper's prompt plus the study's clinical context -- its
+#: INDICATION/HISTORY and the previous study's FINDINGS
+#: (training/dataio/study_context.py). NOT the paper's protocol.
+PROMPT_STYLE_PAPER_CONTEXT = "paper_context"
+LEGACY_PROMPT_STYLES = (PROMPT_STYLE_FINE, PROMPT_STYLE_PAPER, PROMPT_STYLE_PAPER_CONTEXT)
+PAPER_PROMPT_STYLES = (PROMPT_STYLE_PAPER, PROMPT_STYLE_PAPER_CONTEXT)
 
 
-def build_instruction(groups: dict[str, list[str]], prompt_style: str = PROMPT_STYLE_FINE) -> str:
+def build_instruction(
+    groups: dict[str, list[str]],
+    prompt_style: str = PROMPT_STYLE_FINE,
+    context: dict | None = None,
+) -> str:
     if prompt_style not in LEGACY_PROMPT_STYLES:
         # Any other string used to fall through to the paper wording silently.
         raise ValueError(f"prompt_style must be one of {LEGACY_PROMPT_STYLES}, got {prompt_style!r}")
     findings = format_findings(groups)
+    if prompt_style == PROMPT_STYLE_PAPER_CONTEXT:
+        try:
+            from training.dataio.study_context import format_context_lines
+        except ImportError:  # script layout
+            from dataio.study_context import format_context_lines
+        # Raises on a missing context: an empty one would silently train the
+        # plain paper prompt under this style's name.
+        return (
+            f"{format_context_lines(context)}\n\n"
+            f"Abnormality information: {findings}\n\n"
+            "Act as an expert radiologist. Using the clinical context, the structured abnormality "
+            "information and the image-derived features above, write the *Findings* section of a "
+            "chest X-ray report.\n\n"
+            "- Do not invent findings. Describe abnormalities supported by the image features and "
+            "the abnormality information.\n"
+            "- When previous study findings are given, state what is unchanged, new or resolved; "
+            "when none are given, do not refer to a prior study.\n"
+            "- Do not repeat the same information using different wording.\n"
+            "- Use a single, fluent paragraph in formal radiological style.\n"
+            "- Use cautious and precise language if uncertain abnormalities are present.\n"
+            "- Avoid enumeration, bullet points, and speculative phrases.\n"
+            "- The report should reflect the clinical tone and structure of professionally "
+            "written reports.\n\n"
+            "Return only the generated findings text."
+        )
     if prompt_style == PROMPT_STYLE_FINE:
         return (
             f"Abnormality information: {findings}\n\n"
@@ -558,9 +592,17 @@ def build_native_instruction() -> str:
     return native_findings_instruction()
 
 
-def build_prompt(groups: dict[str, list[str]], img_token: str, prompt_style: str) -> str:
+def build_prompt(
+    groups: dict[str, list[str]],
+    img_token: str,
+    prompt_style: str,
+    context: dict | None = None,
+) -> str:
     """Legacy/plain-text prompt used by Vicuna and soft-token MedGemma."""
-    return f"Image information: {image_block(img_token)}.\n\n{build_instruction(groups, prompt_style)}"
+    return (
+        f"Image information: {image_block(img_token)}.\n\n"
+        f"{build_instruction(groups, prompt_style, context)}"
+    )
 
 
 def _split_csv_for(split: str) -> str:
@@ -1167,13 +1209,29 @@ class VariantLLM:
                     "image_mode": self.image_mode,
                     "num_img_tokens": NUM_IMG_TOKENS,
                 }
-            return {
+            metadata = {
                 "builder": "legacy",
                 "version": "paper_build_instruction",
                 "prompt_style": self.legacy_prompt_style,
                 "image_mode": self.image_mode,
                 "num_img_tokens": NUM_IMG_TOKENS,
             }
+            if self.legacy_prompt_style == PROMPT_STYLE_PAPER_CONTEXT:
+                # Only here, so the `paper` metadata stays byte-identical.
+                try:
+                    from training.dataio.study_context import (
+                        MAX_INDICATION_WORDS,
+                        MAX_PRIOR_WORDS,
+                    )
+                except ImportError:  # script layout
+                    from dataio.study_context import MAX_INDICATION_WORDS, MAX_PRIOR_WORDS
+
+                metadata["context"] = {
+                    "fields": ["indication", "prior_findings", "prior_days"],
+                    "max_indication_words": MAX_INDICATION_WORDS,
+                    "max_prior_words": MAX_PRIOR_WORDS,
+                }
+            return metadata
         config = self.prompt_config
         return {
             "builder": "stage2.prompts.PromptBuilder",
@@ -1323,7 +1381,8 @@ class VariantLLM:
             )
         target = str(record["ref"]).strip()
         if self.family != "medgemma":
-            prompt = build_prompt(record["pred_groups"], self.img_token, prompt_style) + "\nASSISTANT:"
+            prompt = build_prompt(record["pred_groups"], self.img_token, prompt_style,
+                                  record.get("context")) + "\nASSISTANT:"
             return prompt, prompt + " " + target + (self.tokenizer.eos_token or "")
         content: list[dict[str, Any]] = []
         if self.image_mode in NATIVE_PIXEL_MODES:
@@ -1339,7 +1398,8 @@ class VariantLLM:
         if self.prompt_config is not None:
             instruction = self._render_prompt_text(record)
         else:
-            instruction = build_prompt(record["pred_groups"], self.img_token, prompt_style)
+            instruction = build_prompt(record["pred_groups"], self.img_token, prompt_style,
+                                       record.get("context"))
         content.append({"type": "text", "text": instruction})
         prompt_messages = [{"role": "user", "content": content}]
         full_messages = prompt_messages + [
@@ -1800,8 +1860,19 @@ class VariantLLM:
         *,
         no_repeat_ngram_size: int | None = None,
         repetition_penalty: float | None = None,
+        num_beams: int = 1,
+        length_penalty: float | None = None,
     ) -> str:
-        """Greedy decode. Both anti-repetition knobs default to OFF.
+        """Greedy decode by default; beam search when ``num_beams > 1``.
+
+        Beam (2026-10-11): ``num_beams=4, length_penalty=2.0`` was chosen on val
+        300 and measured once on test (n=2,800, v3 adapter): BERTScore +0.0083
+        [+0.0037, +0.0129], ROUGE-L +0.0150, CIDEr +0.0439 over greedy. The
+        defaults keep greedy, so every recorded number stays reproducible. Soft
+        and finding tokens are repeated per beam, since the wrappers check one
+        projection per row of the (beam-expanded) batch.
+
+        Both anti-repetition knobs default to OFF.
 
         Off is deliberate: every Stage-2 number already recorded was produced
         without them, and switching a default here would silently make those
@@ -1851,11 +1922,14 @@ class VariantLLM:
             for key, value in encoded.items()
             if torch.is_tensor(value)
         }
+        num_beams = max(int(num_beams), 1)
         old_embedding = None
         wrapped = None
         if self.image_mode in SOFT_TOKEN_MODES:
             qformer = record["qformer_embs"].unsqueeze(0).to(self.device, dtype=torch.float32)
             projected = self.img_proj(qformer)
+            if num_beams > 1:
+                projected = projected.repeat_interleave(num_beams, dim=0)
             old_embedding = self.model.get_input_embeddings()
             wrapped = SoftTokenEmbeddingWrapper(
                 old_embedding, self.img_token_id, projected, NUM_IMG_TOKENS
@@ -1868,6 +1942,8 @@ class VariantLLM:
                 .unsqueeze(0)
                 .to(self.device, dtype=torch.float32)
             )
+            if num_beams > 1:
+                features = features.repeat_interleave(num_beams, dim=0)
             if old_embedding is None:
                 old_embedding = self.model.get_input_embeddings()
                 wrapped = old_embedding
@@ -1887,7 +1963,7 @@ class VariantLLM:
             generate_kwargs = {
                 **model_inputs,
                 "max_new_tokens": max_new_tokens,
-                "num_beams": 1,
+                "num_beams": num_beams,
                 "do_sample": False,
                 "pad_token_id": self.tokenizer.pad_token_id,
                 "eos_token_id": eos_token_id,
@@ -1910,6 +1986,8 @@ class VariantLLM:
                 generate_kwargs["no_repeat_ngram_size"] = int(no_repeat_ngram_size)
             if repetition_penalty:
                 generate_kwargs["repetition_penalty"] = float(repetition_penalty)
+            if num_beams > 1 and length_penalty is not None:
+                generate_kwargs["length_penalty"] = float(length_penalty)
             seq = self.model.generate(**generate_kwargs)[0]
         finally:
             if old_embedding is not None:

@@ -119,6 +119,8 @@ tuyệt đối); record từ manifest native thiếu hai cái đầu và nay b�
 ## `--prompt-style` — prompt legacy kiểu bài báo (2026-10-05, D-027)
 
 Hằng: `PROMPT_STYLE_FINE = "fine"` (mặc định), `PROMPT_STYLE_PAPER = "paper"`,
+`PROMPT_STYLE_PAPER_CONTEXT = "paper_context"` (2026-10-11, cùng ràng buộc mode như `paper`;
+`resolve_lora_size` cho cả hai kiểu paper r=8/α=16), `PAPER_PROMPT_STYLES`,
 `PROMPT_STYLES`, `DEFAULT_PROMPT_STYLE`. Ba hàm, đều stdlib:
 
 | Hàm | Vai trò |

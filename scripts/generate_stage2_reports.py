@@ -50,7 +50,7 @@ if str(_REPO_ROOT) not in sys.path:
 from scripts.evaluate_explanation import _assert_private_output_location  # noqa: E402
 from training.pipeline_modes import (  # noqa: E402
     DEFAULT_PROMPT_STYLE,
-    PROMPT_STYLE_PAPER,
+    PAPER_PROMPT_STYLES,
     PROMPT_STYLES,
     check_adapter_prompt_style,
     resolve_pipeline_modes,
@@ -96,6 +96,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "token, including clinical terms a report legitimately "
                              "repeats, so prefer --no-repeat-ngram-size.")
 
+    # Beam: 1 = greedy (default, every recorded number). The measured operating
+    # point is 4 beams with length_penalty 2.0 (2026-10-11): test n=2,800,
+    # BERTScore +0.0083, ROUGE-L +0.0150, CIDEr +0.0439 over greedy.
+    parser.add_argument("--num-beams", type=int, default=1,
+                        help="Beam width. 1 = greedy (default). 4 is the measured "
+                             "operating point.")
+    parser.add_argument("--length-penalty", type=float, default=0.0,
+                        help="HF length_penalty, used only with --num-beams > 1. "
+                             "0 = unset (HF default 1.0). 2.0 is the measured "
+                             "operating point.")
+
     native = parser.add_argument_group("medgemma_direct record source")
     native.add_argument("--manifest", type=Path, default=None)
     native.add_argument("--image-root", type=Path, default=None)
@@ -112,6 +123,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     stage1.add_argument("--stage1-checkpoint", type=Path, default=None)
     stage1.add_argument("--threshold-path", type=Path, default=None)
     stage1.add_argument("--num-workers", type=int, default=4)
+    stage1.add_argument("--reports-root", type=Path, default=None,
+                        help="Raw report files, for --prompt-style paper_context. Default "
+                             "<data_root>/mimic-cxr-reports/files.")
     stage1.add_argument("--cue-rule", default="argmax",
                         choices=("argmax", "paper_thresholds", "none", "cutpoints"),
                         help="How MHCAC's three-class predictions become the prompt's "
@@ -160,6 +174,10 @@ FINDING_TOKENS_OFF = "off"
 
 def validate_invocation(args: argparse.Namespace, mode) -> None:
     """Reject impossible combinations before anything expensive is imported."""
+    if getattr(args, "num_beams", 1) < 1:
+        raise SystemExit("--num-beams must be >= 1")
+    if getattr(args, "length_penalty", 0.0) and getattr(args, "num_beams", 1) == 1:
+        raise SystemExit("--length-penalty only applies to beam search; add --num-beams > 1")
     # Callers (tests included) may hand in a partial Namespace; absent means
     # the default, which is what every invocation before the flag existed got.
     args.prompt_style = getattr(args, "prompt_style", DEFAULT_PROMPT_STYLE)
@@ -194,7 +212,7 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
         # paper describes for Eq. 22; it needs no v2 cue-state contract.
         # cutpoints lists every finding, like argmax, so it has no abstention
         # state that needs the v2 cue-state contract.
-        if args.prompt_style != PROMPT_STYLE_PAPER and args.cue_rule != "cutpoints":
+        if args.prompt_style not in PAPER_PROMPT_STYLES and args.cue_rule != "cutpoints":
             if args.prompt_config is None:
                 raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
             from stage2.prompts import load_prompt_config
@@ -343,6 +361,17 @@ def stage1_records(args: argparse.Namespace) -> list[dict]:
         record["view_position"] = None
     if args.finding_feature_ablation == "permute_across":
         records = permute_finding_features_across_studies(records, args.seed)
+    if args.prompt_style == fig9.PROMPT_STYLE_PAPER_CONTEXT:
+        try:
+            from training.dataio.study_context import attach_study_context
+        except ImportError:  # script layout
+            from dataio.study_context import attach_study_context
+        from local_config import METADATA_CSV, PATH_TO_MIMIC_CXR
+
+        reports_root = args.reports_root or Path(PATH_TO_MIMIC_CXR) / "mimic-cxr-reports" / "files"
+        counts = attach_study_context(records, split_csv=fig9._split_csv_for(args.split),
+                                      metadata_csv=METADATA_CSV, reports_root=reports_root)
+        print(f"[context] {args.split}: {counts}", flush=True)
     return records
 
 
@@ -494,6 +523,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     record, args.prompt_style, args.max_new_tokens,
                     no_repeat_ngram_size=args.no_repeat_ngram_size or None,
                     repetition_penalty=args.repetition_penalty or None,
+                    num_beams=args.num_beams,
+                    length_penalty=args.length_penalty or None,
                 )
             except Exception as exc:  # one bad study must not lose the run
                 failures += 1
@@ -539,6 +570,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "eos_token_id": eos_token_id,
         "no_repeat_ngram_size": args.no_repeat_ngram_size or None,
         "repetition_penalty": args.repetition_penalty or None,
+        "num_beams": args.num_beams,
+        "length_penalty": (args.length_penalty or None) if args.num_beams > 1 else None,
         "seed": args.seed,
         "wall_seconds": round(time.time() - started, 1),
         "peak_vram_bytes": (

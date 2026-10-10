@@ -26,6 +26,8 @@ train/val/test.csv ──► manifest.build_records() ──► list[dict] ─�
 |---|---|---|---|
 | `manifest.py` | 255 | [📄](manifest.py.doc.md) | `build_records`, `assert_no_leakage`, `assert_columns`, `split_generated_report`, `SECTION_MODES` |
 | `validate_manifest.py` | — | [📄](validate_manifest.py.doc.md) | CLI kiểm tra invariant |
+| `study_context.py` | — | [📄](study_context.py.doc.md) | Bối cảnh prompt `paper_context`: INDICATION/HISTORY + FINDINGS lần chụp trước (2026-10-11) |
+| `oracle_cues.py` | — | [📄](oracle_cues.py.doc.md) | Cue train từ nhãn thật trộn MHCAC (`--train-cues oracle_mix`, 2026-10-11) |
 
 ## Main responsibilities
 
