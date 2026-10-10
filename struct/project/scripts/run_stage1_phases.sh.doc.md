@@ -19,3 +19,9 @@ thư mục thì resume từ `checkpoint_last.pth`; nếu `ROOT` đã có `PHASE_
 thì exit 3 luôn. Kiểm chứng trên GPU 2026-09-24: cổng bị ép trượt sau epoch 2 →
 exit 3, không chạy 1b, không có `checkpoint_phase1a`; kill giữa epoch rồi
 `RESUME=1` → nạp `checkpoint_last` (chạy lại epoch từ batch đầu), hoàn tất.
+
+## 2026-10-11 — mặc định chỉ 1a → 1b
+`PHASES` mặc định `"phase1a phase1b"`; pha 1c chỉ chạy khi đặt rõ
+`PHASES="phase1a phase1b phase1c"` (tái lập run cũ). Lý do: trên test, 1b tốt nhất so với 1c
+AUROC +0,0037 [−0,0012; +0,0095] (không có ý nghĩa) và 1c làm ITC R@5 0,65 → 0,17
+(`docs/TONG_HOP_2026-10-11.md`). Vì 1b là pha cuối, `phase1b.run.test_splits: [test]`.

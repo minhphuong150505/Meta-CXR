@@ -23,6 +23,7 @@ Parser hiện tại **khôi phục phần thân tường thuật** thay vì fall
 | `_narrative_after_comparison(comparison)` | 85 | ★ Cứu phần tường thuật nằm sau COMPARISON |
 | `_normalise_section_name(name)` | 46 | Chuẩn hóa tên section |
 | `is_exam_header(text)` / `_strip_exam_header(line)` | — | Loại dòng tiêu đề exam (2026-10-07) |
+| `clinical_context(report_text)` | — | INDICATION + HISTORY đã làm sạch, "" nếu không có (2026-10-11; input prompt `paper_context`) |
 | `clean_report_text(text)` | 144 | Dọn whitespace, ký tự lạ |
 | `count_lexical_tokens(text)` | 155 | Đếm token cho giới hạn độ dài |
 

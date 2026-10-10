@@ -39,7 +39,8 @@ GROUPS = {
 def _prompt_namespace() -> dict:
     tree = ast.parse(FIG9.read_text(encoding="utf-8"))
     wanted_funcs = {"format_findings", "build_instruction"}
-    wanted_names = {"PROMPT_STYLE_FINE", "PROMPT_STYLE_PAPER", "LEGACY_PROMPT_STYLES"}
+    wanted_names = {"PROMPT_STYLE_FINE", "PROMPT_STYLE_PAPER", "PROMPT_STYLE_PAPER_CONTEXT",
+                    "LEGACY_PROMPT_STYLES", "PAPER_PROMPT_STYLES"}
     nodes = [
         node for node in tree.body
         if (isinstance(node, ast.FunctionDef) and node.name in wanted_funcs)
@@ -48,7 +49,7 @@ def _prompt_namespace() -> dict:
             and any(isinstance(t, ast.Name) and t.id in wanted_names for t in node.targets)
         )
     ]
-    assert len(nodes) == 5, "the prompt helpers moved; update this test"
+    assert len(nodes) == 7, "the prompt helpers moved; update this test"
     namespace: dict = {}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(FIG9), "exec"), namespace)
     return namespace
@@ -102,6 +103,28 @@ def test_unknown_style_raises_instead_of_falling_through_to_paper():
 
 def test_styles_mirror_the_engine():
     assert tuple(_prompt_namespace()["LEGACY_PROMPT_STYLES"]) == PROMPT_STYLES
+
+
+def test_paper_context_adds_the_two_context_lines_and_requires_them():
+    ns = _prompt_namespace()
+    groups = {"positive": ["Edema"], "negative": ["Pneumothorax"], "uncertain": []}
+    ctx = {"indication": "shortness of breath", "prior_findings": "Mild edema.", "prior_days": 2}
+    text = ns["build_instruction"](groups, "paper_context", ctx)
+    assert text.startswith("Indication: shortness of breath\n"
+                           "Previous study findings (2 days earlier): Mild edema.\n\n"
+                           "Abnormality information: Positive findings: Edema. "
+                           "Negative findings: Pneumothorax")
+    assert "do not refer to a prior study" in text
+    with pytest.raises(ValueError, match="no study context"):
+        ns["build_instruction"](groups, "paper_context", None)
+    # the paper style ignores a context argument entirely
+    assert ns["build_instruction"](groups, "paper", ctx) == ns["build_instruction"](groups, "paper")
+
+
+def test_paper_context_uses_the_papers_lora_size():
+    from training.pipeline_modes import PAPER_LORA_ALPHA, PAPER_LORA_RANK, resolve_lora_size
+
+    assert resolve_lora_size("paper_context", None, None) == (PAPER_LORA_RANK, PAPER_LORA_ALPHA)
 
 
 @pytest.mark.parametrize("mode", [

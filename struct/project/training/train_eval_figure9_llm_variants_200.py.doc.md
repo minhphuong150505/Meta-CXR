@@ -187,6 +187,14 @@ mọi cache cũ vẫn hit; `assert_class_logits_present` fail-closed nếu khôn
 
 ## Prompt legacy: `fine` và `paper` (2026-10-05, D-027)
 
+> **2026-10-11:** thêm `PROMPT_STYLE_PAPER_CONTEXT = "paper_context"` (`PAPER_PROMPT_STYLES`
+> = paper, paper_context): prompt bài báo + hai dòng bối cảnh từ `record["context"]`
+> (`training/dataio/study_context.format_context_lines`; thiếu context → lỗi). Câu chỉ dẫn
+> đổi để dùng bối cảnh và không bịa so sánh khi không có lần trước. `paper` và `fine` giữ
+> nguyên từng byte; `_prompt_metadata` chỉ thêm khoá `context` cho `paper_context`.
+> `generate(...)` nhận thêm `num_beams` (mặc định 1 = greedy) và `length_penalty`; khi beam,
+> soft token và finding token được lặp theo số beam (`tests/test_beam_generation.py`).
+
 `build_instruction(groups, prompt_style)` có hai chữ: `PROMPT_STYLE_FINE`
 (câu lệnh ngắn tự viết, mọi số legacy đã ghi đều dùng nó) và
 `PROMPT_STYLE_PAPER` — instruction của bài báo META-CXR, **trùng từng byte**

@@ -113,7 +113,7 @@ def test_no_phases_block_means_the_historical_single_phase():
 
 @pytest.mark.parametrize(
     ("phase", "epochs", "itc", "cls", "batch", "aug"),
-    [("phase1a", 4, 1.0, 0.0, 128, False), ("phase1b", 5, 0.0, 1.0, 16, True),
+    [("phase1a", 4, 1.0, 0.0, 128, False), ("phase1b", 3, 0.0, 1.0, 16, True),
      ("phase1c", 1, 1.0, 1.0, 8, True)],
 )
 def test_phase_overrides_reach_the_config(phase, epochs, itc, cls, batch, aug):
@@ -129,6 +129,19 @@ def test_phase_overrides_reach_the_config(phase, epochs, itc, cls, batch, aug):
         assert len(config.model.encoder_finetune.patterns) == 5
     # The paper's MHCAC has no teacher in any phase.
     assert config.model.loss.lambda_teacher_cls == 0 and config.model.loss.lambda_distill == 0
+    # 1b is the last phase run by default (1c opt-in since 2026-10-11), so it
+    # scores the held-out test split; 1a never does.
+    if phase == "phase1b":
+        assert list(config.run.test_splits) == ["test"]
+    if phase == "phase1a":
+        assert list(config.run.test_splits) == []
+
+
+def test_phase_runner_defaults_to_1a_then_1b():
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / "scripts/run_stage1_phases.sh").read_text()
+    assert 'PHASES=${PHASES:-"phase1a phase1b"}' in text
 
 
 def test_phase1a_optimises_only_itc_itm_lm():
@@ -143,7 +156,8 @@ def test_phase1b_uses_the_papers_learning_rates():
     assert config.run.warmup_lr == pytest.approx(5e-5)
     assert config.run.init_lr == pytest.approx(2e-4)
     assert config.run.min_lr == pytest.approx(1e-5)
-    assert config.run.max_epoch == 5
+    # The paper's LR curve, over 3 epochs instead of its 5 (2026-10-11).
+    assert config.run.max_epoch == 3
 
 
 def test_init_checkpoint_chain(tmp_path):

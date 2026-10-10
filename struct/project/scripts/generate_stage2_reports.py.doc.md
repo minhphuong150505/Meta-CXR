@@ -82,6 +82,12 @@ danh sách record — thu hẹp ở tầng dưới sẽ trượt cache.
 
 ## Chống lặp — `--no-repeat-ngram-size`, `--repetition-penalty`
 
+> **Beam (2026-10-11):** `--num-beams` (mặc định 1 = greedy) và `--length-penalty` (0 = không
+> đặt; chỉ hợp lệ khi beam > 1). Điểm vận hành đã đo: 4 beam, length penalty 2,0 — test
+> n=2.800: BERTScore +0,0083, ROUGE-L +0,0150, CIDEr +0,0439 so với greedy. Summary ghi
+> `num_beams`, `length_penalty`. `--prompt-style paper_context` gắn bối cảnh cho split đang
+> sinh (`--reports-root`).
+
 Cả hai **mặc định TẮT**. Mọi con số Stage-2 đã ghi đều sinh ra khi không có
 chúng, nên bật mặc định sẽ âm thầm làm kết quả cũ không tái lập được.
 `VariantLLM.generate` nhận chúng dạng keyword-only và giữ `generate_kwargs`

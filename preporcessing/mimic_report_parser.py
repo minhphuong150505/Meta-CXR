@@ -192,6 +192,18 @@ def get_target_text(report_text: str) -> tuple[str, str, str]:
     return "", "", "NO_FINDINGS"
 
 
+def clinical_context(report_text: str) -> str:
+    """The report's INDICATION and HISTORY sections, cleaned; "" when absent.
+
+    Clinical context known when the exam is ordered (the reason for exam), used
+    as a Stage-2 prompt input since 2026-10-11 (MAIRA-2, RaDialog, MedGemma's
+    fine-tuning recipe all use it). Never the FINDINGS/IMPRESSION target.
+    """
+    sections, _narrative = _report_sections(report_text or "")
+    parts = sections.get("indication", []) + sections.get("history", [])
+    return clean_report_text(" ".join(parts))
+
+
 def clean_report_text(text: str) -> str:
     if not isinstance(text, str):
         return ""

@@ -231,7 +231,11 @@ def requires_multimodal(mode: PipelineMode) -> bool:
 # groups as text. That is ``meta_cxr_qformer_with_mhcac_prompt``.
 PROMPT_STYLE_FINE = "fine"
 PROMPT_STYLE_PAPER = "paper"
-PROMPT_STYLES = (PROMPT_STYLE_FINE, PROMPT_STYLE_PAPER)
+# 2026-10-11: the paper prompt plus the study's INDICATION/HISTORY and previous
+# FINDINGS. Same mode restrictions as `paper`; NOT the paper's protocol.
+PROMPT_STYLE_PAPER_CONTEXT = "paper_context"
+PROMPT_STYLES = (PROMPT_STYLE_FINE, PROMPT_STYLE_PAPER, PROMPT_STYLE_PAPER_CONTEXT)
+PAPER_PROMPT_STYLES = (PROMPT_STYLE_PAPER, PROMPT_STYLE_PAPER_CONTEXT)
 DEFAULT_PROMPT_STYLE = PROMPT_STYLE_FINE
 
 
@@ -322,7 +326,7 @@ def resolve_lora_size(
     prompt_style: str, lora_rank: int | None, lora_alpha: int | None
 ) -> tuple[int, int]:
     """Fill unset LoRA rank/alpha from the prompt style's default."""
-    if prompt_style == PROMPT_STYLE_PAPER:
+    if prompt_style in PAPER_PROMPT_STYLES:
         rank, alpha = PAPER_LORA_RANK, PAPER_LORA_ALPHA
     else:
         rank, alpha = DEFAULT_LORA_RANK, DEFAULT_LORA_ALPHA
