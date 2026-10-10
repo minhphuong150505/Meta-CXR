@@ -71,6 +71,14 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   so a cutpoint-cue Stage-2 retrain is the untested fair version. Reported
   Stage-2 numbers stay v3 / Eq. 22. Record:
   `docs/handoff/PLAN-2026-10-10-cutpoint-headline.md`.
+- ⚠ **Soft tokens COLLAPSE to one vector (probe 2026-10-11,
+  `scripts/probe_soft_tokens_cached.py`, `run_20261005_paper`).** Mean cosine
+  between the 32 tokens of a study **+0.9995** (untrained readout was +0.80).
+  Label information mostly survives: linear probe on the pooled tokens, test
+  auroc_mean 0.713 vs MHCAC 0.745 on the same 2,780 studies -- equal on common
+  findings, lost on rare ones (Fracture at chance, Pleural Other 0.83 -> 0.64).
+  So the soft-token bottleneck is collapse (one effective token), not missing
+  14-label signal. Record: `docs/handoff/PLAN-2026-10-11-soft-token-probe.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).
