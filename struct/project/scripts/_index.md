@@ -61,6 +61,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 |---|---|---|---|
 | `diagnose_stream_scale.py` (231) | [📄](diagnose_stream_scale.py.doc.md) | 🔬 | Đo RMS token mỗi encoder tại điểm nối + attention mass của MHCAC. **Read-only** — đo được chênh lệch **32×**, xem trang doc |
 | `probe_soft_tokens.py` (215) | [📄](probe_soft_tokens.py.doc.md) | 🔬 | Linear probe trên 32 soft token của Q-Former, trước khi đốt ~70 h cho arm C. Đo được **macro AUROC 0,6847** (xáo trộn 0,4838; MHCAC 0,7643) — soft token có tín hiệu dù cross-attention chưa train |
+| `probe_soft_tokens_cached.py` | [📄](probe_soft_tokens_cached.py.doc.md) | 🔬 | Probe soft token từ cache Stage 2 (train→val→test), so với MHCAC trên cùng study. 2026-10-11: pooled 0,713 vs MHCAC 0,745; **32 token sụp thành một** (cosine trong study 0,9995) |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |
 
