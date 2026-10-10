@@ -70,6 +70,8 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `probe_image_features.py` | [📄](probe_image_features.py.doc.md) | 🔬 | Probe tuyến tính cùng giao thức cho soft token và embedding ngoài (vd. MedGemma), so với MHCAC |
 | `score_stage2_paper_protocol.py` | [📄](score_stage2_paper_protocol.py.doc.md) | ✅ | Chấm Stage 2 theo giao thức bài báo + CE lexicon + so sánh ghép cặp (2026-10-11) |
 | `score_ce_chexbert.py` | [📄](score_ce_chexbert.py.doc.md) | ✅ | CE bằng CheXbert (`f1chexbert`, venv riêng) + so sánh ghép cặp (2026-10-11) |
+| `analyze_radiologist_labels.py` | [📄](analyze_radiologist_labels.py.doc.md) | 🔬 | Nhiễu nhãn CheXpert so với nhãn bác sĩ (687 study test) và chấm Stage 1 theo nhãn bác sĩ |
+| `embed_cxr_encoders.py` | [📄](embed_cxr_encoders.py.doc.md) | 🔬 | Đặc trưng từng encoder (BioViL, PubMedCLIP, Swin, RAD-DINO) cho probe so sánh |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |
 
