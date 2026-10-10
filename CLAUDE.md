@@ -63,6 +63,14 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   `Stage1Context.cutpoints`, which enters fingerprints only when non-empty so
   existing Stage-1 record caches still hit; never abstains, so it needs no
   guided `--prompt-config`). Pinned by `tests/test_cue_rule_cutpoints.py`.
+  **Measured 2026-10-11 -- no generation gain.** v3 adapter, same 2,800 test
+  studies, only the cues swapped (control reproduced v3 100/100; cues changed
+  on 91% of studies): beam 4 flat on every metric (BERTScore +0.0010
+  [-0.0015, +0.0035], CIDEr +0.0040 [-0.0073, +0.0157]); greedy ROUGE-L -0.0030
+  and BLEU-4 -0.0031, both significant. The adapter was trained on Eq. 22 cues,
+  so a cutpoint-cue Stage-2 retrain is the untested fair version. Reported
+  Stage-2 numbers stay v3 / Eq. 22. Record:
+  `docs/handoff/PLAN-2026-10-10-cutpoint-headline.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).
