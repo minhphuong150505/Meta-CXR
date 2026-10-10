@@ -29,4 +29,4 @@ Sụp đổ xảy ra ở **phase 1a** (cosine 0,9989, PR 1,002; khởi tạo BLI
 attention dồn vào một token (entropy ~0,1); phase 1b làm norm token PubMedCLIP/Swin
 tăng 19,6→1.713 / 12→413 khi Q-Former đã đóng băng. Xem
 `docs/handoff/PLAN-2026-10-11-soft-token-probe.md` và
-`docs/RESEARCH-2026-10-11-stage1-stage2-diagnosis.md`.
+`docs/TONG_HOP_2026-10-11.md`.
