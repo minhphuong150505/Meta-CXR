@@ -1,0 +1,69 @@
+{
+  "cutpoints": {
+    "Atelectasis": [
+      0.748071759625514,
+      0.7626140581156382
+    ],
+    "Cardiomegaly": [
+      0.803030503433976,
+      0.803030503433976
+    ],
+    "Consolidation": [
+      0.7635417061641265,
+      0.7960797426245648
+    ],
+    "Edema": [
+      0.6683846679815248,
+      0.7887392852462932
+    ],
+    "Enlarged Cardiomediastinum": [
+      0.4566308558787545,
+      0.4566308558787545
+    ],
+    "Fracture": [
+      0.41626922927753474,
+      0.41626922927753474
+    ],
+    "Lung Lesion": [
+      0.5106339181777523,
+      0.5106339181777523
+    ],
+    "Lung Opacity": [
+      0.7233665040601077,
+      0.7233665040601077
+    ],
+    "No Finding": [
+      0.5521779078319787,
+      0.5521779078319787
+    ],
+    "Pleural Effusion": [
+      0.7205951540243669,
+      0.7205951540243669
+    ],
+    "Pleural Other": [
+      0.6211216579006085,
+      0.6211216579006085
+    ],
+    "Pneumonia": [
+      0.6959762914657235,
+      0.777133895504459
+    ],
+    "Pneumothorax": [
+      0.83957311679503,
+      0.83957311679503
+    ],
+    "Support Devices": [
+      0.7979523464163232,
+      0.7979523464163232
+    ]
+  },
+  "format": "meta_cxr_severity_cutpoints_v1",
+  "metadata": {
+    "checkpoint": "run_20261005_paper/phase1c/checkpoint_best",
+    "num_samples": 1808,
+    "objective": "per-finding sklearn-weighted F1 (three classes)",
+    "rule": "two cutpoints: N < t1 <= U < t2 <= P",
+    "score": "p_pos / (p_pos + p_neg)",
+    "split": "val"
+  }
+}

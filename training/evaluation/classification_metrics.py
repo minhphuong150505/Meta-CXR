@@ -264,6 +264,7 @@ def evaluate_classification(
     *,
     zero_division: float = PAPER_ZERO_DIVISION,
     thresholds: dict[str, dict[str, float]] | None = None,
+    cutpoints: dict[str, tuple[float, float]] | None = None,
 ) -> ClassificationReport:
     """Score one split with the paper's three-class protocol.
 
@@ -276,7 +277,16 @@ def evaluate_classification(
     protocol -- the paper uses these thresholds only for the Stage-2 prompt --
     and is reported beside the argmax numbers, never instead of them. AUROC and
     AUPRC do not depend on the decision rule and are identical either way.
+
+    ``cutpoints`` (per finding ``(t1, t2)`` on ``p_pos / (p_pos + p_neg)``,
+    fitted on VALIDATION by ``scripts/calibrate_thresholds.py --rule
+    cutpoints``) replaces argmax with ``threshold_calibration.apply_cutpoints``:
+    Negative / Uncertain band / Positive. This project's HEADLINE rule since
+    2026-10-10 (user decision); still not the paper's protocol. Mutually
+    exclusive with ``thresholds``.
     """
+    if thresholds is not None and cutpoints is not None:
+        raise ValueError("pass thresholds or cutpoints, not both")
     if predictions.num_classes != NUM_CLASSES:
         raise SchemaError(
             f"the paper's protocol is three-class; got {predictions.num_classes} "
@@ -284,7 +294,13 @@ def evaluate_classification(
         )
     labels = predictions.labels
     probabilities = predictions.probabilities
-    if thresholds is None:
+    if cutpoints is not None:
+        from training.evaluation.threshold_calibration import apply_cutpoints
+
+        predicted = apply_cutpoints(
+            probabilities, cutpoints, tuple(predictions.pathology_names)
+        )
+    elif thresholds is None:
         predicted = decide(probabilities)
     else:
         from training.evaluation.threshold_calibration import decide_with_thresholds
@@ -368,7 +384,11 @@ def evaluate_classification(
             "protocol": "META-CXR paper: three-class argmax, per-finding "
             "sklearn-weighted P/R/F1 (zero_division=1), mean over findings; "
             "one-vs-rest AUROC per class",
-            "decision": "argmax" if thresholds is None else (
+            "decision": (
+                "per-finding validation cutpoints on p_pos/(p_pos+p_neg): "
+                "Negative < t1 <= Uncertain < t2 <= Positive -- project headline, "
+                "NOT the paper's protocol" if cutpoints is not None
+                else "argmax" if thresholds is None else
                 "per-class Eq. 22 thresholds (largest margin above threshold; "
                 "argmax when no class clears) -- NOT the paper's protocol"
             ),

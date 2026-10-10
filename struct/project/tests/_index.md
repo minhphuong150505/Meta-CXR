@@ -125,6 +125,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 |---|---|
 | `test_classification_metrics.py` (377) | P/R/F1, per-pathology, uncertain policy |
 | `test_threshold_calibration.py` (256) | Calibrate + baseline + bootstrap |
+| `test_stage1_cutpoint_headline.py` (2026-10-10) | File hai ngưỡng/bệnh: ghi/đọc, từ chối file Eq. 22 và t1 > t2, `evaluate_classification(cutpoints=)`, CLI `--cutpoints` kèm `argmax_reference`, từ chối file fit trên split đang chấm, kiểm file đã ship (14 bệnh, từ val) |
 | `test_generation_metrics.py` (314) | BLEU/ROUGE, error analysis |
 | `test_evaluation_integration.py` (379) | End-to-end evaluator |
 | `test_clinical_metrics.py` | ⚠ **Chỉ số thiếu báo unavailable, KHÔNG trả 0** |

@@ -3,8 +3,12 @@
 > Thư mục: [`scripts/`](_index.md) · Thêm 2026-10-01 · ✅ ACTIVE (phân tích bổ sung)
 
 ## Purpose
-Phân tích **bổ sung, không phải giao thức của bài báo** (bài báo dùng argmax và
-argmax vẫn là kết quả chính). Ca Uncertain nằm giữa ca âm và ca dương trên điểm
+So sánh ghép cặp luật ngưỡng với argmax. **Không phải giao thức của bài báo**
+(bài báo dùng argmax). Từ 2026-10-10 luật hai ngưỡng là **số chính của dự án**
+(quyết định của user): file ngưỡng đã fit nằm ở
+`configs/stage1_cutpoints/run_20261005_paper.json` và được chấm bằng
+[`evaluate_stage1.py --cutpoints`](evaluate_stage1.py.doc.md); argmax vẫn báo
+kèm làm mốc so với bài báo. Ca Uncertain nằm giữa ca âm và ca dương trên điểm
 `s = p_pos / (p_pos + p_neg)`, nên mỗi bệnh có thể quyết định bằng ngưỡng trên `s`.
 
 ## Entry point

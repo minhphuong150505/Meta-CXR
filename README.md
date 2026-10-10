@@ -347,7 +347,8 @@ cả split — đúng đại lượng mà trung bình batch xấp xỉ, nên có
 
 Ngưỡng theo từng lớp (Hình 11, Eq. 22: điểm trên ROC gần góc trên-trái nhất) được
 fit trên **val** bằng `scripts/calibrate_thresholds.py` và chỉ dùng cho prompt
-Stage 2 (`--cue-rule paper_thresholds`). Chỉ số phân loại chính luôn dùng argmax.
+Stage 2 (`--cue-rule paper_thresholds`). Chỉ số phân loại chính dùng hai ngưỡng
+theo bệnh từ 2026-10-10 (xem dưới); argmax vẫn báo kèm.
 Có thể chấm thêm tập test bằng chính các ngưỡng val này
 (`scripts/evaluate_stage1.py --thresholds <file>`, thêm 2026-10-01). Đó là phân
 tích bổ sung, không phải giao thức của bài báo, nên luôn báo cạnh số argmax chứ
@@ -358,6 +359,35 @@ hai ngưỡng trên điểm `p_pos/(p_pos+p_neg)` fit trên val. Trên `run_2026
 0,766 → 0,815, F1 5 bệnh 0,644 → 0,743, macro recall 0,456 → 0,437. Gần như toàn bộ cải thiện đến từ
 việc dời ngưỡng âm/dương; dải Uncertain ở giữa gần như không giúp (precision Uncertain 0,16). Đây
 không phải giao thức argmax của bài báo, nên chỉ báo cạnh số argmax.
+
+**Từ 2026-10-10, số Stage 1 CHÍNH của dự án dùng hai ngưỡng fit trên val (quyết
+định của user), không còn là argmax.** Mỗi bệnh: âm dưới t1, Uncertain trong
+[t1, t2), dương từ t2, trên `p_pos/(p_pos+p_neg)`, chọn để tối đa weighted F1 ba
+lớp của bệnh đó trên val (1.808 study). File ngưỡng của model báo cáo:
+[`configs/stage1_cutpoints/run_20261005_paper.json`](configs/stage1_cutpoints/run_20261005_paper.json)
+(4 bệnh có dải Uncertain: Atelectasis, Consolidation, Edema, Pneumonia).
+
+```bash
+python scripts/calibrate_thresholds.py --rule cutpoints --predictions <val.npz> \
+    --checkpoint <run> --output configs/stage1_cutpoints/<run>.json
+python scripts/evaluate_stage1.py --predictions <test.npz> \
+    --cutpoints configs/stage1_cutpoints/<run>.json --output-dir <dir>
+```
+
+Test `run_20261005_paper` (n = 3.269, CI 95% bootstrap 1.000 lần):
+
+| | Hai ngưỡng (số chính) | argmax (giao thức bài báo) | Bài báo |
+|---|---|---|---|
+| weighted precision | 0,827 [0,823; 0,832] | 0,839 | 0,87 |
+| weighted recall | 0,834 [0,830; 0,838] | 0,781 | 0,78 |
+| weighted F1 | 0,820 [0,815; 0,824] | 0,780 | 0,73 |
+| F1 5 bệnh | 0,749 [0,741; 0,757] | 0,669 | 0,701 |
+| macro recall | 0,446 | 0,461 | — |
+| AUROC Pos / Neg / Unc | 0,784 / 0,778 / 0,663 (không đổi) | như bên trái | Hình 5 |
+
+⚠ Luôn ghi "không phải giao thức của bài báo" cạnh số chính: bài báo báo argmax,
+và không nói ngưỡng Eq. 22 của họ fit trên split nào (ROC ở Hình 5 là trên test).
+Checkpoint mới phải fit file ngưỡng riêng trên val của chính nó.
 
 **Hai chỗ bài báo tự dùng nhị phân** nằm ở
 [`paper_protocol.py`](training/evaluation/paper_protocol.py):

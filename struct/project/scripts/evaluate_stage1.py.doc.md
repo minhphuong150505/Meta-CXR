@@ -1,6 +1,6 @@
 > Source: `scripts/evaluate_stage1.py` (236 dòng)
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-09-29
+> Last verified against source: 2026-10-10
 
 # `scripts/evaluate_stage1.py`
 
@@ -14,7 +14,7 @@ model, không GPU, không dataset.
 ```bash
 python scripts/evaluate_stage1.py --predictions <test.npz> --output-dir <dir> \
     [--no-bootstrap] [--no-plots] [--no-baselines] [--split test] \
-    [--thresholds <val_thresholds_eq22.json>]
+    [--thresholds <val_thresholds_eq22.json> | --cutpoints <val_cutpoints.json>]
 ```
 
 ## Làm gì
@@ -31,6 +31,13 @@ python scripts/evaluate_stage1.py --predictions <test.npz> --output-dir <dir> \
   dùng argmax). Từ chối file fit trên chính split đang chấm hoặc trên test. AUROC
   không đổi. Khác hẳn cờ `--thresholds` nhị phân đã gỡ ở D-023: `load_thresholds`
   từ chối định dạng cũ.
+- `--cutpoints` (2026-10-10): **luật cho số CHÍNH của dự án** (quyết định của
+  user), vẫn không phải giao thức argmax của bài báo. Hai ngưỡng mỗi bệnh trên
+  `p_pos/(p_pos+p_neg)` fit trên val (`calibrate_thresholds.py --rule cutpoints`).
+  `metrics.json` thêm `argmax_reference.aggregates` và màn hình in dòng
+  "argmax reference" bên cạnh, để luôn so được với bài báo. Từ chối file fit trên
+  split đang chấm / test, và từ chối dùng chung với `--thresholds`. File của model
+  báo cáo: `configs/stage1_cutpoints/run_20261005_paper.json`.
 
 ## Đã gỡ (D-023)
 `--thresholds` nhị phân (cờ cùng tên hiện tại là ngưỡng ba lớp, xem trên), `--uncertain-policy`, `--label-framing`, `--score`,
