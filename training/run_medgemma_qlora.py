@@ -109,6 +109,12 @@ def parse_args() -> argparse.Namespace:
              "with probability --train-cue-model-share MHCAC's -- so the model learns "
              "to rely on cues. Validation/test keep MHCAC's cues.",
     )
+    parser.add_argument(
+        "--clean-train-records", action="store_true",
+        help="Encode the TRAIN Stage-1 records (soft tokens, cues) from clean "
+             "images, as val/test are. Default off: the historical behaviour, "
+             "where the dataset applies the training augmentation to them.",
+    )
     parser.add_argument("--train-cue-model-share", type=float, default=0.2,
                         help="oracle_mix only: share of (study, finding) cues taken "
                              "from MHCAC instead of the true label.")
@@ -645,6 +651,7 @@ def main() -> None:
         train_records = fig9.build_stage1_records(
             context, checkpoint_root, root, "train", args.train_limit, args.num_workers,
             cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
+            clean_train_images=args.clean_train_records,
         )
         print(f"[stage1] validation limit={args.val_limit or 'all'}", flush=True)
         val_records = fig9.build_stage1_records(
@@ -694,6 +701,7 @@ def main() -> None:
         "stage1_checkpoint": context.run_name if needs_stage1 else None,
         "cue_rule": args.cue_rule if needs_stage1 else None,
         "train_cues": args.train_cues if needs_stage1 else None,
+        "clean_train_records": bool(args.clean_train_records) if needs_stage1 else None,
         "train_cue_model_share": (
             args.train_cue_model_share if args.train_cues == "oracle_mix" else None
         ),
@@ -724,6 +732,7 @@ def main() -> None:
         "stage1_required": needs_stage1,
         "cue_rule": args.cue_rule if needs_stage1 else None,
         "train_cues": args.train_cues if needs_stage1 else None,
+        "clean_train_records": bool(args.clean_train_records) if needs_stage1 else None,
         "finding_tokens": args.finding_tokens,
         "prompt_style": None if prompt_config or not needs_stage1 else args.prompt_style,
     }
