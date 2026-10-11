@@ -208,3 +208,13 @@ Việc còn lại khi xong: đọc val loss epoch 1 và 2; chấm `gen_test_beam
 bằng `score_stage2_paper_protocol.py` và `score_ce_chexbert.py`; so ghép cặp với v3
 (`~/stage2_v3_test_beam_20261009/gen/beam4_lp2.jsonl`, khớp theo study — `sample_key` của hai
 bên có thể khác cách tính, kiểm tra trước); cập nhật TONG_HOP, CHI_MUC, README, CLAUDE.md.
+
+### Sửa ghi nhận 2026-10-12 00:18 — run 00:07 đã dừng, run được duyệt bắt đầu 00:18:47
+
+Run khởi chạy lúc 00:07 bị dừng ở vòng 348/85.185 theo yêu cầu user (user muốn duyệt danh
+sách rà soát và các điểm chưa kiểm chứng TRƯỚC khi train); adapter dở và log nằm ở
+`~/stage2_p2_20261011/stopped_0012/`. User duyệt lại cùng cấu hình (P2 + LR 3e-4, 2 epoch,
+batch 2 × 8) sau khi được trình: epoch thứ hai và LR 3e-4 ở chế độ dài chưa có phép đo; soft
+token sụp chưa sửa; VRAM 15,8/16 GB (nếu hết bộ nhớ: chạy lại với batch 1 × 16); kết quả không
+cùng điều kiện với bài báo. Run hiện hành: bắt đầu 2026-10-12 00:18:47, cả ba cache
+train/val/test được dùng lại, ~1,0 it/s. Dự kiến `P2LR3_ALL_DONE` rạng sáng 2026-10-14.
