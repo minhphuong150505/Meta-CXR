@@ -911,6 +911,19 @@ study (not image) → anchor + ≤1 auxiliary view
 ```
 
 - Sampling is **one row per study**, not per image (`study_sampling: true`).
+- ⚠⚠ **The BioViL stream is mis-read in two ways, both inherited from the reference
+  code, both UNFIXED (found 2026-10-11).** (1) `visual_encoder(...)
+  .projected_patch_embeddings` is `[B, 1408, 14, 14]` and the model does
+  `.reshape(B, -1, 1408)` with no permute (`blip2_qformer.py` twice,
+  `precompute_features.py`), so the 196 "tokens" are flattened groups of ~7 channel
+  maps, not patches; one true patch is spread over all 196. The "14x14 = 196 tokens,
+  32 px per cell" description below is what was intended, not what runs. (2)
+  `ImageModel(joint_feature_size=1408)` drops BioViL-T's 128-d projector on load, so
+  the 1408-d projector is random-initialised, and only phase 1c trains it: in 1a/1b
+  it is a frozen random projection. Probe on 2,780 test studies: one pooled
+  MedCLIP-Swin token 0.734 AUROC vs MHCAC 0.745; RAD-DINO 0.721; soft tokens
+  1a 0.721 / 1b 0.689 / 1c 0.725. Fixing either needs a new 1a and 1b -- ask the
+  user. Record: `docs/TONG_HOP_2026-10-11.md` sections 11.5-11.6.
 - **Training augmentation reaches the BioViL stream only** (observed
   2026-10-11). `ReportDataset._row_visual` applies the random affine + jitter to
   `image` (BioViL, and RAD-DINO when enabled, which reads the same tensor),
