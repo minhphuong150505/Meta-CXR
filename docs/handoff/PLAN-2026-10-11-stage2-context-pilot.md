@@ -192,3 +192,19 @@ lại được.
 Giới hạn phải ghi rõ: pilot chỉ ~475 update. LR cao hơn có thể thắng vì mô hình học được
 nhiều hơn trong ngân sách ngắn; ở lần train toàn bộ (~10.600 update mỗi epoch) lợi ích có thể
 nhỏ hơn. Chưa có phép đo nào cho chế độ dài.
+
+## Train toàn bộ — khởi chạy lại 2026-10-12 00:07 (user duyệt: P2 + LR 3e-4, 2 epoch)
+
+`~/stage2_p2lr3_full.sh`, log `~/stage2_p2lr3.log`, log train `~/stage2_p2_20261011/full_lr3.log`,
+output `~/stage2_p2_20261011/full`, mã `ce18c45` (checkout `~/Meta-CXR-v3`, cùng nơi dựng cache).
+Lệnh như lần trước cộng `--lora-lr 3e-4`. Xác nhận lúc khởi động: cache train được dùng lại
+(`reusing ..._train_qformer_all_09aa2fb4a3955654.pt`); 170.370 record train, 109.140 có lần
+chụp trước, 161.362 có indication, 0 record không khớp; cue train 1.747.488 ô từ nhãn thật /
+467.322 từ MHCAC; val 1.360, test 2.800 record. Tốc độ ~1,0 it/s, 85.185 vòng mỗi epoch →
+~23,5 giờ/epoch, ~47 giờ train, rồi sinh trên test (beam, greedy). Kết thúc bằng
+`P2LR3_ALL_DONE`, dự kiến rạng sáng 2026-10-14.
+
+Việc còn lại khi xong: đọc val loss epoch 1 và 2; chấm `gen_test_beam` / `gen_test_greedy`
+bằng `score_stage2_paper_protocol.py` và `score_ce_chexbert.py`; so ghép cặp với v3
+(`~/stage2_v3_test_beam_20261009/gen/beam4_lp2.jsonl`, khớp theo study — `sample_key` của hai
+bên có thể khác cách tính, kiểm tra trước); cập nhật TONG_HOP, CHI_MUC, README, CLAUDE.md.
