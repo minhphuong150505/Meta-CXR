@@ -1619,6 +1619,11 @@ cached soft tokens and MHCAC cues of every train record come from one random
 augmented draw per study, while val/test records come from clean images.
 Mild, but it is a train/test difference in Stage 2's inputs; a measurement
 script must switch it off (`scripts/embed_cxr_encoders.py` does).
+**Opt-in since 2026-10-11:** `run_medgemma_qlora.py --clean-train-records`
+encodes the train records from clean images; it enters the train cohort
+fingerprint only when set (`tests/test_clean_train_records.py`), so existing
+caches still hit. Default unchanged. Being piloted against P2 with LoRA r16 and
+LR 3e-4 (`docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`).
 
 ⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
 EPOCH. Every arm A number must be reported that way.** The planned

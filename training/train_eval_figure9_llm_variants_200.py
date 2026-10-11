@@ -645,6 +645,7 @@ def stage1_cohort_fingerprint(
     sample_limit: int | None,
     cue_rule: str = DEFAULT_CUE_RULE,
     finding_tokens: str = FINDING_TOKENS_OFF,
+    clean_train_images: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     ckpt_path = stage1_checkpoint_path(context, checkpoint_root)
     cfg_path = context.resolve_config_path(
@@ -675,6 +676,11 @@ def stage1_cohort_fingerprint(
     # when off so every existing cache still hits.
     if finding_tokens != FINDING_TOKENS_OFF:
         payload["record_features"] = "with_class_logits"
+    # Train records are historically encoded from the AUGMENTED BioViL tensor
+    # (the dataset turns the training augmentation on for split="train").
+    # Only when the clean variant is asked for, so existing caches still hit.
+    if clean_train_images and split == "train":
+        payload["train_images"] = "clean"
     return stable_fingerprint(payload), payload
 
 
@@ -741,6 +747,7 @@ def build_stage1_records(
     num_workers: int,
     cue_rule: str = DEFAULT_CUE_RULE,
     finding_tokens: str = FINDING_TOKENS_OFF,
+    clean_train_images: bool = False,
 ) -> list[dict]:
     """Build Q-Former records. Stage-1 only -- native MedGemma must not call this.
 
@@ -753,7 +760,8 @@ def build_stage1_records(
     validate_cue_thresholds(context, cue_rule)
     validate_finding_token_mode(finding_tokens)
     cohort_id, cohort = stage1_cohort_fingerprint(
-        context, checkpoint_root, split, sample_limit, cue_rule, finding_tokens
+        context, checkpoint_root, split, sample_limit, cue_rule, finding_tokens,
+        clean_train_images,
     )
     limit_name = str(sample_limit) if sample_limit and sample_limit > 0 else "all"
     # This local-only cache necessarily contains target report text and image
@@ -772,7 +780,13 @@ def build_stage1_records(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg, model = build_stage1_model(context, checkpoint_root, device)
+    if clean_train_images:
+        # Soft tokens and cues of train records from the same clean image
+        # pipeline as val/test (no random affine / jitter).
+        cfg.datasets_cfg.mimic_cxr.vis_processor.train.augmentation.enabled = False
     loader = make_stage1_loader(cfg, split, sample_limit, num_workers)
+    if clean_train_images and getattr(loader.dataset, "augmentation_enabled", False):
+        raise RuntimeError("clean_train_images was requested but augmentation is still on")
     records = []
     skipped_invalid_targets = 0
     image_input_keys = STAGE1_IMAGE_INPUT_KEYS
