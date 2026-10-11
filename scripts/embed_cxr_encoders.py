@@ -8,7 +8,9 @@ runs the Stage-1 dataset (so each encoder gets ITS OWN preprocessing) and
 writes one ``.npz`` per encoder with ``keys`` (anchor image basename) and
 ``emb``:
 
-* ``biovil``     -- mean of BioViL-T's projected patch embeddings (its global vector);
+* ``biovil``     -- mean of BioViL-T's projected patch embeddings over H x W (its global vector);
+* ``biovil_asmodel`` -- mean of the 196 "tokens" as the model builds them (reshape of the
+                    channel-first grid, which is NOT the patch layout);
 * ``biovil_grid2`` -- the same 14x14 grid averaged into 2x2 regions and concatenated
                     (4 x 1408): whether regional position adds information;
 * ``pubmedclip`` -- PubMedCLIP's CLS token (post-layernorm, as the model reads it);
@@ -111,7 +113,8 @@ def main(argv=None) -> int:
 
         input_keys = STAGE1_IMAGE_INPUT_KEYS
     encoders = not args.no_encoder_features
-    out: dict[str, list] = {"biovil": [], "biovil_grid2": [], "pubmedclip": [], "swin": [],
+    out: dict[str, list] = {"biovil": [], "biovil_grid2": [], "biovil_asmodel": [], "pubmedclip": [],
+                            "swin": [],
                             "raddino": [], "softtok": []}
     keys: list[str] = []
     started = time.time()
@@ -127,15 +130,17 @@ def main(argv=None) -> int:
                 _logits, soft = model.forward_image(inputs)
                 out["softtok"].append(soft.float().mean(1).cpu().numpy())
             if encoders and model.use_biovil:
-                patches = model.visual_encoder(image).projected_patch_embeddings
-                tokens = patches.reshape(image.shape[0], -1, patches.shape[-1])
-                out["biovil"].append(tokens.mean(1).float().cpu().numpy())
-                # 2x2 regional means of the 14x14 grid, concatenated: does WHERE
-                # carry finding information the global mean loses?
-                side = int(round(tokens.shape[1] ** 0.5))
-                grid = tokens.reshape(image.shape[0], side, side, -1).permute(0, 3, 1, 2)
-                pooled = torch.nn.functional.adaptive_avg_pool2d(grid.float(), 2)
+                # BioViL returns [B, D, H, W]. The true patch tokens are
+                # flatten(2).transpose(1, 2); the model itself does
+                # reshape(B, -1, D) on the channel-first tensor, which mixes
+                # channels and positions (found 2026-10-11) -- that layout is
+                # written as biovil_asmodel for comparison.
+                patches = model.visual_encoder(image).projected_patch_embeddings.float()
+                out["biovil"].append(patches.mean((2, 3)).cpu().numpy())
+                pooled = torch.nn.functional.adaptive_avg_pool2d(patches, 2)
                 out["biovil_grid2"].append(pooled.flatten(1).cpu().numpy())
+                as_model = patches.reshape(image.shape[0], -1, patches.shape[1])
+                out["biovil_asmodel"].append(as_model.mean(1).cpu().numpy())
             if encoders and model.use_pubmedclip:
                 pmc = batch.get("pubmedclip_image")
                 tokens = model._pubmedclip_tokens(image, pmc.to(device) if pmc is not None else None)
