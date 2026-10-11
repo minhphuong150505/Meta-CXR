@@ -162,3 +162,33 @@ pilot thêm tổ hợp.
 
 Không nằm trong pilot này: sửa soft token sụp (cần sửa Q-Former + train lại 1a, ~1 ngày GPU,
 chưa có thiết kế được kiểm chứng) và arm ảnh gốc MedGemma (user không chọn).
+
+### Execution report — pilot biến thể (2026-10-11 17:59 → 2026-10-12 00:01, `P2VAR_ALL_DONE`)
+
+Run toàn bộ dừng 17:59 sau khi ghi cache train (giữ nguyên). Ba arm `rc=0`. Val 500 study,
+ghép cặp với P2, bootstrap 2.000 lần.
+
+| beam 4, lp 2 | BLEU-1 | BLEU-4 | METEOR | ROUGE-L | CIDEr | BERTScore | CheXbert micro F1-14 | micro F1-5 | val loss |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| P2 (mốc) | 0,423 | 0,178 | 0,172 | 0,345 | 0,518 | 0,448 | 0,463 | 0,494 | 1,229 |
+| R16 | 0,416 | 0,176 | 0,171 | 0,348 | 0,555 | 0,451 | 0,454 | 0,490 | 1,212 |
+| **LR3** | **0,431** | **0,189** | **0,180** | **0,365** | **0,606** | **0,467** | **0,478** | **0,517** | **1,189** |
+| CLEAN | 0,421 | 0,172 | 0,173 | 0,343 | 0,516 | 0,446 | 0,474 | 0,512 | 1,230 |
+
+| hiệu so với P2 | BERTScore | ROUGE-L | CIDEr | BLEU-4 | CheXbert micro F1-14 |
+|---|---|---|---|---|---|
+| LR3, beam | **+0,0185 [+0,0059; +0,0318]** | **+0,0206 [+0,0100; +0,0322]** | +0,0879 [+0,0285; +0,1555] | +0,0168 [+0,0074; +0,0266] | +0,0155 [−0,0107; +0,0406] |
+| LR3, greedy | **+0,0177 [+0,0078; +0,0280]** | **+0,0209 [+0,0108; +0,0312]** | +0,1495 [+0,0460; +0,2638] | +0,0241 [+0,0136; +0,0353] | +0,0111 [−0,0131; +0,0349] |
+| R16, beam | +0,0025 [−0,0077; +0,0127] | +0,0032 [−0,0060; +0,0126] | +0,0376 [−0,0186; +0,0992] | +0,0010 [−0,0082; +0,0103] | −0,0089 [−0,0338; +0,0135] |
+| R16, greedy | −0,0008 [−0,0113; +0,0100] | +0,0093 [−0,0003; +0,0196] | +0,1052 [+0,0195; +0,2033] | +0,0121 [+0,0022; +0,0225] | −0,0117 [−0,0353; +0,0129] |
+| CLEAN, beam | −0,0018 [−0,0113; +0,0074] | −0,0020 [−0,0088; +0,0047] | −0,0013 [−0,0368; +0,0391] | −0,0052 [−0,0112; +0,0007] | +0,0116 [−0,0122; +0,0354] |
+| CLEAN, greedy | −0,0080 [−0,0164; −0,0001] | −0,0020 [−0,0083; +0,0044] | +0,0112 [−0,0309; +0,0544] | +0,0036 [−0,0026; +0,0099] | −0,0113 [−0,0355; +0,0135] |
+
+**Theo quy tắc đã chốt:** LR 3e-4 **đạt** (ROUGE-L và BERTScore cận dưới > 0, cả beam và
+greedy). LoRA r16 **không đạt** (beam không khác P2). Cache ảnh sạch **không đạt** (không khác
+P2; greedy BERTScore hơi thấp hơn) — giữ cache có augmentation, nên cache train đã dựng dùng
+lại được.
+
+Giới hạn phải ghi rõ: pilot chỉ ~475 update. LR cao hơn có thể thắng vì mô hình học được
+nhiều hơn trong ngân sách ngắn; ở lần train toàn bộ (~10.600 update mỗi epoch) lợi ích có thể
+nhỏ hơn. Chưa có phép đo nào cho chế độ dài.
