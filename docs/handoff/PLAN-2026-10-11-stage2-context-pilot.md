@@ -139,3 +139,26 @@ các file `.pth` của pilot Stage 1 (`~/s1pilot_20261011`, 21 GB); dự đoán 
 - **Giữ nguyên như pilot (chưa có phép đo ủng hộ thay đổi):** LoRA r8/α16, LR 1e-4, batch
   2 × 8; record train tính từ ảnh có augmentation; soft token đã sụp.
 - Kết luận: không có tối ưu nào đã được kiểm chứng mà run này còn thiếu; không dừng run.
+
+## Pilot biến thể của P2 (user yêu cầu 2026-10-11 17:00) — run toàn bộ tạm dừng
+
+User muốn thử ba điểm "chưa tối ưu" trước khi train 2 ngày. Run toàn bộ (lúc đó mới dựng
+cache, chưa train) được dừng ngay sau khi ghi xong cache train; cache giữ lại ở
+`~/stage2_p2_20261011/full/.sensitive_stage1_cache/`. Script `~/p2var.sh` →
+`~/p2var_20261011/`, mã `3371efd`, cùng 10.000 study train và 500 study val như pilot sáng.
+
+| arm | khác P2 ở |
+|---|---|
+| R16 | `--lora-rank 16 --lora-alpha 32` |
+| LR3 | `--lora-lr 3e-4` |
+| CLEAN | `--clean-train-records` (record train tính từ ảnh không augmentation) |
+
+Mốc so sánh: P2 của pilot sáng (`~/pilot_20261011/gen_P2_{beam,greedy}`, mã `ce18c45`; hai
+commit chỉ khác ở các cờ mặc định tắt). **Quy tắc chốt trước:** nhận một biến thể nếu so với
+P2 (beam, ghép cặp, n = 500) ROUGE-L **và** BERTScore có cận dưới > 0, hoặc CheXbert micro
+F1-14 có cận dưới > 0 mà không chỉ số NLG nào giảm có ý nghĩa. Không biến thể nào đạt: train
+toàn bộ đúng cấu hình P2 đã định. Các biến thể thắng được gộp lại cho lần train toàn bộ, không
+pilot thêm tổ hợp.
+
+Không nằm trong pilot này: sửa soft token sụp (cần sửa Q-Former + train lại 1a, ~1 ngày GPU,
+chưa có thiết kế được kiểm chứng) và arm ảnh gốc MedGemma (user không chọn).
