@@ -109,3 +109,22 @@ Lưu ý: P0 của pilot (0,121 BLEU-4 trên 500 study val) không so trực ti�
 trên 2.800 study test; chỉ các hiệu ghép cặp trong pilot là có giá trị. Bài báo: BLEU-1
 0,390, BLEU-4 0,102, METEOR 0,173, ROUGE-L 0,280, CIDEr 0,291, BERTScore 0,426 (test,
 không dùng bối cảnh).
+
+## Train toàn bộ (user duyệt 2026-10-11: cấu hình P2, 2 epoch)
+
+Stage 1 giữ nguyên (`run_20261005_paper`, pilot sửa BioViL không có lợi — xem
+`PLAN-2026-10-11-stage1-improvement.md`). Khởi chạy 2026-10-11 15:50, `~/stage2_p2_full.sh`
+→ `~/stage2_p2_20261011/`, mã `ce18c45` (cùng mã với pilot), log `~/stage2_p2_20261011.log`:
+
+```
+run_medgemma_qlora.py --pipeline-mode meta_cxr_qformer_with_mhcac_prompt --section-mode findings_only
+  --prompt-style paper_context --cue-rule cutpoints --threshold-path configs/stage1_cutpoints/run_20261005_paper.json
+  --train-cues oracle_mix --train-cue-model-share 0.2 --train-epochs 2 --batch-size 2 --grad-accum 8
+  --save-every-updates 32 --skip-test
+```
+
+Sau khi train: sinh trên test với beam 4 + length penalty 2 và greedy
+(`gen_test_beam`, `gen_test_greedy`); kết thúc bằng `P2FULL_ALL_DONE`. Chấm bằng
+`score_stage2_paper_protocol.py` và `score_ce_chexbert.py`, ghép cặp với v3 trên cùng study.
+Ước tính: dựng cache Stage 1 ~1,8 giờ, train ~40 giờ, sinh ~3 giờ. Để giải phóng đĩa đã xóa
+các file `.pth` của pilot Stage 1 (`~/s1pilot_20261011`, 21 GB); dự đoán `.npz` và log còn giữ.
