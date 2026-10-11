@@ -65,3 +65,47 @@ BERTScore) + CE lexicon; bootstrap ghép cặp 2.000 lần, seed 16.
 
 OOM, NaN, smoke không sinh được báo cáo, hoặc cohort 500 study val không khớp
 `sample_key` giữa các arm.
+
+## Execution report (2026-10-11, máy train)
+
+`~/pilot_run.sh`, 01:17 → 07:15, `PILOT_ALL_DONE`. Mỗi arm 10.000 study train (7.604
+record có FINDINGS hợp lệ), 1 epoch; chấm 500 study val cố định; giao thức bài báo, CE
+lexicon và CE CheXbert (`f1chexbert`); bootstrap ghép cặp 2.000 lần. Artifact:
+`~/pilot_20261011/` (`scores_*`, `ce_*`).
+
+| beam 4, lp 2 | BLEU-1 | BLEU-4 | METEOR | ROUGE-L | CIDEr | BERTScore | CE lexicon | CheXbert micro F1-14 | micro F1-5 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| P0 (như v3) | 0,370 | 0,121 | 0,142 | 0,301 | 0,284 | 0,410 | 0,212 | 0,438 | 0,438 |
+| P1 (+ bối cảnh) | 0,408 | 0,165 | 0,168 | 0,336 | 0,487 | 0,437 | 0,289 | 0,441 | 0,441 |
+| P2 (+ cue nhãn thật lúc train) | **0,423** | **0,178** | **0,172** | **0,345** | **0,518** | **0,448** | **0,308** | **0,463** | **0,494** |
+
+| greedy | BLEU-1 | BLEU-4 | METEOR | ROUGE-L | CIDEr | BERTScore | CE lexicon | CheXbert micro F1-14 | micro F1-5 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| P0 | 0,296 | 0,094 | 0,127 | 0,288 | 0,193 | 0,410 | 0,213 | 0,452 | 0,469 |
+| P1 | 0,349 | 0,146 | 0,156 | 0,338 | 0,407 | 0,455 | 0,287 | 0,457 | 0,453 |
+| P2 | 0,345 | 0,144 | 0,156 | 0,337 | 0,387 | 0,460 | 0,290 | 0,470 | 0,480 |
+
+Ghép cặp (n = 500):
+
+| | BERTScore | ROUGE-L | CIDEr | BLEU-4 | CE lexicon | CheXbert micro F1-5 |
+|---|---|---|---|---|---|---|
+| P1 − P0, beam | +0,0275 [+0,0143; +0,0406] | +0,0359 [+0,0229; +0,0490] | +0,2027 [+0,1118; +0,3002] | +0,0386 [+0,0249; +0,0535] | +0,0763 [+0,0370; +0,1131] | +0,0022 [−0,0525; +0,0576] |
+| P1 − P0, greedy | +0,0450 [+0,0319; +0,0574] | +0,0496 [+0,0372; +0,0617] | +0,2132 [+0,1338; +0,2965] | +0,0537 [+0,0410; +0,0660] | +0,0744 [+0,0318; +0,1122] | −0,0157 [−0,0653; +0,0379] |
+| P2 − P1, beam | +0,0110 [+0,0010; +0,0209] | +0,0081 [−0,0000; +0,0164] | +0,0312 [−0,0145; +0,0740] | +0,0103 [+0,0026; +0,0180] | +0,0190 [−0,0075; +0,0453] | +0,0532 [+0,0158; +0,0889] |
+| P2 − P1, greedy | +0,0050 [−0,0025; +0,0124] | −0,0004 [−0,0071; +0,0064] | −0,0195 [−0,0624; +0,0219] | −0,0040 [−0,0108; +0,0028] | +0,0029 [−0,0403; +0,0499] | +0,0266 [−0,0095; +0,0655] |
+
+**Theo quy tắc đã chốt trước:**
+
+1. **Bối cảnh — NHẬN.** P1 − P0 có ROUGE-L và BERTScore với cận dưới > 0 ở cả beam và
+   greedy; BLEU-4 +0,04–0,05, CIDEr +0,20, CE lexicon +0,075. CheXbert micro không đổi,
+   macro F1-14 tăng (+0,047 beam, +0,068 [+0,022; +0,110] greedy).
+2. **Train cue bằng nhãn thật có nhiễu — KHÔNG đạt ngưỡng đã chốt.** CE lexicon beam
+   +0,019 [−0,008; +0,045] (ngưỡng: ≥ +0,02 và cận dưới > 0), greedy +0,003. Ngoài quy
+   tắc: CheXbert micro F1-5 beam +0,053 [+0,016; +0,089] có ý nghĩa, BERTScore và BLEU-4
+   beam tăng có ý nghĩa, không chỉ số NLG nào giảm có ý nghĩa. Tức là có tín hiệu tốt
+   nhưng chưa xác lập ở n = 500, một seed — quyết định dùng hay không là của user.
+
+Lưu ý: P0 của pilot (0,121 BLEU-4 trên 500 study val) không so trực tiếp được với v3
+trên 2.800 study test; chỉ các hiệu ghép cặp trong pilot là có giá trị. Bài báo: BLEU-1
+0,390, BLEU-4 0,102, METEOR 0,173, ROUGE-L 0,280, CIDEr 0,291, BERTScore 0,426 (test,
+không dùng bối cảnh).
