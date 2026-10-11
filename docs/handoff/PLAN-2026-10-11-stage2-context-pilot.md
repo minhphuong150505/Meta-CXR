@@ -128,3 +128,14 @@ Sau khi train: sinh trên test với beam 4 + length penalty 2 và greedy
 `score_stage2_paper_protocol.py` và `score_ce_chexbert.py`, ghép cặp với v3 trên cùng study.
 Ước tính: dựng cache Stage 1 ~1,8 giờ, train ~40 giờ, sinh ~3 giờ. Để giải phóng đĩa đã xóa
 các file `.pth` của pilot Stage 1 (`~/s1pilot_20261011`, 21 GB); dự đoán `.npz` và log còn giữ.
+
+### Rà soát trước khi để run chạy 2 ngày (2026-10-11 16:15)
+
+- **Độ dài chuỗi:** đo trên 7.604 record train và 1.360 record val của pilot P2 (cùng prompt):
+  prompt p50 / p99 / max = 375 / 480 / 547 token, cả chuỗi (prompt + target) max 676 — dưới
+  `--max-length 768`; 0 dòng bị cắt, 0 token target bị mất.
+- **Chọn checkpoint:** val loss chấm cuối mỗi epoch, adapter tốt nhất được lưu riêng,
+  `--patience 1`; LR cosine trên toàn bộ số update, warm-up 3%.
+- **Giữ nguyên như pilot (chưa có phép đo ủng hộ thay đổi):** LoRA r8/α16, LR 1e-4, batch
+  2 × 8; record train tính từ ảnh có augmentation; soft token đã sụp.
+- Kết luận: không có tối ưu nào đã được kiểm chứng mà run này còn thiếu; không dừng run.
