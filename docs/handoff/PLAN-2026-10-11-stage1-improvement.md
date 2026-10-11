@@ -136,3 +136,33 @@ của `run_20261005_paper`, không chấm test.
 với A có cận dưới > 0; nhận C thay B nếu C − B có cận dưới > 0. Không arm nào thắng: giữ
 `run_20261005_paper`, không train lại Stage 1. Lưu ý giới hạn: B và C khởi từ checkpoint 1a
 đã học trên bố cục token cũ, nên pilot đo phần lợi cho MHCAC, không đo Q-Former.
+
+## Execution report — pilot 1b (2026-10-11 13:10 → 15:33, `S1PILOT_DONE`)
+
+Ba arm `rc=0`, mỗi arm ~48 phút, VRAM đỉnh 6,4 / 6,4 / 6,8 GB. Log xác nhận cấu hình: B
+train thêm 2,7M tham số (projector BioViL), `shared_visual_projector` không còn trong nhóm
+`fade_out`; C in `unfroze 69 parameters (31.85M) across 5 patterns`.
+
+Val 1.808 study, theo epoch (AUROC trung bình ba lớp / macro recall / F1-5):
+
+| arm | epoch 0 | epoch 1 | `loss_cls` train cuối |
+|---|---|---|---:|
+| A (đang ship) | 0,702 / 0,476 / 0,689 | **0,740** / 0,483 / 0,714 | 0,570 |
+| B (bố cục patch + projector train) | 0,688 / 0,469 / 0,701 | 0,721 / 0,477 / 0,706 | 0,566 |
+| C (B + mở khóa nông) | 0,704 / 0,485 / 0,716 | 0,726 / 0,482 / 0,727 | 0,560 |
+
+Bootstrap ghép cặp (1.000 lần, epoch tốt nhất theo `macro_recall`: A và B epoch 1, C epoch 0):
+
+| | AUROC TB | AUROC Pos | macro recall | F1-5 |
+|---|---|---|---|---|
+| B − A | **−0,0197 [−0,0288; −0,0103]** | −0,0238 [−0,0359; −0,0132] | −0,0052 [−0,0093; −0,0014] | −0,0077 [−0,0126; −0,0027] |
+| C − A | **−0,0358 [−0,0470; −0,0247]** | −0,0366 [−0,0500; −0,0219] | +0,0025 [−0,0032; +0,0081] | +0,0017 [−0,0040; +0,0080] |
+
+**Theo quy tắc đã chốt: không arm nào thắng — giữ `run_20261005_paper`, không train lại
+Stage 1.** B và C có loss train thấp hơn nhưng AUROC val thấp hơn A có ý nghĩa.
+
+Điều pilot này KHÔNG chứng minh: rằng bố cục patch tệ hơn về nguyên tắc. B và C khởi từ
+checkpoint 1a (projector chung và Q-Former đã khớp với bố cục cũ), chỉ có 2 epoch trên
+60.000 study, và cả ba arm còn đang tăng ở epoch 1. Nó chỉ cho thấy: trong ngân sách có thể
+kiểm chứng rẻ, sửa hai lỗi BioViL không đem lại lợi ích đo được, nên không đủ căn cứ để chi
+15–20 giờ train lại 1a + 1b. Cờ `model.biovil.token_layout` giữ ở mặc định cũ.
