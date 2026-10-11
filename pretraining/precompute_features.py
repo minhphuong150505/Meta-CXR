@@ -100,9 +100,9 @@ def extract_raw_features(model, image, enabled, swin_image=None, pubmedclip_imag
     """
     out = {}
     if enabled.get("biovil"):
-        out["biovil"] = model.visual_encoder(image).projected_patch_embeddings.reshape(
-            image.shape[0], -1, 1408
-        )
+        # Same layout as the model reads (model.biovil.token_layout); a cache is
+        # only valid for the layout it was built with.
+        out["biovil"] = model._biovil_tokens(image)
     if enabled.get("pubmedclip"):
         # Its own CLIP preprocessing when model.pubmedclip.preprocess is native.
         out["pubmedclip"] = model._pubmedclip_tokens(image, pubmedclip_image)
