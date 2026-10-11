@@ -929,8 +929,13 @@ study (not image) → anchor + ≤1 auxiliary view
   `precompute_features.py`). Absent key = `legacy_reshape`, bit-identical to
   before (`tests/test_biovil_token_layout.py`); the shipped YAML does not set it.
   A checkpoint or feature cache is only valid under the layout it was made with.
-  For (2), list `visual_encoder.projector` in a phase's `trainable`. Pilot
-  (user-approved): `docs/handoff/PLAN-2026-10-11-stage1-improvement.md`.
+  For (2), list `visual_encoder.projector` in a phase's `trainable`.
+  **Pilot 2026-10-11 -- NO gain, keep the defaults.** Phase 1b only, 60,000
+  studies, 2 epochs, from the same 1a checkpoint, val n=1,808: patch layout +
+  trained projectors vs shipped, AUROC mean -0.0197 [-0.0288, -0.0103]; with the
+  shallow unfreeze added, -0.0358 [-0.0470, -0.0247]. Lower train loss, lower
+  val AUROC. It does not test a 1a retrained on the patch layout. Record:
+  `docs/handoff/PLAN-2026-10-11-stage1-improvement.md`.
 - **Training augmentation reaches the BioViL stream only** (observed
   2026-10-11). `ReportDataset._row_visual` applies the random affine + jitter to
   `image` (BioViL, and RAD-DINO when enabled, which reads the same tensor),
