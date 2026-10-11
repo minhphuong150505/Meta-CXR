@@ -48,6 +48,7 @@ và có thể trôi dạt sang hai biểu diễn khác nhau.
 | `stream_adapter.py` | [📄](stream_adapter.py.doc.md) | 🟡 | giữ `D` | `StreamAdapter` (đường chính, identity ở init), `ContrastiveProjectionHead`, `pool_stream`. Lý do tồn tại: MPC từng có **gradient bằng 0** |
 | `pubmedclip/pubmed_clip.py` | [📄](pubmedclip.py.doc.md) | ✅ | 768 | Dựng với `project=False` — projector sở hữu phép chiếu |
 | `pubmedclip/preprocess.py` | [📄](pubmedclip.py.doc.md) | ✅ | — | Tiền xử lý CLIP riêng trên ảnh gốc (`preprocess: native`, D-022) |
+| `biovil_tokens.py` | [📄](biovil_tokens.py.doc.md) | ✅ | — | Lưới BioViL `[B,D,H,W]` → token; `model.biovil.token_layout` (`legacy_reshape` mặc định, `patch`) |
 | `swin/swin_encoder.py` | [📄](swin_encoder.py.doc.md) | ✅ | 768 (medclip) | Backend `medclip` (production, D-020) — MedCLIP Swin-Tiny, 50 token; backend `hf` + `ChayanM/SwinV2-GPT2_Mimic` chỉ còn cho ablation |
 | `swin/medclip_swin.py` | [📄](medclip_swin.py.doc.md) | ✅ | 768 | Tiền xử lý MedCLIP, nạp weights strict, ghép pooled + 49 patch |
 | `feature_mask.py` | [📄](feature_mask.py.doc.md) | ✅ | giữ `D` | Mask 10% token mỗi encoder lúc train (bài báo) |

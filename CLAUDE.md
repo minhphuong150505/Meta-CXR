@@ -924,6 +924,13 @@ study (not image) → anchor + ≤1 auxiliary view
   MedCLIP-Swin token 0.734 AUROC vs MHCAC 0.745; RAD-DINO 0.721; soft tokens
   1a 0.721 / 1b 0.689 / 1c 0.725. Fixing either needs a new 1a and 1b -- ask the
   user. Record: `docs/TONG_HOP_2026-10-11.md` sections 11.5-11.6.
+  **Opt-in fix for (1), 2026-10-11:** `model.biovil.token_layout: patch`
+  (`vision_encoders/biovil_tokens.py`, read by `Blip2Qformer._biovil_tokens` and
+  `precompute_features.py`). Absent key = `legacy_reshape`, bit-identical to
+  before (`tests/test_biovil_token_layout.py`); the shipped YAML does not set it.
+  A checkpoint or feature cache is only valid under the layout it was made with.
+  For (2), list `visual_encoder.projector` in a phase's `trainable`. Pilot
+  (user-approved): `docs/handoff/PLAN-2026-10-11-stage1-improvement.md`.
 - **Training augmentation reaches the BioViL stream only** (observed
   2026-10-11). `ReportDataset._row_visual` applies the random affine + jitter to
   `image` (BioViL, and RAD-DINO when enabled, which reads the same tensor),

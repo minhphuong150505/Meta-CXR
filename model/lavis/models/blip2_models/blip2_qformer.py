@@ -28,6 +28,7 @@ from mhcac.mhcac_12 import AbnormalityClassificationModel, StreamLayout
 
 from vision_encoders.pubmedclip.pubmed_clip import Pubmedclip
 from vision_encoders.pubmedclip.preprocess import resolve_pubmedclip_preprocess
+from vision_encoders.biovil_tokens import biovil_grid_to_tokens, resolve_biovil_token_layout
 from pretraining.retired_keys import (
     drop_retired_state,
     reject_retired_model_keys as reject_retired_binary_keys,
@@ -192,6 +193,7 @@ class Blip2Qformer(Blip2Base):
         use_biovil=True,
         use_pubmedclip=True,
         pubmedclip_preprocess="biovil_tensor",
+        biovil_token_layout=None,
         use_swin=False,
         swin_model_name="ChayanM/SwinV2-GPT2_Mimic",
         swin_backend="hf",
@@ -251,6 +253,10 @@ class Blip2Qformer(Blip2Base):
         # CLIP preprocessing of the raw radiograph, D-022); "biovil_tensor":
         # the historical crop of the BioViL tensor.
         self.pubmedclip_preprocess = resolve_pubmedclip_preprocess(pubmedclip_preprocess)
+        # How BioViL's [B, D, H, W] grid becomes tokens. Absent key = the
+        # historical reshape (not a patch layout); "patch" is the true one.
+        # See vision_encoders/biovil_tokens.py.
+        self.biovil_token_layout = resolve_biovil_token_layout(biovil_token_layout)
         self.use_swin = bool(use_swin)
         self.use_raddino = bool(use_raddino)
         if not any([self.use_biovil, self.use_pubmedclip, self.use_swin, self.use_raddino]):
@@ -755,9 +761,7 @@ class Blip2Qformer(Blip2Base):
         with torch.no_grad():
             if "biovil" in need:
                 streams["biovil"] = scatter(
-                    self.visual_encoder(real).projected_patch_embeddings.reshape(
-                        real.shape[0], -1, 1408
-                    )
+                    self._biovil_tokens(real)
                 )
             if "pubmedclip" in need:
                 # Fuse the 768-dim ViT stream; the 1408 projection is recomputed
@@ -810,6 +814,11 @@ class Blip2Qformer(Blip2Base):
         return self.view_fusion[name](
             anchor, aux.to(anchor.dtype), aux_mask, anchor_view_id, aux_view_ids
         )
+
+    def _biovil_tokens(self, image):
+        """BioViL patch grid -> [B, 196, 1408] under ``self.biovil_token_layout``."""
+        grid = self.visual_encoder(image).projected_patch_embeddings
+        return biovil_grid_to_tokens(grid, self.biovil_token_layout)
 
     def _native_stream_layouts(self, img_size):
         """Per-encoder token layout, or ``None`` to use the legacy resample path.
@@ -951,9 +960,7 @@ class Blip2Qformer(Blip2Base):
 
         if self.use_biovil:
             cnn_raw = cached["biovil"] if "biovil" in cached else (
-                self.visual_encoder(image).projected_patch_embeddings.reshape(
-                    image.shape[0], -1, VISUAL_DIM
-                )
+                self._biovil_tokens(image)
             )
             cnn_raw = self._adapt("biovil", self._mask_stream(cnn_raw))
             self._stash_prefusion("biovil", cnn_raw, aux_streams)
@@ -2276,6 +2283,9 @@ class Blip2Qformer(Blip2Base):
         pubmedclip_preprocess = resolve_pubmedclip_preprocess(
             (cfg.get("pubmedclip", {}) or {}).get("preprocess", None)
         )
+        biovil_token_layout = resolve_biovil_token_layout(
+            (cfg.get("biovil", {}) or {}).get("token_layout", None)
+        )
         use_swin = cfg_bool(encoders.get("swin", cfg.get("use_swin", False)))
         swin_cfg = cfg.get("swin", {}) or {}
         swin_model_name = cfg.get(
@@ -2425,6 +2435,7 @@ class Blip2Qformer(Blip2Base):
             use_biovil=use_biovil,
             use_pubmedclip=use_pubmedclip,
             pubmedclip_preprocess=pubmedclip_preprocess,
+            biovil_token_layout=biovil_token_layout,
             use_swin=use_swin,
             swin_model_name=swin_model_name,
             swin_backend=swin_backend,
