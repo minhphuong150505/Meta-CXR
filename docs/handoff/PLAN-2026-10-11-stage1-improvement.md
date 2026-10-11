@@ -113,3 +113,26 @@ khóa sâu (không hơn mở khóa nông).
 2. Đo M1–M5 (mục 4) → chốt phương án Stage 1 và nguồn soft token.
 3. User duyệt → Stage 1 phương án A (~6 h), một lần, có checkpoint hiện tại làm dự phòng.
 4. Stage 2 toàn bộ một lần với cấu hình thắng pilot, cue từ checkpoint Stage 1 mới.
+
+## 7. Cập nhật 2026-10-11 chiều: kết quả đo và pilot được duyệt
+
+Kết quả M1–M5: `docs/TONG_HOP_2026-10-11.md` mục 11.5–11.6. Hai điểm đổi kế hoạch:
+RAD-DINO không hơn MedCLIP-Swin (không tích hợp); và luồng BioViL có hai lỗi kế thừa từ
+code gốc — token bị trộn (`reshape` không hoán vị trục) và projector 1408 chiều là ngẫu
+nhiên, đóng băng trong 1a/1b. "Mở khóa encoder nông" (mục 3) vì thế chưa đủ.
+
+**Pilot (user duyệt 2026-10-11), `~/s1pilot.sh` → `~/s1pilot_20261011/`, mã `9b79822`:**
+chỉ pha 1b, 60.000 study train đầu tiên, 2 epoch, warm-up 150 update, cùng checkpoint 1a
+của `run_20261005_paper`, không chấm test.
+
+| arm | khác gì |
+|---|---|
+| A | như cấu hình đang ship |
+| B | `model.biovil.token_layout=patch`; `visual_encoder.projector` được train; `shared_visual_projector` + `ln_vision` không bị đóng băng sau 10% |
+| C | B + mở khóa encoder nông (5 pattern của `run_20260820_ft`) |
+
+**Quy tắc chọn (chốt trước):** trên 1.808 study val, epoch tốt nhất của mỗi arm theo
+`macro_recall`; bootstrap ghép cặp AUROC trung bình ba lớp. Nhận B (hoặc C) nếu hiệu so
+với A có cận dưới > 0; nhận C thay B nếu C − B có cận dưới > 0. Không arm nào thắng: giữ
+`run_20261005_paper`, không train lại Stage 1. Lưu ý giới hạn: B và C khởi từ checkpoint 1a
+đã học trên bố cục token cũ, nên pilot đo phần lợi cho MHCAC, không đo Q-Former.
