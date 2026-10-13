@@ -210,13 +210,13 @@ lần trước đã ngang bài báo ở BLEU và hơn mô hình 0,12 CE lexicon;
 indication BLEU-4 9,5 → 14,8, ROUGE-L 27,1 → 31,6; MAIRA-2 bỏ lần chụp trước lúc suy
 luận ROUGE-L −28,9%. Kế hoạch pilot: `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
 **Đã làm (2026-10-14), chuyển sang lớp B:** train toàn bộ 2 epoch cùng cue nhãn thật lúc train
-và LR 3e-4. Test 300 study, ghép cặp với v3 beam: BERTScore +0,080 [+0,064; +0,095], ROUGE-L
-+0,075 [+0,062; +0,090], CIDEr +0,227 [+0,138; +0,319], CheXbert micro F1-14 +0,095
-[+0,058; +0,133]; tuyệt đối (beam) BLEU-1 0,434 / BLEU-4 0,190 / METEOR 0,188 / ROUGE-L 0,348 /
-CIDEr 0,393 / BERTScore 0,461 so với bài báo 0,390 / 0,102 / 0,173 / 0,280 / 0,291 / 0,426.
+và LR 3e-4. Test 2.800 study, ghép cặp với v3 beam: BERTScore +0,096 [+0,091; +0,102], ROUGE-L
++0,090 [+0,085; +0,096], CIDEr +0,288 [+0,256; +0,320], CheXbert micro F1-14 +0,104
+[+0,092; +0,116]; tuyệt đối (beam) BLEU-1 0,434 / BLEU-4 0,190 / METEOR 0,190 / ROUGE-L 0,355 /
+CIDEr 0,416 / BERTScore 0,466 so với bài báo 0,390 / 0,102 / 0,173 / 0,280 / 0,291 / 0,426.
 Lớp B chứ không phải A: không cùng điều kiện với bài báo (mô hình có thêm indication và báo
 cáo lần chụp trước), và ba thay đổi (bối cảnh, cue lúc train, LR/epoch) đi cùng nhau nên chưa
-tách đóng góp ở chế độ train dài. Số trên cả 2.800 study đang được sinh.
+tách đóng góp ở chế độ train dài.
 
 **TM-24 — Kênh ảnh gốc của MedGemma** (MedSigLIP, 256 token, đã train trên 231k
 ảnh MIMIC-CXR) thay 32 soft token sụp. **Bằng chứng yếu, chỉ là giả thuyết:** tài
