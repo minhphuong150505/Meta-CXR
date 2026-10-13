@@ -1604,17 +1604,18 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
 - ✅ **FULL RUN DONE 2026-10-14: P2 (`paper_context` + `oracle_mix`) + `--lora-lr 3e-4`,
   2 epochs, batch 2 x 8.** 47h45m, 0 OOM; adapter `~/stage2_p2_20261011/full/adapters/...`
   on the host (checkout `~/Meta-CXR-v3` at `ce18c45`). Val loss 0.99053 -> **0.95619**
-  (epoch 2 kept); train loss 1.024 -> 0.855. Test, **n=300**, paper protocol, beam 4 lp 2:
-  BLEU-1 0.434 / BLEU-4 0.190 / METEOR 0.188 / ROUGE-L 0.348 / CIDEr 0.393 / BERTScore 0.461,
-  CheXbert micro F1-14 0.547. Paired vs v3 beam on the same 300: BERTScore +0.080
-  [+0.064, +0.095], ROUGE-L +0.075 [+0.062, +0.090], CIDEr +0.227 [+0.138, +0.319],
-  CheXbert micro F1-14 +0.095 [+0.058, +0.133]. ⚠ **Not the paper's conditions**: this
+  (epoch 2 kept); train loss 1.024 -> 0.855. Test, **n=2,800**, paper protocol, beam 4 lp 2:
+  BLEU-1 0.434 / BLEU-4 0.190 / METEOR 0.190 / ROUGE-L 0.355 / CIDEr 0.416 / BERTScore 0.466,
+  CheXbert micro F1-14 0.564 (greedy: 0.376 / 0.168 / 0.177 / 0.354 / 0.375 / 0.474, 0.563).
+  Paired vs v3 beam on the same 2,800: BERTScore +0.096 [+0.091, +0.102], ROUGE-L +0.090
+  [+0.085, +0.096], CIDEr +0.288 [+0.256, +0.320], CheXbert micro F1-14 +0.104
+  [+0.092, +0.116]. (The run's own first scoring was on 300 studies; superseded.) ⚠ **Not the paper's conditions**: this
   model also reads the indication and the previous study's FINDINGS; beating the paper's
   0.390 / 0.102 / 0.173 / 0.280 / 0.291 / 0.426 says nothing about the image channel
   (soft tokens still collapsed). One run, one seed; the three changes are not separated
   at full budget. Traps: (1) `generate_stage2_reports.py --limit` defaults to **300** --
-  the run script omitted it, so pass `--limit 0` for the whole split (full 2,800 generation
-  launched 2026-10-14 00:36, `~/stage2_genfull.sh`); (2) generation re-keys rows with
+  the run script omitted it, so pass `--limit 0` for the whole split (done separately,
+  `~/stage2_genfull.sh` -> `gen_test_{beam,greedy}_full`, scores in `score/n2800_*.json`); (2) generation re-keys rows with
   `sample_key_for(image_path)`, which is NOT the cache record's `sample_key`, so v3's
   JSONL shares 0 keys with it -- pair by cache row order and verify references row by row
   (reference text alone is not unique: 2,798 distinct of 2,800).

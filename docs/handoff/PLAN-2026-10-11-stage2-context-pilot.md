@@ -267,7 +267,30 @@ thì không; MedGemma thay Vicuna; bài báo chấm trên cả test. Chỉ riên
 trước đã ngang bài báo ở BLEU-1/BLEU-4 (TONG_HOP mục 4.4), nên phần hơn bài báo không chứng
 minh kênh ảnh tốt hơn. Một run, một seed, n = 300.
 
-**Đang chạy:** sinh trên cả 2.800 study test, bắt đầu 2026-10-14 00:36, cùng adapter và tham
-số, chỉ thêm `--limit 0` (`~/stage2_genfull.sh`, log `~/stage2_genfull.log`, output
-`gen_test_beam_full` / `gen_test_greedy_full`, kết thúc bằng `GENFULL_ALL_DONE`, dự kiến
-~05:15). Số trên 2.800 study sẽ thay bảng trên. Không train thêm, không đổi pipeline.
+### Chấm lại trên cả 2.800 study test (2026-10-14) — số dùng để báo cáo
+
+`~/stage2_genfull.sh`: cùng adapter và tham số, chỉ thêm `--limit 0`; 00:36:01 → 05:21:38,
+`GENFULL_ALL_DONE`. Beam 10.492 giây, greedy 6.600 giây, 2.800/2.800 study, 0 lỗi, đỉnh VRAM
+9,5 / 8,9 GB. Khớp với v3: 2.800/2.800 tham chiếu trùng từng dòng cho cả hai file. v3 beam
+tính lại ra đúng số đã ghi ngày 2026-10-09 (0,357 / 0,098 / 0,137 / 0,265 / 0,128 / 0,369).
+Kết quả: `score/n2800_paper_protocol.json`, `score/n2800_ce_chexbert.json` trên máy train.
+
+| | BLEU-1 | BLEU-4 | METEOR | ROUGE-L | CIDEr | BERTScore | số từ (trung vị) | CE micro F1-14 | CE macro F1-14 | CE micro F1-5 | CE macro F1-5 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| v3 beam | 0,357 | 0,098 | 0,137 | 0,265 | 0,128 | 0,369 | 47 | 0,460 | 0,290 | 0,518 | 0,450 |
+| P2+LR3 beam 4, lp 2 | 0,434 | 0,190 | 0,190 | 0,355 | 0,416 | 0,466 | 47 | 0,564 | 0,425 | 0,615 | 0,551 |
+| P2+LR3 greedy | 0,376 | 0,168 | 0,177 | 0,354 | 0,375 | 0,474 | 39 | 0,563 | 0,424 | 0,609 | 0,542 |
+| bài báo (không bối cảnh) | 0,390 | 0,102 | 0,173 | 0,280 | 0,291 | 0,426 | — | — | — | — | — |
+
+Hiệu ghép cặp so với v3 beam (bootstrap 2.000 lần, seed 16, n = 2.800), mọi khoảng đều không
+chứa 0:
+
+| | BERTScore | ROUGE-L | CIDEr | BLEU-4 | CE micro F1-14 | CE macro F1-14 | CE micro F1-5 |
+|---|---|---|---|---|---|---|---|
+| beam | +0,096 [+0,091; +0,102] | +0,090 [+0,085; +0,096] | +0,288 [+0,256; +0,320] | +0,095 [+0,089; +0,101] | +0,104 [+0,092; +0,116] | +0,136 [+0,121; +0,151] | +0,097 [+0,081; +0,112] |
+| greedy | +0,105 [+0,100; +0,111] | +0,090 [+0,084; +0,095] | +0,248 [+0,214; +0,284] | +0,087 [+0,081; +0,092] | +0,103 [+0,092; +0,115] | +0,134 [+0,119; +0,150] | +0,091 [+0,075; +0,106] |
+
+Beam hơn greedy ở BLEU/METEOR/CIDEr (dài hơn: 47 so với 39 từ), greedy hơn nhẹ ở BERTScore;
+CheXbert gần như bằng nhau. Cảnh báo "không cùng điều kiện với bài báo" ở trên giữ nguyên. Một
+run, một seed; ba thay đổi (bối cảnh, cue lúc train, LR/epoch) chưa tách ở chế độ train dài.
+Không train thêm, không đổi pipeline.
