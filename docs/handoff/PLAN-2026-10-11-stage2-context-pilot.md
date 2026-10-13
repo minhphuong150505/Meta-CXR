@@ -218,3 +218,56 @@ batch 2 × 8) sau khi được trình: epoch thứ hai và LR 3e-4 ở chế đ�
 token sụp chưa sửa; VRAM 15,8/16 GB (nếu hết bộ nhớ: chạy lại với batch 1 × 16); kết quả không
 cùng điều kiện với bài báo. Run hiện hành: bắt đầu 2026-10-12 00:18:47, cả ba cache
 train/val/test được dùng lại, ~1,0 it/s. Dự kiến `P2LR3_ALL_DONE` rạng sáng 2026-10-14.
+
+## Execution report — train toàn bộ xong 2026-10-14 (P2 + LR 3e-4, 2 epoch)
+
+Lệnh: `~/stage2_p2lr3_full.sh`, exit 0; `P2LR3_ALL_DONE` lúc 2026-10-14 00:34:23. Train
+2026-10-12 00:18:47 → 2026-10-14 00:04:03 (47h45m), 85.185 vòng mỗi epoch, ~1,0 it/s, 0 OOM,
+0 traceback, máy không reboot, VRAM 12,4–15,8 GB. Mã `ce18c45`.
+
+| epoch | train loss | val loss |
+|---|---:|---:|
+| 1 | 1,02386 | 0,99053 |
+| 2 | 0,85472 | **0,95619** |
+
+Epoch 2 giảm val loss 0,034 nên adapter được giữ là của epoch 2. Train loss giảm 0,169, tức
+khoảng cách train–val mở ra (−0,03 → +0,10). Val loss là teacher-forced, không đo chất lượng
+sinh. Tham chiếu: nhánh LR3 của pilot (10.000 study) val loss 1,189.
+
+**Lệch so với kế hoạch:** script không truyền `--limit` cho `generate_stage2_reports.py` nên
+bước sinh chỉ lấy mặc định **300 study** test (mẫu cố định, seed 16), không phải 2.800. Sinh
+300 study: beam 1.102 giây, 0 lỗi, đỉnh VRAM 8,9 GiB; greedy 0 lỗi.
+
+**Khớp study với v3:** `sample_key` khác cách tính (v3 dùng key của record cache, file mới dùng
+key tính từ tên ảnh) → 0 key chung. Khớp theo thứ tự dòng của cache test dùng chung: báo cáo
+tham chiếu trùng 2.800/2.800 dòng với v3, 300/300 với mỗi file mới (không khớp theo nội dung
+tham chiếu vì chỉ có 2.798 tham chiếu khác nhau). Bản v3 mang key mới nằm ở thư mục riêng
+`~/stage2_p2_20261011/score/` trên máy train.
+
+**Test, 300 study, giao thức bài báo** (v3 tính lại trên đúng 300 study này; CE = CheXbert):
+
+| | BLEU-1 | BLEU-4 | METEOR | ROUGE-L | CIDEr | BERTScore | số từ (trung vị) | CE micro F1-14 | CE macro F1-14 | CE micro F1-5 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| v3 beam | 0,374 | 0,105 | 0,141 | 0,273 | 0,166 | 0,381 | 47 | 0,451 | 0,311 | 0,498 |
+| P2+LR3 beam 4, lp 2 | 0,434 | 0,190 | 0,188 | 0,348 | 0,393 | 0,461 | 46 | 0,547 | 0,404 | 0,602 |
+| P2+LR3 greedy | 0,367 | 0,164 | 0,174 | 0,350 | 0,383 | 0,473 | 38 | 0,535 | 0,407 | 0,589 |
+| bài báo (cả test, không bối cảnh) | 0,390 | 0,102 | 0,173 | 0,280 | 0,291 | 0,426 | — | — | — | — |
+
+Hiệu ghép cặp so với v3 beam (bootstrap 2.000 lần, seed 16, n = 300), mọi khoảng đều không
+chứa 0:
+
+| | BERTScore | ROUGE-L | CIDEr | BLEU-4 | CE micro F1-14 | CE micro F1-5 |
+|---|---|---|---|---|---|---|
+| beam | +0,080 [+0,064; +0,095] | +0,075 [+0,062; +0,090] | +0,227 [+0,138; +0,319] | +0,085 [+0,070; +0,100] | +0,095 [+0,058; +0,133] | +0,104 [+0,056; +0,153] |
+| greedy | +0,092 [+0,075; +0,108] | +0,077 [+0,061; +0,094] | +0,217 [+0,085; +0,346] | +0,077 [+0,060; +0,094] | +0,084 [+0,047; +0,120] | +0,092 [+0,048; +0,132] |
+
+**Không cùng điều kiện với bài báo:** mô hình mới nhận thêm indication và FINDINGS của lần
+chụp trước trong prompt (2.566 và 2.508 trên 2.800 study test có hai thông tin này), bài báo
+thì không; MedGemma thay Vicuna; bài báo chấm trên cả test. Chỉ riêng việc chép FINDINGS lần
+trước đã ngang bài báo ở BLEU-1/BLEU-4 (TONG_HOP mục 4.4), nên phần hơn bài báo không chứng
+minh kênh ảnh tốt hơn. Một run, một seed, n = 300.
+
+**Đang chạy:** sinh trên cả 2.800 study test, bắt đầu 2026-10-14 00:36, cùng adapter và tham
+số, chỉ thêm `--limit 0` (`~/stage2_genfull.sh`, log `~/stage2_genfull.log`, output
+`gen_test_beam_full` / `gen_test_greedy_full`, kết thúc bằng `GENFULL_ALL_DONE`, dự kiến
+~05:15). Số trên 2.800 study sẽ thay bảng trên. Không train thêm, không đổi pipeline.

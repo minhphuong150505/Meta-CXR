@@ -1600,7 +1600,24 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
   `HF_HUB_OFFLINE=1`; weights in `~/.cache/chexbert/chexbert.pth`, sha256 6550703c...,
   copied in because the HF CDN gives this host ~9 KB/s).
 - Pilot P0/P1/P2 to choose the Stage-2 recipe before one full run:
-  `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`. Not yet run on GPU.
+  `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`. Pilot ran 2026-10-11/12.
+- ✅ **FULL RUN DONE 2026-10-14: P2 (`paper_context` + `oracle_mix`) + `--lora-lr 3e-4`,
+  2 epochs, batch 2 x 8.** 47h45m, 0 OOM; adapter `~/stage2_p2_20261011/full/adapters/...`
+  on the host (checkout `~/Meta-CXR-v3` at `ce18c45`). Val loss 0.99053 -> **0.95619**
+  (epoch 2 kept); train loss 1.024 -> 0.855. Test, **n=300**, paper protocol, beam 4 lp 2:
+  BLEU-1 0.434 / BLEU-4 0.190 / METEOR 0.188 / ROUGE-L 0.348 / CIDEr 0.393 / BERTScore 0.461,
+  CheXbert micro F1-14 0.547. Paired vs v3 beam on the same 300: BERTScore +0.080
+  [+0.064, +0.095], ROUGE-L +0.075 [+0.062, +0.090], CIDEr +0.227 [+0.138, +0.319],
+  CheXbert micro F1-14 +0.095 [+0.058, +0.133]. ⚠ **Not the paper's conditions**: this
+  model also reads the indication and the previous study's FINDINGS; beating the paper's
+  0.390 / 0.102 / 0.173 / 0.280 / 0.291 / 0.426 says nothing about the image channel
+  (soft tokens still collapsed). One run, one seed; the three changes are not separated
+  at full budget. Traps: (1) `generate_stage2_reports.py --limit` defaults to **300** --
+  the run script omitted it, so pass `--limit 0` for the whole split (full 2,800 generation
+  launched 2026-10-14 00:36, `~/stage2_genfull.sh`); (2) generation re-keys rows with
+  `sample_key_for(image_path)`, which is NOT the cache record's `sample_key`, so v3's
+  JSONL shares 0 keys with it -- pair by cache row order and verify references row by row
+  (reference text alone is not unique: 2,798 distinct of 2,800).
 
 ⚠ **2026-10-06: Stage 2 had never run on a D-020/D-022 Stage-1 checkpoint, and
 the first attempt died on study 1.** `build_stage1_records` filtered batch keys
@@ -1622,8 +1639,9 @@ script must switch it off (`scripts/embed_cxr_encoders.py` does).
 **Opt-in since 2026-10-11:** `run_medgemma_qlora.py --clean-train-records`
 encodes the train records from clean images; it enters the train cohort
 fingerprint only when set (`tests/test_clean_train_records.py`), so existing
-caches still hit. Default unchanged. Being piloted against P2 with LoRA r16 and
-LR 3e-4 (`docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`).
+caches still hit. Default unchanged. Piloted 2026-10-12 against P2: no gain (nor
+from LoRA r16); only LR 3e-4 passed
+(`docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`).
 
 ⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
 EPOCH. Every arm A number must be reported that way.** The planned

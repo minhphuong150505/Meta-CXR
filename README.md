@@ -382,6 +382,17 @@ paper_context` (thêm INDICATION/HISTORY và FINDINGS lần chụp trước vào
 và CE thật bằng CheXbert `scripts/score_ce_chexbert.py` (venv riêng `~/.venvs/chexbert`).
 Pilot chọn công thức Stage 2: `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
 
+**Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
+`--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
+`~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **300 study**
+(giao thức bài báo, beam 4 + length penalty 2): BLEU-1 0,434 / BLEU-4 0,190 / METEOR 0,188 /
+ROUGE-L 0,348 / CIDEr 0,393 / BERTScore 0,461; CheXbert micro F1-14 0,547. Ghép cặp với v3
+beam trên cùng study: BERTScore +0,080 [+0,064; +0,095], CIDEr +0,227 [+0,138; +0,319],
+CheXbert micro F1-14 +0,095 [+0,058; +0,133]. ⚠ **Không cùng điều kiện với bài báo**
+(0,390 / 0,102 / 0,173 / 0,280 / 0,291 / 0,426): mô hình này có thêm indication và FINDINGS
+của lần chụp trước trong prompt. Bước sinh ban đầu chỉ lấy 300 study vì script quên `--limit`;
+`generate_stage2_reports.py` cần `--limit 0` để sinh cả 2.800 study (đang chạy).
+
 **Tổng hợp chẩn đoán 2026-10-11** (soft token META-Former sụp thành một vector ở pha 1a,
 pha 1c không giúp phân loại, Stage 2 bỏ qua cue, giá trị của báo cáo lần chụp trước, đề
 xuất chờ duyệt): [`docs/TONG_HOP_2026-10-11.md`](docs/TONG_HOP_2026-10-11.md); chỉ mục khác
