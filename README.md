@@ -403,8 +403,11 @@ CheXbert micro F1-14 +0,104 [+0,092; +0,116]. ⚠ **Không cùng điều kiện 
 của lần chụp trước trong prompt. Bước sinh ban đầu chỉ lấy 300 study vì script quên `--limit`;
 `generate_stage2_reports.py` cần `--limit 0` để sinh cả 2.800 study (đã sinh và chấm lại, số trên).
 
-**Giải mã MBR để tăng BERTScore (2026-10-14, tùy chọn, CHƯA chạy trên GPU).** Trên test,
-BERTScore của beam là precision 0,493 / recall 0,439 / F1 0,466, của greedy 0,537 / 0,414 /
+**Giải mã MBR để tăng BERTScore (2026-10-14, tùy chọn).** Val đã chạy 2026-10-15 và quy tắc
+chốt trước chọn MBR (n = 1.360, ghép cặp với beam 4 / lp 2): BERTScore +0,0199 [+0,0132; +0,0262],
+CheXbert micro F1-14 +0,0162 [+0,0045; +0,0274]; ROUGE-L / CIDEr / BLEU-4 không đổi có ý nghĩa;
+BLEU-1 toàn tập 0,457 → 0,412 vì output ngắn hơn (median 36 → 32 từ). Test chưa chấm. Lý do thử:
+trên output test đã có, BERTScore của beam là precision 0,493 / recall 0,439 / F1 0,466, của greedy 0,537 / 0,414 /
 0,474: viết dài hơn mất precision nhiều hơn phần recall được thêm. MBR sinh 8 mẫu cho mỗi
 study rồi giữ ứng viên (beam, greedy hoặc một mẫu) có kỳ vọng BERTScore cao nhất so với các
 mẫu, không dùng báo cáo tham chiếu:

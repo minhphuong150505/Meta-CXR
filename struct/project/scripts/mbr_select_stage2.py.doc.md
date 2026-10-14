@@ -47,7 +47,7 @@ CheXbert.
 | `needed_pairs(texts, is_ref)` | các cặp (i < j) mà kỳ vọng cần đọc: ít nhất một bên là mẫu |
 | `expected_utility(utility, is_ref)` | kỳ vọng trên các giả tham chiếu, bỏ đường chéo |
 | `select(studies, utility_fn, chunk=250)` | chấm theo khối 250 study (bert_score giữ embedding mỗi câu trong RAM), argmax |
-| `bertscore_utility(device, batch_size)` | `BERTScorer` nạp một lần, lần gọi đầu tiên |
+| `bertscore_utility(device, batch_size)` | `BERTScorer` nạp một lần, lần gọi đầu tiên; `--batch-size` (mặc định 64, đúng giá trị các lần chạy 2026-10-15) được truyền vào `BERTScorer.score`, vốn không đọc batch của hàm khởi tạo |
 | `summarize(studies, hyp_names)` | thống kê không chứa văn bản |
 
 ## Calls / Called by
