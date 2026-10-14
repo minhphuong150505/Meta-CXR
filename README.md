@@ -26,6 +26,16 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 > nguồn CheXmask/MS-CXR, kết quả Table 5 và `private-results`. Tổng 9 file
 > `.pth`, 11,5 GB.
 >
+> ⚠ **Dọn ổ ngày 2026-10-14 (theo yêu cầu của tác giả).** Trên `/home` chỉ còn
+> run Stage 1 đang báo cáo `run_20261005_paper`, adapter Stage 2 chính
+> `stage2_p2_20261011` và adapter v3; các run Stage 1/Stage 2 khác đã xoá (con số
+> vẫn còn trong git, nhưng không chấm lại được). Trên ổ 1 TB đã xoá
+> `archive-home/`, `run_b16fast_20260814`, `run_gate3_20260815`, các cache và
+> manifest cũ; **còn giữ** `mimic-cxr-jpg-full` (đủ 377.110 ảnh, 227.835 báo cáo),
+> `processed/full_allviews_v2` và `datasets/`. Lúc xoá, `ntfs3` báo lỗi inode và
+> đánh dấu volume **dirty** — cần chạy `chkdsk /f` từ Windows; trong lúc chờ
+> không ghi lên ổ này. Chi tiết: CLAUDE.md, "Cleanup 2026-10-14".
+>
 > **Mất** (nằm trên `/home`): hai run A/B `abl_on`/`abl_off` của explanation loss
 > — nên **kết quả D-017 không chấm lại hay mở rộng được**, dù con số vẫn còn
 > trong git; và `explanation_masks_v2` (cache có `masks_bbox_*`), nên **term
