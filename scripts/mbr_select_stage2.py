@@ -193,7 +193,9 @@ def bertscore_utility(device: str, batch_size: int) -> UtilityFn:
             holder["scorer"] = BERTScorer(model_type=UTILITY_MODEL, lang="en", idf=False,
                                           rescale_with_baseline=False,
                                           batch_size=batch_size, device=device)
-        _, _, f1 = holder["scorer"].score(a, b)
+        # BERTScorer.score takes its own batch_size (default 64); the
+        # constructor's is not used by it. The 2026-10-15 runs used 64.
+        _, _, f1 = holder["scorer"].score(a, b, batch_size=batch_size)
         return f1.numpy()
     return score
 
@@ -229,7 +231,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--split", required=True, choices=("val", "test"))
     ap.add_argument("--output-dir", type=Path, required=True)
     ap.add_argument("--device", default=None, help="default: cuda when available, else cpu")
-    ap.add_argument("--batch-size", type=int, default=128)
+    ap.add_argument("--batch-size", type=int, default=64,
+                    help="BERTScore batch; 64 is what the recorded runs used")
     args = ap.parse_args(argv)
 
     from scripts.evaluate_explanation import _assert_private_output_location

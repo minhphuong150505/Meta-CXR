@@ -1629,7 +1629,11 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
 - Beam: `VariantLLM.generate(num_beams=, length_penalty=)` and
   `generate_stage2_reports.py --num-beams 4 --length-penalty 2.0`; soft/finding
   tokens are repeated per beam. Defaults stay greedy.
-- **MBR decoding (2026-10-14, opt-in, NOT YET RUN ON GPU):**
+- **MBR decoding (2026-10-14, opt-in). VAL RAN 2026-10-15 and the pre-declared rule
+  chose M** (n=1,360, paired vs beam 4 / lp 2): BERTScore +0.0199 [+0.0132, +0.0262],
+  CheXbert micro F1-14 +0.0162 [+0.0045, +0.0274]; ROUGE-L / CIDEr / BLEU-4 flat;
+  corpus BLEU-1 0.457 -> 0.412 (output median 36 -> 32 words). Greedy alone was not
+  eligible. Test not yet scored -- the plan's execution report has every number.
   `generate_stage2_reports.py --num-samples 8 [--temperature 0.7 --top-p 0.95 --top-k 0]`
   writes `candidates_<split>.jsonl` (no `generated` key, so no scorer can read a
   random sample as the decode) via `VariantLLM.generate_candidates`; then
