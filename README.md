@@ -396,9 +396,9 @@ của lần chụp trước trong prompt. Bước sinh ban đầu chỉ lấy 30
 **Tổng hợp chẩn đoán 2026-10-11** (soft token META-Former sụp thành một vector ở pha 1a,
 pha 1c không giúp phân loại, Stage 2 bỏ qua cue, giá trị của báo cáo lần chụp trước, đề
 xuất chờ duyệt): [`docs/TONG_HOP_2026-10-11.md`](docs/TONG_HOP_2026-10-11.md); chỉ mục khác
-biệt so với bài báo: [`docs/CHI_MUC_TINH_MOI.md`](docs/CHI_MUC_TINH_MOI.md). So sánh đầy đủ
-với bài báo (khác biệt pipeline và lý do, tính mới, kết quả theo các phép đo của bài báo,
-giải thích chênh lệch): [`docs/SO_SANH_VOI_BAI_BAO.md`](docs/SO_SANH_VOI_BAI_BAO.md).
+biệt so với bài báo: [`docs/CHI_MUC_TINH_MOI.md`](docs/CHI_MUC_TINH_MOI.md). So sánh với
+bài báo (hai checkpoint được báo cáo và cấu hình của chúng, kết quả theo các phép đo của bài
+báo, sai khác và lý do, giải thích chênh lệch): [`docs/SO_SANH_VOI_BAI_BAO.md`](docs/SO_SANH_VOI_BAI_BAO.md).
 
 Test `run_20261005_paper` (n = 3.269, CI 95% bootstrap 1.000 lần):
 
