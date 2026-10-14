@@ -234,7 +234,10 @@ question for any artifact is simply *which drive was it on*.
 | | `meta-cxr-ablation/`, `private-results/` — Table 5 evals, `xai_*`, `trainpred` |
 | | `torch-cache/hub/checkpoints/blip2_pretrained.pth` + `resnet50` |
 
-9 `.pth` files, 11.5 GB, survive on the data drive. `/home` is 984 MB used of
+(Historical table: `run_b16fast_20260814`, `run_gate3_20260815` and
+`torch-cache/` were deleted on 2026-10-14 — see "Cleanup 2026-10-14" below.)
+
+9 `.pth` files, 11.5 GB, survived on the data drive. `/home` was 984 MB used of
 325 GB — a fresh home with only a `setup-dev-environment.sh` in it.
 
 **What this costs, precisely:** the explanation-loss A/B (D-017) cannot be
@@ -259,8 +262,41 @@ wrote there, and only runs after the 2026-08-15 mount change wrote to `/home`.
 | OS | Ubuntu 26.04 LTS, root fs created 2026-08-17 20:54 |
 | System disk | 465.8 GB — `p1` 1 GB EFI, `p2` **139.7 GB ext4 `/`** (UUID `c2eb4245-…`), `p3` **325 GB ext4 `/home`** (UUID `ba112a5a-…`) |
 | Dataset disk | 931.5 GB — `p2` **930.7 GB NTFS, UUID `A4E6C088E6C05BE4`**, `p3` 781 MB NTFS |
-| `/mnt/drive1tb` | Persistent since 2026-09-02 — in `/etc/fstab` by UUID, `nofail`. **Check the DRIVER, not just the mountpoint** (see below). `ntfs3`, `ro`. 931 GB, 612 GB used, 319 GB free |
-| Checkpoints | old ones survive on the data drive (read-only); **new** runs need `run.output_dir=/home/phuong/<run>` (ext4, 324 GB free) |
+| `/mnt/drive1tb` | Persistent since 2026-09-02 — in `/etc/fstab` by UUID, `nofail`. **Check the DRIVER, not just the mountpoint** (see below). ⚠ Observed **`ntfs3`, `rw`** on 2026-10-14 (not `ro` as the fstab line below says). 931 GB, 589 GB used, 343 GB free after the 2026-10-14 cleanup |
+| Checkpoints | **none left on the data drive** (deleted 2026-10-14, see below); every run writes `run.output_dir=/home/phuong/<run>` (ext4, 219 GB free on 2026-10-14) |
+
+⚠⚠ **CLEANUP 2026-10-14, at the user's request — both disks.** Verified over SSH
+after the deletion.
+
+- **`/home` (271 → 85 GB used):** deleted `smoke_20261009_evoke`,
+  `eval_1b_test_20261011{,b}`, `pilot_20261011`, `p2var_20261011`,
+  `stage2_mc_20260913`, `stage2_paper_20261006b`, `run_20261007_aux3`,
+  `run_20261009_evoke_d`, `run_20260925b_3phase`, `run_20260930_3class` — whole
+  directories, `.npz` predictions and logs included. **Kept:** `run_20261005_paper`
+  (the reported Stage-1 model; its `checkpoint_phase1a.pth` is a real file, not a
+  link into `run_20260930_3class`), `stage2_p2_20261011` (the reported Stage-2
+  adapter), `stage2_paper_20261007_v3` (v3 adapter), `stage1_meas_20261011`,
+  `explanation_masks_v2`, venvs and caches.
+- **Data drive (765 → 589 GB used):** deleted `archive-home/` (153 GB: every
+  run that had been moved off `/home` — `run_20260818_qformer` …
+  `run_20260912_mc_shallow`, `run_20260820_ft` included, the smokes, `verify_*`,
+  `ft_*`; the `/home` symlinks into it were removed too), `run_b16fast_20260814`,
+  `run_gate3_20260815`, `uv-cache`, `hf-cache`, `torch-cache`,
+  `processed/full_allviews` (v1), `meta-cxr-manifests-upgraded-20260806`, the
+  `meta-cxr-training*` / `watchdog` / smoke-source dirs and loose logs. **Kept:**
+  `mimic-cxr-jpg-full/` (377,110 JPGs and 227,835 reports, counted after the
+  deletion), `processed/full_allviews_v2`, `datasets/` (chexmask, ms-cxr,
+  explanation_masks), `meta-cxr-ablation/`, `private-results/`.
+- **Consequence:** every Stage-1 run except `run_20261005_paper` and every Stage-2
+  pilot is now numbers-in-git only — none can be re-scored, resumed or probed.
+  Older sections of this file that cite checkpoints or `.npz` of those runs
+  describe what *was* on disk.
+- ⚠ **The deletion marked the NTFS volume dirty:** `journalctl -k` at 14:47:31 shows
+  nine `ntfs3(...): Inode r=... is not in use!` and `Mark volume as dirty due to
+  NTFS errors`. The dataset counts above are intact. Run `chkdsk /f` from Windows
+  when convenient (`ntfsfix` only clears the flag); until then do not write to the
+  drive, and expect `ntfs3` to possibly refuse `rw` on the next mount — reading,
+  which is all training does, is unaffected.
 
 ⚠⚠ **NEVER MOUNT THIS DISK BY `/dev/nvmeXn1p2` — THE NAMES SWAP BETWEEN
 REBOOTS.** Observed both ways on the same machine: on 2026-08-18 morning the
@@ -1495,9 +1531,9 @@ Three fixes landed 2026-08-18 when it was made to supervise *continuously*:
   evaluated false — which happened to look like "no progress" during startup and
   hid the error in stderr.
 
-`blip2_pretrained.pth` re-downloads on a fresh `/home` even though a copy
-survives at `<data drive>/torch-cache/hub/checkpoints/`. Symlink
-`~/.cache/torch/hub/checkpoints` at it to skip 1.9 GB.
+`blip2_pretrained.pth` re-downloads on a fresh `/home`. The copy that used to
+sit at `<data drive>/torch-cache/hub/checkpoints/` was deleted 2026-10-14; the
+live copy is `~/.cache/torch/hub/checkpoints/` (real files, not a symlink).
 
 ⚠⚠ **Never `pgrep -f` / `pkill -f` a pattern that appears in your own command
 line.** It has cost two SSH sessions on this host. `pgrep -f "bash
