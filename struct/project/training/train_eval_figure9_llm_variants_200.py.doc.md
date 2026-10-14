@@ -67,7 +67,8 @@ section ở entrypoint chính.
 | `collate_train` | 1059 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/collate_train.md) |
 | `_forward_batch` | 1082 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/_forward_batch.md) |
 | `evaluate_loss` | 1108 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/evaluate_loss.md) |
-| `generate` | 1307 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/generate.md) ★ |
+| `generate` | 1869 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/generate.md) ★ |
+| `generate_candidates` | 1919 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/generate_candidates.md) |
 | `assert_vision_tower_frozen` | 825 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/assert_vision_tower_frozen.md) |
 
 ### Method phụ trợ
@@ -194,6 +195,11 @@ mọi cache cũ vẫn hit; `assert_class_logits_present` fail-closed nếu khôn
 > nguyên từng byte; `_prompt_metadata` chỉ thêm khoá `context` cho `paper_context`.
 > `generate(...)` nhận thêm `num_beams` (mặc định 1 = greedy) và `length_penalty`; khi beam,
 > soft token và finding token được lặp theo số beam (`tests/test_beam_generation.py`).
+> **2026-10-14:** thân hàm `generate` chuyển sang `_generate_texts` (dùng chung với
+> `generate_candidates`, trả về mọi chuỗi đã decode); `generate` lấy `[0]` và gửi đúng
+> các kwargs như trước. `generate_candidates` sampling N chuỗi cho giải mã MBR
+> (`scripts/mbr_select_stage2.py`); soft/finding token được lặp theo số chuỗi trả về,
+> vì HF nhân batch theo `num_return_sequences` khi `num_beams == 1`.
 
 `build_instruction(groups, prompt_style)` có hai chữ: `PROMPT_STYLE_FINE`
 (câu lệnh ngắn tự viết, mọi số legacy đã ghi đều dùng nó) và

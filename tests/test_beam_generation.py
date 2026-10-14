@@ -51,7 +51,9 @@ def _llm(captured, image_mode="native"):
 
         def generate(self, **kwargs):
             captured.update(kwargs)
-            return torch.tensor([kwargs["input_ids"][0].tolist() + [20, 106]])
+            prompt = kwargs["input_ids"][0].tolist()
+            rows = kwargs.get("num_return_sequences", 1)
+            return torch.tensor([prompt + [20 + r, 106] for r in range(rows)])
 
         def get_input_embeddings(self):
             return "embedding"
@@ -85,6 +87,103 @@ def test_beam_passes_width_and_length_penalty():
     llm, _, _ = _llm(captured)
     llm.generate({}, "fine", 20, num_beams=4, length_penalty=2.0)
     assert captured["num_beams"] == 4 and captured["length_penalty"] == 2.0
+
+
+def test_greedy_sends_no_sampling_kwargs():
+    captured = {}
+    llm, _, _ = _llm(captured)
+    llm.generate({}, "fine", 20)
+    assert captured["do_sample"] is False
+    assert not {"num_return_sequences", "temperature", "top_p", "top_k"} & set(captured)
+
+
+def test_candidates_sample_and_decode_every_sequence():
+    captured = {}
+    llm, _, _ = _llm(captured)
+    out = llm.generate_candidates({}, "fine", 20, num_samples=3, temperature=0.7,
+                                  top_p=0.95, top_k=0)
+    assert out == ["20", "21", "22"]
+    assert captured["do_sample"] is True and captured["num_beams"] == 1
+    assert captured["num_return_sequences"] == 3
+    assert (captured["temperature"], captured["top_p"], captured["top_k"]) == (0.7, 0.95, 0)
+    assert "length_penalty" not in captured
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"num_samples": 0, "temperature": 0.7, "top_p": 0.95, "top_k": 0},
+    {"num_samples": 2, "temperature": 0.0, "top_p": 0.95, "top_k": 0},
+    {"num_samples": 2, "temperature": 0.7, "top_p": 0.0, "top_k": 0},
+    {"num_samples": 2, "temperature": 0.7, "top_p": 0.95, "top_k": -1},
+])
+def test_candidates_refuse_bad_sampling_arguments(kwargs):
+    llm, _, _ = _llm({})
+    with pytest.raises(ValueError):
+        llm.generate_candidates({}, "fine", 20, **kwargs)
+
+
+def _soft_token_rows(monkeypatch, call):
+    captured = {}
+    llm, fig9, torch = _llm(captured, image_mode="qformer")
+    llm.img_token_id = 7
+    llm.finding_encoder = None
+    llm.finding_token_id = None
+    llm.img_proj = torch.nn.Identity()
+    llm._chat_texts = lambda record, style: ("prompt", "prompt target")
+
+    class Tok:
+        pad_token_id = 0
+        eos_token_id = 1
+
+        def __call__(self, *a, **k):
+            return {"input_ids": torch.tensor([[5, 6]]),
+                    "attention_mask": torch.ones((1, 2), dtype=torch.long)}
+
+        def decode(self, ids, **k):
+            return " ".join(str(x) for x in ids.tolist() if x not in (1, 106))
+
+    llm.tokenizer = Tok()
+    seen = {}
+
+    class Wrapper:
+        def __init__(self, base, token_id, projected, count):
+            seen["rows"] = projected.shape[0]
+
+    monkeypatch.setattr(fig9, "SoftTokenEmbeddingWrapper", Wrapper)
+    call(llm, {"qformer_embs": torch.zeros(32, 8)})
+    return seen["rows"]
+
+
+def test_sampling_repeats_soft_tokens_per_sample(monkeypatch):
+    rows = _soft_token_rows(monkeypatch, lambda llm, record: llm.generate_candidates(
+        record, "paper", 20, num_samples=5, temperature=0.7, top_p=0.95, top_k=0))
+    assert rows == 5
+
+
+def test_cli_defaults_to_no_sampling(tmp_path):
+    args = gen.parse_args(["--output-dir", str(tmp_path)])
+    assert args.num_samples == 0
+
+
+@pytest.mark.parametrize("extra, message", [
+    (["--num-samples", "4", "--num-beams", "4"], "cannot be combined"),
+    (["--num-samples", "4", "--no-repeat-ngram-size", "5"], "anti-repetition"),
+    (["--num-samples", "4", "--temperature", "0"], "temperature"),
+    (["--num-samples", "4", "--top-p", "1.5"], "top-p"),
+    (["--num-samples", "4", "--top-k", "-2"], "top-k"),
+    (["--num-samples", "-1"], "must be >= 0"),
+])
+def test_cli_refuses_impossible_sampling(tmp_path, extra, message):
+    args = gen.parse_args(["--output-dir", str(tmp_path), *extra])
+    with pytest.raises(SystemExit, match=message):
+        gen.validate_invocation(args, _mode("medgemma_direct"))
+
+
+def test_study_seed_depends_on_the_study_not_its_position():
+    key = "0123456789abcdef01234567"
+    assert gen.study_seed(16, key) == gen.study_seed(16, key)
+    assert gen.study_seed(16, key) != gen.study_seed(16, "ffffffff" + key[8:])
+    assert gen.study_seed(16, key) != gen.study_seed(17, key)
+    assert 0 <= gen.study_seed(16, key) < 2**31
 
 
 def test_beam_repeats_soft_tokens_per_beam(monkeypatch):

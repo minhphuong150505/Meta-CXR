@@ -1905,6 +1905,79 @@ class VariantLLM:
         radiologists for ordinary phrasing ("there is no evidence of ..."
         twice in one report is normal); at 3 it would hit one report in five.
         """
+        return self._generate_texts(
+            record,
+            prompt_style,
+            max_new_tokens,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            repetition_penalty=repetition_penalty,
+            num_beams=num_beams,
+            length_penalty=length_penalty,
+        )[0]
+
+    @torch.no_grad()
+    def generate_candidates(
+        self,
+        record: dict,
+        prompt_style: str,
+        max_new_tokens: int,
+        *,
+        num_samples: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+    ) -> list[str]:
+        """``num_samples`` sampled reports for one record, for MBR selection.
+
+        Added 2026-10-14 for ``scripts/mbr_select_stage2.py``: the samples are
+        the pseudo-references that minimum-Bayes-risk decoding scores each
+        hypothesis against. Same prompt, stop IDs and soft-token path as
+        ``generate``; only the decode differs. ``top_p`` and ``top_k`` are
+        required because MedGemma's generation_config sets neither, so leaving
+        them out would silently apply the HF defaults (top_k=50). ``top_k=0``
+        and ``top_p=1.0`` switch the filters off. Seeding is the caller's job:
+        sampling draws from torch's global RNG.
+        """
+        if num_samples < 1:
+            raise ValueError(f"num_samples must be >= 1, got {num_samples}")
+        if not temperature > 0:
+            raise ValueError(f"temperature must be > 0, got {temperature}")
+        if not 0 < top_p <= 1:
+            raise ValueError(f"top_p must be in (0, 1], got {top_p}")
+        if top_k < 0:
+            raise ValueError(f"top_k must be >= 0, got {top_k}")
+        return self._generate_texts(
+            record,
+            prompt_style,
+            max_new_tokens,
+            sampling={
+                "do_sample": True,
+                "temperature": float(temperature),
+                "top_p": float(top_p),
+                "top_k": int(top_k),
+                "num_return_sequences": int(num_samples),
+            },
+        )
+
+    def _generate_texts(
+        self,
+        record: dict,
+        prompt_style: str,
+        max_new_tokens: int,
+        *,
+        no_repeat_ngram_size: int | None = None,
+        repetition_penalty: float | None = None,
+        num_beams: int = 1,
+        length_penalty: float | None = None,
+        sampling: dict | None = None,
+    ) -> list[str]:
+        """Shared body of ``generate`` and ``generate_candidates``.
+
+        Returns every sequence ``model.generate`` hands back, decoded: one for
+        greedy and beam (``generate`` takes ``[0]``), ``num_return_sequences``
+        when ``sampling`` is given. Without ``sampling`` the generate kwargs are
+        exactly what ``generate`` built before the split.
+        """
         self.model.eval()
         if self.img_proj is not None:
             self.img_proj.eval()
@@ -1937,13 +2010,20 @@ class VariantLLM:
             if torch.is_tensor(value)
         }
         num_beams = max(int(num_beams), 1)
+        num_returned = int(sampling["num_return_sequences"]) if sampling else 1
+        if sampling and num_beams > 1:
+            raise ValueError("sampling and beam search are separate decodes")
+        # HF expands the batch by num_beams for beam search and by
+        # num_return_sequences for greedy/sampling; the soft- and finding-token
+        # wrappers check one projection per row of that expanded batch.
+        expand = num_beams if num_beams > 1 else num_returned
         old_embedding = None
         wrapped = None
         if self.image_mode in SOFT_TOKEN_MODES:
             qformer = record["qformer_embs"].unsqueeze(0).to(self.device, dtype=torch.float32)
             projected = self.img_proj(qformer)
-            if num_beams > 1:
-                projected = projected.repeat_interleave(num_beams, dim=0)
+            if expand > 1:
+                projected = projected.repeat_interleave(expand, dim=0)
             old_embedding = self.model.get_input_embeddings()
             wrapped = SoftTokenEmbeddingWrapper(
                 old_embedding, self.img_token_id, projected, NUM_IMG_TOKENS
@@ -1956,8 +2036,8 @@ class VariantLLM:
                 .unsqueeze(0)
                 .to(self.device, dtype=torch.float32)
             )
-            if num_beams > 1:
-                features = features.repeat_interleave(num_beams, dim=0)
+            if expand > 1:
+                features = features.repeat_interleave(expand, dim=0)
             if old_embedding is None:
                 old_embedding = self.model.get_input_embeddings()
                 wrapped = old_embedding
@@ -2002,12 +2082,17 @@ class VariantLLM:
                 generate_kwargs["repetition_penalty"] = float(repetition_penalty)
             if num_beams > 1 and length_penalty is not None:
                 generate_kwargs["length_penalty"] = float(length_penalty)
-            seq = self.model.generate(**generate_kwargs)[0]
+            if sampling:
+                generate_kwargs.update(sampling)
+            sequences = self.model.generate(**generate_kwargs)
         finally:
             if old_embedding is not None:
                 self.model.set_input_embeddings(old_embedding)
-        gen_ids = seq[input_ids.shape[1] :] if seq.shape[0] > input_ids.shape[1] else seq
-        return clean_text(self.tokenizer.decode(gen_ids, skip_special_tokens=True))
+        texts = []
+        for seq in sequences[:num_returned]:
+            gen_ids = seq[input_ids.shape[1] :] if seq.shape[0] > input_ids.shape[1] else seq
+            texts.append(clean_text(self.tokenizer.decode(gen_ids, skip_special_tokens=True)))
+        return texts
 
 
 def clean_text(text: str) -> str:

@@ -403,6 +403,25 @@ CheXbert micro F1-14 +0,104 [+0,092; +0,116]. ⚠ **Không cùng điều kiện 
 của lần chụp trước trong prompt. Bước sinh ban đầu chỉ lấy 300 study vì script quên `--limit`;
 `generate_stage2_reports.py` cần `--limit 0` để sinh cả 2.800 study (đã sinh và chấm lại, số trên).
 
+**Giải mã MBR để tăng BERTScore (2026-10-14, tùy chọn, CHƯA chạy trên GPU).** Trên test,
+BERTScore của beam là precision 0,493 / recall 0,439 / F1 0,466, của greedy 0,537 / 0,414 /
+0,474: viết dài hơn mất precision nhiều hơn phần recall được thêm. MBR sinh 8 mẫu cho mỗi
+study rồi giữ ứng viên (beam, greedy hoặc một mẫu) có kỳ vọng BERTScore cao nhất so với các
+mẫu, không dùng báo cáo tham chiếu:
+
+```bash
+python scripts/generate_stage2_reports.py <các cờ như lần sinh test> --split val --limit 0 \
+    --num-samples 8 --temperature 0.7 --top-p 0.95 --top-k 0 --output-dir <dir>/gen_val_samples
+python scripts/mbr_select_stage2.py --split val \
+    --hyp beam=<dir>/gen_val_beam/generated_val.jsonl \
+    --hyp greedy=<dir>/gen_val_greedy/generated_val.jsonl \
+    --samples <dir>/gen_val_samples/candidates_val.jsonl --output-dir <dir>/mbr_val
+```
+
+Utility chính là mô hình của BERTScore, nên mọi số từ MBR phải ghi "MBR (utility =
+BERTScore)" và chấm kèm BLEU/ROUGE-L/CIDEr/CheXbert. Quy tắc chọn trên val và lệnh đầy đủ:
+`docs/handoff/PLAN-2026-10-14-stage2-mbr-bertscore.md`.
+
 **Tổng hợp chẩn đoán 2026-10-11** (soft token META-Former sụp thành một vector ở pha 1a,
 pha 1c không giúp phân loại, Stage 2 bỏ qua cue, giá trị của báo cáo lần chụp trước, đề
 xuất chờ duyệt): [`docs/TONG_HOP_2026-10-11.md`](docs/TONG_HOP_2026-10-11.md); chỉ mục khác
