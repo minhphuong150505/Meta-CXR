@@ -106,6 +106,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="HF length_penalty, used only with --num-beams > 1. "
                              "0 = unset (HF default 1.0). 2.0 is the measured "
                              "operating point.")
+    # Sampled candidates for minimum-Bayes-risk selection (2026-10-14). 0 = off:
+    # one deterministic decode per study, which is what every recorded number
+    # used. On, the output is candidates_<split>.jsonl with NO "generated" key,
+    # so a scorer cannot mistake a random sample for the decode.
+    parser.add_argument("--num-samples", type=int, default=0,
+                        help="Sample this many reports per study and write them to "
+                             "candidates_<split>.jsonl for scripts/mbr_select_stage2.py. "
+                             "0 = off (default).")
+    parser.add_argument("--temperature", type=float, default=0.7,
+                        help="Sampling temperature (--num-samples only).")
+    parser.add_argument("--top-p", type=float, default=0.95,
+                        help="Nucleus filter (--num-samples only). 1.0 = off.")
+    parser.add_argument("--top-k", type=int, default=0,
+                        help="Top-k filter (--num-samples only). 0 = off; MedGemma's "
+                             "generation_config sets none, so it is always passed.")
 
     native = parser.add_argument_group("medgemma_direct record source")
     native.add_argument("--manifest", type=Path, default=None)
@@ -178,6 +193,20 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
         raise SystemExit("--num-beams must be >= 1")
     if getattr(args, "length_penalty", 0.0) and getattr(args, "num_beams", 1) == 1:
         raise SystemExit("--length-penalty only applies to beam search; add --num-beams > 1")
+    num_samples = getattr(args, "num_samples", 0)
+    if num_samples < 0:
+        raise SystemExit("--num-samples must be >= 0")
+    if num_samples:
+        if getattr(args, "num_beams", 1) > 1:
+            raise SystemExit("--num-samples samples; it cannot be combined with --num-beams > 1")
+        if getattr(args, "no_repeat_ngram_size", 0) or getattr(args, "repetition_penalty", 0.0):
+            raise SystemExit("--num-samples does not apply the anti-repetition flags; drop them")
+        if not args.temperature > 0:
+            raise SystemExit("--temperature must be > 0")
+        if not 0 < args.top_p <= 1:
+            raise SystemExit("--top-p must be in (0, 1]")
+        if args.top_k < 0:
+            raise SystemExit("--top-k must be >= 0")
     # Callers (tests included) may hand in a partial Namespace; absent means
     # the default, which is what every invocation before the flag existed got.
     args.prompt_style = getattr(args, "prompt_style", DEFAULT_PROMPT_STYLE)
@@ -293,6 +322,15 @@ def sample_key_for(image_path: str | Path) -> str:
     which carries no ``dicom_id`` column of its own.
     """
     return blake2b(Path(str(image_path)).stem.encode(), digest_size=12).hexdigest()
+
+
+def study_seed(seed: int, sample_key: str) -> int:
+    """Per-study sampling seed: depends on the study, not on its position.
+
+    So one study's candidates are the same whether it is generated alone, in a
+    500-study subset or in the whole split.
+    """
+    return (int(seed) * 1_000_003 + int(sample_key[:8], 16)) % (2**31)
 
 
 def native_records(args: argparse.Namespace, limit: int) -> list[dict]:
@@ -514,25 +552,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     llm.model.eval()
     llm.assert_vision_tower_frozen()
 
-    path = output_dir / f"generated_{args.split}.jsonl"
+    sampling = args.num_samples > 0
+    path = output_dir / f"{'candidates' if sampling else 'generated'}_{args.split}.jsonl"
     started, failures = time.time(), 0
     with path.open("w", encoding="utf-8") as handle:
         for index, record in enumerate(records):
             try:
-                generated = llm.generate(
-                    record, args.prompt_style, args.max_new_tokens,
-                    no_repeat_ngram_size=args.no_repeat_ngram_size or None,
-                    repetition_penalty=args.repetition_penalty or None,
-                    num_beams=args.num_beams,
-                    length_penalty=args.length_penalty or None,
-                )
+                if sampling:
+                    torch.manual_seed(study_seed(args.seed, record["sample_key"]))
+                    output = {"candidates": llm.generate_candidates(
+                        record, args.prompt_style, args.max_new_tokens,
+                        num_samples=args.num_samples, temperature=args.temperature,
+                        top_p=args.top_p, top_k=args.top_k,
+                    )}
+                else:
+                    output = {"generated": llm.generate(
+                        record, args.prompt_style, args.max_new_tokens,
+                        no_repeat_ngram_size=args.no_repeat_ngram_size or None,
+                        repetition_penalty=args.repetition_penalty or None,
+                        num_beams=args.num_beams,
+                        length_penalty=args.length_penalty or None,
+                    )}
             except Exception as exc:  # one bad study must not lose the run
                 failures += 1
                 print(f"[gen] study {index} failed: {type(exc).__name__}", flush=True)
                 continue
             handle.write(json.dumps({
                 "sample_key": record["sample_key"],
-                "generated": generated,
+                **output,
                 "reference": record["ref"],
                 "view_position": record.get("view_position"),
             }, ensure_ascii=False) + "\n")
@@ -572,6 +619,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "repetition_penalty": args.repetition_penalty or None,
         "num_beams": args.num_beams,
         "length_penalty": (args.length_penalty or None) if args.num_beams > 1 else None,
+        "num_samples": args.num_samples or None,
+        "temperature": args.temperature if sampling else None,
+        "top_p": args.top_p if sampling else None,
+        "top_k": args.top_k if sampling else None,
+        "output_file": path.name,
         "seed": args.seed,
         "wall_seconds": round(time.time() - started, 1),
         "peak_vram_bytes": (

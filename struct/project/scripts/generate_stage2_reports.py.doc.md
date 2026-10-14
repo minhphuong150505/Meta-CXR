@@ -1,6 +1,6 @@
-> Source: `scripts/generate_stage2_reports.py` (412 dòng)
+> Source: `scripts/generate_stage2_reports.py` (649 dòng)
 > Status: ✅ ACTIVE — sinh báo cáo, ghi `.jsonl` cho `evaluate_stage2.py`
-> Last verified against source: 2026-09-08
+> Last verified against source: 2026-10-14
 
 # `scripts/generate_stage2_reports.py`
 
@@ -211,3 +211,26 @@ automatically. Low-level Figure-9 helper defaults remain historical compatibilit
 Với `paper`, `--cue-rule paper_thresholds` không cần `--prompt-config`.
 `generation_summary.json` ghi `prompt_style` (chỉ khi mode `qformer` dùng prompt
 legacy; còn lại `None`). Một `Namespace` thiếu thuộc tính này được coi là `fine`.
+
+## `--num-samples` — ứng viên cho giải mã MBR (2026-10-14)
+
+`--num-samples N` (mặc định 0 = tắt) thay một lần giải mã tất định bằng N mẫu
+sampling cho mỗi study, qua `VariantLLM.generate_candidates` — cùng prompt, stop ID và
+đường soft token với `generate`. Output là **`candidates_<split>.jsonl`** (mỗi dòng
+`candidates: [...]`, KHÔNG có khoá `generated`), để không script chấm nào nhầm một mẫu
+ngẫu nhiên là bản giải mã. Chọn bằng
+[`mbr_select_stage2.py`](mbr_select_stage2.py.doc.md).
+
+| Cờ | Mặc định | Ghi chú |
+|---|---|---|
+| `--temperature` | 0,7 | phải > 0 |
+| `--top-p` | 0,95 | (0, 1]; 1,0 = tắt |
+| `--top-k` | 0 | 0 = tắt. Luôn truyền tường minh: `generation_config` của MedGemma không đặt gì, bỏ trống thì HF tự dùng `top_k=50` |
+
+Seed theo study: `torch.manual_seed(study_seed(seed, sample_key))` trước mỗi study, nên
+mẫu của một study không phụ thuộc vị trí của nó trong cohort. `validate_invocation`
+từ chối `--num-samples` cùng `--num-beams > 1` hoặc cùng cờ chống lặp (đường sampling
+không dùng chúng), và temperature/top-p/top-k ngoài miền. `generation_summary.json`
+ghi `num_samples`, `temperature`, `top_p`, `top_k` (`None` khi tắt) và `output_file`.
+Khi tắt, output và kwargs giống hệt trước (`tests/test_beam_generation.py`).
+

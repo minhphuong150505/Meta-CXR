@@ -1629,6 +1629,28 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
 - Beam: `VariantLLM.generate(num_beams=, length_penalty=)` and
   `generate_stage2_reports.py --num-beams 4 --length-penalty 2.0`; soft/finding
   tokens are repeated per beam. Defaults stay greedy.
+- **MBR decoding (2026-10-14, opt-in, NOT YET RUN ON GPU):**
+  `generate_stage2_reports.py --num-samples 8 [--temperature 0.7 --top-p 0.95 --top-k 0]`
+  writes `candidates_<split>.jsonl` (no `generated` key, so no scorer can read a
+  random sample as the decode) via `VariantLLM.generate_candidates`; then
+  `scripts/mbr_select_stage2.py --hyp beam=... --hyp greedy=... --samples ...` keeps,
+  per study, the hypothesis with the highest expected BERTScore F1 (distilroberta-base,
+  idf off) against the SAMPLES only -- deterministic decodes never vote, a sample is
+  never scored against itself, the reference is never read. Why: on test the
+  BERTScore split is beam P 0.493 / R 0.439 / F1 0.466, greedy 0.537 / 0.414 / 0.474;
+  lengthening (beam) costs precision more than it gains recall, and a per-study
+  oracle choice between the two reaches 0.503. ⚠ The utility IS the metric's model:
+  label every MBR number "MBR (utility = BERTScore)" and report BLEU/ROUGE/CIDEr and
+  CheXbert beside it. Pre-declared val rule and commands:
+  `docs/handoff/PLAN-2026-10-14-stage2-mbr-bertscore.md`. `generate()` itself is
+  unchanged (body moved to `_generate_texts`); the pipeline first regenerates 20
+  recorded test beams and aborts unless all 20 match word for word.
+- **BLEU on the full run is capped by length, measured 2026-10-14:** beam output is
+  85% of the reference token count (brevity penalty 0.838; greedy 71%, 0.660), and
+  pycocoevalcap's CIDEr is CIDEr-D (Gaussian length penalty, sigma 6 tokens; the
+  current mean factor is 0.26). Length tuning would raise BLEU/METEOR/CIDEr and
+  lower BERTScore -- the two pull in opposite directions. Prior-FINDINGS length is
+  no length hint: it correlates 0.25 with the report's own length (val and train).
 - Scoring in git: `scripts/score_stage2_paper_protocol.py` (paper protocol + lexicon CE
   + paired bootstrap; replaces the host-only `~/paper_nlg_gpu.py`/`~/pair_cmp.py`) and
   `scripts/score_ce_chexbert.py` (real CE with CheXbert) in the SEPARATE venv

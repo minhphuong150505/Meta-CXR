@@ -1,4 +1,4 @@
-> Source: `training/train_eval_figure9_llm_variants_200.py:1307-1372`
+> Source: `training/train_eval_figure9_llm_variants_200.py:1869-1916` (thân: `_generate_texts`, `:1962-2095`)
 > Status: ✅ ACTIVE
 
 # `VariantLLM.generate(record, prompt_style, max_new_tokens)`
@@ -65,3 +65,12 @@ Dùng đường prompt khác lúc generate → mất parity với train, chất 
 `prompt_config` (kiểm tra trong `_chat_texts`). `"paper"` sinh ra prompt
 nguyên văn của bài báo META-CXR — xem `build_instruction` trong
 [file doc](../../train_eval_figure9_llm_variants_200.py.doc.md).
+
+## Tách thân hàm (2026-10-14)
+Thân hàm nằm ở `_generate_texts(..., sampling=None) -> list[str]`, dùng chung với
+[`generate_candidates`](generate_candidates.md). `generate` gọi nó với đúng các tham số
+cũ và trả `[0]`; khi `sampling is None` kwargs gửi cho `model.generate` giống từng khoá
+với trước (`tests/test_beam_generation.py::test_greedy_sends_no_sampling_kwargs`). Số hàng
+soft/finding token = `num_beams` khi beam, `num_return_sequences` khi greedy/sampling —
+đúng cách HF 4.53 nhân batch.
+

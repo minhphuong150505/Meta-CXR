@@ -42,7 +42,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `evaluate_stage1_cutpoints.py` | [📄](evaluate_stage1_cutpoints.py.doc.md) | ✅ **Bổ sung, không phải giao thức bài báo**: fit 1 hoặc 2 ngưỡng trên `p_pos/(p_pos+p_neg)` ở val, chấm test, bootstrap ghép cặp so với argmax (2026-10-01) |
 | `compare_stage1_predictions.py` | [📄](compare_stage1_predictions.py.doc.md) | Bootstrap ghép cặp hai file `.npz` Stage-1 trên cùng study, toàn split và theo `num_views`; dùng cho ablation đa góc nhìn (2026-10-06) |
 | `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |
-| `generate_stage2_reports.py` (381) | [📄](generate_stage2_reports.py.doc.md) | ✅ Sinh `.jsonl` cho dòng trên. `--pipeline-mode` chọn nguồn record: CSV (native) hay Stage-1 (soft token). ⚠ Hai cohort khác nhau — dùng `--restrict-to` mới so sánh được |
+| `generate_stage2_reports.py` (381) | [📄](generate_stage2_reports.py.doc.md) | ✅ Sinh `.jsonl` cho dòng trên. `--pipeline-mode` chọn nguồn record: CSV (native) hay Stage-1 (soft token). ⚠ Hai cohort khác nhau — dùng `--restrict-to` mới so sánh được. `--num-samples N` (2026-10-14) ghi `candidates_<split>.jsonl` cho `mbr_select_stage2.py` |
 | `evaluate_explanation.py` | [📄](evaluate_explanation.py.doc.md) | ✅ XAI — load checkpoint, cần autograd sống, không train |
 | `explain_stage2.py` | [📄](explain_stage2.py.doc.md) | ✅ XAI Stage 2 — JSONL + npz lưới gốc; cổng triệt tiêu huỷ được cả lần chạy |
 
@@ -70,6 +70,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `probe_image_features.py` | [📄](probe_image_features.py.doc.md) | 🔬 | Probe tuyến tính cùng giao thức cho soft token và embedding ngoài (vd. MedGemma), so với MHCAC |
 | `score_stage2_paper_protocol.py` | [📄](score_stage2_paper_protocol.py.doc.md) | ✅ | Chấm Stage 2 theo giao thức bài báo + CE lexicon + so sánh ghép cặp (2026-10-11) |
 | `score_ce_chexbert.py` | [📄](score_ce_chexbert.py.doc.md) | ✅ | CE bằng CheXbert (`f1chexbert`, venv riêng) + so sánh ghép cặp (2026-10-11) |
+| `mbr_select_stage2.py` | [📄](mbr_select_stage2.py.doc.md) | ✅ | Giải mã MBR (2026-10-14): chọn ứng viên có kỳ vọng BERTScore cao nhất so với các mẫu `--num-samples`; ghi `generated_<split>.jsonl` |
 | `analyze_radiologist_labels.py` | [📄](analyze_radiologist_labels.py.doc.md) | 🔬 | Nhiễu nhãn CheXpert so với nhãn bác sĩ (687 study test) và chấm Stage 1 theo nhãn bác sĩ |
 | `embed_cxr_encoders.py` | [📄](embed_cxr_encoders.py.doc.md) | 🔬 | Đặc trưng từng encoder (BioViL, PubMedCLIP, Swin, RAD-DINO) cho probe so sánh |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |

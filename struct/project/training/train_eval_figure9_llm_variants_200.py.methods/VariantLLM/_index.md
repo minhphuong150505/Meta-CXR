@@ -40,7 +40,7 @@ save checkpoints/last mỗi epoch + promote best adapter + _prompt_metadata()
 ```
 
 ## Public methods có trang riêng
-[`train_fine`](train_fine.md) ★ · [`generate`](generate.md) ★ ·
+[`train_fine`](train_fine.md) ★ · [`generate`](generate.md) ★ · [`generate_candidates`](generate_candidates.md) ·
 [`encode_train_example`](encode_train_example.md) · [`collate_train`](collate_train.md) ·
 [`_forward_batch`](_forward_batch.md) · [`evaluate_loss`](evaluate_loss.md) ·
 [`assert_vision_tower_frozen`](assert_vision_tower_frozen.md)
