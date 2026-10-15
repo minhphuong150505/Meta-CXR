@@ -209,5 +209,5 @@ Kết luận:
 - Không phải giao thức của bài báo: prompt có indication và FINDINGS lần trước, cộng giải mã MBR
   mà utility chính là mô hình của BERTScore.
 
-Số chính trong `docs/SO_SANH_VOI_BAI_BAO.md` vẫn là beam (B); M được thêm thành một bảng riêng
-ở mục 2.2. Đổi số chính sang M hay không là quyết định của người dùng.
+**Quyết định của người dùng (2026-10-15): giữ beam (B) làm số chính.** M chỉ là bảng bổ sung ở
+mục 2.2 của `docs/SO_SANH_VOI_BAI_BAO.md`, ghi "MBR (utility = BERTScore)".

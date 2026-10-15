@@ -410,8 +410,8 @@ chọn MBR trên val (n = 1.360, ghép cặp với beam 4 / lp 2: BERTScore +0,0
 không sửa lỗi bỏ sót nội dung); CheXbert micro F1-14 +0,0087 [+0,0012; +0,0161]; ROUGE-L +0,0050
 [+0,0016; +0,0084]; CIDEr −0,0274 [−0,0593; +0,0022] (không có ý nghĩa). Output ngắn hơn (median
 47 → 40 từ) nên BLEU-1 toàn tập 0,434 → 0,382 (thấp hơn 0,390 của bài báo), BLEU-4 0,190 → 0,172,
-METEOR 0,190 → 0,181. Chi phí khoảng 3,2 lần beam. Số chính vẫn là beam; MBR là bảng riêng ở mục
-2.2 của `docs/SO_SANH_VOI_BAI_BAO.md`. Lý do thử:
+METEOR 0,190 → 0,181. Chi phí khoảng 3,2 lần beam. **Người dùng quyết định giữ beam làm số chính
+(2026-10-15)**; MBR chỉ là bảng bổ sung ở mục 2.2 của `docs/SO_SANH_VOI_BAI_BAO.md`. Lý do thử:
 trên output test đã có, BERTScore của beam là precision 0,493 / recall 0,439 / F1 0,466, của greedy 0,537 / 0,414 /
 0,474: viết dài hơn mất precision nhiều hơn phần recall được thêm. MBR sinh 8 mẫu cho mỗi
 study rồi giữ ứng viên (beam, greedy hoặc một mẫu) có kỳ vọng BERTScore cao nhất so với các
