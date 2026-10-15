@@ -117,3 +117,16 @@ Không thử phương án dự phòng (che token CLS/pooled khỏi K/V, query ki
 - Lần 1 (12:47, `4b430ff`): dừng sau 15 s khi nạp checkpoint 1c — 18 tensor `mpc_heads.*` mà model
   `phase1q` (`lambda_mpc 0`) không dựng. Sửa bằng `init_from.ignore: [mpc_heads]` (báo lỗi nếu model
   có module đó); file gộp giữ đầu MPC của 1c.
+- Lần 2 (13:00, `6c72f97`): mọi bước tích hợp chạy được — nạp checkpoint bỏ qua 364 tensor (346 phía
+  Q-Former + 18 đầu MPC); trainable chỉ phía Q-Former (Qformer 186,28M, norm 0,01M, query, chiếu ITC);
+  GradCache tự chọn "dùng lại token ảnh"; val loss gồm `loss_query_div`; cổng ITC chạy; gộp: 346
+  tensor thay, 6 tensor norm thêm, 445 tensor chung trùng từng bit với 1c, 82 tensor chỉ có ở 1c
+  (block encoder 1c mở + đầu MPC) giữ nguyên; chẩn đoán có `--options` chạy, không có thì bị từ
+  chối; dựng record với `--stage1-options` chạy (missing=758, unexpected=0). Số đo 2 update không
+  phải kết quả và không được dùng. Script smoke tự hỏng ở một dòng in tóm tắt của chính nó (không
+  thuộc pipeline).
+
+### Pipeline — khởi chạy 2026-10-15 13:05:50, `6c72f97`, một lần
+
+`EXPECT_REV=6c72f97 setsid nohup bash ~/qrefit_pipeline.sh > ~/qrefit_20261015.log` → `~/qrefit_20261015/`.
+Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể dừng pipeline (chỉ để đối chiếu).
