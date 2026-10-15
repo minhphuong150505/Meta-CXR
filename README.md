@@ -403,10 +403,15 @@ CheXbert micro F1-14 +0,104 [+0,092; +0,116]. ⚠ **Không cùng điều kiện 
 của lần chụp trước trong prompt. Bước sinh ban đầu chỉ lấy 300 study vì script quên `--limit`;
 `generate_stage2_reports.py` cần `--limit 0` để sinh cả 2.800 study (đã sinh và chấm lại, số trên).
 
-**Giải mã MBR để tăng BERTScore (2026-10-14, tùy chọn).** Val đã chạy 2026-10-15 và quy tắc
-chốt trước chọn MBR (n = 1.360, ghép cặp với beam 4 / lp 2): BERTScore +0,0199 [+0,0132; +0,0262],
-CheXbert micro F1-14 +0,0162 [+0,0045; +0,0274]; ROUGE-L / CIDEr / BLEU-4 không đổi có ý nghĩa;
-BLEU-1 toàn tập 0,457 → 0,412 vì output ngắn hơn (median 36 → 32 từ). Test chưa chấm. Lý do thử:
+**Giải mã MBR để tăng BERTScore (2026-10-14, tùy chọn; xong 2026-10-15).** Quy tắc chốt trước
+chọn MBR trên val (n = 1.360, ghép cặp với beam 4 / lp 2: BERTScore +0,0199 [+0,0132; +0,0262]).
+**Test, chạy một lần (n = 2.800, ghép cặp với beam đã báo cáo): BERTScore 0,4656 → 0,4847,
++0,0191 [+0,0155; +0,0228]**, toàn bộ nhờ precision (0,493 → 0,545; recall 0,439 → 0,426, tức MBR
+không sửa lỗi bỏ sót nội dung); CheXbert micro F1-14 +0,0087 [+0,0012; +0,0161]; ROUGE-L +0,0050
+[+0,0016; +0,0084]; CIDEr −0,0274 [−0,0593; +0,0022] (không có ý nghĩa). Output ngắn hơn (median
+47 → 40 từ) nên BLEU-1 toàn tập 0,434 → 0,382 (thấp hơn 0,390 của bài báo), BLEU-4 0,190 → 0,172,
+METEOR 0,190 → 0,181. Chi phí khoảng 3,2 lần beam. Số chính vẫn là beam; MBR là bảng riêng ở mục
+2.2 của `docs/SO_SANH_VOI_BAI_BAO.md`. Lý do thử:
 trên output test đã có, BERTScore của beam là precision 0,493 / recall 0,439 / F1 0,466, của greedy 0,537 / 0,414 /
 0,474: viết dài hơn mất precision nhiều hơn phần recall được thêm. MBR sinh 8 mẫu cho mỗi
 study rồi giữ ứng viên (beam, greedy hoặc một mẫu) có kỳ vọng BERTScore cao nhất so với các

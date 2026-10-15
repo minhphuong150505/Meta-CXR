@@ -1,7 +1,9 @@
 # PLAN 2026-10-14 — Tăng BERTScore bằng giải mã MBR (không train lại)
 
-Trạng thái: **val đã chạy và chấm (2026-10-15), quy tắc chọn M; test chưa chấm** — xem
-"Báo cáo thực thi" cuối file. Adapter: P2 + LR 3e-4 (2 epoch,
+Trạng thái: **xong (2026-10-15).** Quy tắc chốt trước chọn M trên val; test (n = 2.800, chạy
+một lần) lặp lại phần tăng BERTScore: +0,0191 [+0,0155; +0,0228]; CheXbert micro F1-14 +0,0087
+[+0,0012; +0,0161]. BLEU-1/BLEU-4/METEOR/CIDEr toàn tập giảm vì output ngắn hơn — xem "Báo cáo
+thực thi" cuối file. Adapter: P2 + LR 3e-4 (2 epoch,
 `~/stage2_p2_20261011/full/`), Stage 1 `run_20261005_paper`. Chỉ suy luận; không đổi
 checkpoint nào, không đổi bộ chấm.
 
@@ -142,9 +144,70 @@ Lưu ý khi đọc:
   val với test.
 - Không phải giao thức của bài báo: prompt có indication và FINDINGS lần trước, cộng giải mã MBR.
 
-Quyết định này được ghi và commit trước khi chấm test. Mẫu test (`gen_test_samples`, bắt đầu
-2026-10-15 01:41:53) đang sinh và chưa được chấm.
+Quyết định này được ghi và commit (`abb7c15`, push 01:47:53) trước khi chấm test. Lúc đó mẫu
+test (`gen_test_samples`, bắt đầu 2026-10-15 01:41:53) đang sinh và chưa được chấm.
 
-### Test
+### Test — 2026-10-15, chạy một lần theo quy tắc đã chốt
 
-Chưa chạy. `ARM=M bash ~/mbr_test_phase.sh` sau `MBR_PIPELINE_DONE`.
+`gen_test_samples` xong 06:18:49: 2.800 study × 8 mẫu, 0 lỗi, 16.594 s (~0,17 study/s).
+`~/mbr_test_wait.sh` thấy `MBR_PIPELINE_DONE` và chạy `ARM=M bash ~/mbr_test_phase.sh` một lần
+(checkout `6dd5688`, GPU rảnh); `TEST_SCORED arm=M` lúc 06:22:29. Log
+`~/stage2_mbr_20261014_test.log`, output `~/stage2_mbr_20261014/{mbr_test,score}/`.
+
+- `mbr_test`: 123.200 cặp, 39,8 s trên GPU. Ứng viên được chọn: beam 625, greedy 1.327, mẫu 848.
+  Kỳ vọng utility trung bình (F1 thô): beam 0,937 / greedy 0,942 / mẫu 0,933 / ứng viên được
+  chọn 0,945.
+- B là beam test đã báo cáo, chấm lại ra đúng số đã báo cáo (BLEU-1 0,434 / BLEU-4 0,190 /
+  METEOR 0,190 / ROUGE-L 0,355 / CIDEr 0,416 / BERTScore 0,466; CheXbert micro F1-14 0,564).
+
+Chỉ số trên toàn tập test (n = 2.800, giao thức bài báo; CheXbert = `score_ce_chexbert.py`):
+
+| arm | BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 | METEOR | ROUGE-L | CIDEr | BERTScore | từ (median) | CheXbert micro F1-14 | CheXbert macro F1-14 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| B (beam 4, lp 2) | 0,4337 | 0,3082 | 0,2366 | 0,1900 | 0,1897 | 0,3549 | 0,4158 | 0,4656 | 47 | 0,5644 | 0,4253 |
+| M (MBR, utility = BERTScore) | 0,3824 | 0,2763 | 0,2138 | 0,1722 | 0,1815 | 0,3599 | 0,3885 | **0,4847** | 40 | **0,5730** | 0,4354 |
+| bài báo | 0,390 | | | 0,102 | 0,173 | 0,280 | 0,291 | 0,426 | | | |
+
+Ô trống: bài báo không báo (CE của bài báo dùng bộ gán nhãn CheXpert, không so trực tiếp được).
+CheXbert macro-14 precision / recall: B 0,517 / 0,398, M 0,535 / 0,406.
+
+Ghép cặp với B (bootstrap 2.000 lần, seed 16), Δ [khoảng tin cậy 95%]; cột cuối nhắc lại M − B
+trên val (bảng ở trên):
+
+| chỉ số | M − B, test | M − B, val |
+|---|---|---|
+| **BERTScore** | **+0,0191 [+0,0155; +0,0228]** | +0,0199 [+0,0132; +0,0262] |
+| **CheXbert micro F1-14** | **+0,0087 [+0,0012; +0,0161]** | +0,0162 [+0,0045; +0,0274] |
+| CheXbert macro F1-14 | +0,0101 [−0,0014; +0,0218] | +0,0184 [−0,0036; +0,0389] |
+| CheXbert micro F1-5 | +0,0085 [−0,0004; +0,0175] | +0,0214 [+0,0042; +0,0380] |
+| CheXbert macro F1-5 | +0,0096 [−0,0026; +0,0216] | +0,0173 [−0,0076; +0,0425] |
+| **ROUGE-L** | **+0,0050 [+0,0016; +0,0084]** | +0,0032 [−0,0043; +0,0103] |
+| CIDEr | −0,0274 [−0,0593; +0,0022] | +0,0084 [−0,0764; +0,0910] |
+| BLEU-4 (theo study) | −0,0038 [−0,0076; +0,0001] | −0,0046 [−0,0133; +0,0041] |
+| lexicon CE macro F1 | +0,0027 [−0,0135; +0,0195] | +0,0247 [+0,0010; +0,0473] |
+| output trùng B | 628 / 2.800 | 397 / 1.360 |
+
+Kết luận:
+
+- **BERTScore tăng trên test**: 0,4656 → 0,4847, +0,0191 [+0,0155; +0,0228], gần đúng mức đo
+  trên val. Mục tiêu của plan đạt và lặp lại trên tập giữ riêng.
+- Phần tăng đến từ precision, không phải recall (đo lại bằng `bert_score`, cùng mô hình và
+  rescale, F1 khớp bộ chấm): precision 0,493 → 0,545, recall 0,439 → 0,426. MBR chọn bản ngắn
+  và "đồng thuận" hơn; nó không sửa lỗi bỏ sót nội dung đã nêu ở mục "Vì sao" — recall còn giảm
+  nhẹ. Chọn theo từng study giữa B và M bằng tham chiếu (oracle, không đạt được) cho F1 0,505;
+  M hơn B ở 49,5% study.
+- CheXbert micro F1-14 tăng có ý nghĩa nhưng chỉ bằng khoảng một nửa mức val (+0,0087 so với
+  +0,0162); macro F1-14, micro F1-5 và macro F1-5 dương nhưng khoảng tin cậy chạm 0. Lexicon CE,
+  tăng có ý nghĩa trên val, không đổi trên test. Ý "MBR chọn báo cáo nhất quán lâm sàng hơn" chỉ
+  còn đứng ở micro F1-14, với mức tăng nhỏ.
+- ROUGE-L tăng nhỏ, có ý nghĩa (+0,0050).
+- Các chỉ số thưởng độ dài giảm: output ngắn hơn (median 47 → 40 từ), BLEU-1 toàn tập
+  0,434 → 0,382, BLEU-4 0,190 → 0,172, METEOR 0,190 → 0,181, CIDEr 0,416 → 0,388 (ghép cặp
+  −0,0274 [−0,0593; +0,0022], không có ý nghĩa). ⚠ BLEU-1 của M (0,382) thấp hơn bài báo
+  (0,390); của B (0,434) cao hơn.
+- Chi phí suy luận của M ≈ 3,2 lần beam.
+- Không phải giao thức của bài báo: prompt có indication và FINDINGS lần trước, cộng giải mã MBR
+  mà utility chính là mô hình của BERTScore.
+
+Số chính trong `docs/SO_SANH_VOI_BAI_BAO.md` vẫn là beam (B); M được thêm thành một bảng riêng
+ở mục 2.2. Đổi số chính sang M hay không là quyết định của người dùng.

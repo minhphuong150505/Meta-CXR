@@ -1629,11 +1629,19 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
 - Beam: `VariantLLM.generate(num_beams=, length_penalty=)` and
   `generate_stage2_reports.py --num-beams 4 --length-penalty 2.0`; soft/finding
   tokens are repeated per beam. Defaults stay greedy.
-- **MBR decoding (2026-10-14, opt-in). VAL RAN 2026-10-15 and the pre-declared rule
-  chose M** (n=1,360, paired vs beam 4 / lp 2): BERTScore +0.0199 [+0.0132, +0.0262],
-  CheXbert micro F1-14 +0.0162 [+0.0045, +0.0274]; ROUGE-L / CIDEr / BLEU-4 flat;
-  corpus BLEU-1 0.457 -> 0.412 (output median 36 -> 32 words). Greedy alone was not
-  eligible. Test not yet scored -- the plan's execution report has every number.
+- **MBR decoding (2026-10-14, opt-in). DONE 2026-10-15: the pre-declared val rule chose
+  M (val n=1,360: BERTScore +0.0199 [+0.0132, +0.0262]; greedy alone not eligible), and
+  test, run ONCE (n=2,800, paired vs the reported beam 4 / lp 2), replicates the
+  BERTScore gain: 0.4656 -> 0.4847, +0.0191 [+0.0155, +0.0228].** All of it is precision
+  (0.493 -> 0.545); recall FALLS 0.439 -> 0.426, so MBR does not fix the omission problem
+  that motivated it -- it picks shorter consensus text. CheXbert micro F1-14
+  +0.0087 [+0.0012, +0.0161] (val +0.0162); macro F1-14 and F1-5 positive, CIs touch zero;
+  lexicon CE flat (significant on val only); ROUGE-L +0.0050 [+0.0016, +0.0084]; CIDEr
+  -0.0274 [-0.0593, +0.0022]. Output is shorter (median 47 -> 40 words), so corpus
+  BLEU-1 0.434 -> 0.382 -- BELOW the paper's 0.390 -- BLEU-4 0.190 -> 0.172, METEOR
+  0.190 -> 0.181, CIDEr 0.416 -> 0.388. Cost ~3.2x beam. **Beam stays the reported
+  headline**; `docs/SO_SANH_VOI_BAI_BAO.md` section 2.2 carries MBR as a separate table,
+  and switching the headline is the user's call. Every number: the plan's execution report.
   `generate_stage2_reports.py --num-samples 8 [--temperature 0.7 --top-p 0.95 --top-k 0]`
   writes `candidates_<split>.jsonl` (no `generated` key, so no scorer can read a
   random sample as the decode) via `VariantLLM.generate_candidates`; then

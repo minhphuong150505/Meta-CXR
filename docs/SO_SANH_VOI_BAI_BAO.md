@@ -1,7 +1,8 @@
 # So sánh kết quả với bài báo META-CXR
 
-Cập nhật 2026-10-14. Hai checkpoint được báo cáo, cấu hình huấn luyện, kết quả theo các phép đo
-của bài báo và nguyên nhân sai khác. Chỉ số tổng hợp, không có văn bản báo cáo hay ID bệnh nhân.
+Cập nhật 2026-10-15 (thêm giải mã MBR ở mục 2.2). Hai checkpoint được báo cáo, cấu hình huấn
+luyện, kết quả theo các phép đo của bài báo và nguyên nhân sai khác. Chỉ số tổng hợp, không có
+văn bản báo cáo hay ID bệnh nhân.
 
 Mỗi giai đoạn chỉ nêu một checkpoint chính. Các thử nghiệm khác, kết quả âm và chỉ mục đầy đủ
 từng hạng mục (TM-01 … TM-29): [`CHI_MUC_TINH_MOI.md`](CHI_MUC_TINH_MOI.md); chẩn đoán và thí
@@ -142,6 +143,26 @@ Các chỉ số được tính theo cách phổ biến mà bài báo dùng: ch�
 *Không rõ: bảng của bài báo là ảnh và hai số này không được nhắc trong phần chữ. Báo cáo sinh ra có độ dài trung vị 47 từ.*
 
 Bảng này không phải so sánh cùng điều kiện. Mô hình của đề tài đọc thêm chỉ định chụp và báo cáo của lần chụp trước; mô hình của bài báo chỉ đọc 32 token ảnh và danh sách bệnh.
+
+**Giải mã MBR (bổ sung 2026-10-15, không thay số chính).** Cùng bộ adapter, chỉ đổi cách giải mã. Với mỗi nghiên cứu, mô hình sinh thêm 8 mẫu ngẫu nhiên (nhiệt độ 0,7, top-p 0,95); trong các ứng viên gồm bản tìm kiếm chùm, bản tham lam và 8 mẫu, ứng viên có BERTScore trung bình cao nhất so với các mẫu được giữ lại. Báo cáo của bác sĩ không tham gia việc chọn. Cách giải mã và quy tắc chọn được chốt trên tập kiểm định (1.360 nghiên cứu) và ghi lại trước khi chấm tập kiểm tra; tập kiểm tra chỉ chạy một lần.
+
+**Bảng: Giải mã tìm kiếm chùm (số chính) và giải mã MBR trên tập kiểm tra**
+
+| Chỉ số | Bài báo | Tìm kiếm chùm (số chính) | MBR (utility = BERTScore) | MBR − tìm kiếm chùm, ghép cặp |
+|---|---|---|---|---|
+| BLEU-1 | 0,390 | 0,434 | 0,382 | không có |
+| BLEU-4 | 0,102 | 0,190 | 0,172 | −0,0038 [−0,0076; +0,0001] |
+| METEOR | 0,173 | 0,190 | 0,181 | không có |
+| ROUGE-L | 0,280 | 0,355 | 0,360 | +0,0050 [+0,0016; +0,0084] |
+| CIDEr | 0,291 | 0,416 | 0,388 | −0,0274 [−0,0593; +0,0022] |
+| BERTScore | 0,426 | 0,466 | 0,485 | +0,0191 [+0,0155; +0,0228] |
+| CheXbert F1 micro, 14 bệnh | không báo | 0,564 | 0,573 | +0,0087 [+0,0012; +0,0161] |
+| F1 hiệu quả lâm sàng, macro, 14 bệnh | 0,428 (bộ gán nhãn CheXpert) | 0,425 | 0,435 | +0,0101 [−0,0014; +0,0218] |
+| Độ dài trung vị (từ) | không báo | 47 | 40 | không có |
+
+*Khoảng tin cậy 95% bằng bootstrap ghép cặp 2.000 lần trên 2.800 nghiên cứu. "Không có": bộ chấm không tính khoảng tin cậy cho chỉ số toàn tập này. BLEU-4 ghép cặp tính theo từng nghiên cứu nên không phải hiệu của hai số BLEU-4 toàn tập.*
+
+MBR tăng BERTScore có ý nghĩa, gần đúng mức đã đo trên tập kiểm định (+0,0199). Toàn bộ phần tăng đến từ precision của BERTScore (0,493 lên 0,545), còn recall giảm nhẹ (0,439 xuống 0,426): MBR chọn bản ngắn hơn và gần với đa số các mẫu hơn, chứ không làm báo cáo bỏ sót ít hơn. Ngoài ra, hàm utility dùng để chọn ứng viên chính là mô hình của BERTScore, nên một phần mức tăng đến từ chính cách chọn. Các chỉ số không dùng mô hình đó tăng ít hơn: CheXbert F1 micro và ROUGE-L tăng nhỏ nhưng có ý nghĩa, F1 macro tăng nhưng khoảng tin cậy chạm 0. Báo cáo được chọn ngắn hơn (trung vị 40 so với 47 từ), nên các chỉ số thưởng độ dài giảm và BLEU-1 xuống dưới mức của bài báo. Mỗi nghiên cứu tốn khoảng 3,2 lần thời gian của giải mã tìm kiếm chùm. Bảng tóm tắt ở đầu tài liệu và bảng chỉ số sinh ngôn ngữ phía trên vẫn dùng giải mã tìm kiếm chùm.
 
 ### 2.3 Hiệu quả lâm sàng
 
