@@ -129,7 +129,8 @@ live microbatch plus the queue, not from gradient accumulation."* — tăng
   không adapter/fusion/projector/`ln_vision`, encoder đóng băng (`encoder_finetune` tắt).
 - `model`: `multi_view: true`, `qformer_input_norm: per_stream`, `eval_mode_modules: [view_fusion]`,
   `gradcache_chunk_size: 32`; loss `lambda_itc 1`, `lambda_lm 1`, `lambda_query_diversity 1`,
-  `lambda_itm 0`, mọi loss MHCAC 0. `run`: không cache đặc trưng, batch 128, augmentation tắt,
+  `lambda_itm 0`, mọi loss MHCAC 0. `run`: không cache đặc trưng, batch 128, `num_workers: 4`
+  (8 worker × prefetch 2 × batch ảnh ~0,9 GB làm máy 30 GB hết RAM, OOM killer 2026-10-15), augmentation tắt,
   2 epoch, chọn theo val loss, cổng ITC mỗi epoch (chỉ ghi, không dừng).
 - ⚠ Checkpoint của nó thiếu block encoder 1c đã mở: chỉ dùng qua `scripts/merge_qformer_refit.py`.
 - Ba khóa model mới (`qformer_input_norm`, `loss.lambda_query_diversity`, `eval_mode_modules`)
