@@ -17,6 +17,9 @@ cổng: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`. Chỉ phụ thuộc tor
 | `batch_centred_participation_ratio(states)` | `[B, Q, D]` → `[B]`: số hướng hiệu dụng của phần thay đổi theo ảnh (mỗi query trừ trung bình của nó trong batch), tính từ Gram: `(tr G)² / ‖G‖²_F` |
 | `query_diversity_loss(states)` | `mean_b log(Q/PR_b)/log(Q)` ∈ [0, 1]: 1 = một hướng thông tin ảnh, 0 = Q hướng độc lập bằng nhau. Batch 1 study → 0 có graph (chunk lẻ cuối của GradCache) |
 | `assert_input_norm_keys_match(model_keys, ckpt_keys)` | báo lỗi khi model và checkpoint không cùng có/không có `qformer_input_norm.*` |
+| `resolve_qformer_dropout(value)` | 2026-10-15 (lần 2): `None` (khóa vắng = dropout 0,1 của BERT) hoặc xác suất trong [0, 1); khác → lỗi |
+| `set_dropout_probability(module, p)` | đặt `p` cho mọi lớp dropout (`_DropoutNd`) dưới `module`, trả số lớp; không đổi chế độ train/eval; module không có dropout → lỗi |
+| `assert_noise_free_query_path(lambda_div, qformer_dropout, feature_mask_ratio)` | `lambda_div > 0` mà dropout Q-Former (`None` = 0,1) hoặc che token > 0 → lỗi, nêu đúng khóa cần đặt 0 |
 
 ## Vì sao như vậy
 - **Chỉ Q-Former đọc bản đã chuẩn hóa.** Q-Former của BLIP-2 được pretrain trên token ViT đã

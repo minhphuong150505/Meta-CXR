@@ -43,8 +43,11 @@ from vision_encoders.stream_adapter import (
 from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector
 from vision_encoders.qformer_inputs import (
     QformerInputNorm,
+    assert_noise_free_query_path,
     query_diversity_loss,
+    resolve_qformer_dropout,
     resolve_qformer_input_norm,
+    set_dropout_probability,
 )
 # from vision_encoders.medclip.medclip import Medclip
 
@@ -188,6 +191,8 @@ class Blip2Qformer(Blip2Base):
     # would shadow the module nn.Module registers under that name.
     lambda_query_diversity = 0.0
     eval_mode_modules: tuple[str, ...] = ()
+    #: None = BERT's dropout (0.1) inside the Q-Former, the historical path.
+    qformer_dropout = None
     #: None = decide per step whether GradCache may reuse the image tokens of its
     #: no-grad pass (it may when nothing upstream of the Q-Former trains).
     gradcache_reuse_image_tokens = None
@@ -259,6 +264,7 @@ class Blip2Qformer(Blip2Base):
         qformer_input_norm=None,
         lambda_query_diversity=0.0,
         eval_mode_modules=(),
+        qformer_dropout=None,
     ):
         super().__init__()
 
@@ -314,6 +320,15 @@ class Blip2Qformer(Blip2Base):
 
         # Set after the pretrained weights are in; read by BertEncoder.forward.
         self.Qformer.config.gradient_checkpointing = bool(qformer_grad_checkpointing)
+        # Dropout probability of every Q-Former dropout layer (2026-10-15 refit: the
+        # query-diversity term was satisfied by amplified dropout noise). Sets p and
+        # leaves the module in train mode, so gradient checkpointing stays on.
+        self.qformer_dropout = resolve_qformer_dropout(qformer_dropout)
+        if self.qformer_dropout is not None:
+            count = set_dropout_probability(self.Qformer, self.qformer_dropout)
+            self.Qformer.config.hidden_dropout_prob = self.qformer_dropout
+            self.Qformer.config.attention_probs_dropout_prob = self.qformer_dropout
+            logging.info("Q-Former dropout set to %s on %d layers", self.qformer_dropout, count)
         self.vision_proj = nn.Linear(self.Qformer.config.hidden_size, embed_dim)
         self.text_proj = nn.Linear(self.Qformer.config.hidden_size, embed_dim)
 
@@ -402,6 +417,9 @@ class Blip2Qformer(Blip2Base):
                 "lambda_query_diversity > 0 needs a vision-language objective "
                 "(lambda_itc / lambda_itm / lambda_lm): without one the Q-Former never runs"
             )
+        assert_noise_free_query_path(
+            self.lambda_query_diversity, self.qformer_dropout, self.feature_mask_ratio
+        )
         self.lambda_cls = float(lambda_cls)
         self.lambda_teacher_cls = float(lambda_teacher_cls)
         self.lambda_distill = float(lambda_distill)
@@ -2498,6 +2516,7 @@ class Blip2Qformer(Blip2Base):
         qformer_input_norm = cfg.get("qformer_input_norm", None)
         lambda_query_diversity = float(loss_cfg.get("lambda_query_diversity", 0.0))
         eval_mode_modules = tuple(cfg.get("eval_mode_modules", None) or ())
+        qformer_dropout = cfg.get("qformer_dropout", None)
 
         explanation_cfg_raw = cfg.get("explanation", {}) or {}
         explanation_streams = explanation_cfg_raw.get("streams", None)
@@ -2613,6 +2632,7 @@ class Blip2Qformer(Blip2Base):
             qformer_input_norm=qformer_input_norm,
             lambda_query_diversity=lambda_query_diversity,
             eval_mode_modules=eval_mode_modules,
+            qformer_dropout=qformer_dropout,
         )
 
         # Optional inference-only ablation. ``active_encoders`` names streams

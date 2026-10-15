@@ -20,8 +20,15 @@ in the first two cross-attention layers every query attends PubMedCLIP's CLS tok
   per-query offset from passing for diversity, and the participation ratio (not a mean of
   pairwise cosines) is what stops "one informative query + 31 near-constant ones" from
   passing: near-constant queries contribute ~no variance and so ~nothing to the ratio.
+* :func:`set_dropout_probability` / :func:`assert_noise_free_query_path` -- the term must be
+  computed on a noise-free query path. Measured 2026-10-15 (the first 2-epoch refit): with the
+  Q-Former's dropout 0.1 on in training, the model learned to make the dropout perturbation
+  3.9x the image-dependent part of the query states. That noise is near-isotropic across the
+  32 queries, so the ratio read ~30 directions in training (loss 0.014) while the eval-mode
+  states the gate and Stage 2 see held 2.32 (loss 0.77), and the term stopped constraining
+  them. ``model.qformer_dropout: 0.0`` removes the noise without leaving train mode.
 
-torch only, so both are testable on a CPU box.
+torch only, so all of it is testable on a CPU box.
 """
 
 from __future__ import annotations
@@ -108,6 +115,52 @@ def query_diversity_loss(states: torch.Tensor) -> torch.Tensor:
         return states.float().sum() * 0.0
     pr = batch_centred_participation_ratio(states).clamp(min=1.0, max=float(queries))
     return ((math.log(queries) - pr.log()) / math.log(queries)).mean()
+
+
+def resolve_qformer_dropout(value) -> float | None:
+    """``None`` (absent key: BERT's 0.1 everywhere, the historical path) or a probability in [0, 1)."""
+    if value is None:
+        return None
+    p = float(value)
+    if not 0.0 <= p < 1.0:
+        raise ValueError(f"model.qformer_dropout must be in [0, 1) or absent; got {value!r}")
+    return p
+
+
+def set_dropout_probability(module: nn.Module, p: float) -> int:
+    """Set ``p`` on every dropout layer under ``module``; returns how many there were.
+
+    The module keeps its train/eval mode: the Q-Former's gradient checkpointing is gated on
+    ``self.training``, so putting it in eval mode to silence dropout would also switch that off.
+    """
+    layers = [m for m in module.modules() if isinstance(m, nn.modules.dropout._DropoutNd)]
+    if not layers:
+        raise ValueError(f"{type(module).__name__} has no dropout layer to set")
+    for layer in layers:
+        layer.p = float(p)
+    return len(layers)
+
+
+def assert_noise_free_query_path(lambda_query_diversity: float, qformer_dropout: float | None,
+                                 feature_mask_ratio: float) -> None:
+    """Refuse the diversity term on a query path that carries training-only noise.
+
+    ``qformer_dropout`` None means BERT's default 0.1. Feature masking perturbs the Q-Former's
+    inputs only in training too, so the term would again score states Stage 2 never receives.
+    """
+    if lambda_query_diversity <= 0:
+        return
+    noisy = []
+    if qformer_dropout is None or qformer_dropout > 0:
+        noisy.append("model.qformer_dropout: 0.0")
+    if feature_mask_ratio > 0:
+        noisy.append("model.feature_mask_ratio: 0.0")
+    if noisy:
+        raise ValueError(
+            "lambda_query_diversity > 0 needs the query path free of training-only noise; set "
+            + " and ".join(noisy) + ". With Q-Former dropout on (2026-10-15 refit) the model "
+            "learned to amplify the dropout noise, which the participation ratio reads as diversity"
+        )
 
 
 def assert_input_norm_keys_match(model_keys: Iterable[str], checkpoint_keys: Iterable[str],

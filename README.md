@@ -453,6 +453,12 @@ ITC R@5 0,58 / 0,56 đạt. Pipeline dừng trước probe và pilot; Stage 2 kh
 "lách" qua dropout: nó được tính lúc train khi Q-Former còn dropout 0,1, và mô hình học cách khuếch
 đại nhiễu dropout lên 3,9 lần phần phụ thuộc ảnh, nên lúc train loss đọc ~30 hướng (0,014) trong khi
 val (chế độ eval) là 0,77. Không dùng `lambda_query_diversity` khi Q-Former còn dropout.
+**Lần 2 (user chọn 2026-10-15; CHƯA chạy GPU):** khóa mới `model.qformer_dropout` (vắng = dropout
+0,1 của BERT, giống từng bit) đặt xác suất cho mọi lớp dropout của Q-Former mà vẫn để module ở chế độ
+train (giữ gradient checkpointing); `phase1q` đặt `qformer_dropout: 0.0` và `feature_mask_ratio: 0.0`,
+và mô hình từ chối `lambda_query_diversity > 0` nếu thiếu một trong hai. Smoke 600 update phải đạt
+PR ≥ 4, bản đồ ≤ 0,6, ITC trên ngẫu nhiên và độ lệch loss đa dạng train/val ≤ 0,05 thì mới refit đầy đủ;
+không đạt thì dừng (mục "Lần 2" của plan).
 
 Test `run_20261005_paper` (n = 3.269, CI 95% bootstrap 1.000 lần):
 

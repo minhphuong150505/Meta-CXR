@@ -128,10 +128,11 @@ live microbatch plus the queue, not from gradient accumulation."* — tăng
 - `trainable`: Q-Former, query, chiếu ITC, `temp`/SigLIP, `qformer_input_norm`. Không MHCAC,
   không adapter/fusion/projector/`ln_vision`, encoder đóng băng (`encoder_finetune` tắt).
 - `model`: `multi_view: true`, `qformer_input_norm: per_stream`, `eval_mode_modules: [view_fusion]`,
-  `gradcache_chunk_size: 32`; loss `lambda_itc 1`, `lambda_lm 1`, `lambda_query_diversity 1`,
+  `qformer_dropout: 0.0` và `feature_mask_ratio: 0.0` (lần 2, 2026-10-15: lượt train của query phải là
+  lượt eval — lần 1 với dropout 0,1 thì loss đa dạng bị lách), `gradcache_chunk_size: 32`; loss `lambda_itc 1`, `lambda_lm 1`, `lambda_query_diversity 1`,
   `lambda_itm 0`, mọi loss MHCAC 0. `run`: không cache đặc trưng, batch 128, `num_workers: 4`
   (8 worker × prefetch 2 × batch ảnh ~0,9 GB làm máy 30 GB hết RAM, OOM killer 2026-10-15), augmentation tắt,
   2 epoch, chọn theo val loss, cổng ITC mỗi epoch (chỉ ghi, không dừng).
 - ⚠ Checkpoint của nó thiếu block encoder 1c đã mở: chỉ dùng qua `scripts/merge_qformer_refit.py`.
-- Ba khóa model mới (`qformer_input_norm`, `loss.lambda_query_diversity`, `eval_mode_modules`)
-  vắng ở khối model gốc = đường cũ, giống từng bit. Kế hoạch: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.
+- Bốn khóa model mới (`qformer_input_norm`, `loss.lambda_query_diversity`, `eval_mode_modules`,
+  `qformer_dropout`) vắng ở khối model gốc = đường cũ, giống từng bit; `feature_mask_ratio` gốc vẫn 0,1. Kế hoạch: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.
