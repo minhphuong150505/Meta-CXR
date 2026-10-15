@@ -310,7 +310,7 @@ nhưng không nhận gradient; BCE gate chỉ cộng vào total khi `lambda_gate
 
 ## Sửa soft token sụp — 2026-10-15 (opt-in, chưa chạy GPU)
 
-Ba khóa model, vắng = đường cũ giống từng bit:
+Bốn khóa model, vắng = đường cũ giống từng bit:
 
 - `qformer_input_norm: per_stream` → `self.qformer_input_norm = QformerInputNorm(...)`
   ([`qformer_inputs.py`](../../../../vision_encoders/qformer_inputs.py.doc.md)); `None` khi tắt.
@@ -320,9 +320,17 @@ Ba khóa model, vắng = đường cũ giống từng bit:
 - `loss.lambda_query_diversity` → `loss_query_div` (trường mới của `BlipOutput`, nên được log ở
   train và val; cộng vào `loss`). Cần một mục tiêu vision-language (không thì Q-Former không chạy) →
   `__init__` báo lỗi nếu thiếu. Trong `forward_gradcache` tính theo chunk (trung bình batch của chunk),
-  trọng số `len(chunk)/batch` để các chunk cộng thành trung bình batch.
+  trọng số `len(chunk)/batch` để các chunk cộng thành trung bình batch. Từ 2026-10-15 (lần 2)
+  `__init__` gọi `assert_noise_free_query_path`: `lambda_query_diversity > 0` đòi
+  `qformer_dropout: 0.0` và `feature_mask_ratio: 0.0`, không thì lỗi — refit lần 1 chạy với dropout
+  0,1 và học cách khuếch đại nhiễu dropout lên 3,9 lần phần phụ thuộc ảnh (PR lúc train ~30, eval 2,32).
 - `eval_mode_modules: [view_fusion]` → `train()` giữ các module đó ở eval (dropout và bỏ ảnh phụ
   20% của view fusion tắt khi train, như lúc dựng record Stage 2). Tên không phải submodule → lỗi.
+- `qformer_dropout` (2026-10-15, lần 2) → `set_dropout_probability(self.Qformer, p)` ngay sau khi
+  Q-Former được dựng (đặt `p` cho mọi lớp dropout, ghi cả `hidden_dropout_prob` /
+  `attention_probs_dropout_prob` trong config, log `Q-Former dropout set to ...`). Module vẫn ở chế độ
+  train: gradient checkpointing của `BertEncoder` chỉ bật khi `self.training`, nên đưa Q-Former về eval
+  để tắt dropout sẽ tắt luôn checkpointing. Class attribute `qformer_dropout = None` cho đối tượng `__new__`.
 
 GradCache dùng lại token: khi `_gradcache_reuse` thấy token ảnh không cần gradient (phía trước
 Q-Former đóng băng — pha `phase1q`), lượt 1 encode mỗi chunk MỘT lần, ghi RNG SAU encode, lượt 3

@@ -213,3 +213,41 @@ Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể d�
   thêm. Lần refit này không kiểm được thiết kế dự định, vì sau vài trăm update loss đa dạng hết tác dụng.
   Phần còn lại của bản sửa (norm từng luồng, khởi tạo lại BLIP-2, bỏ ITM, 2 epoch) vẫn cho PR 2,32 so với
   1,00 của 1c, và ITC R@5 0,58 so với ≈0,17. Chờ user chọn bước tiếp.
+
+## Lần 2 — đường đi của query không còn nhiễu chỉ có lúc train (user chọn phương án A, 2026-10-15)
+
+**Thay đổi (chốt TRƯỚC khi chạy):**
+
+- Khóa mới `model.qformer_dropout` (vắng = dropout 0,1 của BERT, giống từng bit):
+  `set_dropout_probability` đặt `p` cho mọi lớp dropout trong Q-Former ngay sau khi dựng; module vẫn ở
+  chế độ train, vì gradient checkpointing của `BertEncoder` chỉ bật khi `self.training`
+  (`Qformer.py:530`). Đưa Q-Former vào `eval_mode_modules` sẽ tắt luôn checkpointing.
+- `phase1q`: `qformer_dropout: 0.0` và `feature_mask_ratio: 0.0` (che token đầu vào là nguồn nhiễu chỉ
+  có lúc train còn lại trên đường đi của query; view fusion đã ở eval từ lần 1, encoder đóng băng giữ
+  eval). Lượt train của query = lượt eval.
+- `Blip2Qformer.__init__` từ chối `lambda_query_diversity > 0` nếu thiếu một trong hai khóa
+  (`assert_noise_free_query_path`).
+- Không đổi: λ = 1, LR, batch 128, 2 epoch, `trainable`, cổng cuối, cổng thông tin, quy tắc pilot.
+- Hệ quả phụ: ITC và LM của 1q cũng train không dropout và không che token (hai regulariser này mất).
+
+**Quy tắc:**
+
+0. **Kiểm tra vi mô** (~2 phút GPU): `~/qrefit_dropout_probe.py` trên file gộp của lần 1 với các khóa
+   1q. Ở chế độ train của mô hình, trạng thái query phải trùng chế độ eval: độ lệch tương đối ≤ 1e-6 và PR
+   lệch ≤ 1e-4. Không đạt thì dừng.
+1. **Smoke 600 update** (`run.truncate_train=76800`, qua hết warm-up 500 update; ~55 phút), chỉ bản sửa
+   (đối chứng C đã có từ lần 1). **Cổng smoke** = cổng sụp của cổng cuối (`final_pr_batch_centred` ≥ 4,
+   `xattn_mean_query_map_cos` ≤ 0,6, ITC R@5 trên ngẫu nhiên cả hai chiều) **và** |loss đa dạng lúc
+   train − val| ≤ 0,05. Giá trị train là trung bình các update được log trong 1/4 cuối epoch; giá trị val
+   lấy từ `phase_metrics` của epoch đó. Không đạt → `SMOKE_GATE_FAILED`, dừng, ghi kết quả âm. **Không có
+   ngoại lệ cho cổng này** (đã nói với user trước khi chạy).
+2. Refit 2 epoch → gộp → chẩn đoán → **cổng cuối như lần 1**; độ lệch train/val chỉ báo cáo.
+3. Cổng thông tin, pilot A/B, chấm điểm, quy tắc nhận B: như lần 1.
+
+**Chạy:** `~/qrefit2_pipeline.sh` (+ `~/qrefit2_gap.py`, `~/qrefit_dropout_probe.py`, cùng
+`~/qrefit_gate.py` và `~/qrefit_build_records.py` của lần 1, không đổi) → `~/qrefit2_20261015/`, log
+`~/qrefit2_20261015.log`. Ước tính nếu qua mọi cổng: kiểm tra vi mô 2 phút + smoke ~55 phút + refit ~5 h
++ cổng thông tin ~1 h + pilot ~6 h + chấm ~20 phút ≈ 13 h.
+
+**Giới hạn biết trước thêm:** không còn nhiễu ngẫu nhiên để lách, nhưng PR vẫn không phân biệt biến
+thiên phụ thuộc ảnh có ích với vô ích; điều đó chỉ cổng thông tin và pilot đo được.

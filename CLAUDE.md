@@ -125,6 +125,15 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   ratio read ~30 directions in training -- `loss_query_div` 0.014 in the train log against 0.77 on val
   (eval mode) -- and the term stopped constraining the real geometry. Do not use
   `lambda_query_diversity` with Q-Former dropout on, and compare the term's train and val values.
+  🧪 **Attempt 2 (user chose it 2026-10-15) -- NOT YET RUN ON GPU:** `model.qformer_dropout`
+  (absent = BERT's 0.1, bit-identical) sets `p` on every Q-Former dropout layer right after the
+  Q-Former is built and leaves it in train mode -- do NOT put the Q-Former in `eval_mode_modules`
+  instead: `BertEncoder` gradient checkpointing is gated on `self.training` (`Qformer.py:530`).
+  `phase1q` now sets `qformer_dropout: 0.0` and `feature_mask_ratio: 0.0` (masking is the other
+  training-only noise on the queries' input), and `Blip2Qformer.__init__` REFUSES
+  `lambda_query_diversity > 0` without both (`assert_noise_free_query_path`). Gates of attempt 2,
+  incl. the smoke rule (600 updates; PR >= 4, map <= 0.6, ITC above chance, train/val gap of the
+  term <= 0.05, else stop): the plan's "Lần 2" section.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

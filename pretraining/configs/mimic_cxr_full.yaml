@@ -1159,7 +1159,8 @@ run:
     # Differs from 1a in: LayerNorm per stream on the Q-Former's input
     # (qformer_input_norm), the query-diversity penalty, no ITM (at chance all of
     # 1a), multi-view tokens exactly as Stage-2 records see them (view fusion
-    # held in eval mode), no feature cache, 2 epochs.
+    # held in eval mode), no Q-Former dropout and no feature masking (so the
+    # training forward of the queries is the eval one), no feature cache, 2 epochs.
     # ⚠ Its checkpoints lack the 1c-unfrozen encoder blocks (no phase lists them
     # in `trainable`): use it ONLY through scripts/merge_qformer_refit.py, which
     # writes the 1c checkpoint with the Q-Former side replaced.
@@ -1182,6 +1183,13 @@ run:
         multi_view: true
         qformer_input_norm: per_stream
         eval_mode_modules: [view_fusion]
+        # The diversity term must score the query states Stage 2 receives. The first
+        # refit (2026-10-15) ran with BERT's dropout 0.1 and the model learned to make
+        # the dropout noise 3.9x the image-dependent part: PR ~30 in training, 2.32 in
+        # eval mode. Both training-only noise sources are off here, and the model
+        # refuses lambda_query_diversity > 0 without these two lines.
+        qformer_dropout: 0.0
+        feature_mask_ratio: 0.0
         gradcache_chunk_size: 32
         loss:
           lambda_itc: 1.0

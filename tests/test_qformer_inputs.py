@@ -4,6 +4,10 @@ The two ways the penalty could pass a collapsed Q-Former are pinned here: a cons
 per query, and one informative query beside 31 near-constant ones. Both must score as
 collapsed (loss ~1), or the refit could report "diverse" soft tokens that carry one direction
 of image information, which is the state it exists to fix.
+
+A third way was found on the GPU (2026-10-15): computed on training-mode states, the penalty
+reads dropout noise as diversity, and the first refit learned to amplify that noise. That
+mechanism, and the knob and guard that close it, are pinned at the end.
 """
 
 from __future__ import annotations
@@ -16,9 +20,12 @@ import torch
 from vision_encoders.qformer_inputs import (
     QformerInputNorm,
     assert_input_norm_keys_match,
+    assert_noise_free_query_path,
     batch_centred_participation_ratio,
     query_diversity_loss,
+    resolve_qformer_dropout,
     resolve_qformer_input_norm,
+    set_dropout_probability,
 )
 from vision_encoders.shared_visual_tokens import SharedVisualTokens
 
@@ -143,3 +150,67 @@ def test_norm_keys_must_agree_between_model_and_checkpoint():
         assert_input_norm_keys_match(without, with_norm)
     with pytest.raises(ValueError, match="LayerNorm initialisation"):
         assert_input_norm_keys_match(with_norm, without)
+
+
+# --------------------------------------------------------------------------
+# Training-only noise on the query path (2026-10-15 refit)
+# --------------------------------------------------------------------------
+
+
+def test_dropout_noise_reads_as_diversity():
+    """Why the knob exists: collapsed states plus per-element dropout noise score as diverse."""
+    collapsed = _image_part(7).expand(B, Q, D).contiguous()
+    assert float(query_diversity_loss(collapsed)) == pytest.approx(1.0, abs=1e-5)
+    # A shared component 12x the image part gives dropout noise ~4x the image-dependent part,
+    # about what the refit learned (3.9x); the 32 identical queries then score as diverse.
+    states = collapsed + 12.0
+    torch.manual_seed(8)
+    noisy = torch.nn.functional.dropout(states, p=0.1, training=True)
+    ratio = (noisy - states).flatten(1).norm(dim=1) / (collapsed - collapsed.mean(0)).flatten(1).norm(dim=1)
+    assert 3.5 < float(ratio.mean()) < 5.0
+    assert float(query_diversity_loss(noisy)) < 0.25
+
+
+def test_resolve_qformer_dropout():
+    assert resolve_qformer_dropout(None) is None
+    assert resolve_qformer_dropout(0) == 0.0 and resolve_qformer_dropout("0.05") == 0.05
+    for bad in (1.0, -0.1, 1.5):
+        with pytest.raises(ValueError, match="qformer_dropout"):
+            resolve_qformer_dropout(bad)
+
+
+def _with_dropout():
+    torch.manual_seed(9)
+    return torch.nn.Sequential(
+        torch.nn.Linear(D, D), torch.nn.Dropout(0.1),
+        torch.nn.Sequential(torch.nn.Linear(D, D), torch.nn.Dropout(0.1)),
+    )
+
+
+def test_zero_dropout_makes_the_training_forward_the_eval_one_without_leaving_train_mode():
+    module = _with_dropout()
+    x = torch.randn(4, D)
+    module.train()
+    assert not torch.equal(module(x), module(x)), "dropout should be live before the knob"
+    assert set_dropout_probability(module, 0.0) == 2
+    assert module.training  # gradient checkpointing is gated on self.training
+    trained = module(x)
+    module.eval()
+    assert torch.equal(trained, module(x))
+
+
+def test_set_dropout_probability_refuses_a_module_without_dropout():
+    with pytest.raises(ValueError, match="no dropout layer"):
+        set_dropout_probability(torch.nn.Linear(D, D), 0.0)
+
+
+def test_the_diversity_term_refuses_a_noisy_query_path():
+    assert_noise_free_query_path(0.0, None, 0.1)       # term off: anything goes
+    assert_noise_free_query_path(1.0, 0.0, 0.0)        # the 1q configuration
+    with pytest.raises(ValueError, match=r"qformer_dropout: 0\.0") as err:
+        assert_noise_free_query_path(1.0, None, 0.0)   # None = BERT's 0.1
+    assert "feature_mask_ratio" not in str(err.value)
+    with pytest.raises(ValueError, match=r"qformer_dropout: 0\.0 and model\.feature_mask_ratio"):
+        assert_noise_free_query_path(1.0, 0.1, 0.1)
+    with pytest.raises(ValueError, match="feature_mask_ratio"):
+        assert_noise_free_query_path(1.0, 0.0, 0.1)

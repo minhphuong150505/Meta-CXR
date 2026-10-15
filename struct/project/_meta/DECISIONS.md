@@ -1357,6 +1357,12 @@ dạng tính trên trạng thái lúc train (dropout 0,1 trong Q-Former) và b�
 dropout lên 3,9 lần phần phụ thuộc ảnh (0,4 lần khi không có loss), PR lúc train ~30, loss 0,014 so
 với 0,77 trên val. Số đo đầy đủ: báo cáo thực thi của plan.
 
+**Lần 2 (user chọn phương án A, 2026-10-15; chưa chạy GPU).** Giữ thiết kế, chỉ bỏ nhiễu chỉ có lúc
+train trên đường đi của query: khóa mới `model.qformer_dropout` (đặt `p` cho mọi lớp dropout của
+Q-Former, module vẫn ở train để giữ gradient checkpointing) và `feature_mask_ratio: 0.0` trong
+`phase1q`; `__init__` từ chối `lambda_query_diversity > 0` nếu thiếu một trong hai. Không đổi λ, cổng
+cuối, cổng thông tin hay quy tắc pilot. Thêm smoke 600 update có cổng (không có ngoại lệ) trước refit.
+
 **Vấn đề (đo 2026-10-11).** 32 soft token của một study gần như là một vector (cosine 0,9989 sau
 1a): ở hai tầng cross-attention đầu mọi query đọc CLS của PubMedCLIP, và không mục tiêu nào của 1a
 đòi query khác nhau.

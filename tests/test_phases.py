@@ -394,6 +394,9 @@ def test_phase1q_refits_only_the_qformer_side():
     model = config.model
     assert model.qformer_input_norm == "per_stream"
     assert list(model.eval_mode_modules) == ["view_fusion"]
+    # The diversity term must see the eval-mode queries: the first refit (2026-10-15) ran with
+    # dropout on and learned to amplify it. Both training-only noise sources are off.
+    assert float(model.qformer_dropout) == 0.0 and float(model.feature_mask_ratio) == 0.0
     assert model.multi_view is True and int(model.gradcache_chunk_size) > 0
     assert model.encoder_finetune.enabled is False
     on = {k for k, v in model.loss.items() if k.startswith("lambda_") and float(v) > 0}
