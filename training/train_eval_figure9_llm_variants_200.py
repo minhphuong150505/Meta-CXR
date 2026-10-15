@@ -681,6 +681,10 @@ def stage1_cohort_fingerprint(
     # Only when the clean variant is asked for, so existing caches still hit.
     if clean_train_images and split == "train":
         payload["train_images"] = "clean"
+    # --stage1-options (2026-10-15): another model built from the same files.
+    # Only when given, so every existing cache still hits.
+    if getattr(context, "config_options", ()):
+        payload["stage1_options"] = list(context.config_options)
     return stable_fingerprint(payload), payload
 
 

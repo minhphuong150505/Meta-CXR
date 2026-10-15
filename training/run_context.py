@@ -39,6 +39,10 @@ class Stage1Context:
     cutpoints: Mapping[str, tuple[float, float]] = field(
         default_factory=lambda: MappingProxyType({})
     )
+    # ``KEY=VALUE`` overrides applied to the Stage-1 YAML when the model is built
+    # (``--stage1-options``, 2026-10-15): the META-Former refit's checkpoint needs
+    # ``model.qformer_input_norm=per_stream``. Empty for every earlier run.
+    config_options: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not str(self.run_name).strip():
@@ -48,6 +52,11 @@ class Stage1Context:
             object.__setattr__(self, "config_path", Path(self.config_path))
         if self.checkpoint_path is not None:
             object.__setattr__(self, "checkpoint_path", Path(self.checkpoint_path))
+        options = tuple(str(o) for o in (self.config_options or ()))
+        bad = [o for o in options if "=" not in o or not o.split("=", 1)[0].strip()]
+        if bad:
+            raise ValueError(f"config_options must be KEY=VALUE; got {bad}")
+        object.__setattr__(self, "config_options", options)
         object.__setattr__(
             self,
             "thresholds",
@@ -98,4 +107,8 @@ class Stage1Context:
             payload["cutpoints"] = {
                 name: list(pair) for name, pair in self.cutpoints.items()
             }
+        # Same rule: a run built with config options is a different Stage-1
+        # model and must not hit an older record cache.
+        if self.config_options:
+            payload["config_options"] = list(self.config_options)
         return payload

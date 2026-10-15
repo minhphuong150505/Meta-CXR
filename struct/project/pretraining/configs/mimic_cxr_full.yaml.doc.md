@@ -119,3 +119,16 @@ live microbatch plus the queue, not from gradient accumulation."* — tăng
   Lịch cosine 3 epoch là một đường LR khác, nên run đầu với giá trị này là một phép đo mới.
 - `run.phases.phase1b.run.test_splits: [test]`: 1b là pha cuối mặc định, chấm test một lần.
 - `phase1c` giữ trong YAML nhưng không chạy mặc định (`scripts/run_stage1_phases.sh`).
+
+## 2026-10-15 — `phase1q`: train lại META-Former trên checkpoint đã xong (opt-in, chưa chạy GPU)
+- Không nằm trong chuỗi mặc định. `run.phases.phase1q.init_from.path` phải cho trên dòng lệnh
+  (thiếu → `PhaseConfigError`); `init_from.skip` = phía Q-Former → khởi tạo BLIP-2.
+- `trainable`: Q-Former, query, chiếu ITC, `temp`/SigLIP, `qformer_input_norm`. Không MHCAC,
+  không adapter/fusion/projector/`ln_vision`, encoder đóng băng (`encoder_finetune` tắt).
+- `model`: `multi_view: true`, `qformer_input_norm: per_stream`, `eval_mode_modules: [view_fusion]`,
+  `gradcache_chunk_size: 32`; loss `lambda_itc 1`, `lambda_lm 1`, `lambda_query_diversity 1`,
+  `lambda_itm 0`, mọi loss MHCAC 0. `run`: không cache đặc trưng, batch 128, augmentation tắt,
+  2 epoch, chọn theo val loss, cổng ITC mỗi epoch (chỉ ghi, không dừng).
+- ⚠ Checkpoint của nó thiếu block encoder 1c đã mở: chỉ dùng qua `scripts/merge_qformer_refit.py`.
+- Ba khóa model mới (`qformer_input_norm`, `loss.lambda_query_diversity`, `eval_mode_modules`)
+  vắng ở khối model gốc = đường cũ, giống từng bit. Kế hoạch: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.

@@ -91,7 +91,8 @@ HIDDEN = 32
 QUERIES = 4
 
 
-def _tiny_model(itc_loss="sigmoid", checkpointing=False, chunk=0):
+def _tiny_model(itc_loss="sigmoid", checkpointing=False, chunk=0, dropout=0.0,
+                random_encode=False):
     pytest.importorskip("transformers")
     try:
         from model.lavis.models.blip2_models.blip2_qformer import Blip2Qformer
@@ -107,8 +108,8 @@ def _tiny_model(itc_loss="sigmoid", checkpointing=False, chunk=0):
     torch.manual_seed(0)
     config = BertConfig(
         vocab_size=len(tokenizer), hidden_size=HIDDEN, num_hidden_layers=2,
-        num_attention_heads=2, intermediate_size=64, hidden_dropout_prob=0.0,
-        attention_probs_dropout_prob=0.0, max_position_embeddings=64,
+        num_attention_heads=2, intermediate_size=64, hidden_dropout_prob=dropout,
+        attention_probs_dropout_prob=dropout, max_position_embeddings=64,
     )
     config.encoder_width = VIS_DIM
     config.add_cross_attention = True
@@ -144,7 +145,10 @@ def _tiny_model(itc_loss="sigmoid", checkpointing=False, chunk=0):
     model.projector = nn.Linear(VIS_DIM, VIS_DIM)  # stands in for the shared projection
 
     def encode_samples(samples):
+        model.encode_calls = getattr(model, "encode_calls", 0) + 1
         tokens = model.projector(samples["feat"])
+        if random_encode:  # consumes the RNG like the 10% feature mask does
+            tokens = tokens * (torch.rand(tokens.shape[:2] + (1,)) > 0.3)
         return SharedVisualTokens(tokens=tokens, spans={"biovil": slice(0, tokens.shape[1])})
 
     model.encode_samples = encode_samples
@@ -274,3 +278,102 @@ def test_gradcache_refuses_classification_objectives():
     model.lambda_cls = 1.0
     with pytest.raises(ValueError, match="alignment-only"):
         model.forward_gradcache(_batch())
+
+
+# --------------------------------------------------------------------------
+# 2026-10-15 refit: reuse of frozen image tokens, and the query-diversity term
+# --------------------------------------------------------------------------
+
+
+def test_gradcache_reuses_frozen_image_tokens_and_keeps_the_gradient():
+    """Nothing upstream trains -> each chunk is encoded once, the update is unchanged."""
+    batch = _batch()
+    recompute = _tiny_model("sigmoid", chunk=2).train()
+    recompute.projector.requires_grad_(False)
+    recompute.lambda_itm = 0.0
+    recompute.gradcache_reuse_image_tokens = False
+    torch.manual_seed(5)
+    out_a = recompute.forward_gradcache(batch)
+    g_a = _grads(recompute)
+    assert recompute.encode_calls == 6  # 3 chunks x (no-grad pass + replay)
+
+    reuse = _tiny_model("sigmoid", chunk=2).train()
+    reuse.load_state_dict(recompute.state_dict())
+    reuse.projector.requires_grad_(False)
+    reuse.lambda_itm = 0.0
+    torch.manual_seed(5)
+    out_b = reuse.forward_gradcache(batch)
+    g_b = _grads(reuse)
+    assert reuse.encode_calls == 1 + 3  # one probe, then one encode per chunk
+    assert reuse._gradcache_reuse_cache[1] is True
+    assert "projector.weight" not in g_b
+    for key in ("loss_itc", "loss_lm", "loss"):
+        assert float(out_b[key]) == pytest.approx(float(out_a[key]), rel=1e-5, abs=1e-7)
+    assert set(g_a) == set(g_b)
+    for name in g_a:
+        assert torch.allclose(g_b[name], g_a[name], rtol=1e-5, atol=1e-8), name
+
+
+def test_gradcache_probe_keeps_recomputing_when_the_projection_trains():
+    model = _tiny_model("sigmoid", chunk=2).train()
+    model.lambda_itm = 0.0
+    torch.manual_seed(5)
+    model.forward_gradcache(_batch())
+    assert model._gradcache_reuse_cache[1] is False
+    assert "projector.weight" in _grads(model)
+
+
+def test_reused_tokens_replay_the_same_features_under_dropout_and_random_masks():
+    """GradCache is only exact if step 3 recomputes what step 1 saw, chunk by chunk."""
+    model = _tiny_model("sigmoid", chunk=2, dropout=0.2, random_encode=True).train()
+    model.projector.requires_grad_(False)
+    model.lambda_itm = 0.0
+    seen = []
+    original = model._alignment_features
+
+    def recording(samples, text_tokens, shared=None):
+        out = original(samples, text_tokens, shared=shared)
+        seen.append((out[0].detach().clone(), out[1].detach().clone()))
+        return out
+
+    model._alignment_features = recording
+    torch.manual_seed(7)
+    model.forward_gradcache(_batch())
+    assert len(seen) == 6
+    for first, replay in zip(seen[:3], seen[3:], strict=True):
+        assert torch.equal(first[0], replay[0]) and torch.equal(first[1], replay[1])
+
+
+def test_gradcache_adds_the_query_diversity_term_to_the_gradient():
+    from vision_encoders.qformer_inputs import query_diversity_loss
+
+    batch = _batch()
+    model = _tiny_model("sigmoid", chunk=6).train()
+    model.lambda_itm = 0.0
+    model.lambda_query_diversity = 0.5
+    torch.manual_seed(5)
+    out = model.forward_gradcache(batch)
+    g_cache = _grads(model)
+    assert float(out["loss_query_div"]) > 0
+    assert float(out["loss"]) == pytest.approx(
+        float(out["loss_itc"]) + float(out["loss_lm"]) + 0.5 * float(out["loss_query_div"]), rel=1e-5)
+
+    plain = _tiny_model("sigmoid", chunk=6).train()
+    plain.load_state_dict(model.state_dict())
+    torch.manual_seed(5)
+    tokens = plain.tokenizer(batch["text_output"], padding="max_length", truncation=True,
+                             max_length=plain.max_txt_len, return_tensors="pt")
+    tok = SimpleNamespace(input_ids=tokens.input_ids, attention_mask=tokens.attention_mask)
+    mask = batch["generation_mask"]
+    img_f, txt_f, embeds, q_tokens, q_out = plain._alignment_features(batch, tok)
+    loss_itc, *_ = plain._image_text_contrastive(img_f, txt_f, mask)
+    loss_lm = plain._language_modeling(tok, q_tokens, q_out, mask, image_embeds=embeds)
+    loss_div = query_diversity_loss(q_out.last_hidden_state)
+    (loss_itc + loss_lm + 0.5 * loss_div).backward()
+    g_plain = _grads(plain)
+    for name, grad in g_plain.items():
+        if name.startswith("itm_head"):
+            continue
+        diff = (g_cache[name] - grad).abs().max().item()
+        scale = grad.abs().max().item()
+        assert diff <= 1e-6 + 1e-3 * scale, f"{name}: max |diff| {diff:.3g} at scale {scale:.3g}"

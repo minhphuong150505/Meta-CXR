@@ -80,6 +80,17 @@ Cache chỉ trúng khi khớp `cohort_id`, tức cùng `--checkpoint-root`,
 `build_stage1_records` với `sample_limit=None` và áp `--limit` **sau đó**, trên
 danh sách record — thu hẹp ở tầng dưới sẽ trượt cache.
 
+## `--stage1-options`, `--soft-token-ablation` (2026-10-15)
+
+- `--stage1-options KEY=VALUE ...` — override YAML khi dựng mô hình Stage 1; checkpoint gộp của
+  refit META-Former ([`merge_qformer_refit.py`](merge_qformer_refit.py.doc.md)) cần
+  `model.qformer_input_norm=per_stream`. Vào `Stage1Context.config_options` và danh tính cache
+  (`stage1_options`) **chỉ khi có**, nên mọi cache cũ vẫn trúng. Ghi vào `generation_summary.json`.
+- `--soft-token-ablation permute_across` — mỗi study nhận 32 soft token của study khác
+  (derangement có seed, `permute_soft_tokens_across_studies`), giữ cue và bối cảnh của chính nó;
+  đo adapter có đọc kênh ảnh không. Áp lên mọi record trước `--limit`, nên cùng `--limit` chọn
+  cùng study với lần sinh thường. Chỉ cho mode soft token; ngoài phân phối, không phải arm đối chứng.
+
 ## Chống lặp — `--no-repeat-ngram-size`, `--repetition-penalty`
 
 > **Beam (2026-10-11):** `--num-beams` (mặc định 1 = greedy) và `--length-penalty` (0 = không

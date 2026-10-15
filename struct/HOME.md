@@ -209,6 +209,7 @@ Meta-CXR-source/
 │
 ├── vision_encoders/
 │   ├── shared_visual_tokens.py     ✅ ★ điểm chiếu DUY NHẤT
+│   ├── qformer_inputs.py           🧪 norm đầu vào Q-Former + loss đa dạng query (opt-in, 2026-10-15)
 │   ├── pubmedclip/pubmed_clip.py   ✅
 │   ├── pubmedclip/preprocess.py    ✅ tiền xử lý CLIP riêng (D-022)
 │   ├── swin/swin_encoder.py        ✅

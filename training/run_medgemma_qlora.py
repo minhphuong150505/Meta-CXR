@@ -68,6 +68,15 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Direct checkpoint_best.pth override; otherwise uses <checkpoint-root>/<run>/checkpoint_best.pth.",
     )
+    parser.add_argument(
+        "--stage1-options",
+        nargs="*",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Overrides for the Stage-1 YAML when the model is built, e.g. "
+        "model.qformer_input_norm=per_stream for a META-Former refit checkpoint "
+        "(scripts/merge_qformer_refit.py). Enters the Stage-1 cache identity only when given.",
+    )
     parser.add_argument("--output-dir", default="training/outputs/medgemma_qlora_full")
     parser.add_argument(
         "--gcs-output",
@@ -617,6 +626,7 @@ def main() -> None:
                     if args.cue_rule != fig9.CUE_RULE_CUTPOINTS else {}),
         cutpoints=(fig9.load_cue_cutpoints(args.threshold_path)
                    if args.cue_rule == fig9.CUE_RULE_CUTPOINTS else {}),
+        config_options=tuple(args.stage1_options or ()),
     )
     fig9.set_seed(fig9.SEED)
     root = Path(args.output_dir)

@@ -92,6 +92,28 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   the model by 0.12 lexicon CE. Novelty index vs the paper:
   `docs/CHI_MUC_TINH_MOI.md`; pilot awaiting approval:
   `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
+- 🧪 **Collapse fix, opt-in, user-approved 2026-10-15 -- NOT YET RUN ON GPU:** phase
+  `phase1q` re-fits ONLY the META-Former on a finished, frozen Stage-1 checkpoint
+  (`run.phases.phase1q.init_from.path=<1c checkpoint_best.pth>`; `init_from.skip` leaves the
+  Q-Former side at BLIP-2's init). New knobs, all default off: `model.qformer_input_norm:
+  per_stream` (one LayerNorm per stream on the Q-Former's COPY of the shared tokens; MHCAC
+  still reads them raw), `model.loss.lambda_query_diversity` (`log(Q/PR)/log(Q)` of the
+  per-study participation ratio of the queries' batch-centred states,
+  `vision_encoders/qformer_inputs.py`; a constant offset per query and "one informative
+  query + 31 constant ones" both score as collapsed, pinned by tests), `model.eval_mode_modules`
+  (`[view_fusion]` in 1q: its dropout and 20% aux-view drop off while training). GradCache
+  now reuses the no-grad pass's image tokens when nothing upstream trains (decided by a
+  grad probe, cached per requires_grad pattern; recompute otherwise, as before). Every Q-Former
+  `encoder_hidden_states` goes through `Blip2Qformer._qformer_tokens` (the ITC gate too).
+  ⚠ **A 1q checkpoint lacks the encoder blocks 1c unfroze** (no phase lists them in
+  `trainable`): loaded alone, encoders fall back to pretrained and MHCAC changes silently.
+  Use ONLY `scripts/merge_qformer_refit.py` output (1c state + refit Q-Former side; refuses
+  if any other shared tensor differs by one bit), and build the model with
+  `--stage1-options model.qformer_input_norm=per_stream` (Stage-2 CLIs) / `--options` (the
+  diagnostic); `assert_input_norm_keys_match` refuses a mismatch either way.
+  `generate_stage2_reports.py --soft-token-ablation permute_across` swaps soft tokens across
+  studies (image-reliance probe). Gates, pilot rule, commands:
+  `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

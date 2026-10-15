@@ -26,3 +26,18 @@ def test_cache_identity_changes_only_for_clean_train_records(tmp_path):
     )[0]
     for split in ("val", "test"):
         assert fp(split, False)[0] == fp(split, True)[0]
+
+
+def test_stage1_options_enter_the_cache_identity_only_when_given(tmp_path):
+    """--stage1-options (2026-10-15): a refit checkpoint must not hit an older cache."""
+    fig9 = pytest.importorskip("training.train_eval_figure9_llm_variants_200")
+    from training.run_context import Stage1Context
+
+    plain = Stage1Context(run_name="mimic_cxr_full_blip2", thresholds={})
+    refit = Stage1Context(run_name="mimic_cxr_full_blip2", thresholds={},
+                          config_options=("model.qformer_input_norm=per_stream",))
+    a, pa = fig9.stage1_cohort_fingerprint(plain, tmp_path, "val", None, "argmax")
+    b, pb = fig9.stage1_cohort_fingerprint(refit, tmp_path, "val", None, "argmax")
+    assert a != b
+    assert "stage1_options" not in pa
+    assert pb["stage1_options"] == ["model.qformer_input_norm=per_stream"]

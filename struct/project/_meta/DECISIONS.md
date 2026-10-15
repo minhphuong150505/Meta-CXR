@@ -31,6 +31,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-021](#d-021--gradient-checkpointing-q-former-gradcache-pha-1a-siglip-mở-lại-khối-encoder-ở-1c) | Checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
 | [D-026](#d-026--siêu-tham-số-mhcac-theo-bài-báo-2026-10-05) | MHCAC: 8 common expert token, label smoothing 0 (theo bài báo) | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
 | [D-027](#d-027--stage-2-theo-bài-báo-không-ảnh-gốc-prompt-nguyên-văn-2026-10-05) | Stage 2 `--prompt-style paper`: không ảnh gốc, 32 soft token + P/N/U, prompt nguyên văn bài báo | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
+| [D-028](#d-028--sửa-soft-token-sụp-train-lại-meta-former-trên-checkpoint-đã-xong-2026-10-15) | Sửa soft token sụp: pha `phase1q` train lại chỉ META-Former trên checkpoint 1c đóng băng; norm đầu vào Q-Former, loss đa dạng query, file gộp bắt buộc | ✅ Confirmed (user duyệt); chưa chạy GPU | 2026-10-15 |
 
 ---
 
@@ -1345,3 +1346,23 @@ chạy được.
   legacy, `meta_cxr_qformer` cũng nhận `pred_groups`. Đó là lý do `paper` chỉ cho
   phép đúng mode `..._with_mhcac_prompt`, để tên mode khớp nội dung prompt.
 - Ghim bởi `tests/test_prompt_style.py` (15 test).
+
+## D-028 — Sửa soft token sụp: train lại META-Former trên checkpoint đã xong (2026-10-15)
+
+Status: **Confirmed — user duyệt kế hoạch; code xong, chưa chạy GPU**
+
+**Vấn đề (đo 2026-10-11).** 32 soft token của một study gần như là một vector (cosine 0,9989 sau
+1a): ở hai tầng cross-attention đầu mọi query đọc CLS của PubMedCLIP, và không mục tiêu nào của 1a
+đòi query khác nhau.
+
+**Quyết định.** Không train lại 1a/1b. Pha opt-in `phase1q` train lại CHỈ phía META-Former trên
+checkpoint đã báo cáo (`run_20261005_paper/phase1c`), mọi thứ khác đóng băng, nên MHCAC, ngưỡng, cue
+và mọi số Stage 1 không đổi và pilot Stage 2 chỉ khác soft token. Q-Former khởi tạo lại từ BLIP-2
+(`init_from.skip`), đọc token qua LayerNorm từng luồng (`qformer_input_norm`), thêm loss đa dạng
+query (`lambda_query_diversity`, participation ratio của phần thay đổi theo ảnh), bỏ ITM, đầu vào đa
+góc chụp như lúc dựng record Stage 2 (`eval_mode_modules: [view_fusion]`).
+
+**Hệ quả.** Checkpoint của 1q thiếu block encoder 1c đã mở (`keep` chỉ là hợp các `trainable`) →
+chỉ dùng qua `scripts/merge_qformer_refit.py`, file gộp từ chối nếu tensor nào ngoài Q-Former lệch.
+Stage 2 dựng mô hình với `--stage1-options model.qformer_input_norm=per_stream`. Khác thứ tự bài
+báo (Q-Former train sau MHCAC). Cổng và quy tắc: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.

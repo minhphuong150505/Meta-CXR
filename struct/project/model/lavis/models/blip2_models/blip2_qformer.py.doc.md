@@ -150,6 +150,9 @@ dòng đọc ở đây = key đó không làm gì.
 | `from_config` | [📄](blip2_qformer.py.methods/from_config.md) | ★ YAML → tham số |
 | `generate` | [📄](blip2_qformer.py.methods/Blip2Qformer/generate.md) | Sinh caption (không dùng ở Stage 1 training) |
 | `forward_image` | [📄](blip2_qformer.py.methods/Blip2Qformer/forward_image.md) | Trích Q-Former image embeddings cho downstream |
+| `_qformer_tokens` | — | 2026-10-15: token ảnh Q-Former đọc = `shared.tokens`, hoặc bản LayerNorm từng luồng khi `qformer_input_norm` bật. MỌI `encoder_hidden_states` chứa token ảnh đi qua đây (forward, GradCache, ITM, LM, `forward_image`, `extract_features`, cổng ITC) |
+| `forward_gradcache` | — | Pha 1a/1q: ITC trên cả batch, activation từng chunk. 2026-10-15: thêm `lambda_query_diversity` theo chunk; dùng lại token ảnh của lượt no-grad khi `_gradcache_reuse` cho phép |
+| `_gradcache_reuse` | — | 2026-10-15: encode một chunk với grad bật, hỏi autograd token có cần gradient không (khôi phục RNG); cache theo mẫu `requires_grad`; ghi đè bằng `gradcache_reuse_image_tokens` (test) |
 
 ### Trivial helpers
 
@@ -304,3 +307,24 @@ lambda_mention_conditioned_cls)`. `mimic_cxr_full.yaml` đặt `lambda_gate: 0.0
 head mention vẫn tồn tại (parameter set không đổi, checkpoint cũ vẫn nạp được)
 nhưng không nhận gradient; BCE gate chỉ cộng vào total khi `lambda_gate > 0`;
 `mention_logits` vẫn được trả trong output nhưng là giá trị ngẫu nhiên.
+
+## Sửa soft token sụp — 2026-10-15 (opt-in, chưa chạy GPU)
+
+Ba khóa model, vắng = đường cũ giống từng bit:
+
+- `qformer_input_norm: per_stream` → `self.qformer_input_norm = QformerInputNorm(...)`
+  ([`qformer_inputs.py`](../../../../vision_encoders/qformer_inputs.py.doc.md)); `None` khi tắt.
+  KHÔNG có class attribute cùng tên (nó sẽ che module đã đăng ký) — `_qformer_tokens` đọc bằng
+  `getattr(..., None)`, nên đối tượng dựng bằng `__new__` (test) vẫn chạy. Không kết hợp được với
+  `active_encoders` (LayerNorm(0) = bias, luồng bị ablate vẫn tới Q-Former) → `from_config` báo lỗi.
+- `loss.lambda_query_diversity` → `loss_query_div` (trường mới của `BlipOutput`, nên được log ở
+  train và val; cộng vào `loss`). Cần một mục tiêu vision-language (không thì Q-Former không chạy) →
+  `__init__` báo lỗi nếu thiếu. Trong `forward_gradcache` tính theo chunk (trung bình batch của chunk),
+  trọng số `len(chunk)/batch` để các chunk cộng thành trung bình batch.
+- `eval_mode_modules: [view_fusion]` → `train()` giữ các module đó ở eval (dropout và bỏ ảnh phụ
+  20% của view fusion tắt khi train, như lúc dựng record Stage 2). Tên không phải submodule → lỗi.
+
+GradCache dùng lại token: khi `_gradcache_reuse` thấy token ảnh không cần gradient (phía trước
+Q-Former đóng băng — pha `phase1q`), lượt 1 encode mỗi chunk MỘT lần, ghi RNG SAU encode, lượt 3
+phát lại từ đó với token đã giữ → cùng dropout của Q-Former, gradient như khi tính lại (test trên
+máy train). Ngược lại (1a có projector train được) giữ nguyên hành vi cũ.

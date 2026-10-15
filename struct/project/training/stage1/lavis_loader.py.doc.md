@@ -30,10 +30,10 @@ branch that has already decided it needs Stage 1."*
 | Hàm | Dòng | Vai trò |
 |---|---|---|
 | `default_stage1_config_path(run_name)` | 49 | ⚠ resolve vào `encoder_comparison/` |
-| `build_cfg(context)` | 53 | YAML → LAVIS `Config` |
+| `build_cfg(context)` | 53 | YAML → LAVIS `Config`; `context.config_options` thành `options` (2026-10-15) |
 | `filter_state_dict_for_model(model, state_dict)` | 58 | Lọc key không khớp |
 | `load_state_dict_materializing_meta(model, state_dict)` | 72 | ★ Vật chất hóa tham số meta-device |
-| `build_stage1_model(context, checkpoint_root, device)` | 79 | ★ Dựng + nạp checkpoint |
+| `build_stage1_model(context, checkpoint_root, device)` | 79 | ★ Dựng + nạp checkpoint; gọi `assert_input_norm_keys_match` TRƯỚC bộ lọc shape (2026-10-15): model và checkpoint phải cùng có/không có `qformer_input_norm.*` ([`qformer_inputs.py`](../../vision_encoders/qformer_inputs.py.doc.md)) |
 | `make_stage1_loader(cfg, split, sample_limit, num_workers)` | 96 | `MIMIC_CXR_Dataset` → `DataLoader` |
 
 ## ⚠ Hai đường resolve config khác nhau

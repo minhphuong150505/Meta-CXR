@@ -20,6 +20,14 @@ Aggregates only on stdout and in ``--report``. No identifiers, text or paths.
 
     python scripts/diagnose_qformer_collapse.py --checkpoint <ckpt.pth | none> \\
         --label 1c --limit 200 --report <private dir>/qformer_<label>.json
+
+A merged META-Former refit (scripts/merge_qformer_refit.py) needs the option it was trained
+with: ``--options model.qformer_input_norm=per_stream``. Two summary keys are the refit's
+collapse gate (2026-10-15): ``xattn_mean_query_map_cos`` (how alike the 32 queries'
+cross-attention maps are, averaged over the cross-attention layers) and
+``final_pr_batch_centred`` (participation ratio of each study's query states after removing
+every query's mean over the studies scored: the number of distinct directions of IMAGE
+information, which a constant offset per query cannot raise).
 """
 
 from __future__ import annotations
@@ -66,6 +74,8 @@ def main(argv=None) -> int:
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--num-workers", type=int, default=4)
     ap.add_argument("--report", type=Path, default=None)
+    ap.add_argument("--options", nargs="*", default=[], metavar="KEY=VALUE",
+                    help="Stage-1 YAML overrides, e.g. model.qformer_input_norm=per_stream")
     args = ap.parse_args(argv)
 
     from training import train_eval_figure9_llm_variants_200 as fig9
@@ -73,16 +83,25 @@ def main(argv=None) -> int:
     from training.stage1 import lavis_loader as L
 
     ckpt = None if args.checkpoint == "none" else Path(args.checkpoint)
-    context = Stage1Context(run_name="diag", config_path=args.config, checkpoint_path=ckpt)
+    from vision_encoders.qformer_inputs import (
+        assert_input_norm_keys_match,
+        batch_centred_participation_ratio,
+        query_diversity_loss,
+    )
+
+    context = Stage1Context(run_name="diag", config_path=args.config, checkpoint_path=ckpt,
+                            config_options=tuple(args.options))
     cfg = L.build_cfg(context)
     model = L.tasks.setup_task(cfg).build_model(cfg)
     if ckpt is not None:
         state = L.load_torch_checkpoint(ckpt)
         state = state["model"] if isinstance(state, dict) and "model" in state else state
+        assert_input_norm_keys_match(model.state_dict().keys(), state.keys(), where=str(ckpt))
         state = L.filter_state_dict_for_model(model, state)
         missing, unexpected = L.load_state_dict_materializing_meta(model, state)
         q_missing = [k for k in missing if k.startswith(("Qformer", "query_tokens",
-                                                          "shared_visual_projector", "ln_vision"))]
+                                                          "shared_visual_projector", "ln_vision",
+                                                          "qformer_input_norm"))]
         print(f"[diag] {args.label}: loaded; missing={len(missing)} "
               f"(Q-Former/projector missing={len(q_missing)}) unexpected={len(unexpected)}",
               flush=True)
@@ -116,6 +135,7 @@ def main(argv=None) -> int:
         acc.setdefault(key, []).append(float(value))
 
     pooled = []
+    finals = []
     for batch in loader:
         inputs = {k: v.to(device) for k, v in batch.items()
                   if k in fig9.STAGE1_IMAGE_INPUT_KEYS and torch.is_tensor(v)}
@@ -124,6 +144,7 @@ def main(argv=None) -> int:
             out, image, spans = captured["out"], captured["image"], captured["spans"]
             final = out.last_hidden_state[0]
             pooled.append(final.mean(0).float().cpu())
+            finals.append(final.float().cpu())
             add("final_within_cos", within_cosine(final))
             add("final_pr", participation_ratio(final))
             add("final_pr_centered", participation_ratio(final - final.mean(0, keepdim=True)))
@@ -186,7 +207,14 @@ def main(argv=None) -> int:
             summary[k] = float(np.mean(v))
     summary.update({"label": args.label, "n_studies": n, "query_param_cos": query_param_cos,
                     "pooled_across_studies_cos": across})
-    keys = ["final_within_cos", "final_pr", "final_pr_centered", "pooled_across_studies_cos",
+    stacked = torch.stack(finals)
+    summary["final_pr_batch_centred"] = float(batch_centred_participation_ratio(stacked).mean())
+    summary["query_diversity_loss"] = float(query_diversity_loss(stacked))
+    maps_cos = [summary[f"xattn{i}_query_map_cos"] for i in range(12)
+                if f"xattn{i}_query_map_cos" in summary]
+    summary["xattn_mean_query_map_cos"] = float(np.mean(maps_cos)) if maps_cos else float("nan")
+    keys = ["final_within_cos", "final_pr", "final_pr_centered", "final_pr_batch_centred",
+            "xattn_mean_query_map_cos", "query_diversity_loss", "pooled_across_studies_cos",
             "meanimage_vs_real_token_cos", "meanimage_rel_change", "image_all_within_cos"]
     print(f"[diag] {args.label}: " + "  ".join(f"{k}={summary[k]:.4f}" for k in keys), flush=True)
     print(f"[diag] {args.label}: within-cos by layer: " + " ".join(

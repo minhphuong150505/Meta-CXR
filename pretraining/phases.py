@@ -24,6 +24,8 @@ Each phase is ONE launch of ``pretraining.train`` with ``run.phase=<name>``;
         phase1a:
           epochs: 4
           init_from: null         # or {phase: phase1a} -> <run.phase_root>/checkpoint_phase1a.pth
+                                  # or {path: <file>, skip: [Qformer, ...]}: load a file but
+                                  # leave the skipped prefixes at the model's own init
           trainable: [query_tokens, Qformer, ...]   # module-name prefixes
           transition: null        # or {fade_in: [...], fade_out: [...], fraction: 0.1}
           itc_gate: {every_epoch: true, stop_after_epochs: 2}
@@ -92,6 +94,9 @@ class PhaseSpec:
     #: 1b, where it is frozen.
     keep: tuple[str, ...]
     init_from: dict | None = None
+    #: Prefixes NOT loaded from the init checkpoint: they stay at the model's own
+    #: initialisation (BLIP-2's pretrained Q-Former for the 2026-10-15 refit).
+    init_skip: tuple[str, ...] = ()
     transition: Transition | None = None
     itc_gate: dict | None = None
     grad_interference: dict | None = None
@@ -188,8 +193,19 @@ def build_spec(phases_cfg, phase_name: str) -> PhaseSpec:
     init_from = block.get("init_from")
     if init_from is not None and not isinstance(init_from, dict):
         raise PhaseConfigError("init_from must be a mapping like {phase: phase1a}")
-    if isinstance(init_from, dict) and init_from.get("phase") not in (None, *phases):
-        raise PhaseConfigError(f"init_from.phase {init_from.get('phase')!r} is not a phase")
+    init_skip: tuple[str, ...] = ()
+    if isinstance(init_from, dict):
+        unknown = set(init_from) - {"phase", "path", "skip"}
+        if unknown:
+            raise PhaseConfigError(f"init_from has unknown keys {sorted(unknown)}")
+        if init_from.get("phase") not in (None, *phases):
+            raise PhaseConfigError(f"init_from.phase {init_from.get('phase')!r} is not a phase")
+        if init_from.get("phase") is None and not init_from.get("path"):
+            raise PhaseConfigError(
+                f"run.phases.{phase_name}.init_from needs phase or path "
+                "(a path is usually given on the command line)"
+            )
+        init_skip = _as_tuple(init_from.get("skip"), f"run.phases.{phase_name}.init_from.skip")
     names = tuple(phases)
     return PhaseSpec(
         name=phase_name,
@@ -197,6 +213,7 @@ def build_spec(phases_cfg, phase_name: str) -> PhaseSpec:
         trainable=trainable,
         keep=keep,
         init_from=init_from,
+        init_skip=init_skip,
         transition=transition,
         itc_gate=block.get("itc_gate"),
         grad_interference=block.get("grad_interference"),
@@ -258,6 +275,25 @@ def resolve_init_checkpoint(spec: PhaseSpec, run_root: str | Path) -> Path | Non
         )
     source = spec.init_from["phase"]
     return Path(run_root) / f"checkpoint_{source}.pth"
+
+
+def filter_init_state(state: dict, skip) -> tuple[dict, list[str]]:
+    """Drop the tensors under ``skip`` from an init checkpoint's state dict.
+
+    Returns ``(kept, dropped_names)``. A non-empty ``skip`` that matches nothing is an
+    error: the phase would then load the very modules it meant to re-initialise.
+    """
+    skip = tuple(skip or ())
+    if not skip:
+        return dict(state), []
+    dropped = [name for name in state if matches_any(name, skip)]
+    if not dropped:
+        raise PhaseConfigError(f"init_from.skip {list(skip)} matches no tensor of the init checkpoint")
+    unmatched = [p for p in skip if not any(name_matches(name, p) for name in dropped)]
+    if unmatched:
+        raise PhaseConfigError(f"init_from.skip prefixes {unmatched} match no tensor of the init checkpoint")
+    kept = {name: value for name, value in state.items() if not matches_any(name, skip)}
+    return kept, dropped
 
 
 def apply_trainable(model, spec: PhaseSpec, never_train=()):

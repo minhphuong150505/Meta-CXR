@@ -60,3 +60,5 @@ field này thì term thay thế chúng không hiện ở đâu, và một run c�
 không ăn sẽ trông hoàn toàn khỏe mạnh trong khi không train objective phân loại
 nào. `base_task.train_step` tự thu mọi key chứa `loss`, nên thêm field là đủ để
 nó vào MetricLogger — không phải sửa gì ở task.
+
+`loss_query_div` (2026-10-15): loss đa dạng query của `Blip2Qformer` (`model.loss.lambda_query_diversity`); `None` ở mọi model khác. Có tên `loss_*` nên được log ở train (`loss_dict`) và cộng vào thống kê val như mọi loss khác.

@@ -1146,3 +1146,72 @@ run:
         selection_metric: macro_recall
         save_predictions: true
         test_splits: [test]
+    # -------------------------------------------------------------------------
+    # phase1q -- opt-in, NOT in scripts/run_stage1_phases.sh's chain (2026-10-15,
+    # soft-token collapse fix; docs/handoff/PLAN-2026-10-15-qformer-refit.md).
+    # Re-fits ONLY the META-Former on a finished Stage-1 checkpoint. Everything
+    # else -- the encoders including the blocks 1c unfroze, StreamAdapters, view
+    # fusion, the shared projector, ln_vision, MHCAC -- is loaded from it and
+    # frozen, so MHCAC, the cutpoints and every Stage-1 number stay that
+    # checkpoint's. The Q-Former side is NOT loaded (init_from.skip) and starts
+    # from BLIP-2's pretrained weights, as in 1a. Name the checkpoint on the
+    # command line: run.phases.phase1q.init_from.path=<checkpoint_best.pth>.
+    # Differs from 1a in: LayerNorm per stream on the Q-Former's input
+    # (qformer_input_norm), the query-diversity penalty, no ITM (at chance all of
+    # 1a), multi-view tokens exactly as Stage-2 records see them (view fusion
+    # held in eval mode), no feature cache, 2 epochs.
+    # ⚠ Its checkpoints lack the 1c-unfrozen encoder blocks (no phase lists them
+    # in `trainable`): use it ONLY through scripts/merge_qformer_refit.py, which
+    # writes the 1c checkpoint with the Q-Former side replaced.
+    phase1q:
+      description: META-Former refit on a frozen, finished Stage-1 checkpoint
+      epochs: 2
+      init_from:
+        path: null
+        skip: [query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias]
+      trainable: [query_tokens, Qformer, vision_proj, text_proj, temp, siglip_logit_scale, siglip_bias,
+                  qformer_input_norm]
+      itc_gate:
+        every_epoch: true     # logged, never stops 1q
+        pairs: 256
+        min_delta: 0.10
+      model:
+        multi_view: true
+        qformer_input_norm: per_stream
+        eval_mode_modules: [view_fusion]
+        gradcache_chunk_size: 32
+        loss:
+          lambda_itc: 1.0
+          lambda_itm: 0.0
+          lambda_lm: 1.0
+          lambda_query_diversity: 1.0
+          lambda_cls: 0.0
+          lambda_teacher_cls: 0.0
+          lambda_distill: 0.0
+          lambda_mhcac_contrastive: 0.0
+          lambda_orthogonality: 0.0
+          lambda_sparsity: 0.0
+          lambda_mpc: 0.0
+          lambda_view_consistency: 0.0
+      datasets:
+        mimic_cxr:
+          vis_processor:
+            train:
+              augmentation:
+                enabled: false   # Stage-2 val/test records come from clean images
+      run:
+        feature_cache_dir: null  # the encoders run: the 1c weights are in no cache
+        batch_size_train: 128
+        batch_size_eval: 32
+        accum_grad_iters: 1
+        init_lr: 1.0e-4
+        init_lr_q: 1.0e-4
+        init_lr_cls: 1.0e-4
+        min_lr: 1.0e-5
+        warmup_lr: 1.0e-6
+        warmup_steps: 500
+        eval_start_epoch: 0
+        early_stop_patience: 0
+        selection_metric: loss
+        save_predictions: false
+        test_splits: []

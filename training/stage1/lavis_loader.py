@@ -30,6 +30,7 @@ from model.lavis.common.config import Config  # noqa: E402
 from model.lavis.common.registry import registry  # noqa: E402
 from model.lavis.data.ReportDataset import MIMIC_CXR_Dataset  # noqa: E402
 from training.torch_io import load_torch_checkpoint  # noqa: E402
+from vision_encoders.qformer_inputs import assert_input_norm_keys_match  # noqa: E402
 
 registry.mapping["paths"]["cache_root"] = "."
 
@@ -52,7 +53,8 @@ def default_stage1_config_path(run_name: str) -> Path:
 
 def build_cfg(context) -> Config:
     cfg_path = context.resolve_config_path(default_stage1_config_path(context.run_name))
-    return Config(SimpleNamespace(cfg_path=str(cfg_path), options=None))
+    options = list(getattr(context, "config_options", ()) or ()) or None
+    return Config(SimpleNamespace(cfg_path=str(cfg_path), options=options))
 
 
 def filter_state_dict_for_model(model, state_dict: dict) -> dict:
@@ -83,6 +85,8 @@ def build_stage1_model(context, checkpoint_root: Path, device: torch.device):
     ckpt_path = context.resolve_checkpoint_path(checkpoint_root)
     ckpt = load_torch_checkpoint(ckpt_path)
     state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+    # Before the shape filter, which would drop a mismatched norm silently.
+    assert_input_norm_keys_match(model.state_dict().keys(), state_dict.keys(), where=str(ckpt_path))
     state_dict = filter_state_dict_for_model(model, state_dict)
     missing, unexpected = load_state_dict_materializing_meta(model, state_dict)
     print(f"[stage1] loaded {ckpt_path}; missing={len(missing)} unexpected={len(unexpected)}")
