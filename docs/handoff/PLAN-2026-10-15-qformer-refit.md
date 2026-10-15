@@ -1,6 +1,6 @@
 # PLAN 2026-10-15 — Sửa soft token sụp: train lại META-Former trên checkpoint 1c đóng băng
 
-Trạng thái: **smoke chạy 2026-10-15, cổng smoke không đạt (PR 3,15 < 4); chờ user quyết định.** Quy tắc dưới đây chốt và commit
+Trạng thái: **smoke 2026-10-15 không đạt cổng (PR 3,15 < 4); user chọn A — refit đầy đủ đang chạy, cổng cuối giữ nguyên.** Quy tắc dưới đây chốt và commit
 trước khi có bất kỳ kết quả nào. Stage 1 gốc: `run_20261005_paper/phase1c` (checkpoint của mọi
 số Stage 1 đã báo cáo và của Stage 2 P2 + LR 3e-4).
 
@@ -156,5 +156,10 @@ Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể d�
   Đọc: không có bản sửa (C), thông tin ảnh của 32 query sụp lại về ~1,2 hướng ngay trong 300 update trên cùng đặc
   trưng; có bản sửa (M) giữ 3,15 hướng, căn chỉnh ITC không kém. Bản đồ attention của hai nhánh như nhau ở
   300 update. Cả 300 update nằm trong warm-up LR (500 update). Khởi tạo BLIP-2 đo 4,60 ở lần 1 và 4,29 ở lần 2:
-  với `--checkpoint none` phần chiếu chung là khởi tạo ngẫu nhiên, nên mốc này dao động. Chờ user quyết định
-  bước tiếp (chạy refit đầy đủ với cổng cuối giữ nguyên, tăng trọng số loss rồi smoke lại, hay phương án dự phòng).
+  với `--checkpoint none` phần chiếu chung là khởi tạo ngẫu nhiên, nên mốc này dao động.
+- **Quyết định của user (2026-10-15, phương án A): bỏ qua cổng smoke, chạy refit đầy đủ.** Đây là đổi quy
+  tắc SAU khi thấy kết quả smoke, ghi rõ ở đây. Lý do trình cho user: cả 300 update nằm trong warm-up LR, và
+  đối chứng C cho thấy bản sửa đang chặn sụp (3,15 so với 1,19). **Cổng cuối không đổi:** sau 2 epoch, ở epoch
+  được chọn, `final_pr_batch_centred` ≥ 4 và `xattn_mean_query_map_cos` ≤ 0,6 và ITC R@5 trên mức ngẫu nhiên;
+  không đạt thì dừng trước probe và pilot. Chạy tiếp bằng `START_AT=refit` trong cùng `~/qrefit_20261015/`,
+  log `~/qrefit_20261015_refit.log`.
