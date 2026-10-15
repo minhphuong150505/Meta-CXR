@@ -1,6 +1,6 @@
 # PLAN 2026-10-15 — Sửa soft token sụp: train lại META-Former trên checkpoint 1c đóng băng
 
-Trạng thái: **user duyệt 2026-10-15; code xong, chưa chạy GPU.** Quy tắc dưới đây chốt và commit
+Trạng thái: **smoke chạy 2026-10-15, cổng smoke không đạt (PR 3,15 < 4); chờ user quyết định.** Quy tắc dưới đây chốt và commit
 trước khi có bất kỳ kết quả nào. Stage 1 gốc: `run_20261005_paper/phase1c` (checkpoint của mọi
 số Stage 1 đã báo cáo và của Stage 2 P2 + LR 3e-4).
 
@@ -140,3 +140,21 @@ Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể d�
 - Hai chẩn đoán mốc của lần 1 đã xong (200 study val, chỉ số tổng hợp): checkpoint 1c — `final_within_cos`
   0,9997, `final_pr_batch_centred` 1,0010, `xattn_mean_query_map_cos` 0,7974, `query_diversity_loss` 0,9997;
   khởi tạo BLIP-2 — 0,4542 / 4,6002 / 0,2807 / 0,5634. Cổng (PR ≥ 4, bản đồ ≤ 0,6) nằm giữa hai mốc này.
+- **Lần 2 (13:14:15, `2a3bdac`): smoke chạy hết, cổng smoke KHÔNG đạt → `SMOKE_GATE_FAILED` 14:32:44, pipeline
+  dừng như đã chốt.** RAM ổn định ~8/30 GB trống với 4 worker. Smoke M 300 update 25:01 (5,0 s/update), smoke
+  C 45:38 (9,1 s/update, có ITM). Gộp cả hai: 346 tensor thay, 445 tensor chung trùng từng bit với 1c.
+
+| 200 study val | 1c | khởi tạo BLIP-2 | C (công thức 1a, 300 update) | M (bản sửa, 300 update) | cổng |
+|---|---:|---:|---:|---:|---|
+| `final_pr_batch_centred` | 1,0010 | 4,2907 | 1,1889 | **3,1457** | ≥ 4 — M trượt |
+| `xattn_mean_query_map_cos` | 0,7974 | 0,2837 | 0,5296 | 0,5305 | ≤ 0,6 — đạt |
+| `query_diversity_loss` | 0,9997 | 0,5835 | 0,9514 | 0,6721 | — |
+| `final_within_cos` (thô) | 0,9997 | 0,4561 | 0,8635 | 0,9024 | chỉ báo cáo |
+| ITC R@5 i2t / t2i (ngẫu nhiên 0,02) | — | — | 0,2461 / 0,2773 | 0,2695 / 0,2578 | đạt |
+| ITC `delta_nats` | — | — | 1,5099 | 1,1428 | — |
+
+  Đọc: không có bản sửa (C), thông tin ảnh của 32 query sụp lại về ~1,2 hướng ngay trong 300 update trên cùng đặc
+  trưng; có bản sửa (M) giữ 3,15 hướng, căn chỉnh ITC không kém. Bản đồ attention của hai nhánh như nhau ở
+  300 update. Cả 300 update nằm trong warm-up LR (500 update). Khởi tạo BLIP-2 đo 4,60 ở lần 1 và 4,29 ở lần 2:
+  với `--checkpoint none` phần chiếu chung là khởi tạo ngẫu nhiên, nên mốc này dao động. Chờ user quyết định
+  bước tiếp (chạy refit đầy đủ với cổng cuối giữ nguyên, tăng trọng số loss rồi smoke lại, hay phương án dự phòng).
