@@ -92,7 +92,7 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   the model by 0.12 lexicon CE. Novelty index vs the paper:
   `docs/CHI_MUC_TINH_MOI.md`; pilot awaiting approval:
   `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
-- 🧪 **Collapse fix, opt-in, user-approved 2026-10-15 -- NOT YET RUN ON GPU:** phase
+- 🧪 **Collapse fix, opt-in, user-approved 2026-10-15 -- RAN 2026-10-15, FINAL GATE FAILED (below):** phase
   `phase1q` re-fits ONLY the META-Former on a finished, frozen Stage-1 checkpoint
   (`run.phases.phase1q.init_from.path=<1c checkpoint_best.pth>`; `init_from.skip` leaves the
   Q-Former side at BLIP-2's init; `init_from.ignore: [mpc_heads]` drops the MPC heads 1q does
@@ -116,6 +116,15 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   `generate_stage2_reports.py --soft-token-ablation permute_across` swaps soft tokens across
   studies (image-reliance probe). Gates, pilot rule, commands:
   `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.
+  ❌ **Refit 2 epochs on `run_20261005_paper/phase1c` (`~/qrefit_20261015/`): gate FAILED** --
+  `final_pr_batch_centred` 2.32 (< 4; 1c 1.00), attention-map cos 0.51 (pass), ITC R@5 0.58 / 0.56
+  (pass; 1c ~0.17). Stopped before the info gate and the pilot, as pre-declared; no Stage-2 change.
+  ⚠⚠ **The diversity term was gamed through DROPOUT.** It is computed on train-mode query states
+  (Q-Former dropout 0.1), and the model learned to make the dropout perturbation 3.9x the
+  image-dependent part (0.4x without the term); that noise is near-isotropic, so the participation
+  ratio read ~30 directions in training -- `loss_query_div` 0.014 in the train log against 0.77 on val
+  (eval mode) -- and the term stopped constraining the real geometry. Do not use
+  `lambda_query_diversity` with Q-Former dropout on, and compare the term's train and val values.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

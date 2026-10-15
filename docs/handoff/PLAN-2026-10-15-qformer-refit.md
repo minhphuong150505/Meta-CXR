@@ -163,3 +163,53 @@ Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể d�
   được chọn, `final_pr_batch_centred` ≥ 4 và `xattn_mean_query_map_cos` ≤ 0,6 và ITC R@5 trên mức ngẫu nhiên;
   không đạt thì dừng trước probe và pilot. Chạy tiếp bằng `START_AT=refit` trong cùng `~/qrefit_20261015/`,
   log `~/qrefit_20261015_refit.log`.
+
+### Refit 2 epoch — 14:53:25 → 19:48:49, `cebd51b`: `REFIT_GATE_FAILED`, pipeline dừng đúng quy tắc
+
+- Train 2 epoch: `Training time 4:53:39`, ~4,99 s/update, không OOM; `journalctl -k` từ 14:50 không có
+  OOM/Xid/lỗi NTFS. Epoch được chọn: 1 (epoch cuối). Gộp: 346 tensor thay, 6 tensor norm thêm, 445 tensor
+  chung trùng từng bit với 1c, 82 tensor chỉ có ở 1c giữ nguyên.
+- Val (chế độ eval), epoch 0 / 1: ITC 3,0408 / 2,9134; LM 2,4321 / 2,3738; `loss_query_div` 0,7636 /
+  0,7666. Trung bình lúc train, epoch 0 / 1: ITC 3,6449 / 2,9509; LM 2,8063 / 2,3982; `loss_query_div`
+  **0,0506 / 0,0142** (update đầu tiên: 0,7247).
+- Cổng ITC epoch 1 (256 cặp val): `loss_itc` 2,8833 so với ngẫu nhiên 5,5452 (`delta_nats` +2,6619), hạng
+  trung bình của cặp đúng 9,26 / 10,23 (ngẫu nhiên 127,5), R@1 0,3008 / 0,2930, R@5 0,5781 / 0,5625.
+
+| 200 study val | 1c | M 300 update | refit 2 epoch | cổng |
+|---|---:|---:|---:|---|
+| `final_pr_batch_centred` | 1,0010 | 3,1457 | **2,3166** | ≥ 4 — **trượt** |
+| `xattn_mean_query_map_cos` | 0,7974 | 0,5305 | 0,5065 | ≤ 0,6 — đạt |
+| ITC R@5 i2t / t2i | ≈0,17 (ghi 2026-10-11) | 0,2695 / 0,2578 | 0,5781 / 0,5625 | trên ngẫu nhiên — đạt |
+| `query_diversity_loss` | 0,9997 | 0,6721 | 0,7579 | — |
+| `final_within_cos` (thô) | 0,9997 | 0,9024 | 0,9405 | — |
+
+- Theo tầng (refit): cosine thô giữa 32 query tăng dần tới 0,698 sau 9 tầng, nhảy lên 0,931 sau tầng thứ
+  10 (tầng chỉ có self-attention giữa các query) và 0,940 ở đầu ra; cross-attention đầu có `query_map_cos`
+  0,161, cross-attention cuối 0,921. CLS của PubMedCLIP (index 196) là token được nhìn nhiều nhất ở
+  cross-attention đầu cho 23% study (M 300 update: 37%; 1a cũ: 100%). Sụp không còn nằm ở đầu vào mà ở các
+  tầng cuối.
+- **Vì sao loss đa dạng không giữ được: nó bị "lách" qua dropout.** Loss tính trên trạng thái query lúc
+  train, khi Q-Former còn dropout 0,1. Probe một lần (`~/qrefit_dropout_probe.py` +
+  `~/qrefit_dropout_run.sh`, không vào git; cùng 200 study val, chỉ số tổng hợp,
+  `~/qrefit_20261015/diag/dprobe_*.json`):
+
+| 200 study val | 1c | C 300 update | M 300 update | refit 2 epoch |
+|---|---:|---:|---:|---:|
+| PR_bc, chế độ eval (không dropout) | 1,00 | 1,19 | 3,15 | 2,32 |
+| PR_bc, chỉ bật dropout của Q-Former | 1,28 | 1,56 | 27,40 | 30,11 |
+| loss đa dạng như lúc train (cụm 16 study, có dropout) | 0,894 | 0,831 | 0,042 | 0,018 |
+| độ lớn nhiễu dropout / phần phụ thuộc ảnh | 0,36 | 0,41 | 2,77 | 3,90 |
+
+  Không có loss đa dạng (1c, C), nhiễu dropout chỉ bằng ~0,4 lần phần phụ thuộc ảnh và gần như không đổi
+  PR. Có loss (M), mô hình học cách khuếch đại nhiễu dropout lên 2,8 lần (300 update) rồi 3,9 lần (2
+  epoch) phần phụ thuộc ảnh. Nhiễu gần đẳng hướng (PR của riêng nhiễu 23–26 trên 32), nên lúc train loss
+  đọc thấy 27–30 hướng và về ~0,01–0,05 — không còn áp lực lên hình học thật (chế độ eval, cũng là thứ
+  Stage 2 nhận), vốn giảm 3,15 → 2,32 trong khi ITC/LM train tiếp. Chế độ train đầy đủ của mô hình (thêm
+  che token đầu vào và dropout ở module khác) cho cùng kết quả (30,43), nên nguyên nhân là dropout của
+  Q-Former. Độ lệch giữa loss lúc train (0,014) và loss val (0,77) có sẵn trong log từ epoch 0; tôi đã
+  không đối chiếu hai số này. Đây là lỗi thiết kế loss (tính trên trạng thái có dropout), không phải lỗi
+  dữ liệu hay phần cứng.
+- **Kết luận.** Cổng cuối trượt; pipeline dừng trước cổng thông tin và pilot như đã chốt, không chạy gì
+  thêm. Lần refit này không kiểm được thiết kế dự định, vì sau vài trăm update loss đa dạng hết tác dụng.
+  Phần còn lại của bản sửa (norm từng luồng, khởi tạo lại BLIP-2, bỏ ITM, 2 epoch) vẫn cho PR 2,32 so với
+  1,00 của 1c, và ITC R@5 0,58 so với ≈0,17. Chờ user chọn bước tiếp.
