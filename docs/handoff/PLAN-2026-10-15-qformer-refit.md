@@ -130,3 +130,13 @@ Không thử phương án dự phòng (che token CLS/pooled khỏi K/V, query ki
 
 `EXPECT_REV=6c72f97 setsid nohup bash ~/qrefit_pipeline.sh > ~/qrefit_20261015.log` → `~/qrefit_20261015/`.
 Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể dừng pipeline (chỉ để đối chiếu).
+
+- **Lần 1 dừng 13:07:39 (`ABORT: train smoke_M rc=137`)**: OOM killer của kernel 1 phút sau khi train bắt
+  đầu (`journalctl -k`: global_oom, task=python). Batch 128 KHÔNG có cache = ảnh thật của ba encoder và ảnh
+  phụ, ~0,9 GB/batch; 8 worker × prefetch 2 ≈ 15 GB shared memory, mỗi worker ~1,6 GB RSS, trên máy 30 GB.
+  Smoke tích hợp (2 batch) không thấy được. 5 worker DataLoader mồ côi (ppid 1) còn giữ ~7 GB + shm sau khi
+  tiến trình chính chết; đã dừng theo PID. Sửa: `phase1q.run.num_workers: 4`; pipeline dọn worker mồ côi khi
+  một bước train hỏng.
+- Hai chẩn đoán mốc của lần 1 đã xong (200 study val, chỉ số tổng hợp): checkpoint 1c — `final_within_cos`
+  0,9997, `final_pr_batch_centred` 1,0010, `xattn_mean_query_map_cos` 0,7974, `query_diversity_loss` 0,9997;
+  khởi tạo BLIP-2 — 0,4542 / 4,6002 / 0,2807 / 0,5634. Cổng (PR ≥ 4, bản đồ ≤ 0,6) nằm giữa hai mốc này.

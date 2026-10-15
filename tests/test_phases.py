@@ -399,6 +399,8 @@ def test_phase1q_refits_only_the_qformer_side():
     on = {k for k, v in model.loss.items() if k.startswith("lambda_") and float(v) > 0}
     assert on == {"lambda_itc", "lambda_lm", "lambda_query_diversity"}
     assert config.run.feature_cache_dir is None
+    # 8 workers x prefetch 2 x ~0.9 GB image batches of 128 OOMed the 30 GB host (2026-10-15)
+    assert int(config.run.num_workers) == 4
     assert config.datasets.mimic_cxr.vis_processor.train.augmentation.enabled is False
     assert config.run.selection_metric == "loss" and list(config.run.test_splits) == []
 

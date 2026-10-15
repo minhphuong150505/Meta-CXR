@@ -1204,6 +1204,10 @@ run:
                 enabled: false   # Stage-2 val/test records come from clean images
       run:
         feature_cache_dir: null  # the encoders run: the 1c weights are in no cache
+        # Image batches of 128 studies (three encoders' inputs + the auxiliary view,
+        # ~0.9 GB each) x 8 workers x prefetch 2 exhausted the 30 GB host on
+        # 2026-10-15 (kernel OOM killer, 1 min in). 4 workers hold ~8 batches.
+        num_workers: 4
         batch_size_train: 128
         batch_size_eval: 32
         accum_grad_iters: 1
