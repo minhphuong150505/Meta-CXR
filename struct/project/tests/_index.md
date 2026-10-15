@@ -94,6 +94,10 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | `test_mimic_data_pipeline.py` | Study sampling — nạp `mimic_cxr_utils.py` theo path |
 | `test_training_core.py` | Scheduler giữ `lr_scale`, đuôi accumulation |
 | `test_eval_start_epoch.py` (20 test) | Cửa sổ warm-up `run.eval_start_epoch`: epoch [0]–[4] không eval và **không thể được tuyển làm best**; patience chỉ đếm epoch đã chấm (kẹp `max(best_epoch, eval_start_epoch)`), nếu không run chết ngay ở epoch chấm đầu tiên và log ra như hội tụ. Cũng khẳng định config hiện tại **không thể** early stop |
+| `test_qformer_inputs.py` (2026-10-15) | Sửa soft token sụp: `QformerInputNorm` = LayerNorm từng span, không sửa bản MHCAC; `query_diversity_loss` tính sụp, hằng số theo query, và "một query + 31 hằng" đều là ~1 (không bị lách), query độc lập thấp, bất biến thang, batch 1 → 0; khóa norm model/checkpoint phải khớp |
+| `test_merge_qformer_refit.py` (2026-10-15) | File gộp lấy phía Q-Former từ refit, block encoder 1c và MHCAC từ BASE; từ chối MHCAC/buffer lệch 1e-6, thiếu tensor Q-Former, tensor lạ |
+| `test_phases.py` (thêm 2026-10-15) | `phase1q`: cần `init_from.path`, chỉ train phía Q-Former, cấu hình đúng; `init_from` chỉ nhận phase/path/skip; `filter_init_state` |
+| `test_gradcache_siglip.py` (thêm 2026-10-15, máy train) | GradCache dùng lại token ảnh khi phía trước đóng băng (mỗi chunk encode 1 lần, gradient như tính lại), lượt phát lại thấy đúng đặc trưng dưới dropout + mask ngẫu nhiên, `lambda_query_diversity` cộng đúng vào gradient |
 
 ## Nhóm 3 — Stage 2: mode, soft token, capability
 

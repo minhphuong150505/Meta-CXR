@@ -41,6 +41,11 @@ from vision_encoders.stream_adapter import (
     pool_stream,
 )
 from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector
+from vision_encoders.qformer_inputs import (
+    QformerInputNorm,
+    query_diversity_loss,
+    resolve_qformer_input_norm,
+)
 # from vision_encoders.medclip.medclip import Medclip
 
 # Common dimension every encoder is projected to before the merge.
@@ -178,6 +183,15 @@ class Blip2Qformer(Blip2Base):
         "coco": "configs/models/blip2/blip2_coco.yaml",
     }
 
+    # Defaults for objects built with ``__new__`` (tests): every one is the
+    # historical behaviour. Never put a submodule name here -- a class attribute
+    # would shadow the module nn.Module registers under that name.
+    lambda_query_diversity = 0.0
+    eval_mode_modules: tuple[str, ...] = ()
+    #: None = decide per step whether GradCache may reuse the image tokens of its
+    #: no-grad pass (it may when nothing upstream of the Q-Former trains).
+    gradcache_reuse_image_tokens = None
+
     def __init__(
         self,
         vit_model="eva_clip_g",
@@ -242,6 +256,9 @@ class Blip2Qformer(Blip2Base):
         mhcac_text_guidance="teacher_student",
         mhcac_layer_order="text_first",
         mhcac_text_mask_mode="report",
+        qformer_input_norm=None,
+        lambda_query_diversity=0.0,
+        eval_mode_modules=(),
     ):
         super().__init__()
 
@@ -372,6 +389,19 @@ class Blip2Qformer(Blip2Base):
         self.lambda_itc = float(lambda_itc)
         self.lambda_itm = float(lambda_itm)
         self.lambda_lm = float(lambda_lm)
+        # Soft-token collapse fix (2026-10-15): penalty on the 32 queries carrying
+        # one direction of image information (vision_encoders/qformer_inputs.py).
+        # It reads the query states, so it needs the Q-Former to run.
+        self.lambda_query_diversity = float(lambda_query_diversity)
+        if self.lambda_query_diversity < 0:
+            raise ValueError("model.loss.lambda_query_diversity must be >= 0")
+        if self.lambda_query_diversity > 0 and not (
+            self.lambda_itc > 0 or self.lambda_itm > 0 or self.lambda_lm > 0
+        ):
+            raise ValueError(
+                "lambda_query_diversity > 0 needs a vision-language objective "
+                "(lambda_itc / lambda_itm / lambda_lm): without one the Q-Former never runs"
+            )
         self.lambda_cls = float(lambda_cls)
         self.lambda_teacher_cls = float(lambda_teacher_cls)
         self.lambda_distill = float(lambda_distill)
@@ -566,6 +596,15 @@ class Blip2Qformer(Blip2Base):
         self.shared_visual_projector = SharedVisualTokenProjector(
             shared_stream_dims, visual_dim=VISUAL_DIM
         )
+        # Opt-in (2026-10-15): the Q-Former reads its own LayerNorm-ed copy of the
+        # shared tokens, one LayerNorm per stream; MHCAC still reads them raw.
+        # Absent key = None = the historical path, bit-identical.
+        self.qformer_input_norm_mode = resolve_qformer_input_norm(qformer_input_norm)
+        self.qformer_input_norm = (
+            QformerInputNorm(self.shared_visual_projector.stream_names, VISUAL_DIM)
+            if self.qformer_input_norm_mode is not None
+            else None
+        )
         # Inference-only per-encoder ablation (paper Table 5). Empty tuple is
         # the trained multi-encoder model and leaves the original path intact.
         # Masking happens after shared projection, preserving token positions,
@@ -643,7 +682,16 @@ class Blip2Qformer(Blip2Base):
             logit_adjust_counts=logit_adjust_counts,
             logit_adjust_tau=logit_adjust_tau,
         )
-        
+        # Frozen modules that must keep their inference behaviour while the model
+        # trains (2026-10-15 refit: view_fusion's dropout and its 20% auxiliary-view
+        # drop would otherwise show the Q-Former features it never meets when
+        # Stage-2 records are built, which run in eval mode).
+        names = tuple(str(n) for n in (eval_mode_modules or ()))
+        for name in names:
+            if not isinstance(getattr(self, name, None), nn.Module):
+                raise ValueError(f"model.eval_mode_modules: {name!r} is not a submodule of this model")
+        self.eval_mode_modules = names
+
     def load_state_dict(self, state_dict, strict=True, assign=False):
         """Drop the retired binary mention-gate entries, then load as usual.
 
@@ -911,6 +959,19 @@ class Blip2Qformer(Blip2Base):
             pubmedclip_image=samples.get("pubmedclip_image"),
             aux_pubmedclip_image=samples.get("aux_pubmedclip_image"),
         )
+
+    def _qformer_tokens(self, shared):
+        """The image tokens the Q-Former reads; MHCAC always reads ``shared`` itself.
+
+        Every ``encoder_hidden_states`` that holds image tokens comes from here, so
+        ``model.qformer_input_norm`` reaches ITC, ITM, LM, ``forward_image`` (the
+        Stage-2 soft tokens) and the ITC gate alike. ``getattr`` rather than a class
+        default: see the class attributes.
+        """
+        norm = getattr(self, "qformer_input_norm", None)
+        if norm is None:
+            return shared.tokens
+        return norm(shared)
 
     def _encode_image_streams(self, image, apply_aug=False, cached=None,
                               aux_image=None, aux_cached=None, aux_mask=None,
@@ -1348,8 +1409,12 @@ class Blip2Qformer(Blip2Base):
             return zero
         return output.loss.sum() / token_count
 
-    def _alignment_features(self, samples, text_tokens):
-        """Text then image, exactly as forward(): the tensors ITC/ITM/LM read."""
+    def _alignment_features(self, samples, text_tokens, shared=None):
+        """Text then image, exactly as forward(): the tensors ITC/ITM/LM read.
+
+        ``shared``: SharedVisualTokens already computed for these samples (GradCache
+        reuse, see ``_gradcache_reuse``); the encoders are then not run again.
+        """
         text_output = self.Qformer.bert(
             text_tokens.input_ids,
             attention_mask=text_tokens.attention_mask,
@@ -1358,7 +1423,9 @@ class Blip2Qformer(Blip2Base):
         text_features = F.normalize(
             self.text_proj(text_output.last_hidden_state[:, 0]), dim=-1
         )
-        image_embeds = self.encode_samples(samples).tokens
+        if shared is None:
+            shared = self.encode_samples(samples)
+        image_embeds = self._qformer_tokens(shared)
         query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
         query_output = self.Qformer.bert(
             query_embeds=query_tokens,
@@ -1373,6 +1440,34 @@ class Blip2Qformer(Blip2Base):
             self.vision_proj(query_output.last_hidden_state), dim=-1
         )
         return image_features, text_features, image_embeds, query_tokens, query_output
+
+    def _gradcache_reuse(self, first_chunk_samples, device):
+        """May GradCache encode each chunk once instead of twice?
+
+        Only when the image tokens carry no gradient, i.e. nothing upstream of the
+        Q-Former trains (the 2026-10-15 refit on a frozen Stage-1 checkpoint). Decided
+        by encoding one chunk WITH grad enabled and asking autograd, not from a list
+        of module names that could miss one; the RNG is restored so the probe changes
+        nothing. Cached per requires_grad pattern. ``gradcache_reuse_image_tokens``
+        True/False overrides it (tests).
+        """
+        override = self.gradcache_reuse_image_tokens
+        if override is not None:
+            return bool(override)
+        signature = tuple(p.requires_grad for p in self.parameters())
+        cached = getattr(self, "_gradcache_reuse_cache", None)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        state = _rng_state(device)
+        with torch.enable_grad():
+            probe = self.encode_samples(first_chunk_samples).tokens
+        _set_rng_state(state, device)
+        reuse = not probe.requires_grad
+        del probe
+        self._gradcache_reuse_cache = (signature, reuse)
+        logging.info("GradCache: %s the image tokens of the no-grad pass",
+                     "reusing" if reuse else "recomputing")
+        return reuse
 
     def forward_gradcache(self, samples, loss_scale=1.0):
         """Phase 1a with GradCache (Gao et al., arXiv 2101.06983).
@@ -1427,14 +1522,20 @@ class Blip2Qformer(Blip2Base):
                 attention_mask=text_tokens.attention_mask[index],
             )
 
-        # 1. features of the whole batch, no graph
-        states, image_parts, text_parts = [], [], []
+        # 1. features of the whole batch, no graph. With reuse, each chunk is encoded
+        # here once and the RNG is recorded AFTER the encode, so step 3 replays only
+        # the Q-Former (its dropout) and reads the same tokens.
+        reuse = self._gradcache_reuse(_slice_samples(samples, chunks[0], batch_size), device)
+        states, image_parts, text_parts, shared_parts = [], [], [], []
         with torch.no_grad():
             for index in chunks:
+                sub = _slice_samples(samples, index, batch_size)
+                shared = self.encode_samples(sub) if reuse else None
                 states.append(_rng_state(device))
                 image_f, text_f, *_ = self._alignment_features(
-                    _slice_samples(samples, index, batch_size), tokens_of(index)
+                    sub, tokens_of(index), shared=shared
                 )
+                shared_parts.append(shared)
                 image_parts.append(image_f.float())
                 text_parts.append(text_f.float())
         image_all = torch.cat(image_parts).requires_grad_(True)
@@ -1471,12 +1572,13 @@ class Blip2Qformer(Blip2Base):
         # 3. per chunk: replay, recompute with grad, backward
         total_itm = torch.zeros((), device=device)
         total_lm = torch.zeros((), device=device)
+        total_div = torch.zeros((), device=device)
         for position, index in enumerate(chunks):
             _set_rng_state(states[position], device)
             sub = _slice_samples(samples, index, batch_size)
             sub_tokens = tokens_of(index)
             image_f, text_f, image_embeds, query_tokens, query_output = (
-                self._alignment_features(sub, sub_tokens)
+                self._alignment_features(sub, sub_tokens, shared=shared_parts[position])
             )
             chunk_loss = (image_f.float() * grad_image[index]).sum() + (
                 text_f.float() * grad_text[index]
@@ -1484,9 +1586,9 @@ class Blip2Qformer(Blip2Base):
             local_valid = generation_mask[index]
             if negatives_image is not None and local_valid.any():
                 rows = index[local_valid]
-                neg_images = self.encode_samples(
+                neg_images = self._qformer_tokens(self.encode_samples(
                     _slice_samples(samples, negatives_image[rows], batch_size)
-                ).tokens
+                ))
                 ids_pos = sub_tokens.input_ids[local_valid]
                 atts_pos = sub_tokens.attention_mask[local_valid]
                 ids_neg = text_tokens.input_ids[negatives_text[rows]]
@@ -1531,6 +1633,14 @@ class Blip2Qformer(Blip2Base):
                 )
                 chunk_loss = chunk_loss + loss_scale * self.lambda_lm * loss_lm
                 total_lm = total_lm + loss_lm.detach()
+            if self.lambda_query_diversity > 0:
+                # Per chunk (its own batch mean), weighted so the chunks add up to a
+                # batch mean; the term needs no other chunk.
+                loss_div = query_diversity_loss(query_output.last_hidden_state) * (
+                    len(index) / batch_size
+                )
+                chunk_loss = chunk_loss + loss_scale * self.lambda_query_diversity * loss_div
+                total_div = total_div + loss_div.detach()
             chunk_loss.backward()
 
         zero = torch.zeros((), device=device)
@@ -1538,6 +1648,7 @@ class Blip2Qformer(Blip2Base):
             self.lambda_itc * loss_itc.detach()
             + self.lambda_itm * total_itm
             + self.lambda_lm * total_lm
+            + self.lambda_query_diversity * total_div
         )
         return BlipOutput(
             loss=total,
@@ -1553,6 +1664,7 @@ class Blip2Qformer(Blip2Base):
             loss_explanation=None,
             loss_mpc=zero,
             loss_view_consistency=zero,
+            loss_query_div=total_div,
             classification_logits=None,
             classification_mask=None,
         )
@@ -1639,18 +1751,22 @@ class Blip2Qformer(Blip2Base):
                 return_dict=True,
             )
 
+        loss_query_div = zero
         if needs_vision_language:
+            qformer_embeds = self._qformer_tokens(shared_visual)
             image_atts = torch.ones(
-                image_embeds.shape[:-1], dtype=torch.long, device=device
+                qformer_embeds.shape[:-1], dtype=torch.long, device=device
             )
             query_tokens = self.query_tokens.expand(batch_size, -1, -1)
             query_output = self.Qformer.bert(
                 query_embeds=query_tokens,
-                encoder_hidden_states=image_embeds,
+                encoder_hidden_states=qformer_embeds,
                 encoder_attention_mask=image_atts,
                 use_cache=True,
                 return_dict=True,
             )
+            if self.lambda_query_diversity > 0:
+                loss_query_div = query_diversity_loss(query_output.last_hidden_state)
             image_features = F.normalize(
                 self.vision_proj(query_output.last_hidden_state), dim=-1
             )
@@ -1668,7 +1784,7 @@ class Blip2Qformer(Blip2Base):
                 )
                 if self.lambda_itm > 0:
                     loss_itm = self._image_text_matching(
-                        image_embeds,
+                        qformer_embeds,
                         text_tokens,
                         generation_mask,
                         generation_mask_all,
@@ -1678,7 +1794,7 @@ class Blip2Qformer(Blip2Base):
             if self.lambda_lm > 0:
                 loss_lm = self._language_modeling(
                     text_tokens, query_tokens, query_output, generation_mask,
-                    image_embeds=image_embeds,
+                    image_embeds=qformer_embeds,
                 )
             if self.lambda_itc > 0:
                 self._update_itc_queue(
@@ -1908,6 +2024,7 @@ class Blip2Qformer(Blip2Base):
             + self.lambda_sparsity * sparsity_loss
             + self._mpc_lambda() * loss_mpc
             + self.lambda_view_consistency * loss_view_consistency
+            + self.lambda_query_diversity * loss_query_div
         )
         if lambda_eff > 0:
             total_loss = total_loss + lambda_eff * loss_explanation
@@ -1925,6 +2042,7 @@ class Blip2Qformer(Blip2Base):
             loss_explanation=loss_explanation,
             loss_mpc=loss_mpc,
             loss_view_consistency=loss_view_consistency,
+            loss_query_div=loss_query_div,
             classification_logits=student_logits,
             classification_mask=classification_mask,
         )
@@ -2064,7 +2182,7 @@ class Blip2Qformer(Blip2Base):
             **own_inputs,
         )
 
-        concat_image_embeds = shared_visual.tokens
+        concat_image_embeds = self._qformer_tokens(shared_visual)
 
         (
             classification_logits,
@@ -2170,7 +2288,9 @@ class Blip2Qformer(Blip2Base):
             ), "Image is not provided for mode 'image' or 'multimodal'"
             # return query features
             with self.maybe_autocast():
-                image_embeds_frozen = self._encode_image_streams(image, apply_aug=False).tokens
+                image_embeds_frozen = self._qformer_tokens(
+                    self._encode_image_streams(image, apply_aug=False)
+                )
             image_embeds_frozen = image_embeds_frozen.float()
             image_atts = torch.ones(
                 image_embeds_frozen.size()[:-1], dtype=torch.long
@@ -2210,7 +2330,9 @@ class Blip2Qformer(Blip2Base):
         elif mode == "multimodal":
             # return multimodel query features
             with self.maybe_autocast():
-                image_embeds_frozen = self._encode_image_streams(image, apply_aug=False).tokens
+                image_embeds_frozen = self._qformer_tokens(
+                    self._encode_image_streams(image, apply_aug=False)
+                )
             image_embeds_frozen = image_embeds_frozen.float()
             image_atts = torch.ones(
                 image_embeds_frozen.size()[:-1], dtype=torch.long
@@ -2372,6 +2494,10 @@ class Blip2Qformer(Blip2Base):
         qformer_grad_checkpointing = bool(cfg.get("qformer_grad_checkpointing", False))
         gradcache_chunk_size = int(cfg.get("gradcache_chunk_size", 0))
         feature_mask_ratio = float(cfg.get("feature_mask_ratio", 0.0))
+        # Soft-token collapse fix (2026-10-15); every default is the historical path.
+        qformer_input_norm = cfg.get("qformer_input_norm", None)
+        lambda_query_diversity = float(loss_cfg.get("lambda_query_diversity", 0.0))
+        eval_mode_modules = tuple(cfg.get("eval_mode_modules", None) or ())
 
         explanation_cfg_raw = cfg.get("explanation", {}) or {}
         explanation_streams = explanation_cfg_raw.get("streams", None)
@@ -2484,6 +2610,9 @@ class Blip2Qformer(Blip2Base):
             mhcac_text_guidance=mhcac_text_guidance,
             mhcac_layer_order=mhcac_layer_order,
             mhcac_text_mask_mode=mhcac_text_mask_mode,
+            qformer_input_norm=qformer_input_norm,
+            lambda_query_diversity=lambda_query_diversity,
+            eval_mode_modules=eval_mode_modules,
         )
 
         # Optional inference-only ablation. ``active_encoders`` names streams
@@ -2493,6 +2622,10 @@ class Blip2Qformer(Blip2Base):
             model.shared_visual_projector.stream_names,
             cfg.get("active_encoders", None),
         )
+        if model.ablate_encoders and model.qformer_input_norm is not None:
+            # LayerNorm(0) is the norm's bias, not zero: the ablated stream would
+            # still reach the Q-Former. Not supported rather than silently wrong.
+            raise ValueError("active_encoders cannot be combined with model.qformer_input_norm")
         model.load_checkpoint_from_config(cfg)
         model.apply_encoder_finetune(cfg.get("encoder_finetune", None))
 
@@ -2592,13 +2725,16 @@ class Blip2Qformer(Blip2Base):
             logging.info("  %-52s %8.3fM", pattern, count / 1e6)
 
     def train(self, mode: bool = True):
-        """Keep fine-tuned encoders in eval mode even while the model trains."""
+        """Keep fine-tuned encoders, and ``eval_mode_modules``, in eval mode while training."""
         super().train(mode)
         if mode and getattr(self, "_encoder_finetune_keep_bn_eval", False):
             for root in getattr(self, "_encoder_finetune_roots", ()):
                 module = getattr(self, root, None)
                 if module is not None:
                     module.eval()
+        if mode:
+            for name in self.eval_mode_modules:
+                getattr(self, name).eval()
         return self
 
     def compute_sim_matrix(self, data_loader, task_cfg):

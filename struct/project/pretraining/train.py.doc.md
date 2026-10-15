@@ -6,6 +6,9 @@
 `phases.apply_phase_to_config` ngay sau khi đọc config, và `prepare_phase_model`
 sau khi dựng model: nạp `checkpoint_<pha trước>.pth` (strict=False; tensor lạ →
 lỗi), rồi `apply_trainable`; gắn `model.phase_spec` cho runner.
+Từ 2026-10-15 trước khi nạp nó bỏ các tensor dưới `init_from.skip`
+(`phases.filter_init_state`; skip không khớp tensor nào → lỗi) và ghi log "NOT loaded from":
+các module đó giữ khởi tạo của chính model (Q-Former BLIP-2 cho `phase1q`).
 
 # `pretraining/train.py`
 

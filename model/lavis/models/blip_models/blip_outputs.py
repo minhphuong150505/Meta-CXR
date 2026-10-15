@@ -102,6 +102,9 @@ class BlipOutput(ModelOutput):
 
     loss_distill: Optional[torch.FloatTensor] = None
 
+    # Blip2Qformer: model.loss.lambda_query_diversity (2026-10-15).
+    loss_query_div: Optional[torch.FloatTensor] = None
+
     classification_logits: Optional[torch.FloatTensor] = None
 
     classification_mask: Optional[torch.BoolTensor] = None

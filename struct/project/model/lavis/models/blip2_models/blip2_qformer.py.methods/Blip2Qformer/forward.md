@@ -33,7 +33,9 @@ def forward(self, samples) -> BlipOutput
 | Biến | Ý nghĩa |
 |---|---|
 | `shared_visual` | `SharedVisualTokens` — biểu diễn **duy nhất**, dùng bởi cả MHCAC và Q-Former |
-| `image_embeds` | `shared_visual.tokens [B,ΣP,1408]` |
+| `image_embeds` | `shared_visual.tokens [B,ΣP,1408]` (thiết bị, batch, `zero`) |
+| `qformer_embeds` | `_qformer_tokens(shared_visual)` — bản Q-Former, ITM và LM đọc; = `image_embeds` trừ khi `qformer_input_norm` bật (2026-10-15) |
+| `loss_query_div` | `query_diversity_loss(query_output.last_hidden_state)` khi `lambda_query_diversity > 0` (2026-10-15) |
 | `query_output` | Có `past_key_values` → tái dùng cho LM, không tính lại |
 | `teacher_mask` | `classification_mask & generation_mask` — teacher cần **cả hai** |
 | `student_logits` | Đường inference thật |
@@ -45,7 +47,7 @@ def forward(self, samples) -> BlipOutput
 1 gom cached / aux_cached từ samples
 2 _encode_image_streams(...) → SharedVisualTokens
 3 _batch_mask ×2 → classification_mask, generation_mask
-4 Q-Former: query_tokens → bert(encoder_hidden_states=image_embeds, use_cache=True)
+4 Q-Former: query_tokens → bert(encoder_hidden_states=qformer_embeds, use_cache=True)
            tokenizer(text) → bert(text) → text_features
 5 _image_text_contrastive → loss_itc, sim_i2t, sim_t2i
   _image_text_matching   → loss_itm

@@ -437,6 +437,17 @@ biệt so với bài báo: [`docs/CHI_MUC_TINH_MOI.md`](docs/CHI_MUC_TINH_MOI.md
 bài báo (hai checkpoint được báo cáo và cấu hình của chúng, kết quả theo các phép đo của bài
 báo, sai khác và lý do, giải thích chênh lệch): [`docs/SO_SANH_VOI_BAI_BAO.md`](docs/SO_SANH_VOI_BAI_BAO.md).
 
+**Sửa soft token sụp (2026-10-15, tùy chọn, user duyệt; CHƯA chạy GPU).** Pha `phase1q` train lại
+CHỈ META-Former trên một checkpoint Stage 1 đã xong và đóng băng (`run_20261005_paper/phase1c`), nên
+MHCAC, ngưỡng, cue và mọi số Stage 1 không đổi. Q-Former khởi tạo lại từ BLIP-2
+(`init_from.skip`), đọc token qua LayerNorm riêng từng luồng (`model.qformer_input_norm:
+per_stream`; MHCAC vẫn đọc token gốc), có loss phạt các query mang cùng một hướng thông tin ảnh
+(`model.loss.lambda_query_diversity`), bỏ ITM, đầu vào đa góc chụp như lúc dựng record Stage 2.
+⚠ Checkpoint của 1q không chứa các block encoder mà 1c đã mở khóa: chỉ dùng file do
+`scripts/merge_qformer_refit.py` ghi (từ chối nếu bất kỳ tensor nào ngoài Q-Former lệch), và dựng
+mô hình với `--stage1-options model.qformer_input_norm=per_stream`. Cổng, quy tắc pilot Stage 2 và
+lệnh: [`docs/handoff/PLAN-2026-10-15-qformer-refit.md`](docs/handoff/PLAN-2026-10-15-qformer-refit.md).
+
 Test `run_20261005_paper` (n = 3.269, CI 95% bootstrap 1.000 lần):
 
 | | Hai ngưỡng (số chính) | argmax (giao thức bài báo) | Bài báo |

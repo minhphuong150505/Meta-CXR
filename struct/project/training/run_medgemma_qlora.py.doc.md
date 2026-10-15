@@ -54,6 +54,7 @@ Chạy **trực tiếp bằng python**, không torchrun — Stage 2 single-proce
 | `--checkpoint-root` | `checkpoints` | |
 | `--stage1-run` | `mimic_cxr_full_blip2` | |
 | `--stage1-config` | `pretraining/configs/mimic_cxr_full.yaml` | |
+| `--stage1-options` | — | 2026-10-15: `KEY=VALUE` override YAML Stage 1 (refit META-Former: `model.qformer_input_norm=per_stream`); vào danh tính cache chỉ khi có |
 | `--train/val/test-limit` | — | Smoke |
 | `--output-dir`, `--gcs-output`, `--no-upload` | | |
 

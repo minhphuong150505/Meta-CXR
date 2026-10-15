@@ -35,6 +35,11 @@ identity đó vào fingerprint artifact.
 | `threshold_for(abnormality)` | 67 | Threshold một bệnh lý |
 | `fingerprint_payload()` | 70 | ★ Vân tay ghi vào metadata |
 
+Trường `config_options` (2026-10-15): tuple `KEY=VALUE` áp vào YAML Stage 1 khi dựng mô hình
+(`--stage1-options`; refit META-Former cần `model.qformer_input_norm=per_stream`). Kiểm dạng
+`KEY=VALUE` trong `__post_init__`; vào `fingerprint_payload()` **chỉ khi khác rỗng**, cùng quy tắc
+với `cutpoints`, nên vân tay của mọi run cũ không đổi.
+
 ## Calls / Called by
 
 Gọi: stdlib.

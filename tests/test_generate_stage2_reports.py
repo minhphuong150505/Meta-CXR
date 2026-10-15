@@ -239,3 +239,37 @@ def test_generate_accepts_the_knobs_as_keyword_only():
     for name in ("no_repeat_ngram_size", "repetition_penalty"):
         assert params[name].kind is inspect.Parameter.KEYWORD_ONLY
         assert params[name].default is None
+
+
+# --------------------------------------------------------------------------
+# 2026-10-15 META-Former refit: --stage1-options, --soft-token-ablation
+# --------------------------------------------------------------------------
+
+
+def test_stage1_options_default_to_none_and_parse_as_a_list(tmp_path):
+    assert gen.parse_args(["--output-dir", str(tmp_path)]).stage1_options == []
+    args = gen.parse_args(["--output-dir", str(tmp_path), "--stage1-options",
+                           "model.qformer_input_norm=per_stream"])
+    assert args.stage1_options == ["model.qformer_input_norm=per_stream"]
+
+
+def test_soft_token_ablation_is_a_derangement_that_keeps_cues_and_context():
+    records = [{"sample_key": f"k{i}", "qformer_embs": f"emb{i}", "pred_groups": f"cue{i}"}
+               for i in range(7)]
+    out = gen.permute_soft_tokens_across_studies(records, seed=16)
+    assert [r["sample_key"] for r in out] == [r["sample_key"] for r in records]
+    assert [r["pred_groups"] for r in out] == [r["pred_groups"] for r in records]
+    donors = [r["qformer_embs"] for r in out]
+    assert sorted(donors) == sorted(r["qformer_embs"] for r in records)  # a permutation
+    assert all(d != f"emb{i}" for i, d in enumerate(donors))  # nobody keeps its own
+    assert records[0]["qformer_embs"] == "emb0"  # the input is not modified
+    assert gen.permute_soft_tokens_across_studies(records[:1], 16) == records[:1]
+
+
+def test_soft_token_ablation_needs_a_soft_token_mode(tmp_path):
+    from training.pipeline_modes import resolve_pipeline_modes
+
+    args = gen.parse_args(["--output-dir", str(tmp_path), "--manifest", str(tmp_path),
+                           "--image-root", str(tmp_path), "--soft-token-ablation", "permute_across"])
+    with pytest.raises(SystemExit, match="soft-token pipeline mode"):
+        gen.validate_invocation(args, resolve_pipeline_modes("medgemma_direct")[0])

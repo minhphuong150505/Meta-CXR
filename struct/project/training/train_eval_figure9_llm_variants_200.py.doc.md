@@ -96,7 +96,7 @@ section ở entrypoint chính.
 | `compute_sectioned_nlg` | 1455 | Tách FINDINGS/IMPRESSION rồi chấm |
 | `evaluate_variant` | 1487 | Vòng eval một variant |
 | `assert_private_gcs_destination` | 263 | ★ Chặn upload lên bucket public |
-| `stage1_cohort_fingerprint` | 445 | Vân tay cohort để phát hiện lệch |
+| `stage1_cohort_fingerprint` | 445 | Vân tay cohort để phát hiện lệch; thêm `stage1_options` chỉ khi `context.config_options` khác rỗng (2026-10-15) |
 | `run_family`, `plot_family` | 1651, 1611 | Phần "figure9" thật sự |
 | `field_value` | 343 | ⚠ `except Exception: return str(field)` — nuốt lỗi ([S7 trong docs](../_meta/LEGACY_AND_OPTIONAL.md)) |
 

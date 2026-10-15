@@ -99,6 +99,20 @@ class TestFingerprint(unittest.TestCase):
         b = Stage1Context(run_name="r", thresholds={"Edema": {"positive": 0.6}})
         self.assertNotEqual(a.fingerprint_payload(), b.fingerprint_payload())
 
+    def test_config_options_enter_the_payload_only_when_given(self):
+        plain = Stage1Context(run_name="r")
+        self.assertEqual(plain.config_options, ())
+        self.assertNotIn("config_options", plain.fingerprint_payload())
+        refit = Stage1Context(run_name="r", config_options=["model.qformer_input_norm=per_stream"])
+        self.assertEqual(refit.config_options, ("model.qformer_input_norm=per_stream",))
+        self.assertEqual(refit.fingerprint_payload()["config_options"],
+                         ["model.qformer_input_norm=per_stream"])
+
+    def test_config_options_must_be_key_value(self):
+        for bad in (["per_stream"], ["=per_stream"]):
+            with self.assertRaisesRegex(ValueError, "KEY=VALUE"):
+                Stage1Context(run_name="r", config_options=bad)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,9 @@ Dựng 6 khối con theo đúng thứ tự phụ thuộc, và đăng ký ITC que
 | `freeze_vit` | `True` | |
 | `multi_view` | `False` | ⚠ prod `True` |
 | `lambda_*` (11 objective cũ) | xem code | |
+| `qformer_input_norm` | `None` | 2026-10-15: `"per_stream"` dựng `QformerInputNorm` NGAY SAU `shared_visual_projector` |
+| `lambda_query_diversity` | `0.0` | 2026-10-15: > 0 cần một trong `lambda_itc/itm/lm` > 0, không thì lỗi |
+| `eval_mode_modules` | `()` | 2026-10-15: kiểm ở cuối `__init__` (mỗi tên phải là submodule); `train()` giữ chúng ở eval |
 | `lambda_explanation` | `0.0` | Gate cứng: zero không dựng `ExplanationLoss` |
 | `explanation_cfg` | `None` | `top_k`, warmup và danh sách stream |
 | `itc_queue_size` | 1024 | |

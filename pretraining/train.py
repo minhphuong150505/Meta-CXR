@@ -23,6 +23,7 @@ from pretraining.retired_keys import (
 from pretraining.phases import (
     apply_phase_to_config,
     apply_trainable,
+    filter_init_state,
     resolve_init_checkpoint,
 )
 from model.lavis.common.dist_utils import get_rank, is_main_process, init_distributed_mode
@@ -89,6 +90,13 @@ def prepare_phase_model(model, spec, cfg):
                 "run the previous phase first"
             )
         state = torch.load(init_path, map_location="cpu")["model"]
+        state, skipped = filter_init_state(state, spec.init_skip)
+        if skipped:
+            logging.info(
+                "Phase %s: %d tensors under %s NOT loaded from %s; they keep the "
+                "model's own initialisation",
+                spec.name, len(skipped), list(spec.init_skip), init_path,
+            )
         result = model.load_state_dict(state, strict=False)
         if result.unexpected_keys:
             raise ValueError(

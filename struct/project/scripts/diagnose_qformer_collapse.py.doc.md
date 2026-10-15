@@ -23,6 +23,16 @@ python scripts/diagnose_qformer_collapse.py --checkpoint <ckpt.pth | none> --lab
   nhận attention nhiều nhất;
 - token ảnh: norm và cosine trong study theo stream;
 - phản thực tế: thay mọi token ảnh bằng token trung bình của study rồi so đầu ra.
+- (2026-10-15) `final_pr_batch_centred`: số hướng hiệu dụng của trạng thái query sau khi trừ
+  trung bình từng query trên các study được chấm (thông tin ảnh, hằng số theo query không nâng
+  được); `query_diversity_loss` trên cùng tập; `xattn_mean_query_map_cos`: trung bình qua các
+  tầng cross-attention của độ giống bản đồ attention giữa query. Hai chỉ số đầu và cuối là cổng
+  sụp của refit (`docs/handoff/PLAN-2026-10-15-qformer-refit.md`).
+
+`--options KEY=VALUE ...` dựng model với override YAML — checkpoint gộp của refit
+([`merge_qformer_refit.py`](merge_qformer_refit.py.doc.md)) cần
+`--options model.qformer_input_norm=per_stream`; `assert_input_norm_keys_match` báo lỗi nếu thiếu.
+Bản `image` ghi nhận là chính `encoder_hidden_states` Q-Former đọc (đã chuẩn hóa khi có cờ).
 
 ## Kết quả (2026-10-11)
 Sụp đổ xảy ra ở **phase 1a** (cosine 0,9989, PR 1,002; khởi tạo BLIP-2 0,445 / 2,94),

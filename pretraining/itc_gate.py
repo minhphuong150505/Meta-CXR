@@ -76,7 +76,9 @@ def itc_features(model, samples, device):
         for key, value in samples.items()
     }
     shared_visual = model.encode_samples(moved)
-    image_embeds = shared_visual.tokens
+    # The Q-Former's own copy (model.qformer_input_norm, 2026-10-15), exactly as
+    # training reads it; the shared tokens themselves when the option is off.
+    image_embeds = model._qformer_tokens(shared_visual)
     image_atts = torch.ones(image_embeds.shape[:-1], dtype=torch.long, device=device)
     query_tokens = model.query_tokens.expand(image_embeds.shape[0], -1, -1)
     query_output = model.Qformer.bert(

@@ -136,6 +136,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     stage1.add_argument("--stage1-run", default="mimic_cxr_full_blip2")
     stage1.add_argument("--stage1-config", type=Path, default=None)
     stage1.add_argument("--stage1-checkpoint", type=Path, default=None)
+    stage1.add_argument("--stage1-options", nargs="*", default=[], metavar="KEY=VALUE",
+                        help="Overrides for the Stage-1 YAML when the model is built, e.g. "
+                             "model.qformer_input_norm=per_stream for a META-Former refit "
+                             "checkpoint (scripts/merge_qformer_refit.py). Enters the "
+                             "Stage-1 cache identity only when given.")
     stage1.add_argument("--threshold-path", type=Path, default=None)
     stage1.add_argument("--num-workers", type=int, default=4)
     stage1.add_argument("--reports-root", type=Path, default=None,
@@ -166,6 +171,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "features, to test whether the model uses them. ⚠ "
                              "Out of distribution: a mechanism probe, never a "
                              "substitute for the trained q_only control arm.")
+    stage1.add_argument("--soft-token-ablation", default=None, choices=("permute_across",),
+                        help="Inference-only: give every study another study's 32 soft "
+                             "tokens (a derangement), keeping its own cues and context, to "
+                             "measure how much the adapter reads the image channel. ⚠ Out "
+                             "of distribution: a mechanism probe, not a control arm.")
     stage1.add_argument("--stage1-cache-dir", type=Path, default=None,
                         help="Where .sensitive_stage1_cache lives. Point it at the "
                              "TRAINING output dir to reuse that run's encode pass; "
@@ -278,6 +288,8 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
             )
     if args.finding_feature_ablation and args.finding_tokens == FINDING_TOKENS_OFF:
         raise SystemExit("--finding-feature-ablation needs --finding-tokens")
+    if args.soft_token_ablation and mode.image_mode not in SOFT_TOKEN_IMAGE_MODES:
+        raise SystemExit("--soft-token-ablation needs a soft-token pipeline mode")
     if not mode.requires_stage1:
         if args.manifest is None or args.image_root is None:
             raise SystemExit(f"{mode.name} needs --manifest and --image-root")
@@ -386,6 +398,7 @@ def stage1_records(args: argparse.Namespace) -> list[dict]:
                     if args.cue_rule != fig9.CUE_RULE_CUTPOINTS else {}),
         cutpoints=(fig9.load_cue_cutpoints(args.threshold_path)
                    if args.cue_rule == fig9.CUE_RULE_CUTPOINTS else {}),
+        config_options=tuple(args.stage1_options or ()),
     )
     fig9.set_seed(args.seed)
     cache_dir = args.stage1_cache_dir or args.output_dir
@@ -399,6 +412,8 @@ def stage1_records(args: argparse.Namespace) -> list[dict]:
         record["view_position"] = None
     if args.finding_feature_ablation == "permute_across":
         records = permute_finding_features_across_studies(records, args.seed)
+    if args.soft_token_ablation == "permute_across":
+        records = permute_soft_tokens_across_studies(records, args.seed)
     if args.prompt_style == fig9.PROMPT_STYLE_PAPER_CONTEXT:
         try:
             from training.dataio.study_context import attach_study_context
@@ -432,6 +447,25 @@ def permute_finding_features_across_studies(
     for record, donor in zip(records, donors, strict=True):
         copied = dict(record)
         copied["class_logits"] = donor.get("class_logits")
+        out.append(copied)
+    return out
+
+
+def permute_soft_tokens_across_studies(records: list[dict], seed: int) -> list[dict]:
+    """Give each study another study's 32 soft tokens; its cues and context stay its own.
+
+    The same derangement as :func:`permute_finding_features_across_studies`, on
+    ``qformer_embs``. If the reports barely change, the adapter does not read the image
+    channel. ⚠ Out of distribution; a mechanism probe, not a control arm.
+    """
+    n = len(records)
+    if n < 2:
+        return records
+    shift = 1 + random.Random(seed).randrange(n - 1)
+    out = []
+    for i, record in enumerate(records):
+        copied = dict(record)
+        copied["qformer_embs"] = records[(i + shift) % n]["qformer_embs"]
         out.append(copied)
     return out
 
@@ -607,6 +641,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "restrict_to": str(args.restrict_to) if args.restrict_to else None,
         "finding_tokens": args.finding_tokens,
         "finding_feature_ablation": args.finding_feature_ablation,
+        "soft_token_ablation": args.soft_token_ablation,
+        "stage1_options": list(args.stage1_options or []) or None,
         "cue_rule": args.cue_rule if mode.requires_stage1 else None,
         "model_id": llm.model_id,
         "split": args.split,
