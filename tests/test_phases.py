@@ -386,6 +386,10 @@ def test_phase1q_refits_only_the_qformer_side():
     spec, config = _spec("phase1q")
     assert set(spec.init_skip) == {"query_tokens", "Qformer", "vision_proj", "text_proj", "itm_head",
                                    "temp", "siglip_logit_scale", "siglip_bias"}
+    # lambda_mpc 0 -> no MPC heads in this model; the 1c checkpoint's are ignored
+    # (found by the 2026-10-15 integration smoke: they were "unexpected" tensors).
+    assert spec.init_ignore == ("mpc_heads",)
+    assert float(config.model.loss.lambda_mpc) == 0.0
     assert spec.epochs == config.run.max_epoch == 2
     model = config.model
     assert model.qformer_input_norm == "per_stream"
@@ -417,7 +421,27 @@ def test_filter_init_state_drops_exactly_the_skipped_prefixes():
     assert sorted(dropped) == ["Qformer.bert.w", "query_tokens"]
     assert kept == {"Qformer_extra.w": 2, "mhcac.w": 4}  # a prefix is a module path
     assert filter_init_state(state, ()) == (state, [])
-    with pytest.raises(PhaseConfigError, match="matches no tensor"):
+    with pytest.raises(PhaseConfigError, match="match no tensor"):
         filter_init_state(state, ("vision_proj",))
     with pytest.raises(PhaseConfigError, match=r"\['vision_proj'\] match no tensor"):
         filter_init_state(state, ("Qformer", "vision_proj"))
+
+
+def test_ignore_drops_modules_the_model_does_not_build_and_nothing_else():
+    state = {"Qformer.bert.w": 1, "mpc_heads.biovil.w": 2, "mhcac.w": 3}
+    kept, dropped = filter_init_state(state, ("Qformer",), ("mpc_heads",),
+                                      model_keys=["Qformer.bert.w", "mhcac.w"])
+    assert sorted(dropped) == ["Qformer.bert.w", "mpc_heads.biovil.w"]
+    assert kept == {"mhcac.w": 3}
+    # a model that DOES build the module must use skip, not ignore
+    with pytest.raises(PhaseConfigError, match="use init_from.skip"):
+        filter_init_state(state, (), ("mpc_heads",), model_keys=["mpc_heads.biovil.w"])
+    with pytest.raises(PhaseConfigError, match=r"ignore prefixes \['view_fusion'\]"):
+        filter_init_state(state, (), ("view_fusion",), model_keys=[])
+
+
+def test_a_prefix_cannot_be_both_skipped_and_ignored():
+    block = {"epochs": 1, "trainable": ["Qformer"],
+             "init_from": {"path": "/x", "skip": ["Qformer"], "ignore": ["Qformer"]}}
+    with pytest.raises(PhaseConfigError, match="both skip and ignore"):
+        build_spec({"p": block}, "p")

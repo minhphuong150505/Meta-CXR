@@ -1169,6 +1169,9 @@ run:
       init_from:
         path: null
         skip: [query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias]
+        # lambda_mpc 0 here -> no MPC heads are built; the checkpoint's are not
+        # loaded, and merge_qformer_refit.py keeps them in the merged file.
+        ignore: [mpc_heads]
       trainable: [query_tokens, Qformer, vision_proj, text_proj, temp, siglip_logit_scale, siglip_bias,
                   qformer_input_norm]
       itc_gate:
