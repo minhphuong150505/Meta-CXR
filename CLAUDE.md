@@ -1639,9 +1639,9 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
   lexicon CE flat (significant on val only); ROUGE-L +0.0050 [+0.0016, +0.0084]; CIDEr
   -0.0274 [-0.0593, +0.0022]. Output is shorter (median 47 -> 40 words), so corpus
   BLEU-1 0.434 -> 0.382 -- BELOW the paper's 0.390 -- BLEU-4 0.190 -> 0.172, METEOR
-  0.190 -> 0.181, CIDEr 0.416 -> 0.388. Cost ~3.2x beam. **Beam stays the reported
-  headline**; `docs/SO_SANH_VOI_BAI_BAO.md` section 2.2 carries MBR as a separate table,
-  and switching the headline is the user's call. Every number: the plan's execution report.
+  0.190 -> 0.181, CIDEr 0.416 -> 0.388. Cost ~3.2x beam. **User decision 2026-10-15: beam
+  stays the reported headline**; MBR is only the supplementary table in
+  `docs/SO_SANH_VOI_BAI_BAO.md` section 2.2. Every number: the plan's execution report.
   `generate_stage2_reports.py --num-samples 8 [--temperature 0.7 --top-p 0.95 --top-k 0]`
   writes `candidates_<split>.jsonl` (no `generated` key, so no scorer can read a
   random sample as the decode) via `VariantLLM.generate_candidates`; then

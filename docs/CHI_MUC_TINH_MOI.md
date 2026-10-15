@@ -1,8 +1,9 @@
 # Chỉ mục tính mới so với bài báo META-CXR
 
-Cập nhật 2026-10-11 (lần 2: thêm cơ chế sụp token, mốc chép báo cáo lần trước,
-truy hồi bằng embedding MedGemma). Bài báo gốc: D. Edirisinghe et al., "Chest X-Ray Report
-Generation Using Abnormality Guided Vision Language Model", IEEE Access, vol. 13,
+Cập nhật 2026-10-15 (thêm giải mã MBR vào TM-02); trước đó 2026-10-11 (lần 2: thêm cơ chế
+sụp token, mốc chép báo cáo lần trước, truy hồi bằng embedding MedGemma). Bài báo gốc:
+D. Edirisinghe et al., "Chest X-Ray Report Generation Using Abnormality Guided Vision
+Language Model", IEEE Access, vol. 13,
 2025 (META-CXR). Mọi chi tiết "bài báo" dưới đây đã đối chiếu với văn bản PDF
 (mục III–V, Eq. 22, Bảng 2–7, Hình 10–11); chi tiết bài báo không nêu thì ghi
 "không nêu". Số của dự án lấy từ artifact trên máy train, nguồn ghi ở từng mục.
@@ -29,7 +30,7 @@ bài báo"; nhóm B chỉ được viết là "khác/bổ sung", vì chưa có a
 | ID | Hạng mục | Loại |
 |---|---|---|
 | TM-01 | Số chính Stage 1 dùng hai ngưỡng theo từng bệnh fit trên val | A |
-| TM-02 | Giải mã beam 4 + length penalty 2 | A |
+| TM-02 | Giải mã beam 4 + length penalty 2 (MBR thử thêm 2026-10-15, không thay beam) | A |
 | TM-03 | Làm sạch target FINDINGS v3 (bỏ dòng tiêu đề phiếu chụp) | A |
 | TM-04 | GradCache + SigLIP cho pha căn chỉnh 1a | A |
 | TM-05 | Đa góc chụp: ViewFusion, MPC, StreamAdapter, view consistency | B |
@@ -76,9 +77,19 @@ Nguồn: `docs/handoff/PLAN-2026-10-10-cutpoint-headline.md`, commit `3607223`.
 2.800 study, cùng adapter: beam − greedy BERTScore +0,0083 [+0,0037; +0,0129],
 ROUGE-L +0,0150 [+0,0112; +0,0188], CIDEr +0,0439 [+0,0230; +0,0653]; số beam
 0,357/0,098/0,137/0,265/0,128/0,369 (BLEU-1/BLEU-4/METEOR/ROUGE-L/CIDEr/
-BERTScore). Chọn trên val 300 trước, chạy test một lần. ⚠ Chưa có trong
-`generate_stage2_reports.py` (chạy bằng probe). Nguồn:
+BERTScore) — adapter v3; số beam của adapter hiện tại ở TM-23. Chọn trên val 300 trước,
+chạy test một lần. Lần đo này chạy bằng probe; từ 2026-10-11 beam có trong
+`generate_stage2_reports.py` (`--num-beams 4 --length-penalty 2.0`). Nguồn:
 `docs/handoff/PLAN-2026-10-07-stage2-header-fix.md`.
+
+*Thử thêm 2026-10-15 — giải mã MBR, không thay beam (quyết định của user).* Cùng adapter
+hiện tại (TM-23): mỗi study sinh thêm 8 mẫu, giữ ứng viên (beam, greedy hoặc một mẫu) có kỳ
+vọng BERTScore cao nhất so với các mẫu; quy tắc chốt trên val, test chạy một lần. Test 2.800
+study, ghép cặp với beam: BERTScore 0,466 → 0,485, +0,0191 [+0,0155; +0,0228], toàn bộ nhờ
+precision (0,493 → 0,545; recall 0,439 → 0,426); CheXbert micro F1-14
++0,0087 [+0,0012; +0,0161]; ROUGE-L +0,0050 [+0,0016; +0,0084]; CIDEr −0,0274
+[−0,0593; +0,0022]; output ngắn hơn (median 47 → 40 từ) nên BLEU-1 0,434 → 0,382, dưới bài
+báo (0,390). Utility là chính mô hình của BERTScore. Nguồn: `docs/handoff/PLAN-2026-10-14-stage2-mbr-bertscore.md`.
 
 **TM-03 — Làm sạch target FINDINGS (manifest v3).** Bài báo không mô tả cách lấy
 FINDINGS. Dự án phát hiện 9,8% target train bắt đầu bằng dòng tiêu đề phiếu chụp
