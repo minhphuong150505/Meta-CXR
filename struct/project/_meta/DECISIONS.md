@@ -31,7 +31,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-021](#d-021--gradient-checkpointing-q-former-gradcache-pha-1a-siglip-mở-lại-khối-encoder-ở-1c) | Checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
 | [D-026](#d-026--siêu-tham-số-mhcac-theo-bài-báo-2026-10-05) | MHCAC: 8 common expert token, label smoothing 0 (theo bài báo) | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
 | [D-027](#d-027--stage-2-theo-bài-báo-không-ảnh-gốc-prompt-nguyên-văn-2026-10-05) | Stage 2 `--prompt-style paper`: không ảnh gốc, 32 soft token + P/N/U, prompt nguyên văn bài báo | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
-| [D-028](#d-028--sửa-soft-token-sụp-train-lại-meta-former-trên-checkpoint-đã-xong-2026-10-15) | Sửa soft token sụp: pha `phase1q` train lại chỉ META-Former trên checkpoint 1c đóng băng; norm đầu vào Q-Former, loss đa dạng query, file gộp bắt buộc | ✅ Confirmed (user duyệt); chưa chạy GPU | 2026-10-15 |
+| [D-028](#d-028--sửa-soft-token-sụp-train-lại-meta-former-trên-checkpoint-đã-xong-2026-10-15) | Sửa soft token sụp: pha `phase1q` train lại chỉ META-Former trên checkpoint 1c đóng băng; norm đầu vào Q-Former, loss đa dạng query, file gộp bắt buộc | ✅ Confirmed (user duyệt); refit 2026-10-15 trượt cổng sụp (loss đa dạng bị lách qua dropout) | 2026-10-15 |
 
 ---
 
@@ -1349,7 +1349,13 @@ chạy được.
 
 ## D-028 — Sửa soft token sụp: train lại META-Former trên checkpoint đã xong (2026-10-15)
 
-Status: **Confirmed — user duyệt kế hoạch; code xong, chưa chạy GPU**
+Status: **Confirmed — user duyệt kế hoạch; refit đã chạy 2026-10-15, trượt cổng sụp**
+
+**Kết quả 2026-10-15.** Refit 2 epoch: `final_pr_batch_centred` 2,32 (cổng ≥ 4; 1c 1,00), bản đồ
+attention 0,51 và ITC R@5 0,58 / 0,56 đạt → dừng trước probe và pilot, Stage 2 không đổi. Loss đa
+dạng tính trên trạng thái lúc train (dropout 0,1 trong Q-Former) và bị lách: mô hình khuếch đại nhiễu
+dropout lên 3,9 lần phần phụ thuộc ảnh (0,4 lần khi không có loss), PR lúc train ~30, loss 0,014 so
+với 0,77 trên val. Số đo đầy đủ: báo cáo thực thi của plan.
 
 **Vấn đề (đo 2026-10-11).** 32 soft token của một study gần như là một vector (cosine 0,9989 sau
 1a): ở hai tầng cross-attention đầu mọi query đọc CLS của PubMedCLIP, và không mục tiêu nào của 1a

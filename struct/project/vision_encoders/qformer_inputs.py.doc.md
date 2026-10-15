@@ -28,6 +28,11 @@ cổng: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`. Chỉ phụ thuộc tor
   bình từng query trong batch để một hằng số khác nhau cho mỗi query không được tính là đa dạng;
   dùng PR (không phải cosine² từng cặp) để "một query mang thông tin + 31 query gần hằng số" (hướng
   phần dư chỉ là nhiễu dropout, cosine ≈ 0) vẫn bị tính là sụp. Cả hai ghim bằng test.
+- ⚠ **Đo 2026-10-15: PR vẫn bị lách được bằng nhiễu dropout nếu loss tính lúc train.** Nhiễu dropout
+  gần đẳng hướng giữa 32 query; trong refit 1q mô hình học cách khuếch đại nó lên 3,9 lần phần phụ
+  thuộc ảnh, nên lúc train PR ~30 (loss 0,014) trong khi chế độ eval chỉ 2,32 (loss 0,77). Chỉ dùng
+  loss này khi Q-Former không có dropout, và so giá trị train với val
+  ([báo cáo thực thi](../../../docs/handoff/PLAN-2026-10-15-qformer-refit.md)).
 - **Báo lỗi khi khóa norm không khớp.** Thiếu norm trong model → tensor norm của checkpoint bị bỏ âm
   thầm; thiếu trong checkpoint → norm chạy ở khởi tạo. Cả hai cho báo cáo trôi chảy từ soft token sai.
 

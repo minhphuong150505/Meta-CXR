@@ -437,7 +437,8 @@ biệt so với bài báo: [`docs/CHI_MUC_TINH_MOI.md`](docs/CHI_MUC_TINH_MOI.md
 bài báo (hai checkpoint được báo cáo và cấu hình của chúng, kết quả theo các phép đo của bài
 báo, sai khác và lý do, giải thích chênh lệch): [`docs/SO_SANH_VOI_BAI_BAO.md`](docs/SO_SANH_VOI_BAI_BAO.md).
 
-**Sửa soft token sụp (2026-10-15, tùy chọn, user duyệt; CHƯA chạy GPU).** Pha `phase1q` train lại
+**Sửa soft token sụp (2026-10-15, tùy chọn, user duyệt; đã chạy 2026-10-15 — KHÔNG đạt cổng, xem
+cuối đoạn).** Pha `phase1q` train lại
 CHỈ META-Former trên một checkpoint Stage 1 đã xong và đóng băng (`run_20261005_paper/phase1c`), nên
 MHCAC, ngưỡng, cue và mọi số Stage 1 không đổi. Q-Former khởi tạo lại từ BLIP-2
 (`init_from.skip`), đọc token qua LayerNorm riêng từng luồng (`model.qformer_input_norm:
@@ -447,6 +448,11 @@ per_stream`; MHCAC vẫn đọc token gốc), có loss phạt các query mang c�
 `scripts/merge_qformer_refit.py` ghi (từ chối nếu bất kỳ tensor nào ngoài Q-Former lệch), và dựng
 mô hình với `--stage1-options model.qformer_input_norm=per_stream`. Cổng, quy tắc pilot Stage 2 và
 lệnh: [`docs/handoff/PLAN-2026-10-15-qformer-refit.md`](docs/handoff/PLAN-2026-10-15-qformer-refit.md).
+**Kết quả refit 2 epoch:** PR theo batch 2,32 (cổng ≥ 4; 1c là 1,00) → trượt; bản đồ attention 0,51 và
+ITC R@5 0,58 / 0,56 đạt. Pipeline dừng trước probe và pilot; Stage 2 không đổi. ⚠ Loss đa dạng bị
+"lách" qua dropout: nó được tính lúc train khi Q-Former còn dropout 0,1, và mô hình học cách khuếch
+đại nhiễu dropout lên 3,9 lần phần phụ thuộc ảnh, nên lúc train loss đọc ~30 hướng (0,014) trong khi
+val (chế độ eval) là 0,77. Không dùng `lambda_query_diversity` khi Q-Former còn dropout.
 
 Test `run_20261005_paper` (n = 3.269, CI 95% bootstrap 1.000 lần):
 
