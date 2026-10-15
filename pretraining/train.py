@@ -90,12 +90,16 @@ def prepare_phase_model(model, spec, cfg):
                 "run the previous phase first"
             )
         state = torch.load(init_path, map_location="cpu")["model"]
-        state, skipped = filter_init_state(state, spec.init_skip)
+        state, skipped = filter_init_state(
+            state, spec.init_skip, spec.init_ignore, model_keys=model.state_dict().keys()
+        )
         if skipped:
             logging.info(
-                "Phase %s: %d tensors under %s NOT loaded from %s; they keep the "
-                "model's own initialisation",
-                spec.name, len(skipped), list(spec.init_skip), init_path,
+                "Phase %s: %d tensors under %s NOT loaded from %s; skipped ones keep the "
+                "model's own initialisation, ignored ones (%s) are modules this phase "
+                "does not build",
+                spec.name, len(skipped), list(spec.init_skip) + list(spec.init_ignore),
+                init_path, list(spec.init_ignore),
             )
         result = model.load_state_dict(state, strict=False)
         if result.unexpected_keys:

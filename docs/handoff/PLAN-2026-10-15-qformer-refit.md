@@ -29,7 +29,9 @@ số Stage 1 đã báo cáo và của Stage 2 P2 + LR 3e-4).
    bình của nó trong batch).
 3. Bỏ ITM.
 4. Pha `phase1q` (`pretraining/configs/mimic_cxr_full.yaml`, không nằm trong chuỗi mặc định): nạp
-   checkpoint 1c, **bỏ qua** phía Q-Former (`init_from.skip` → khởi tạo BLIP-2 như 1a), chỉ train
+   checkpoint 1c, **bỏ qua** phía Q-Former (`init_from.skip` → khởi tạo BLIP-2 như 1a) và đầu MPC
+   (`init_from.ignore: [mpc_heads]`: `lambda_mpc 0` nên model không dựng chúng; thêm sau smoke tích
+   hợp, xem báo cáo thực thi), chỉ train
    Q-Former + query + chiếu ITC + norm; mọi thứ khác đóng băng; đầu vào đa góc chụp đúng như lúc
    dựng record Stage 2 (`eval_mode_modules: [view_fusion]` giữ dropout/bỏ ảnh phụ của view fusion ở
    chế độ eval); không cache đặc trưng; GradCache batch 128 dùng lại token ảnh của lượt no-grad
@@ -110,4 +112,8 @@ Không thử phương án dự phòng (che token CLS/pooled khỏi K/V, query ki
 
 ## Báo cáo thực thi
 
-Chưa chạy.
+### Smoke tích hợp (2 update, `~/qrefit_micro.sh`, không phải kết quả) — 2026-10-15
+
+- Lần 1 (12:47, `4b430ff`): dừng sau 15 s khi nạp checkpoint 1c — 18 tensor `mpc_heads.*` mà model
+  `phase1q` (`lambda_mpc 0`) không dựng. Sửa bằng `init_from.ignore: [mpc_heads]` (báo lỗi nếu model
+  có module đó); file gộp giữ đầu MPC của 1c.

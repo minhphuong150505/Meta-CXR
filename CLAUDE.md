@@ -95,7 +95,9 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
 - 🧪 **Collapse fix, opt-in, user-approved 2026-10-15 -- NOT YET RUN ON GPU:** phase
   `phase1q` re-fits ONLY the META-Former on a finished, frozen Stage-1 checkpoint
   (`run.phases.phase1q.init_from.path=<1c checkpoint_best.pth>`; `init_from.skip` leaves the
-  Q-Former side at BLIP-2's init). New knobs, all default off: `model.qformer_input_norm:
+  Q-Former side at BLIP-2's init; `init_from.ignore: [mpc_heads]` drops the MPC heads 1q does
+  not build at `lambda_mpc 0` -- an `ignore` the model DOES build is an error, use `skip`).
+  New knobs, all default off: `model.qformer_input_norm:
   per_stream` (one LayerNorm per stream on the Q-Former's COPY of the shared tokens; MHCAC
   still reads them raw), `model.loss.lambda_query_diversity` (`log(Q/PR)/log(Q)` of the
   per-study participation ratio of the queries' batch-centred states,

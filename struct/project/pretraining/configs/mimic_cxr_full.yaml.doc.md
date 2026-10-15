@@ -122,7 +122,9 @@ live microbatch plus the queue, not from gradient accumulation."* — tăng
 
 ## 2026-10-15 — `phase1q`: train lại META-Former trên checkpoint đã xong (opt-in, chưa chạy GPU)
 - Không nằm trong chuỗi mặc định. `run.phases.phase1q.init_from.path` phải cho trên dòng lệnh
-  (thiếu → `PhaseConfigError`); `init_from.skip` = phía Q-Former → khởi tạo BLIP-2.
+  (thiếu → `PhaseConfigError`); `init_from.skip` = phía Q-Former → khởi tạo BLIP-2;
+  `init_from.ignore: [mpc_heads]` — `lambda_mpc 0` nên model không dựng đầu MPC; file gộp giữ
+  đầu MPC của checkpoint gốc.
 - `trainable`: Q-Former, query, chiếu ITC, `temp`/SigLIP, `qformer_input_norm`. Không MHCAC,
   không adapter/fusion/projector/`ln_vision`, encoder đóng băng (`encoder_finetune` tắt).
 - `model`: `multi_view: true`, `qformer_input_norm: per_stream`, `eval_mode_modules: [view_fusion]`,
