@@ -1,0 +1,608 @@
+{
+ "stage1_test": {
+  "checkpoint": "run_20260930_3class/phase1c/checkpoint_best",
+  "n": 3269,
+  "aggregates": {
+   "accuracy": 0.7684729064039406,
+   "auprc_negative_mean": 0.9331283096682441,
+   "auprc_positive_mean": 0.3714954412645299,
+   "auprc_uncertain_mean": 0.05443035602941475,
+   "auroc_mean": 0.709363364701515,
+   "auroc_negative_mean": 0.7691389002254884,
+   "auroc_positive_mean": 0.7755408772016185,
+   "auroc_uncertain_mean": 0.573721620675586,
+   "macro_recall": 0.4560255519529898,
+   "mean_weighted_f1_5": 0.6437846611543658,
+   "weighted_f1": 0.7658041279810038,
+   "weighted_precision": 0.8378940995883262,
+   "weighted_recall": 0.7684729064039406
+  },
+  "intervals": {
+   "auroc_negative_mean": [
+    0.7611127648648482,
+    0.7773451942264539
+   ],
+   "auroc_positive_mean": [
+    0.7670671555759528,
+    0.7839007629454557
+   ],
+   "auroc_uncertain_mean": [
+    0.5381628794110055,
+    0.6066760803007998
+   ],
+   "macro_recall": [
+    0.4513292722398612,
+    0.4688235306934149
+   ],
+   "mean_weighted_f1_5": [
+    0.6352341715384713,
+    0.65250298428051
+   ],
+   "weighted_f1": [
+    0.7612136397392432,
+    0.7704987043686201
+   ],
+   "weighted_precision": [
+    0.834414661514548,
+    0.8451630937510012
+   ],
+   "weighted_recall": [
+    0.7640563126733522,
+    0.7727675733808541
+   ]
+  },
+  "per_finding": [
+   {
+    "pathology": "No Finding",
+    "weighted_precision": "0.8332739380513051",
+    "weighted_recall": "0.8522167487684729",
+    "weighted_f1": "0.8300457772730123",
+    "accuracy": "0.8522167487684729",
+    "macro_recall": "0.6412865251208746",
+    "n_negative": "2680",
+    "auroc_negative": "0.8215360258566323",
+    "auprc_negative": "0.950654162668621",
+    "precision_negative": "0.8696236559139785",
+    "recall_negative": "0.9656716417910448",
+    "f1_negative": "0.9151343705799151",
+    "n_positive": "568",
+    "auroc_positive": "0.8220661656506202",
+    "auprc_positive": "0.5399020631923751",
+    "precision_positive": "0.6617647058823529",
+    "recall_positive": "0.31690140845070425",
+    "f1_positive": "0.42857142857142855",
+    "n_uncertain": "0",
+    "auroc_uncertain": "",
+    "auprc_uncertain": "",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "1.0",
+    "f1_uncertain": "1.0"
+   },
+   {
+    "pathology": "Enlarged Cardiomediastinum",
+    "weighted_precision": "0.8113094746099769",
+    "weighted_recall": "0.8737684729064039",
+    "weighted_f1": "0.8374843123617507",
+    "accuracy": "0.8737684729064039",
+    "macro_recall": "0.34866250462936094",
+    "n_negative": "2893",
+    "auroc_negative": "0.6359074599689392",
+    "auprc_negative": "0.9313498568248874",
+    "precision_negative": "0.8940208794685226",
+    "recall_negative": "0.9768406498444522",
+    "f1_negative": "0.933597621407334",
+    "n_positive": "151",
+    "auroc_positive": "0.6330811488152388",
+    "auprc_positive": "0.08356583263460968",
+    "precision_positive": "0.15384615384615385",
+    "recall_positive": "0.039735099337748346",
+    "f1_positive": "0.06315789473684211",
+    "n_uncertain": "204",
+    "auroc_uncertain": "0.5934069915745536",
+    "auprc_uncertain": "0.0986693442712101",
+    "precision_uncertain": "0.125",
+    "recall_uncertain": "0.029411764705882353",
+    "f1_uncertain": "0.047619047619047616"
+   },
+   {
+    "pathology": "Cardiomegaly",
+    "weighted_precision": "0.7711853612416945",
+    "weighted_recall": "0.40548029556650245",
+    "weighted_f1": "0.36290144551242115",
+    "accuracy": "0.40548029556650245",
+    "macro_recall": "0.3944138767801095",
+    "n_negative": "2267",
+    "auroc_negative": "0.7314273355195562",
+    "auprc_negative": "0.8620650305741038",
+    "precision_negative": "0.9366336633663367",
+    "recall_negative": "0.2086457873842082",
+    "f1_negative": "0.3412698412698413",
+    "n_positive": "866",
+    "auroc_positive": "0.7428013313864763",
+    "auprc_positive": "0.4682825752264863",
+    "precision_positive": "0.3076923076923077",
+    "recall_positive": "0.9745958429561201",
+    "f1_positive": "0.4677195899141036",
+    "n_uncertain": "115",
+    "auroc_uncertain": "0.5032681552616606",
+    "auprc_uncertain": "0.03593087579376403",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Lung Opacity",
+    "weighted_precision": "0.7007742045950852",
+    "weighted_recall": "0.6126847290640394",
+    "weighted_f1": "0.6163563034769969",
+    "accuracy": "0.6126847290640394",
+    "macro_recall": "0.4413983020325398",
+    "n_negative": "2131",
+    "auroc_negative": "0.7183433200564461",
+    "auprc_negative": "0.8254576788927799",
+    "precision_negative": "0.8141112618724559",
+    "recall_negative": "0.5631159080244017",
+    "f1_negative": "0.665742024965326",
+    "n_positive": "1038",
+    "auroc_positive": "0.7217892047881848",
+    "auprc_positive": "0.5365641738462463",
+    "precision_positive": "0.44532130777903045",
+    "recall_positive": "0.7610789980732178",
+    "f1_positive": "0.561877667140825",
+    "n_uncertain": "79",
+    "auroc_uncertain": "0.5066127157470911",
+    "auprc_uncertain": "0.024844286240016014",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Lung Lesion",
+    "weighted_precision": "0.9293362331455045",
+    "weighted_recall": "0.9134852216748769",
+    "weighted_f1": "0.918389674684543",
+    "accuracy": "0.9134852216748769",
+    "macro_recall": "0.3729710776348188",
+    "n_negative": "3107",
+    "auroc_negative": "0.7224181498195564",
+    "auprc_negative": "0.9810490702534899",
+    "precision_negative": "0.9611745513866231",
+    "recall_negative": "0.9481815255873833",
+    "f1_negative": "0.9546338302009073",
+    "n_positive": "123",
+    "auroc_positive": "0.7272039024390244",
+    "auprc_positive": "0.09116794046558875",
+    "precision_positive": "0.11475409836065574",
+    "recall_positive": "0.17073170731707318",
+    "f1_positive": "0.13725490196078433",
+    "n_uncertain": "18",
+    "auroc_uncertain": "0.5788441692466461",
+    "auprc_uncertain": "0.013041800008234098",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Edema",
+    "weighted_precision": "0.7445598223195461",
+    "weighted_recall": "0.6539408866995073",
+    "weighted_f1": "0.676658524265347",
+    "accuracy": "0.6539408866995073",
+    "macro_recall": "0.5586073764334427",
+    "n_negative": "2276",
+    "auroc_negative": "0.8379512103394158",
+    "auprc_negative": "0.9242568975078883",
+    "precision_negative": "0.9066032123735871",
+    "recall_negative": "0.6695957820738138",
+    "f1_negative": "0.7702805155420773",
+    "n_positive": "683",
+    "auroc_positive": "0.8429443545417962",
+    "auprc_positive": "0.5796024331361415",
+    "precision_positive": "0.44481327800829873",
+    "recall_positive": "0.7847730600292826",
+    "f1_positive": "0.5677966101694916",
+    "n_uncertain": "289",
+    "auroc_uncertain": "0.6716416165098328",
+    "auprc_uncertain": "0.15274447254590529",
+    "precision_uncertain": "0.17679558011049723",
+    "recall_uncertain": "0.22145328719723184",
+    "f1_uncertain": "0.1966205837173579"
+   },
+   {
+    "pathology": "Consolidation",
+    "weighted_precision": "0.8858395391300846",
+    "weighted_recall": "0.7746305418719212",
+    "weighted_f1": "0.8054166844466095",
+    "accuracy": "0.7746305418719212",
+    "macro_recall": "0.45150481271259163",
+    "n_negative": "2931",
+    "auroc_negative": "0.7179825793459882",
+    "auprc_negative": "0.9547468160954062",
+    "precision_negative": "0.9356223175965666",
+    "recall_negative": "0.8181508017741386",
+    "f1_negative": "0.8729523116126684",
+    "n_positive": "220",
+    "auroc_positive": "0.7561726912453465",
+    "auprc_positive": "0.18257193756290718",
+    "precision_positive": "0.17226277372262774",
+    "recall_positive": "0.5363636363636364",
+    "f1_positive": "0.26077348066298345",
+    "n_uncertain": "97",
+    "auroc_uncertain": "0.455034729606376",
+    "auprc_uncertain": "0.026572643864203147",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Pneumonia",
+    "weighted_precision": "0.8084438474349146",
+    "weighted_recall": "0.6918103448275862",
+    "weighted_f1": "0.6883993576404539",
+    "accuracy": "0.6918103448275862",
+    "macro_recall": "0.44706510366621827",
+    "n_negative": "2563",
+    "auroc_negative": "0.7311453560067326",
+    "auprc_negative": "0.899877248906022",
+    "precision_negative": "0.8602329450915142",
+    "recall_negative": "0.8068669527896996",
+    "f1_negative": "0.8326957922287095",
+    "n_positive": "335",
+    "auroc_positive": "0.713957503932449",
+    "auprc_positive": "0.26335850238475267",
+    "precision_positive": "0.21208530805687204",
+    "recall_positive": "0.5343283582089552",
+    "f1_positive": "0.30364715860899066",
+    "n_uncertain": "350",
+    "auroc_uncertain": "0.6812402642216306",
+    "auprc_uncertain": "0.19737087608676604",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Atelectasis",
+    "weighted_precision": "0.7170844305066778",
+    "weighted_recall": "0.6169950738916257",
+    "weighted_f1": "0.6271749637066677",
+    "accuracy": "0.6169950738916257",
+    "macro_recall": "0.4754269721646182",
+    "n_negative": "2326",
+    "auroc_negative": "0.7703033519042495",
+    "auprc_negative": "0.895525273780747",
+    "precision_negative": "0.8879037365421153",
+    "recall_negative": "0.6027515047291487",
+    "f1_negative": "0.7180537772087068",
+    "n_positive": "731",
+    "auroc_positive": "0.765165411453824",
+    "auprc_positive": "0.4353666724419555",
+    "precision_positive": "0.3609112709832134",
+    "recall_positive": "0.8235294117647058",
+    "f1_positive": "0.5018757815756565",
+    "n_uncertain": "191",
+    "auroc_uncertain": "0.6016883403809299",
+    "auprc_uncertain": "0.08735737756866403",
+    "precision_uncertain": "0.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Pneumothorax",
+    "weighted_precision": "0.9510316124215985",
+    "weighted_recall": "0.8996305418719212",
+    "weighted_f1": "0.9185120335950818",
+    "accuracy": "0.8996305418719212",
+    "macro_recall": "0.4875042012313427",
+    "n_negative": "3117",
+    "auroc_negative": "0.8229384782294582",
+    "auprc_negative": "0.9891706657467247",
+    "precision_negative": "0.9781196581196581",
+    "recall_negative": "0.917869746551171",
+    "f1_negative": "0.9470374048328368",
+    "n_positive": "112",
+    "auroc_positive": "0.8423349808673469",
+    "auprc_positive": "0.2875955436863237",
+    "precision_positive": "0.18885448916408668",
+    "recall_positive": "0.5446428571428571",
+    "f1_positive": "0.28045977011494255",
+    "n_uncertain": "19",
+    "auroc_uncertain": "0.4762432560186468",
+    "auprc_uncertain": "0.007006677475392468",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Pleural Effusion",
+    "weighted_precision": "0.8083435401822033",
+    "weighted_recall": "0.7555418719211823",
+    "weighted_f1": "0.7467716878407844",
+    "accuracy": "0.7555418719211823",
+    "macro_recall": "0.5411496426840423",
+    "n_negative": "2044",
+    "auroc_negative": "0.8905438330158442",
+    "auprc_negative": "0.9312332009822576",
+    "precision_negative": "0.9056261343012704",
+    "recall_negative": "0.7323874755381604",
+    "f1_negative": "0.809845820935894",
+    "n_positive": "1074",
+    "auroc_positive": "0.8919358030148068",
+    "auprc_positive": "0.8118826447663929",
+    "precision_positive": "0.6",
+    "recall_positive": "0.8910614525139665",
+    "f1_positive": "0.7171225177969277",
+    "n_uncertain": "130",
+    "auroc_uncertain": "0.5519588493610302",
+    "auprc_uncertain": "0.050322494190000865",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Pleural Other",
+    "weighted_precision": "0.9594378224515211",
+    "weighted_recall": "0.9667487684729064",
+    "weighted_f1": "0.9604922122066231",
+    "accuracy": "0.9667487684729064",
+    "macro_recall": "0.345840408320686",
+    "n_negative": "3169",
+    "auroc_negative": "0.806715371618248",
+    "auprc_negative": "0.9940444075938617",
+    "precision_negative": "0.9766500622665006",
+    "recall_negative": "0.9899021773430104",
+    "f1_negative": "0.9832314684218775",
+    "n_positive": "63",
+    "auroc_positive": "0.8373925394333558",
+    "auprc_positive": "0.0734407458612734",
+    "precision_positive": "0.08333333333333333",
+    "recall_positive": "0.047619047619047616",
+    "f1_positive": "0.06060606060606061",
+    "n_uncertain": "16",
+    "auroc_uncertain": "0.5858988242574258",
+    "auprc_uncertain": "0.00824959238821308",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Fracture",
+    "weighted_precision": "0.972477436542409",
+    "weighted_recall": "0.9716748768472906",
+    "weighted_f1": "0.9580168784488017",
+    "accuracy": "0.9716748768472906",
+    "macro_recall": "0.33707865168539325",
+    "n_negative": "3155",
+    "auroc_negative": "0.6643440178586644",
+    "auprc_negative": "0.9820248013207824",
+    "precision_negative": "0.9716661533723437",
+    "recall_negative": "1.0",
+    "f1_negative": "0.98562949078413",
+    "n_positive": "89",
+    "auroc_positive": "0.6631667680356819",
+    "auprc_positive": "0.06145451039555198",
+    "precision_positive": "1.0",
+    "recall_positive": "0.011235955056179775",
+    "f1_positive": "0.022222222222222223",
+    "n_uncertain": "4",
+    "auroc_uncertain": "0.6350184956843403",
+    "auprc_uncertain": "0.002462892683904523",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   },
+   {
+    "pathology": "Support Devices",
+    "weighted_precision": "0.8374201316040434",
+    "weighted_recall": "0.7700123152709359",
+    "weighted_f1": "0.7746379362749606",
+    "accuracy": "0.7700123152709359",
+    "macro_recall": "0.5414482722458183",
+    "n_negative": "2119",
+    "auroc_negative": "0.8963881136171072",
+    "auprc_negative": "0.9423412242078464",
+    "precision_negative": "0.9586114819759679",
+    "recall_negative": "0.6776781500707881",
+    "f1_negative": "0.7940282001658834",
+    "n_positive": "1125",
+    "auroc_positive": "0.8975604752185063",
+    "auprc_positive": "0.7861806021028138",
+    "precision_positive": "0.6085714285714285",
+    "recall_positive": "0.9466666666666667",
+    "f1_positive": "0.7408695652173913",
+    "n_uncertain": "4",
+    "auroc_uncertain": "0.6175246609124537",
+    "auprc_uncertain": "0.0030212952661179044",
+    "precision_uncertain": "1.0",
+    "recall_uncertain": "0.0",
+    "f1_uncertain": "0.0"
+   }
+  ]
+ },
+ "stage2_test": {
+  "armA": {
+   "n": 2772,
+   "corpus": {
+    "bertscore_f1": 0.22888335451204195,
+    "bertscore_precision": 0.29884462933758915,
+    "bertscore_recall": 0.16134907982924163,
+    "bleu_1": 0.20565586280787634,
+    "bleu_2": 0.12464845612818397,
+    "bleu_3": 0.08321398244137057,
+    "bleu_4": 0.058298333053115714,
+    "cider": 0.1194354337775889,
+    "meteor": 0.21430430317706672,
+    "rouge_1": 0.32866564374716645,
+    "rouge_2": 0.12530061791465527,
+    "rouge_l": 0.23559040132996362
+   },
+   "intervals": {
+    "bertscore_f1": [
+     0.2163411738034709,
+     0.24025430502913858
+    ],
+    "bertscore_precision": [
+     0.2863858365932439,
+     0.31063881702725
+    ],
+    "bertscore_recall": [
+     0.14864757531775502,
+     0.1736440918011036
+    ],
+    "cider": [
+     0.09579351848164176,
+     0.14424391977690595
+    ],
+    "meteor": [
+     0.2079174761664,
+     0.22033341733216055
+    ],
+    "rouge_1": [
+     0.32208605565844417,
+     0.33500474752319015
+    ],
+    "rouge_2": [
+     0.12013948277358452,
+     0.1302880281533857
+    ],
+    "rouge_l": [
+     0.2298804079811973,
+     0.24087876554243212
+    ]
+   }
+  },
+  "armC": {
+   "n": 2772,
+   "corpus": {
+    "bertscore_f1": 0.12795390967521741,
+    "bertscore_precision": 0.19795177321116544,
+    "bertscore_recall": 0.06086426803394164,
+    "bleu_1": 0.1348021525122965,
+    "bleu_2": 0.08182900193876862,
+    "bleu_3": 0.055626912412201704,
+    "bleu_4": 0.03952361428127123,
+    "cider": 0.16024906494263774,
+    "meteor": 0.1936582693073288,
+    "rouge_1": 0.2957863402445457,
+    "rouge_2": 0.1171153233228873,
+    "rouge_l": 0.22337625925251306
+   },
+   "intervals": {
+    "bertscore_f1": [
+     0.11398026250566595,
+     0.14257062845783502
+    ],
+    "bertscore_precision": [
+     0.1833690157559502,
+     0.2127997729090598
+    ],
+    "bertscore_recall": [
+     0.04620480087945262,
+     0.07540607554817798
+    ],
+    "cider": [
+     0.12865868422958834,
+     0.1971548518673391
+    ],
+    "meteor": [
+     0.18647356048174157,
+     0.20107934378000633
+    ],
+    "rouge_1": [
+     0.28824771020095186,
+     0.3035287313389817
+    ],
+    "rouge_2": [
+     0.11118485969874718,
+     0.12355470997989233
+    ],
+    "rouge_l": [
+     0.21698889809913943,
+     0.23060943429529066
+    ]
+   }
+  },
+  "zeroshot": {
+   "n": 2772,
+   "corpus": {
+    "bertscore_f1": 0.27915622222373865,
+    "bertscore_precision": 0.28201651821829915,
+    "bertscore_recall": 0.2767126423443127,
+    "bleu_1": 0.3111961722488038,
+    "bleu_2": 0.17705434192760883,
+    "bleu_3": 0.11051416952454596,
+    "bleu_4": 0.07150130778214545,
+    "cider": 0.05994441658782753,
+    "meteor": 0.2613421872975109,
+    "rouge_1": 0.35031957530072855,
+    "rouge_2": 0.11519527436687989,
+    "rouge_l": 0.237003337527095
+   },
+   "intervals": {
+    "bertscore_f1": [
+     0.2719466812045929,
+     0.2865011990452236
+    ],
+    "bertscore_precision": [
+     0.273280397493308,
+     0.29032416134189315
+    ],
+    "bertscore_recall": [
+     0.2700461982826419,
+     0.2833185691977173
+    ],
+    "cider": [
+     0.05517628628952435,
+     0.06530102619855783
+    ],
+    "meteor": [
+     0.2578378568408555,
+     0.2644811512041148
+    ],
+    "rouge_1": [
+     0.3455262061461254,
+     0.3547019742774434
+    ],
+    "rouge_2": [
+     0.11241230869979296,
+     0.11792847871461477
+    ],
+    "rouge_l": [
+     0.23415788610463018,
+     0.2396117349400731
+    ]
+   }
+  }
+ },
+ "paper": {
+  "bleu_1": 0.39,
+  "bleu_2": 0.255,
+  "bleu_3": 0.175,
+  "bleu_4": 0.102,
+  "meteor": 0.173,
+  "rouge_l": 0.28,
+  "cider": 0.291,
+  "bertscore": 0.426,
+  "radgraph_f1": 0.224,
+  "radcliq": 1.211,
+  "ce_precision": 0.411,
+  "ce_recall": 0.465,
+  "ce_f1": 0.428,
+  "cls_precision": 0.87,
+  "cls_recall": 0.78,
+  "cls_f1": 0.73,
+  "chexpert_f1": 0.699,
+  "loss_cls": 0.551,
+  "loss_cls_ol": 0.649,
+  "loss_cls_ol_sl": 0.667,
+  "loss_all": 0.701,
+  "enc_rn50": 0.602,
+  "enc_vit": 0.473,
+  "enc_swin": 0.467,
+  "enc_all": 0.701,
+  "steps_repr": 20000,
+  "steps_gen": 5000,
+  "lora_r": 8,
+  "lora_alpha": 16,
+  "n_test": 3269
+ }
+}

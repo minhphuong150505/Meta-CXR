@@ -1,0 +1,65 @@
+group,comparison,stage1_source,n_studies,metric,a_mean,b_mean,delta,ci_lower,ci_upper,ci_excludes_zero,at_zero_boundary,note
+pilot 10k,B - A  text cues vs none,run_20260820_ft,300,rouge_l,0.2552,0.2561,0.001,-0.0049,0.0071,False,False,
+pilot 10k,B - A  text cues vs none,run_20260820_ft,300,meteor,0.2354,0.2366,0.0012,-0.0053,0.008,False,False,
+pilot 10k,B - A  text cues vs none,run_20260820_ft,300,cider,0.2,0.2101,0.0102,-0.0086,0.0315,False,False,
+pilot 10k,B - A  text cues vs none,run_20260820_ft,300,bertscore_f1,0.7847,0.7823,-0.0024,-0.0066,0.0015,False,False,
+pilot 10k,C - A  tokens q_only vs none,run_20260820_ft,300,rouge_l,0.2552,0.2515,-0.0036,-0.0105,0.0034,False,False,
+pilot 10k,C - A  tokens q_only vs none,run_20260820_ft,300,meteor,0.2354,0.2307,-0.0047,-0.0132,0.0038,False,False,
+pilot 10k,C - A  tokens q_only vs none,run_20260820_ft,300,cider,0.2,0.1876,-0.0123,-0.0472,0.0171,False,False,
+pilot 10k,C - A  tokens q_only vs none,run_20260820_ft,300,bertscore_f1,0.7847,0.7805,-0.0042,-0.0098,0.001,False,False,
+pilot 10k,D - A  tokens full vs none,run_20260820_ft,300,rouge_l,0.2552,0.2489,-0.0063,-0.0135,0.0008,False,False,
+pilot 10k,D - A  tokens full vs none,run_20260820_ft,300,meteor,0.2354,0.2282,-0.0072,-0.0156,0.0017,False,False,
+pilot 10k,D - A  tokens full vs none,run_20260820_ft,300,cider,0.2,0.1916,-0.0083,-0.0361,0.0157,False,False,
+pilot 10k,D - A  tokens full vs none,run_20260820_ft,300,bertscore_f1,0.7847,0.7772,-0.0075,-0.0133,-0.0021,True,False,
+pilot 10k,D - B  tokens full vs text cues,run_20260820_ft,300,rouge_l,0.2561,0.2489,-0.0072,-0.0147,-0.0002,True,True,
+pilot 10k,D - B  tokens full vs text cues,run_20260820_ft,300,meteor,0.2366,0.2282,-0.0084,-0.0174,-0.0001,True,True,
+pilot 10k,D - B  tokens full vs text cues,run_20260820_ft,300,cider,0.2101,0.1916,-0.0185,-0.0481,0.0044,False,False,
+pilot 10k,D - B  tokens full vs text cues,run_20260820_ft,300,bertscore_f1,0.7823,0.7772,-0.0051,-0.0111,0.0002,False,True,
+pilot 10k,D - C  mention contribution,run_20260820_ft,300,rouge_l,0.2515,0.2489,-0.0026,-0.0086,0.0029,False,False,
+pilot 10k,D - C  mention contribution,run_20260820_ft,300,meteor,0.2307,0.2282,-0.0025,-0.0096,0.0045,False,False,
+pilot 10k,D - C  mention contribution,run_20260820_ft,300,cider,0.1876,0.1916,0.004,-0.021,0.0311,False,False,
+pilot 10k,D - C  mention contribution,run_20260820_ft,300,bertscore_f1,0.7805,0.7772,-0.0033,-0.0073,0.0002,False,True,
+pilot ablation,D+zero - D,run_20260820_ft,300,rouge_l,0.2489,0.2504,0.0015,-0.0045,0.0083,False,False,out-of-distribution probe
+pilot ablation,D+zero - D,run_20260820_ft,300,meteor,0.2282,0.2318,0.0036,-0.0037,0.0123,False,False,out-of-distribution probe
+pilot ablation,D+zero - D,run_20260820_ft,300,cider,0.1916,0.2272,0.0356,-0.002,0.0966,False,False,out-of-distribution probe
+pilot ablation,D+zero - D,run_20260820_ft,300,bertscore_f1,0.7772,0.7802,0.003,-0.001,0.0076,False,False,out-of-distribution probe
+pilot ablation,D+shuffle - D,run_20260820_ft,300,rouge_l,0.2489,0.2526,0.0037,-0.0012,0.0088,False,False,out-of-distribution probe
+pilot ablation,D+shuffle - D,run_20260820_ft,300,meteor,0.2282,0.2312,0.003,-0.0026,0.0086,False,False,out-of-distribution probe
+pilot ablation,D+shuffle - D,run_20260820_ft,300,cider,0.1916,0.2029,0.0113,-0.0057,0.0318,False,False,out-of-distribution probe
+pilot ablation,D+shuffle - D,run_20260820_ft,300,bertscore_f1,0.7772,0.7784,0.0012,-0.0024,0.0048,False,False,out-of-distribution probe
+pilot ablation,D+permute - D,run_20260820_ft,300,rouge_l,0.2489,0.2489,-0.0,-0.0062,0.0062,False,False,out-of-distribution probe
+pilot ablation,D+permute - D,run_20260820_ft,300,meteor,0.2282,0.2318,0.0036,-0.0033,0.0109,False,False,out-of-distribution probe
+pilot ablation,D+permute - D,run_20260820_ft,300,cider,0.1916,0.1945,0.0029,-0.024,0.0288,False,False,out-of-distribution probe
+pilot ablation,D+permute - D,run_20260820_ft,300,bertscore_f1,0.7772,0.7789,0.0017,-0.0027,0.0067,False,False,out-of-distribution probe
+stage1 swap 10k,A' - A  soft-token channel,ft -> mc_shallow,300,rouge_l,0.2552,0.2527,-0.0024,-0.0126,0.007,False,False,
+stage1 swap 10k,A' - A  soft-token channel,ft -> mc_shallow,300,meteor,0.2354,0.2352,-0.0002,-0.0116,0.0109,False,False,
+stage1 swap 10k,A' - A  soft-token channel,ft -> mc_shallow,300,cider,0.2,0.2428,0.0428,-0.007,0.1109,False,False,
+stage1 swap 10k,A' - A  soft-token channel,ft -> mc_shallow,300,bertscore_f1,0.7847,0.7814,-0.0033,-0.0082,0.0012,False,False,
+stage1 swap 10k,B' - B  cue channel,ft -> mc_shallow,300,rouge_l,0.2561,0.2555,-0.0006,-0.0081,0.0075,False,False,
+stage1 swap 10k,B' - B  cue channel,ft -> mc_shallow,300,meteor,0.2366,0.2335,-0.0031,-0.0118,0.0058,False,False,
+stage1 swap 10k,B' - B  cue channel,ft -> mc_shallow,300,cider,0.2101,0.2333,0.0231,-0.0132,0.0652,False,False,
+stage1 swap 10k,B' - B  cue channel,ft -> mc_shallow,300,bertscore_f1,0.7823,0.7817,-0.0007,-0.0047,0.0037,False,False,
+stage1 swap 10k,"B' - A' cues, new Stage 1",run_20260912_mc_shallow,300,rouge_l,0.2527,0.2555,0.0027,-0.0052,0.0118,False,False,
+stage1 swap 10k,"B' - A' cues, new Stage 1",run_20260912_mc_shallow,300,meteor,0.2352,0.2335,-0.0018,-0.0118,0.0086,False,False,
+stage1 swap 10k,"B' - A' cues, new Stage 1",run_20260912_mc_shallow,300,cider,0.2428,0.2333,-0.0095,-0.0747,0.0449,False,False,
+stage1 swap 10k,"B' - A' cues, new Stage 1",run_20260912_mc_shallow,300,bertscore_f1,0.7814,0.7817,0.0003,-0.0041,0.0051,False,False,
+"cue rules, fixed stops, arm C full",conditional - none,run_20260820_ft,100,rouge_l,0.2543,0.2557,0.0013,-0.0076,0.0111,False,False,
+"cue rules, fixed stops, arm C full",conditional - none,run_20260820_ft,100,meteor,0.2403,0.239,-0.0012,-0.0142,0.0127,False,False,
+"cue rules, fixed stops, arm C full",conditional - none,run_20260820_ft,100,cider,0.2369,0.2209,-0.016,-0.0425,0.0085,False,False,
+"cue rules, fixed stops, arm C full",conditional - none,run_20260820_ft,100,bertscore_f1,0.7998,0.7954,-0.0044,-0.0134,0.0042,False,False,
+"cue rules, fixed stops, arm C full",marginal - none,run_20260820_ft,100,rouge_l,0.2543,0.2564,0.0021,-0.0055,0.0115,False,False,
+"cue rules, fixed stops, arm C full",marginal - none,run_20260820_ft,100,meteor,0.2403,0.2405,0.0003,-0.0107,0.0111,False,False,
+"cue rules, fixed stops, arm C full",marginal - none,run_20260820_ft,100,cider,0.2369,0.2269,-0.01,-0.0346,0.0145,False,False,
+"cue rules, fixed stops, arm C full",marginal - none,run_20260820_ft,100,bertscore_f1,0.7998,0.7998,-0.0,-0.0062,0.0062,False,False,
+"cue rules, fixed stops, arm C full",selective - none,run_20260820_ft,100,rouge_l,0.2543,0.2597,0.0054,-0.0039,0.016,False,False,
+"cue rules, fixed stops, arm C full",selective - none,run_20260820_ft,100,meteor,0.2403,0.2433,0.003,-0.0082,0.0151,False,False,
+"cue rules, fixed stops, arm C full",selective - none,run_20260820_ft,100,cider,0.2369,0.2289,-0.008,-0.0307,0.0139,False,False,
+"cue rules, fixed stops, arm C full",selective - none,run_20260820_ft,100,bertscore_f1,0.7998,0.8011,0.0013,-0.006,0.009,False,False,
+"cue rules, fixed stops, arm C full",bal50 - none,run_20260820_ft,100,rouge_l,0.2543,0.257,0.0027,-0.0046,0.0107,False,False,
+"cue rules, fixed stops, arm C full",bal50 - none,run_20260820_ft,100,meteor,0.2403,0.2433,0.003,-0.0074,0.013,False,False,
+"cue rules, fixed stops, arm C full",bal50 - none,run_20260820_ft,100,cider,0.2369,0.2348,-0.0021,-0.0196,0.0137,False,False,
+"cue rules, fixed stops, arm C full",bal50 - none,run_20260820_ft,100,bertscore_f1,0.7998,0.8009,0.001,-0.0052,0.008,False,False,
+"cue rules, fixed stops, arm C full",rec35 - none,run_20260820_ft,100,rouge_l,0.2543,0.2526,-0.0017,-0.0119,0.0088,False,False,
+"cue rules, fixed stops, arm C full",rec35 - none,run_20260820_ft,100,meteor,0.2403,0.2341,-0.0062,-0.0227,0.0087,False,False,
+"cue rules, fixed stops, arm C full",rec35 - none,run_20260820_ft,100,cider,0.2369,0.2355,-0.0014,-0.0285,0.026,False,False,
+"cue rules, fixed stops, arm C full",rec35 - none,run_20260820_ft,100,bertscore_f1,0.7998,0.7968,-0.003,-0.0094,0.0028,False,False,

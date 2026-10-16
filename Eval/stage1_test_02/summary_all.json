@@ -1,0 +1,247 @@
+{
+  "run": {
+    "run_dir": "run_20260820_ft",
+    "source_commit": "fec606b",
+    "checkpoint": "checkpoint_best.pth",
+    "best_epoch": 9,
+    "note": "best epoch is the LAST epoch and val loss was still falling there, unlike run 01 which peaked at epoch 6 on a flat curve",
+    "epochs": 10,
+    "wall_clock": "15h33m (12:09:30 -> 03:43:00)",
+    "mean_epoch_hours": 1.55,
+    "max_mem_MiB": 8976,
+    "kernel_faults": 0,
+    "restarts": 0,
+    "changes_vs_run01": [
+      "model.encoder_finetune: unfroze 31.85M of 181.3M frozen encoder params (ResNet50 layer4 + projector, CLIP vision blocks 10-11 + post_layernorm) at init_lr_enc 1e-5, keep_batchnorm_eval",
+      "every kappa lowered to 1 in class_weights and gate_class_weights"
+    ],
+    "val_loss_by_epoch": {
+      "5": 1.8938521,
+      "6": 1.8924602,
+      "7": 1.8939345,
+      "8": 1.8912849,
+      "9": 1.8842999
+    },
+    "val_f1_positive_macro_by_epoch": {
+      "5": 0.7195565,
+      "6": 0.7179318,
+      "7": 0.7226327,
+      "8": 0.7241734,
+      "9": 0.7202564
+    },
+    "test_studies": 3269,
+    "val_studies": 1808
+  },
+  "arms": {
+    "study_presence_marginal_plateau": {
+      "dir": "eval_presence_plateau",
+      "aggregates": {
+        "accuracy": 0.8307331497909657,
+        "balanced_accuracy": 0.6696374154726003,
+        "binary_accuracy": 0.7944070561843581,
+        "macro_auprc": 0.32030260164323177,
+        "macro_auroc": 0.7642663690768635,
+        "macro_f1": 0.6746592980641036,
+        "macro_npv": 0.928963840858484,
+        "macro_precision": 0.6874481875327461,
+        "macro_recall": 0.6220848543276535,
+        "macro_specificity": 0.8020112732893887,
+        "micro_auprc": 0.4271863271313345,
+        "micro_auroc": 0.8166313977515334,
+        "micro_f1": 0.8307331497909657,
+        "micro_precision": 0.8307331497909657,
+        "micro_recall": 0.8307331497909657,
+        "positive_macro_f1": 0.35416076865399587,
+        "positive_macro_precision": 0.29305426572178195,
+        "positive_macro_recall": 0.5372635576558119,
+        "positive_micro_f1": 0.47524237100657163,
+        "positive_micro_precision": 0.36948603804127883,
+        "positive_micro_recall": 0.6658158614402917,
+        "positive_weighted_f1": 0.5082083490711148,
+        "positive_weighted_precision": 0.42586159958061803,
+        "positive_weighted_recall": 0.6658158614402917,
+        "weighted_f1": 0.8370680325325949,
+        "weighted_precision": 0.8599794023572565,
+        "weighted_recall": 0.8307331497909657
+      },
+      "bootstrap": null,
+      "settings": {
+        "class_names": [
+          "negative",
+          "positive",
+          "uncertain"
+        ],
+        "decision_rule": "threshold",
+        "include_meta_labels": false,
+        "num_pathologies": 14,
+        "num_samples": 3269,
+        "thresholds": {
+          "Atelectasis": 0.32093554173915884,
+          "Cardiomegaly": 0.3499744316641511,
+          "Consolidation": 0.6595479905960406,
+          "Edema": 0.6552634759252136,
+          "Enlarged Cardiomediastinum": 0.5118503403002848,
+          "Fracture": 0.23493781782033718,
+          "Lung Lesion": 0.3115595975674248,
+          "Lung Opacity": 0.33348267046157787,
+          "No Finding": 0.5071472076086376,
+          "Pleural Effusion": 0.39497600782493336,
+          "Pleural Other": 0.15763306636541596,
+          "Pneumonia": 0.5714720101053796,
+          "Pneumothorax": 0.3682344793861194,
+          "Support Devices": 0.10474771787183679
+        },
+        "uncertain_policy": "ignore_uncertain",
+        "uncertain_policy_description": "uncertain dropped from binary metrics (U-Ignore)"
+      }
+    },
+    "masked_polarity_f1_argmax": {
+      "dir": "eval_masked_polarity",
+      "aggregates": {
+        "accuracy": 0.7253171538885824,
+        "balanced_accuracy": 0.6732125573608388,
+        "binary_accuracy": 0.8754137428836224,
+        "macro_auprc": 0.9098590374259777,
+        "macro_auroc": 0.7984562171344585,
+        "macro_f1": 0.6841943640589502,
+        "macro_npv": 0.7045096144557139,
+        "macro_precision": 0.6386707615830796,
+        "macro_recall": 0.4662318417798705,
+        "macro_specificity": 0.4536280892166253,
+        "micro_auprc": 0.9341515534581082,
+        "micro_auroc": 0.8848850125804683,
+        "micro_f1": 0.7253171538885824,
+        "micro_precision": 0.7253171538885824,
+        "micro_recall": 0.7253171538885824,
+        "positive_macro_f1": 0.8841336622575225,
+        "positive_macro_precision": 0.867879835189541,
+        "positive_macro_recall": 0.9017306067129646,
+        "positive_micro_f1": 0.9158845088048628,
+        "positive_micro_precision": 0.8984566818660119,
+        "positive_micro_recall": 0.9340018231540566,
+        "positive_weighted_f1": 0.9161547605706903,
+        "positive_weighted_precision": 0.8993485577079424,
+        "positive_weighted_recall": 0.9340018231540566,
+        "weighted_f1": 0.7893753654645187,
+        "weighted_precision": 0.7259942014782069,
+        "weighted_recall": 0.7274700027753257
+      },
+      "bootstrap": null,
+      "settings": {
+        "class_names": [
+          "negative",
+          "positive",
+          "uncertain"
+        ],
+        "decision_rule": "threshold",
+        "include_meta_labels": false,
+        "num_pathologies": 14,
+        "num_samples": 3269,
+        "thresholds": {
+          "Atelectasis": 0.45211882727050784,
+          "Cardiomegaly": 0.25864481925964355,
+          "Consolidation": 0.33600568771362305,
+          "Edema": 0.5088323056697845,
+          "Enlarged Cardiomediastinum": 0.4847595542669296,
+          "Fracture": 0.5,
+          "Lung Lesion": 0.3708024753799439,
+          "Lung Opacity": 0.24462001770734787,
+          "No Finding": 0.5,
+          "Pleural Effusion": 0.35159069299697876,
+          "Pleural Other": 0.5,
+          "Pneumonia": 0.42659813165664673,
+          "Pneumothorax": 0.391573041677475,
+          "Support Devices": 0.15212222933769226
+        },
+        "uncertain_policy": "ignore_uncertain",
+        "uncertain_policy_description": "uncertain dropped from binary metrics (U-Ignore)"
+      }
+    }
+  },
+  "headline": {
+    "arm": "study_presence_marginal_plateau",
+    "positive_macro_f1": 0.3542,
+    "positive_macro_f1_ci": [
+      0.3418,
+      0.3647
+    ],
+    "macro_auroc": 0.7643,
+    "macro_auroc_ci": [
+      0.7545,
+      0.774
+    ],
+    "macro_auprc": 0.3203,
+    "positive_macro_precision": 0.2931,
+    "positive_macro_recall": 0.5373
+  },
+  "paired_bootstrap_vs_run01": {
+    "resamples": 2000,
+    "same_3269_studies": true,
+    "delta_f1": [
+      0.0144,
+      0.0053,
+      0.0236
+    ],
+    "delta_precision": [
+      0.0154,
+      0.0073,
+      0.0238
+    ],
+    "delta_recall": [
+      0.0368,
+      0.0205,
+      0.0535
+    ],
+    "delta_auroc": [
+      0.0201,
+      0.0136,
+      0.0263
+    ],
+    "all_four_significant": true,
+    "labels_auroc_improved": "14/14"
+  },
+  "precision_floor_sweep": {
+    "columns": [
+      "test_macro_f1",
+      "test_macro_precision",
+      "test_macro_recall"
+    ],
+    "none_plateau": [
+      0.3537,
+      0.2931,
+      0.5358
+    ],
+    "0.40": [
+      0.2888,
+      0.4227,
+      0.381
+    ],
+    "0.50": [
+      0.2507,
+      0.4584,
+      0.2591
+    ],
+    "0.60": [
+      0.1678,
+      0.4906,
+      0.1506
+    ],
+    "0.70": [
+      0.1074,
+      0.524,
+      0.0843
+    ],
+    "run01_for_reference": {
+      "none": [
+        0.3409,
+        0.2778,
+        0.5044
+      ],
+      "0.70": [
+        0.1045,
+        0.4074,
+        0.0815
+      ]
+    }
+  }
+}

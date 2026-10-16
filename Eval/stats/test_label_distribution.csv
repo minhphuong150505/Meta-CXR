@@ -1,0 +1,15 @@
+pathology,positive,negative,uncertain,blank,mentioned,mentioned_pct,prevalence_P_over_PN
+No Finding,568,0,0,2701,568,17.38,1.0
+Enlarged Cardiomediastinum,151,64,204,2850,419,12.82,0.7023
+Cardiomegaly,866,174,115,2114,1155,35.33,0.8327
+Lung Opacity,1038,58,79,2094,1175,35.94,0.9471
+Lung Lesion,123,14,18,3114,155,4.74,0.8978
+Edema,683,305,289,1992,1277,39.06,0.6913
+Consolidation,220,95,97,2857,412,12.6,0.6984
+Pneumonia,335,268,350,2316,953,29.15,0.5556
+Atelectasis,731,20,191,2327,942,28.82,0.9734
+Pneumothorax,112,727,19,2411,858,26.25,0.1335
+Pleural Effusion,1074,340,130,1725,1544,47.23,0.7595
+Pleural Other,63,0,16,3190,79,2.42,1.0
+Fracture,89,3,4,3173,96,2.94,0.9674
+Support Devices,1125,34,4,2106,1163,35.58,0.9707

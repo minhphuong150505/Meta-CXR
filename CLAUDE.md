@@ -3272,7 +3272,7 @@ gains are exactly where "was it mentioned" carries the signal — `No Finding`
 — and those first three are precisely the labels that are degenerate under
 `masked_polarity`. `micro_auroc` goes 0.6384 -> 0.8183, `macro_specificity`
 0.6359 -> 0.8214. Per-label table: `Eval/stage1_test/mention_gate_contribution.csv`
-(git-ignored, on the dev box).
+(tracked since 2026-10-16; its `.npz`/`.png` stay ignored).
 
 ⚠ `m` is **not** a calibrated mention probability — the gate trains with
 inverse-frequency weights (`n_not_mentioned / n_mentioned x kappa_gate`, kappa 2,
@@ -3486,7 +3486,7 @@ are not comparable across the runs because kappa changed the loss scale — the
 comparable thing is the shape. `run_20260821_ext` below settles what that
 falling curve was worth: nothing.
 
-Full record: `Eval/stage1_test_02/README.md` (git-ignored, on the dev box).
+Full record: `Eval/stage1_test_02/README.md` (tracked since 2026-10-16; its `.npz`/`.png` stay ignored).
 
 **MORE EPOCHS DO NOT HELP — measured 2026-08-21, `run_20260821_ext`.** The
 sentence that used to stand here ("this model has not converged; more epochs is
@@ -3521,7 +3521,7 @@ Three transferable lessons, all cheap to reuse:
    was luck in the product `m x q`, which is not a mechanism.
 
 **Run 02 / epoch 9 stands as the final Stage-1 model.** Full record:
-`Eval/stage1_test_03/README.md` (git-ignored, on the dev box).
+`Eval/stage1_test_03/README.md` (tracked since 2026-10-16; its `.npz`/`.png` stay ignored).
 
 **THE MATCHED TRAINING-SIDE LEVER HAS NOW RUN — `run_20260911_mentioncond`,
 2026-09-12. It does NOT produce a better model; it produces better-calibrated
@@ -3939,6 +3939,10 @@ This remote is public.
   `study_id` and report text. `scripts/check_notebook_privacy.py` runs as a
   pre-commit hook; do not bypass it. `notebooks/` no longer exists, but the hook
   still guards any notebook added later.
+- `Eval/` is TRACKED since 2026-10-16 (user request), after a scan of every
+  text/docx/pdf file in it for ids and report text. `*.png` (XAI overlays are
+  radiographs), `*.npz`, `*.jsonl`, `Eval/heatmap/` and `Eval/**/predictions/`
+  stay ignored. Scan any new file before adding it there.
 - `configs/env_config.yaml` is git-ignored here (unlike the old checkout). Edit
   `configs/env_config.yaml.example` for anything shared.
 - `image_path` in the processed CSVs is **relative** (`files/p1X/pXXXXXXXX/sYYYYYYY/<dicom>.jpg`)

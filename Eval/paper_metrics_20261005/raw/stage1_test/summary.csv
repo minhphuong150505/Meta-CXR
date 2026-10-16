@@ -1,0 +1,14 @@
+metric,value
+weighted_precision,0.8378940995883262
+weighted_recall,0.7684729064039406
+weighted_f1,0.7658041279810038
+accuracy,0.7684729064039406
+macro_recall,0.4560255519529898
+mean_weighted_f1_5,0.6437846611543658
+auroc_negative_mean,0.7691389002254884
+auprc_negative_mean,0.9331283096682441
+auroc_positive_mean,0.7755408772016185
+auprc_positive_mean,0.3714954412645299
+auroc_uncertain_mean,0.573721620675586
+auprc_uncertain_mean,0.05443035602941475
+auroc_mean,0.709363364701515

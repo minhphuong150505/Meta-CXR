@@ -1,0 +1,239 @@
+{
+  "note": "SUPPLEMENTARY, not the paper's argmax protocol; cutpoints fitted on validation, maximising per-finding weighted F1",
+  "val": "/home/phuong/run_20261005_paper/phase1c/mimic_cxr_full_blip2/result/val_predictions_epoch_best.npz",
+  "test": "/home/phuong/run_20261005_paper/phase1c/mimic_cxr_full_blip2/result/test_predictions_epoch_best.npz",
+  "num_test": 3269,
+  "bootstrap_samples": 1000,
+  "seed": 16,
+  "rules": {
+    "argmax (paper)": {
+      "metrics": {
+        "weighted_precision": 0.8392368581018393,
+        "weighted_recall": 0.7814259324419423,
+        "weighted_f1": 0.779519948452231,
+        "mean_weighted_f1_5": 0.6686803325036567,
+        "macro_recall": 0.46089170342575736
+      },
+      "uncertain_predicted": 266,
+      "uncertain_true": 1516,
+      "uncertain_recall": 0.0316622691292876,
+      "uncertain_precision": 0.18045112781954886
+    },
+    "one cutpoint": {
+      "metrics": {
+        "weighted_precision": 0.8408255033889451,
+        "weighted_recall": 0.8387799085151303,
+        "weighted_f1": 0.8183290617439744,
+        "mean_weighted_f1_5": 0.7491892480242249,
+        "macro_recall": 0.440383437227156
+      },
+      "uncertain_predicted": 0,
+      "uncertain_true": 1516,
+      "uncertain_recall": 0.0,
+      "uncertain_precision": NaN,
+      "cutpoints": {
+        "No Finding": [
+          0.5521779078319787,
+          0.5521779078319787
+        ],
+        "Enlarged Cardiomediastinum": [
+          0.4566308558787545,
+          0.4566308558787545
+        ],
+        "Cardiomegaly": [
+          0.803030503433976,
+          0.803030503433976
+        ],
+        "Lung Opacity": [
+          0.7233665040601077,
+          0.7233665040601077
+        ],
+        "Lung Lesion": [
+          0.5106339181777523,
+          0.5106339181777523
+        ],
+        "Edema": [
+          0.7887392852462932,
+          0.7887392852462932
+        ],
+        "Consolidation": [
+          0.7960797426245648,
+          0.7960797426245648
+        ],
+        "Pneumonia": [
+          0.801114968287398,
+          0.801114968287398
+        ],
+        "Atelectasis": [
+          0.7626140581156382,
+          0.7626140581156382
+        ],
+        "Pneumothorax": [
+          0.83957311679503,
+          0.83957311679503
+        ],
+        "Pleural Effusion": [
+          0.7205951540243669,
+          0.7205951540243669
+        ],
+        "Pleural Other": [
+          0.6211216579006085,
+          0.6211216579006085
+        ],
+        "Fracture": [
+          0.41626922927753474,
+          0.41626922927753474
+        ],
+        "Support Devices": [
+          0.7979523464163232,
+          0.7979523464163232
+        ]
+      },
+      "minus_argmax": {
+        "weighted_precision": {
+          "delta": 0.0015886452871057832,
+          "ci95": [
+            -0.0010157518450670422,
+            0.005478636074566092
+          ]
+        },
+        "weighted_recall": {
+          "delta": 0.05735397607318804,
+          "ci95": [
+            0.054279714282311306,
+            0.06070830133845949
+          ]
+        },
+        "weighted_f1": {
+          "delta": 0.0388091132917433,
+          "ci95": [
+            0.03581562817182071,
+            0.04183019473147064
+          ]
+        },
+        "mean_weighted_f1_5": {
+          "delta": 0.08050891552056827,
+          "ci95": [
+            0.07379989112562217,
+            0.08688022771941079
+          ]
+        },
+        "macro_recall": {
+          "delta": -0.020508266198601355,
+          "ci95": [
+            -0.02445087366212441,
+            -0.01709580838650473
+          ]
+        }
+      }
+    },
+    "two cutpoints": {
+      "metrics": {
+        "weighted_precision": 0.8271178360234861,
+        "weighted_recall": 0.833853800140746,
+        "weighted_f1": 0.8195527897915124,
+        "mean_weighted_f1_5": 0.7491483541562411,
+        "macro_recall": 0.4459532530745025
+      },
+      "uncertain_predicted": 568,
+      "uncertain_true": 1516,
+      "uncertain_recall": 0.06926121372031663,
+      "uncertain_precision": 0.18485915492957747,
+      "cutpoints": {
+        "No Finding": [
+          0.5521779078319787,
+          0.5521779078319787
+        ],
+        "Enlarged Cardiomediastinum": [
+          0.4566308558787545,
+          0.4566308558787545
+        ],
+        "Cardiomegaly": [
+          0.803030503433976,
+          0.803030503433976
+        ],
+        "Lung Opacity": [
+          0.7233665040601077,
+          0.7233665040601077
+        ],
+        "Lung Lesion": [
+          0.5106339181777523,
+          0.5106339181777523
+        ],
+        "Edema": [
+          0.6683846679815248,
+          0.7887392852462932
+        ],
+        "Consolidation": [
+          0.7635417061641265,
+          0.7960797426245648
+        ],
+        "Pneumonia": [
+          0.6959762914657235,
+          0.777133895504459
+        ],
+        "Atelectasis": [
+          0.748071759625514,
+          0.7626140581156382
+        ],
+        "Pneumothorax": [
+          0.83957311679503,
+          0.83957311679503
+        ],
+        "Pleural Effusion": [
+          0.7205951540243669,
+          0.7205951540243669
+        ],
+        "Pleural Other": [
+          0.6211216579006085,
+          0.6211216579006085
+        ],
+        "Fracture": [
+          0.41626922927753474,
+          0.41626922927753474
+        ],
+        "Support Devices": [
+          0.7979523464163232,
+          0.7979523464163232
+        ]
+      },
+      "minus_argmax": {
+        "weighted_precision": {
+          "delta": -0.012119022078353248,
+          "ci95": [
+            -0.014675451325423467,
+            -0.008374948225647685
+          ]
+        },
+        "weighted_recall": {
+          "delta": 0.0524278676988037,
+          "ci95": [
+            0.049324801545780846,
+            0.05560761353220929
+          ]
+        },
+        "weighted_f1": {
+          "delta": 0.04003284133928131,
+          "ci95": [
+            0.03696218779987539,
+            0.04307154422122929
+          ]
+        },
+        "mean_weighted_f1_5": {
+          "delta": 0.08046802165258449,
+          "ci95": [
+            0.07433934680753729,
+            0.08662721890124099
+          ]
+        },
+        "macro_recall": {
+          "delta": -0.01493845035125485,
+          "ci95": [
+            -0.01922663081951641,
+            -0.011267444046759102
+          ]
+        }
+      }
+    }
+  }
+}

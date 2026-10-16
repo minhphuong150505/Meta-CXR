@@ -1,0 +1,81 @@
+{
+  "format": "meta_cxr_per_class_roc_distance_v1",
+  "metadata": {
+    "num_samples": 1808,
+    "rule": "per (finding, class): argmin sqrt((1-TPR)^2 + FPR^2) on the one-vs-rest ROC (META-CXR Eq. 22)",
+    "source": "/home/phuong/run_20261005_paper/phase1c/mimic_cxr_full_blip2/result/val_predictions_epoch_best.npz",
+    "split": "val"
+  },
+  "thresholds": {
+    "Atelectasis": {
+      "negative": 0.3634376525878906,
+      "positive": 0.4894692301750183,
+      "uncertain": 0.1034870371222496
+    },
+    "Cardiomegaly": {
+      "negative": 0.3053250312805176,
+      "positive": 0.5854285359382629,
+      "uncertain": 0.15054580569267273
+    },
+    "Consolidation": {
+      "negative": 0.6585012078285217,
+      "positive": 0.27576547861099243,
+      "uncertain": 0.04725150018930435
+    },
+    "Edema": {
+      "negative": 0.38686925172805786,
+      "positive": 0.33959487080574036,
+      "uncertain": 0.22765478491783142
+    },
+    "Enlarged Cardiomediastinum": {
+      "negative": 0.6258018016815186,
+      "positive": 0.11097753793001175,
+      "uncertain": 0.25272393226623535
+    },
+    "Fracture": {
+      "negative": 0.8445190787315369,
+      "positive": 0.1602223515510559,
+      "uncertain": 0.010453824885189533
+    },
+    "Lung Lesion": {
+      "negative": 0.8657049536705017,
+      "positive": 0.1109381690621376,
+      "uncertain": 0.009806538000702858
+    },
+    "Lung Opacity": {
+      "negative": 0.42054450511932373,
+      "positive": 0.4732056260108948,
+      "uncertain": 0.041585613042116165
+    },
+    "No Finding": {
+      "negative": 0.6632604598999023,
+      "positive": 0.3368576467037201,
+      "uncertain": null
+    },
+    "Pleural Effusion": {
+      "negative": 0.34532591700553894,
+      "positive": 0.5402594804763794,
+      "uncertain": 0.09642370790243149
+    },
+    "Pleural Other": {
+      "negative": 0.9103149771690369,
+      "positive": 0.03888373449444771,
+      "uncertain": 0.03138373792171478
+    },
+    "Pneumonia": {
+      "negative": 0.5035640001296997,
+      "positive": 0.2813250422477722,
+      "uncertain": 0.19018173217773438
+    },
+    "Pneumothorax": {
+      "negative": 0.7970722317695618,
+      "positive": 0.19121772050857544,
+      "uncertain": 0.014926277101039886
+    },
+    "Support Devices": {
+      "negative": 0.21267390251159668,
+      "positive": 0.7586362361907959,
+      "uncertain": 0.0018479116261005402
+    }
+  }
+}

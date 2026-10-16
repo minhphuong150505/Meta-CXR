@@ -129,11 +129,17 @@ hf_cache/
 # a DUA that forbids redistribution, and this remote is public. Nothing under
 # Test/ is ever committed.
 # MIMIC-CXR derivatives: per-label tables, .npz predictions, XAI overlays.
-# Renamed Test/ -> Eval/ on 2026-09-09; BOTH stay ignored so recreating the
-# old name cannot leak. .csv/.json/.md under here are NOT covered by any
-# other rule, so this directory rule is the only thing stopping them.
+# Renamed Test/ -> Eval/ on 2026-09-09. Test/ stays ignored so recreating the
+# old name cannot leak.
+# Eval/ is TRACKED since 2026-10-16 at the user's request, after every
+# .json/.csv/.md/.py/.docx/.pdf under it was scanned for subject/study/dicom
+# ids, image paths and report text (none found). The images, predictions and
+# keyed outputs stay out: *.png (XAI overlays are radiographs), *.npz
+# (sample_keys link back to studies) and *.jsonl are ignored globally, and the
+# two directories below are excluded outright. Scan anything new before adding.
 Test/
-Eval/
+Eval/heatmap/
+Eval/**/predictions/
 *.png
 *.jpg
 *.jpeg

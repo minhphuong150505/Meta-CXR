@@ -1,0 +1,11 @@
+metric,masked_polarity_f1,masked_polarity_youden,masked_polarity_thr0.5,study_presence_qpos,study_presence_marginal_argmax,study_presence_marginal_plateau
+positive_macro_f1,0.8717,0.8517,0.8713,0.3074,0.3224,0.3397
+positive_macro_precision,0.8455,0.8554,0.8464,0.2564,0.2989,0.2776
+positive_macro_recall,0.9061,0.8647,0.9056,0.5786,0.4261,0.5006
+macro_specificity,0.4197,0.558,0.4442,0.6359,0.8214,0.7901
+balanced_accuracy,0.6586,0.7052,0.6706,0.6072,0.6237,0.6454
+binary_accuracy,0.8583,0.8184,0.854,0.634,0.8118,0.7873
+macro_auroc,0.7857,0.7857,0.7857,0.6767,0.7441,0.7441
+macro_auprc,0.8951,0.8951,0.8951,0.2657,0.3004,0.3004
+micro_auroc,0.868,0.868,0.868,0.6384,0.8183,0.8183
+positive_micro_f1,0.9057,0.8733,0.9022,0.3316,0.4881,0.4685
