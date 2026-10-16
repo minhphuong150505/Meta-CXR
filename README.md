@@ -491,8 +491,12 @@ Checkpoint mới phải fit file ngưỡng riêng trên val của chính nó.
 [`paper_protocol.py`](training/evaluation/paper_protocol.py):
 
 - **Bảng 4 — cross-domain trên CheXpert val**: `p_final = p1/(p0+p1)` (Eq. 21),
-  AUC và F1 trên 5 bệnh; `scripts/evaluate_chexpert_crossdomain.py`. ⚠ Repo chưa
-  có loader CheXpert val cho Stage 1 — mới có phần chấm điểm.
+  AUC và F1 trên 5 bệnh; `scripts/evaluate_chexpert_crossdomain.py`. Loader
+  (2026-10-16): `datasets.mimic_cxr.external_eval` đổi `valid.csv` của CheXpert
+  thành hai bảng mà `MIMIC_CXR_Dataset` đã đọc
+  (`model/lavis/data/external_eval.py`, 15 test CPU). ⚠ **Chưa chạy trên GPU**
+  — dữ liệu CheXpert chưa có trên máy train. Lệnh:
+  `docs/handoff/PLAN-2026-10-16-chexpert-table4.md`.
 - **Bảng 3 — Clinical Efficacy**: precision / recall / macro F1 trên nhãn mà
   CheXpert labeler trích từ báo cáo sinh ra và báo cáo tham chiếu;
   `scripts/evaluate_clinical_efficacy.py`. ⚠ Labeler (CheXpert/CheXbert) không có

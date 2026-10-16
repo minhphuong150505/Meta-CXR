@@ -37,5 +37,5 @@ dòng. Chỉ import numpy + pandas, để suite CPU ghim được đúng logic m
 
 ## Callers
 
-`MIMIC_CXR_Dataset.__init__` · `scripts/count_chexpert_blank_policy.py` (nạp theo
+`MIMIC_CXR_Dataset.__init__` (cũng với bảng nhãn từ [`external_eval`](external_eval.py.doc.md)) · `scripts/count_chexpert_blank_policy.py` (nạp theo
 đường dẫn file) · `tests/test_blank_label_masking.py`.
