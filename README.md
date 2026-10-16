@@ -456,7 +456,8 @@ val (chế độ eval) là 0,77. Không dùng `lambda_query_diversity` khi Q-For
 **Lần 2 (user chọn 2026-10-15; đang chạy từ 2026-10-16 07:55, `~/qrefit2_20261015/`):** kiểm tra vi mô,
 smoke 600 update và cổng refit đã đạt. Refit 2 epoch (chọn epoch 1): PR theo batch 26,9 (1c 1,00; lần 1
 2,32), bản đồ 0,34, ITC R@5 0,63 / 0,61, lệch loss đa dạng train/val 0,009 (lần 1: 0,75). Cổng thông tin
-đang chạy từ 13:33 ngày 16/10, pilot đang chờ. PR cao chỉ nói phần thay
+đạt (probe tuyến tính trên token gộp: AUROC phần giữ lại 0,7845 so với 0,7669 của token cũ; test 0,7325
+so với 0,7155, MHCAC 0,7454, n = 2.780, không có CI); pilot Stage 2 A/B chạy từ 14:44 ngày 16/10. PR cao chỉ nói phần thay
 đổi theo ảnh trải trên nhiều hướng, chưa nói nó có ích. Khóa mới `model.qformer_dropout` (vắng = dropout
 0,1 của BERT, giống từng bit) đặt xác suất cho mọi lớp dropout của Q-Former mà vẫn để module ở chế độ
 train (giữ gradient checkpointing); `phase1q` đặt `qformer_dropout: 0.0` và `feature_mask_ratio: 0.0`,

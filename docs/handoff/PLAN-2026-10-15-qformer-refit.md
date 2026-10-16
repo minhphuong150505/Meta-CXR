@@ -1,8 +1,8 @@
 # PLAN 2026-10-15 — Sửa soft token sụp: train lại META-Former trên checkpoint 1c đóng băng
 
 Trạng thái: **lần 1 (15/10) trượt cổng cuối (PR 2,32 < 4; loss đa dạng bị lách qua dropout). Lần 2
-(16/10, đường đi của query không còn nhiễu chỉ có lúc train): kiểm tra vi mô, smoke và cổng refit đạt
-(PR theo batch 26,9); cổng thông tin đang chạy.** Quy tắc dưới đây chốt và commit
+(16/10, đường đi của query không còn nhiễu chỉ có lúc train): kiểm tra vi mô, smoke, cổng refit (PR theo
+batch 26,9) và cổng thông tin (probe 0,7845 so với 0,7669) đạt; pilot đang chạy.** Quy tắc dưới đây chốt và commit
 trước khi có bất kỳ kết quả nào. Stage 1 gốc: `run_20261005_paper/phase1c` (checkpoint của mọi
 số Stage 1 đã báo cáo và của Stage 2 P2 + LR 3e-4).
 
@@ -366,3 +366,48 @@ thiên phụ thuộc ảnh có ích với vô ích; điều đó chỉ cổng th
   token đến đâu so với token cũ.
 - Pipeline tự sang cổng thông tin lúc 13:33:16: dựng record Stage 1 (60.000 study train + test) cho token
   cũ rồi token mới, ~28 study/s, rồi probe tuyến tính từng bên; ước tính xong ~15:00.
+
+### Cổng thông tin — 13:33:16 → 14:44:53: `INFO_GATE_PASSED`
+
+- Record Stage 1 dựng từ ảnh sạch, cùng ảnh cho hai bên: 60.000 study train đầu theo thứ tự dataset
+  (45.806 có FINDINGS hợp lệ) và cả test (2.800 có FINDINGS hợp lệ); ~30 study/s, mỗi bên ~36 phút. Token
+  cũ: `run_20261005_paper/phase1c`; token mới: file gộp của refit, dựng với `qformer_input_norm=per_stream`.
+  Probe trên trung bình 32 token (chuẩn hóa từng chiều): fit 40.679 study train, chọn L2 trên 4.519 study
+  train giữ lại, test 2.780 study có nhãn. `auroc_mean` = trung bình mọi ô (nhãn, lớp) đủ ca, một-đối-còn-lại.
+
+| `auroc_mean` | MHCAC | token cũ | token mới | mới − cũ |
+|---|---:|---:|---:|---:|
+| train giữ lại (**cổng**: mới ≥ cũ − 0,01) | — | 0,7669 | **0,7845** | +0,0176 — đạt |
+| test, mọi ô | 0,7454 | 0,7155 | 0,7325 | +0,0170 |
+| test, lớp Negative | 0,7800 | 0,7351 | 0,7519 | +0,0168 |
+| test, lớp Positive | 0,7847 | 0,7506 | 0,7626 | +0,0120 |
+| test, lớp Uncertain | 0,6162 | 0,6199 | 0,6460 | +0,0261 |
+| L2 chọn trên train giữ lại | — | 1e-4 | 1e-2 | |
+
+- Token cũ khớp probe 2026-10-11 (0,713; MHCAC 0,745 trên cùng 2.780 study). Khoảng cách tới MHCAC trên
+  test: −0,0299 → −0,0129. Không có CI: probe không ghi xác suất từng study, và cổng chốt trước là so sánh
+  điểm trên phần giữ lại; số test chỉ báo cáo.
+
+| test, AUROC lớp Positive | MHCAC | token cũ | token mới |
+|---|---:|---:|---:|
+| No Finding | 0,8262 | 0,8227 | 0,8242 |
+| Enlarged Cardiomediastinum | 0,6495 | 0,6512 | 0,7002 |
+| Cardiomegaly | 0,7557 | 0,7506 | 0,7602 |
+| Lung Opacity | 0,7275 | 0,7279 | 0,7275 |
+| Lung Lesion | 0,7482 | 0,6867 | 0,7026 |
+| Edema | 0,8430 | 0,8407 | 0,8387 |
+| Consolidation | 0,7659 | 0,7386 | 0,7362 |
+| Pneumonia | 0,7255 | 0,6871 | 0,7179 |
+| Atelectasis | 0,7590 | 0,7364 | 0,7488 |
+| Pneumothorax | 0,8653 | 0,8312 | 0,8175 |
+| Pleural Effusion | 0,8987 | 0,8930 | 0,9019 |
+| Pleural Other | 0,8330 | 0,6905 | 0,6658 |
+| Fracture | 0,6841 | 0,5527 | 0,6317 |
+| Support Devices | 0,9046 | 0,8991 | 0,9028 |
+
+- Đọc kết quả: token mới giữ được thông tin 14 nhãn và nhỉnh hơn token cũ (lớp Uncertain tăng nhiều
+  nhất). Tăng rõ nhất ở Fracture (+0,079) và Enlarged Cardiomediastinum (+0,049, cao hơn MHCAC); giảm ở
+  Pleural Other (−0,025) và Pneumothorax (−0,014). Hai nhãn hiếm (Fracture, Pleural Other) có ít ca
+  dương trên test nên dao động lớn. Probe tuyến tính chỉ nói thông tin có trong token; Stage 2 có đọc nó
+  hay không là việc của pilot.
+- Pilot A bắt đầu ngay sau cổng (14:44:53): dựng record Stage 1 cho 10.000 study train (68 % lúc 14:48).

@@ -129,8 +129,11 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   micro-check, smoke gate and REFIT GATE PASSED.** Refit, 2 epochs, epoch 1 selected:
   `final_pr_batch_centred` 26.86, map cos 0.34, ITC R@5 0.63 / 0.61 (`delta_nats` +2.83), train/val
   gap of the term 0.009 (attempt 1's logs give 0.75); smoke, 600 updates: 26.47 / 0.36 / 0.46 / 0.43.
-  Info gate running since 2026-10-16 13:33, pilot pending. A PR that high says only that image-dependent variation is spread over many
-  directions, not that it is useful -- the info gate decides that. `model.qformer_dropout`
+  INFO GATE PASSED 14:44: linear probe on the pooled tokens, train-holdout `auroc_mean` 0.7845 vs the
+  old tokens' 0.7669 (rule: new >= old - 0.01); test 0.7325 vs 0.7155 (MHCAC 0.7454), n=2,780, no CI.
+  Stage-2 pilot A/B running since 14:44. A PR that high says only that image-dependent variation is spread over many
+  directions, not that it is useful; the probe says the label information survives, and only the pilot
+  says whether Stage 2 reads it. `model.qformer_dropout`
   (absent = BERT's 0.1, bit-identical) sets `p` on every Q-Former dropout layer right after the
   Q-Former is built and leaves it in train mode -- do NOT put the Q-Former in `eval_mode_modules`
   instead: `BertEncoder` gradient checkpointing is gated on `self.training` (`Qformer.py:530`).
