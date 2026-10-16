@@ -120,7 +120,10 @@ live microbatch plus the queue, not from gradient accumulation."* — tăng
 - `run.phases.phase1b.run.test_splits: [test]`: 1b là pha cuối mặc định, chấm test một lần.
 - `phase1c` giữ trong YAML nhưng không chạy mặc định (`scripts/run_stage1_phases.sh`).
 
-## 2026-10-15 — `phase1q`: train lại META-Former trên checkpoint đã xong (opt-in, chưa chạy GPU)
+## 2026-10-15 — `phase1q`: train lại META-Former trên checkpoint đã xong (opt-in; đã chạy, không áp dụng)
+- Đã chạy GPU hai lần: lần 1 (15/10, dropout 0,1) trượt cổng sụp; lần 2 (16/10, cấu hình dưới đây) đạt
+  cổng sụp và cổng thông tin, nhưng pilot Stage 2 không nhận (BERTScore B − A +0,0007 [−0,0057; +0,0067]).
+  Không đổi mặc định nào; pha giữ lại để tái lập. Kết quả: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.
 - Không nằm trong chuỗi mặc định. `run.phases.phase1q.init_from.path` phải cho trên dòng lệnh
   (thiếu → `PhaseConfigError`); `init_from.skip` = phía Q-Former → khởi tạo BLIP-2;
   `init_from.ignore: [mpc_heads]` — `lambda_mpc 0` nên model không dựng đầu MPC; file gộp giữ

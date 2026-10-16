@@ -31,7 +31,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-021](#d-021--gradient-checkpointing-q-former-gradcache-pha-1a-siglip-mở-lại-khối-encoder-ở-1c) | Checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
 | [D-026](#d-026--siêu-tham-số-mhcac-theo-bài-báo-2026-10-05) | MHCAC: 8 common expert token, label smoothing 0 (theo bài báo) | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
 | [D-027](#d-027--stage-2-theo-bài-báo-không-ảnh-gốc-prompt-nguyên-văn-2026-10-05) | Stage 2 `--prompt-style paper`: không ảnh gốc, 32 soft token + P/N/U, prompt nguyên văn bài báo | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
-| [D-028](#d-028--sửa-soft-token-sụp-train-lại-meta-former-trên-checkpoint-đã-xong-2026-10-15) | Sửa soft token sụp: pha `phase1q` train lại chỉ META-Former trên checkpoint 1c đóng băng; norm đầu vào Q-Former, loss đa dạng query, file gộp bắt buộc | ✅ Confirmed (user duyệt); refit 2026-10-15 trượt cổng sụp (loss đa dạng bị lách qua dropout); lần 2 (16/10): smoke, cổng refit (PR theo batch 26,9) và cổng thông tin đạt, pilot đang chạy | 2026-10-15 |
+| [D-028](#d-028--sửa-soft-token-sụp-train-lại-meta-former-trên-checkpoint-đã-xong-2026-10-15) | Sửa soft token sụp: pha `phase1q` train lại chỉ META-Former trên checkpoint 1c đóng băng; norm đầu vào Q-Former, loss đa dạng query, file gộp bắt buộc | ✅ Confirmed (user duyệt); refit 2026-10-15 trượt cổng sụp (loss đa dạng bị lách qua dropout); lần 2 (16/10): smoke, cổng refit (PR theo batch 26,9) và cổng thông tin đạt, pilot Stage 2 không nhận B (BERTScore B − A +0,0007 [−0,0057; +0,0067]) → không áp dụng | 2026-10-15 |
 
 ---
 
@@ -1349,7 +1349,8 @@ chạy được.
 
 ## D-028 — Sửa soft token sụp: train lại META-Former trên checkpoint đã xong (2026-10-15)
 
-Status: **Confirmed — user duyệt kế hoạch; refit đã chạy 2026-10-15, trượt cổng sụp**
+Status: **Confirmed (user duyệt kế hoạch) — KHÔNG áp dụng: lần 1 (15/10) trượt cổng sụp; lần 2 (16/10) đạt
+mọi cổng nhưng pilot Stage 2 không nhận B**
 
 **Kết quả 2026-10-15.** Refit 2 epoch: `final_pr_batch_centred` 2,32 (cổng ≥ 4; 1c 1,00), bản đồ
 attention 0,51 và ITC R@5 0,58 / 0,56 đạt → dừng trước probe và pilot, Stage 2 không đổi. Loss đa
@@ -1360,11 +1361,21 @@ với 0,77 trên val. Số đo đầy đủ: báo cáo thực thi của plan.
 **Lần 2 (user chọn phương án A, 2026-10-15; chạy từ 2026-10-16 07:55: kiểm tra vi mô và smoke 600 update
 đạt — PR theo batch 26,5, bản đồ 0,36, ITC R@5 0,46 / 0,43, lệch train/val 0,009; refit 2 epoch đạt cổng
 cuối — PR theo batch 26,9, bản đồ 0,34, ITC R@5 0,63 / 0,61, lệch train/val 0,009; cổng thông tin đạt —
-probe trên token gộp 0,7845 so với 0,7669 trên phần giữ lại, test 0,7325 so với 0,7155; pilot đang chạy).** Giữ thiết kế, chỉ bỏ nhiễu chỉ có lúc
+probe trên token gộp 0,7845 so với 0,7669 trên phần giữ lại, test 0,7325 so với 0,7155; pilot Stage 2 không
+nhận B).** Giữ thiết kế, chỉ bỏ nhiễu chỉ có lúc
 train trên đường đi của query: khóa mới `model.qformer_dropout` (đặt `p` cho mọi lớp dropout của
 Q-Former, module vẫn ở train để giữ gradient checkpointing) và `feature_mask_ratio: 0.0` trong
 `phase1q`; `__init__` từ chối `lambda_query_diversity > 0` nếu thiếu một trong hai. Không đổi λ, cổng
 cuối, cổng thông tin hay quy tắc pilot. Thêm smoke 600 update có cổng (không có ngoại lệ) trước refit.
+
+**Kết quả pilot lần 2 (2026-10-16 14:44 → 21:02) — không nhận B, không áp dụng.** Cùng 10.000 study
+train, P2 + LR 3e-4, 1 epoch (476 update mỗi nhánh); beam 4 / lp 2 trên cả 1.360 study val, B − A:
+BERTScore +0,0007 [−0,0057; +0,0067] (quy tắc cần cận dưới > 0), CheXbert micro F1-14 +0,0094
+[−0,0047; +0,0234]; mọi chỉ số khác cắt 0, trừ BLEU-4 theo study −0,0060 [−0,0117; −0,0004] ở biên.
+Mô hình đã báo cáo giữ nguyên. Hoán đổi soft token giữa các study (greedy, 500 study val) làm cả hai
+adapter tụt có ý nghĩa — token cũ đã sụp: BERTScore −0,040, CheXbert micro F1-14 −0,083; token refit:
+−0,037 / −0,061 — nên Stage 2 có đọc kênh ảnh, và sự sụp không chặn ảnh khỏi Stage 2. Một
+seed mỗi nhánh, chỉ val, ngân sách pilot. Số đo đầy đủ: mục "Pilot A/B" trong báo cáo thực thi của plan.
 
 **Vấn đề (đo 2026-10-11).** 32 soft token của một study gần như là một vector (cosine 0,9989 sau
 1a): ở hai tầng cross-attention đầu mọi query đọc CLS của PubMedCLIP, và không mục tiêu nào của 1a

@@ -92,7 +92,8 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   the model by 0.12 lexicon CE. Novelty index vs the paper:
   `docs/CHI_MUC_TINH_MOI.md`; pilot awaiting approval:
   `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
-- 🧪 **Collapse fix, opt-in, user-approved 2026-10-15 -- RAN 2026-10-15, FINAL GATE FAILED (below):** phase
+- 🧪 **Collapse fix, opt-in, user-approved 2026-10-15 -- NOT ADOPTED: attempt 1 failed its final gate,
+  attempt 2 passed every gate and the Stage-2 pilot rejected it (both below):** phase
   `phase1q` re-fits ONLY the META-Former on a finished, frozen Stage-1 checkpoint
   (`run.phases.phase1q.init_from.path=<1c checkpoint_best.pth>`; `init_from.skip` leaves the
   Q-Former side at BLIP-2's init; `init_from.ignore: [mpc_heads]` drops the MPC heads 1q does
@@ -125,15 +126,25 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   ratio read ~30 directions in training -- `loss_query_div` 0.014 in the train log against 0.77 on val
   (eval mode) -- and the term stopped constraining the real geometry. Do not use
   `lambda_query_diversity` with Q-Former dropout on, and compare the term's train and val values.
-  🧪 **Attempt 2 (user chose it 2026-10-15) -- RUNNING since 2026-10-16 07:55 (`~/qrefit2_20261015/`);
-  micro-check, smoke gate and REFIT GATE PASSED.** Refit, 2 epochs, epoch 1 selected:
+  ❌ **Attempt 2 (user chose it 2026-10-15) -- RAN 2026-10-16 07:55 -> 21:02 (`~/qrefit2_20261015/`):
+  every gate PASSED, but the pre-declared Stage-2 pilot rule REJECTED B. NOT adopted; the reported model
+  stays.** Refit, 2 epochs, epoch 1 selected:
   `final_pr_batch_centred` 26.86, map cos 0.34, ITC R@5 0.63 / 0.61 (`delta_nats` +2.83), train/val
   gap of the term 0.009 (attempt 1's logs give 0.75); smoke, 600 updates: 26.47 / 0.36 / 0.46 / 0.43.
   INFO GATE PASSED 14:44: linear probe on the pooled tokens, train-holdout `auroc_mean` 0.7845 vs the
   old tokens' 0.7669 (rule: new >= old - 0.01); test 0.7325 vs 0.7155 (MHCAC 0.7454), n=2,780, no CI.
-  Stage-2 pilot A/B running since 14:44. A PR that high says only that image-dependent variation is spread over many
-  directions, not that it is useful; the probe says the label information survives, and only the pilot
-  says whether Stage 2 reads it. `model.qformer_dropout`
+  **PILOT: B NOT ACCEPTED.** Same 10,000 train studies, P2 + LR 3e-4, 1 epoch (476 updates per arm);
+  beam 4 / lp 2 on all 1,360 val studies, B - A: BERTScore +0.0007 [-0.0057, +0.0067] (rule: lower bound
+  > 0 -- fails), CheXbert micro F1-14 +0.0094 [-0.0047, +0.0234]; ROUGE-L, CIDEr, CheXbert macro and F1-5,
+  lexicon CE all cross zero; per-study BLEU-4 -0.0060 [-0.0117, -0.0004] sits at the zero boundary. Val
+  loss 1.18770 -> 1.18495, no CI. So no full Stage-2 retrain on refit tokens.
+  ⚠⚠ **The permutation probe says Stage 2 DOES read the soft tokens -- the collapsed ones too.** Greedy,
+  500 val, tokens swapped across studies (`permute_across`), everything else kept: arm A (old, collapsed)
+  BERTScore -0.0404 [-0.0535, -0.0273], CheXbert micro F1-14 -0.0833 [-0.1129, -0.0536]; arm B -0.0372 /
+  -0.0606, both significant. The collapsed tokens (one effective vector per study) still carry image
+  information Stage 2 uses, so the collapse did not keep the image out of Stage 2; the refit's ~27
+  directions add nothing measurable at this budget. Out-of-distribution probe: it shows the channel is read, not how much it contributes. One
+  seed per arm, val only, pilot budget. Record: the plan's "Pilot A/B" section. `model.qformer_dropout`
   (absent = BERT's 0.1, bit-identical) sets `p` on every Q-Former dropout layer right after the
   Q-Former is built and leaves it in train mode -- do NOT put the Q-Former in `eval_mode_modules`
   instead: `BertEncoder` gradient checkpointing is gated on `self.training` (`Qformer.py:530`).
@@ -1732,7 +1743,9 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
   [+0.092, +0.116]. (The run's own first scoring was on 300 studies; superseded.) ⚠ **Not the paper's conditions**: this
   model also reads the indication and the previous study's FINDINGS; beating the paper's
   0.390 / 0.102 / 0.173 / 0.280 / 0.291 / 0.426 says nothing about the image channel
-  (soft tokens still collapsed). One run, one seed; the three changes are not separated
+  (soft tokens still collapsed; a 10,000-study adapter of this recipe does read them -- swapping them
+  across studies costs BERTScore -0.040, 2026-10-16 refit pilot -- but that does not separate the
+  image's share of the gain). One run, one seed; the three changes are not separated
   at full budget. Traps: (1) `generate_stage2_reports.py --limit` defaults to **300** --
   the run script omitted it, so pass `--limit 0` for the whole split (done separately,
   `~/stage2_genfull.sh` -> `gen_test_{beam,greedy}_full`, scores in `score/n2800_*.json`); (2) generation re-keys rows with
