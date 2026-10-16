@@ -28,11 +28,14 @@ def __init__(self, vis_processor, text_processor, vis_root, split, cfg,
 
 ## Execution flow
 ```text
-đọc CSV theo split (PROCESSED_{TRAIN,VAL,TEST}_CSV)
+external_eval.resolve_external_eval(datasets.mimic_cxr.external_eval, split)
+   ├─ None  → đọc CSV theo split (PROCESSED_{TRAIN,VAL,TEST}_CSV), CHEXPERT_CSV
+   └─ có    → external_eval.load_chexpert_val → (bảng ảnh, bảng nhãn), vis_root mới
+             (2026-10-16, Bảng 4; refuse nếu run.feature_cache_dir)
    ↓
 _coerce_bool cho classification_valid / target_valid
    ↓
-đọc CHEXPERT_CSV → chexpert_labels.prepare_chexpert_labels(
+bảng nhãn (CHEXPERT_CSV hoặc external) → chexpert_labels.prepare_chexpert_labels(
    blank_policy = model.mhcac.blank_label_policy (thiếu → "ignore"),
    excluded_labels = model.mhcac.excluded_labels)
    ↓

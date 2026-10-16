@@ -190,6 +190,17 @@ geometry và no-cache regression)
 ← [HOME](../../../../HOME.md)
 
 
+## Tập đánh giá ngoài: `datasets.mimic_cxr.external_eval` (2026-10-16)
+
+Opt-in, cho Bảng 4 của bài báo. Khi khoá có mặt và split hiện tại nằm trong
+`external_eval.splits` (chỉ `val`/`test`, không bao giờ `train`), `__init__` lấy
+bảng ảnh và bảng nhãn từ
+[`external_eval.load_chexpert_val`](external_eval.py.doc.md) thay cho
+`PROCESSED_*_CSV` / `CHEXPERT_CSV`, và đặt `self.vis_root` thành
+`external_eval.vis_root`; mọi bước sau (ánh xạ nhãn, transform, study index,
+collate) giữ nguyên. Khoá vắng mặt → hành vi cũ từng byte. Từ chối khi đặt cùng
+`run.feature_cache_dir`. Danh sách 14 cột nay là hằng lớp `CHEXPERT_COLS`.
+
 ## Nhãn CheXpert: `blank_label_policy` (2026-09-24)
 
 ⚠ **Đảo ngược 2026-09-24 ([D-018](../../../_meta/DECISIONS.md#d-018--ô-chexpert-trống-là-âm-tính-đảo-ngược-quyết-định-2026-08-14)).**

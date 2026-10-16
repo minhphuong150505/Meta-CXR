@@ -55,6 +55,10 @@ from vision_encoders.pubmedclip.preprocess import (  # noqa: E402
     pubmedclip_preprocess,
     resolve_pubmedclip_preprocess,
 )
+from model.lavis.data.external_eval import (  # noqa: E402
+    load_chexpert_val,
+    resolve_external_eval,
+)
 from model.lavis.data.chexpert_labels import (  # noqa: E402
     IGNORE_LABEL,
     attach_chexpert_labels,
@@ -237,6 +241,14 @@ class MyReportProcessor():
 
 
 class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
+    CHEXPERT_COLS = ("No Finding", "Enlarged Cardiomediastinum",
+                     "Cardiomegaly", "Lung Opacity",
+                     "Lung Lesion", "Edema",
+                     "Consolidation", "Pneumonia",
+                     "Atelectasis", "Pneumothorax",
+                     "Pleural Effusion", "Pleural Other",
+                     "Fracture", "Support Devices")
+
     def __init__(self, vis_processor, text_processor, vis_root, split, cfg, ann_paths=[], truncate=None):
         """
         vis_root (string): Root directory of images (e.g. coco/images/)
@@ -260,7 +272,31 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         }
         if split not in csv_map:
             raise ValueError(f"Unknown split '{split}' (expected train/val/test)")
-        self.reports = pd.read_csv(csv_map[split])
+        # Paper Table 4: an evaluation split may be served from an external
+        # set (CheXpert val) converted to the same two tables. Absent key =
+        # MIMIC-CXR, unchanged. See model/lavis/data/external_eval.py.
+        external_raw = cfg.datasets_cfg.mimic_cxr.get("external_eval", None)
+        if OmegaConf.is_config(external_raw):
+            external_raw = OmegaConf.to_container(external_raw, resolve=True)
+        self.external_eval = resolve_external_eval(external_raw, split)
+        external_labels = None
+        if self.external_eval is None:
+            self.reports = pd.read_csv(csv_map[split])
+        else:
+            if cfg.run_cfg.get("feature_cache_dir", None):
+                raise ValueError(
+                    "external_eval reads images; the feature cache holds MIMIC-CXR "
+                    "features only. Unset run.feature_cache_dir."
+                )
+            self.reports, external_labels = load_chexpert_val(
+                self.external_eval, self.CHEXPERT_COLS
+            )
+            self.vis_root = str(self.external_eval.vis_root)
+            print(
+                f"[{split}] EXTERNAL eval set {self.external_eval.kind}: "
+                f"{len(self.reports)} images from {self.external_eval.valid_csv}, "
+                f"vis_root={self.vis_root}"
+            )
         required_report_cols = {
             "subject_id", "study_id", "dicom_id", "image_path", "findings_clean",
             "has_chexpert_label",
@@ -322,15 +358,11 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
 
         self.use_pred_labels = True
 
-        self.chexpert = pd.read_csv(CHEXPERT_CSV)
+        self.chexpert = (
+            pd.read_csv(CHEXPERT_CSV) if external_labels is None else external_labels
+        )
 
-        self.chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
-                              "Cardiomegaly", "Lung Opacity",
-                              "Lung Lesion", "Edema",
-                              "Consolidation", "Pneumonia",
-                              "Atelectasis", "Pneumothorax",
-                              "Pleural Effusion", "Pleural Other",
-                              "Fracture", "Support Devices"]
+        self.chexpert_cols = list(self.CHEXPERT_COLS)
 
         required_chexpert_cols = {"subject_id", "study_id", *self.chexpert_cols}
         missing_chexpert_cols = sorted(required_chexpert_cols - set(self.chexpert.columns))

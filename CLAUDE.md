@@ -855,8 +855,13 @@ python scripts/evaluate_stage1.py --predictions <test.npz> \
 # Paper Table 4 (CheXpert val, p1/(p0+p1)) and Table 3 CE (labeler output):
 python scripts/evaluate_chexpert_crossdomain.py --predictions <chexpert_val.npz>
 python scripts/evaluate_clinical_efficacy.py --generated-labels <csv> --reference-labels <csv>
-# ⚠ Neither the CheXpert-val Stage-1 loader nor a CheXpert labeler/CheXbert is
-# in this repo; only the scoring is. See training/evaluation/paper_protocol.py.
+# The CheXpert-val .npz comes from an evaluate-only run with
+# datasets.mimic_cxr.external_eval.{kind=chexpert_val,valid_csv,vis_root,splits=[test]}
+# (added 2026-10-16, model/lavis/data/external_eval.py: converts valid.csv into the
+# two tables MIMIC_CXR_Dataset reads; refuses non-valid/ paths and any label but
+# 0/1). NOT YET RUN on GPU or on the real valid.csv -- the data is not on the host
+# yet. Commands: docs/handoff/PLAN-2026-10-16-chexpert-table4.md. Table 3 CE uses
+# scripts/score_ce_chexbert.py (separate venv), see Stage 2 below.
 CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_explanation.py \
     --checkpoint <checkpoint_best.pth> --cfg-path pretraining/configs/mimic_cxr_full.yaml \
     --split test --mask-cache-dir <mask-cache> --output-dir <private-results>/xai \

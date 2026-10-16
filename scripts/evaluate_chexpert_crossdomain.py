@@ -6,10 +6,10 @@ labels (``-1`` = missing) with the paper's Eq. (21) conversion
 ``p_final = p1 / (p0 + p1)``, and reports AUC and F1 on the paper's five
 findings. See ``training/evaluation/paper_protocol.py``.
 
-⚠ Producing that ``.npz`` needs Stage-1 inference on the CheXpert validation
-images, and this repository has no CheXpert loader wired into the Stage-1
-runner (the old checkout's ``CheXpertDataset`` was not carried over). Only the
-scoring is implemented and tested here.
+The ``.npz`` comes from an evaluate-only Stage-1 run whose test split is served
+from CheXpert val through ``datasets.mimic_cxr.external_eval``
+(``model/lavis/data/external_eval.py``); exact commands in
+``docs/handoff/PLAN-2026-10-16-chexpert-table4.md``.
 
     python scripts/evaluate_chexpert_crossdomain.py \\
         --predictions <private>/chexpert_val_predictions.npz --output <private>/table4.json
