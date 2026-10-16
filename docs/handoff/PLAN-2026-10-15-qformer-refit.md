@@ -251,3 +251,52 @@ Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể d�
 
 **Giới hạn biết trước thêm:** không còn nhiễu ngẫu nhiên để lách, nhưng PR vẫn không phân biệt biến
 thiên phụ thuộc ảnh có ích với vô ích; điều đó chỉ cổng thông tin và pilot đo được.
+
+### Báo cáo thực thi lần 2 — khởi chạy 2026-10-16 07:55:40, `3b69007`, một lần
+
+- User duyệt chạy sáng 16/10 ("ok chạy đi"). Trước khi chạy (07:42): GPU rảnh, RAM trống 28/30 GB,
+  `/home` còn 197 GB, ổ dữ liệu `ntfs3`, checkout sạch ở `3b69007`, 5 script trên máy khớp sha256, kernel
+  không có lỗi mới từ 14/10 (chỉ các dòng `ntfs3` của lần dọn ổ và lần hết RAM 13:07 ngày 15/10 của lần 1
+  với 8 worker).
+- Dừng `~/stage2_p2_score.sh` (chạy từ 11/10): vòng chờ dấu `P2FULL_ALL_DONE` trong một log đã ngừng ghi
+  từ 11/10, nên không bao giờ chạy; việc chấm điểm nó định làm đã làm riêng trên 2.800 study test.
+- Pipeline pid 241259, log `~/qrefit2_20261015.log` (tên thư mục giữ như plan dù chạy ngày 16/10).
+- **Kiểm tra vi mô — `MICRO_CHECK_PASSED` lúc 07:56:08** (28 giây). File gộp của lần 1, 200 study val,
+  với các khóa 1q: chỉ bật dropout của Q-Former, và chế độ train đầy đủ của mô hình, đều cho độ lệch
+  tương đối 0,00 so với chế độ eval và PR_bc 2,3166 = 2,3166 (lần 1, cùng mô hình với dropout 0,1: 30,11).
+  Log smoke ghi `Q-Former dropout set to 0.0 on 61 layers` và `feature_mask_ratio` 0,0.
+
+### Smoke 600 update — 07:56:08 → 08:46:40: `SMOKE_GATE_PASSED`
+
+- Train: `Total time 0:46:41`, 4,67 s/update (lần 1 ~4,99), không OOM. Gộp: 346 tensor thay, 6 tensor
+  norm thêm, 445 tensor chung trùng từng bit với 1c, 82 tensor chỉ có ở 1c giữ nguyên; epoch 0.
+- `loss_query_div` lúc train (giá trị của update được log): 0,890 (update 0) → 0,673 (50) → 0,340 (100)
+  → 0,179 (150) → 0,117 (200) → 0,089 (250) → 0,075 (300) → 0,069 (350) → 0,067 (400) → 0,063 (450);
+  trung bình 1/4 cuối 0,0596. Val (chế độ eval, `phase_metrics` epoch 0): 0,0690. Lần này loss lúc train
+  giảm và loss val giảm theo; lần 1 thì train 0,014 trong khi val 0,77. Val ITC 3,0873, LM 2,5945.
+- Cổng ITC (256 cặp val): R@5 0,4570 / 0,4297, `delta_nats` +2,1171.
+
+| 200 study val | 1c | lần 1: M 300 update | lần 1: refit 2 epoch | **lần 2: smoke 600** | cổng |
+|---|---:|---:|---:|---:|---|
+| `final_pr_batch_centred` | 1,0010 | 3,1457 | 2,3166 | **26,4733** | ≥ 4 — đạt |
+| `xattn_mean_query_map_cos` | 0,7974 | 0,5305 | 0,5065 | **0,3643** | ≤ 0,6 — đạt |
+| ITC R@5 i2t / t2i | ≈0,17 | 0,2695 / 0,2578 | 0,5781 / 0,5625 | **0,4570 / 0,4297** | trên ngẫu nhiên — đạt |
+| \|loss đa dạng train − val\| | — | 0,65 | 0,75 | **0,0094** | ≤ 0,05 — đạt |
+| `query_diversity_loss` (eval) | 0,9997 | 0,6721 | 0,7579 | 0,0547 | — |
+| `final_within_cos` (thô) | 0,9997 | 0,9024 | 0,9405 | 0,2274 | — |
+| `final_pr` (thô, không trừ trung bình) | 1,0006 | 1,1028 | 1,0847 | 12,9776 | — |
+| `meanimage_vs_real_token_cos` | 0,8051 | 0,7126 | 0,9032 | 0,5425 | — |
+| `pooled_across_studies_cos` | 0,3416 | 0,9753 | 0,9601 | 0,8972 | — |
+
+- Độ lệch của lần 1 ở dòng thứ tư là `~/qrefit2_gap.py` chạy lại trên log lần 1.
+- Theo tầng: cosine thô giữa 32 query 0,33–0,37 qua 9 tầng đầu, 0,28–0,33 ở hai tầng sau, 0,227 ở đầu ra;
+  không còn bước nhảy ở các tầng cuối như lần 1 (0,698 → 0,931 → 0,940). `query_map_cos` của
+  cross-attention đầu 0,255, cuối 0,496 (lần 1: 0,161 và 0,921). Cross-attention đầu chia khối lượng
+  BioViL 0,46 / PubMedCLIP 0,34 / Swin 0,19; CLS của PubMedCLIP (index 196) nhận 0,028 khối lượng nhưng
+  vẫn là token được nhìn nhiều nhất cho 47% study (lần 1 refit: 23%).
+- Đọc kết quả: thay toàn bộ token ảnh bằng token trung bình của study đổi đầu ra nhiều hơn (cosine 0,54,
+  1c 0,81), tức query dựa vào cấu trúc từng token chứ không chỉ trung bình. Ngược lại, trung bình của 32
+  token giống nhau giữa các study hơn 1c (0,90 so với 0,34; khởi tạo BLIP-2 0,80): phần thay đổi theo ảnh
+  nằm ở từng query, không ở trung bình của chúng. PR 26,5 chỉ nói phần thay đổi theo ảnh trải trên nhiều
+  hướng; nó có ích hay không là việc của cổng thông tin và pilot.
+- Refit 2 epoch bắt đầu ngay sau cổng (08:46:40); ước tính xong ~13:30.

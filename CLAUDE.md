@@ -125,7 +125,11 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   ratio read ~30 directions in training -- `loss_query_div` 0.014 in the train log against 0.77 on val
   (eval mode) -- and the term stopped constraining the real geometry. Do not use
   `lambda_query_diversity` with Q-Former dropout on, and compare the term's train and val values.
-  🧪 **Attempt 2 (user chose it 2026-10-15) -- NOT YET RUN ON GPU:** `model.qformer_dropout`
+  🧪 **Attempt 2 (user chose it 2026-10-15) -- RUNNING since 2026-10-16 07:55 (`~/qrefit2_20261015/`);
+  micro-check and smoke gate PASSED** (600 updates: `final_pr_batch_centred` 26.47, map cos 0.36, ITC
+  R@5 0.46 / 0.43, train/val gap of the term 0.009 -- attempt 1's logs give 0.65); refit, info gate and
+  pilot pending. A PR that high says only that image-dependent variation is spread over many
+  directions, not that it is useful -- the info gate decides that. `model.qformer_dropout`
   (absent = BERT's 0.1, bit-identical) sets `p` on every Q-Former dropout layer right after the
   Q-Former is built and leaves it in train mode -- do NOT put the Q-Former in `eval_mode_modules`
   instead: `BertEncoder` gradient checkpointing is gated on `self.training` (`Qformer.py:530`).
