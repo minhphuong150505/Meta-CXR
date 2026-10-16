@@ -1,0 +1,817 @@
+{
+  "classification": {
+    "aggregates": {
+      "accuracy": 0.7814259324419423,
+      "auprc_negative_mean": 0.9359707786508176,
+      "auprc_positive_mean": 0.3794741934134963,
+      "auprc_uncertain_mean": 0.06272342697704406,
+      "auroc_mean": 0.7435624736745441,
+      "auroc_negative_mean": 0.7780128709936536,
+      "auroc_positive_mean": 0.7836401191925241,
+      "auroc_uncertain_mean": 0.6633015044653712,
+      "macro_recall": 0.46089170342575736,
+      "mean_weighted_f1_5": 0.6686803325036567,
+      "weighted_f1": 0.779519948452231,
+      "weighted_precision": 0.8392368581018393,
+      "weighted_recall": 0.7814259324419423
+    },
+    "baseline_table": "| | weighted_precision | weighted_recall | weighted_f1 | mean_weighted_f1_5 |\n| --- | ---: | ---: | ---: | ---: |\n| **model** | 0.8392 | 0.7814 | 0.7795 | 0.6687 |\n| all_negative | 0.8616 | 0.8088 | 0.7288 | 0.6182 |\n| all_positive | 0.8814 | 0.1579 | 0.0612 | 0.0882 |\n| all_uncertain | 0.9689 | 0.0333 | 0.0041 | 0.0057 |\n| majority_class | 0.8616 | 0.8088 | 0.7288 | 0.6182 |\n| prior_random | 0.7118 | 0.7124 | 0.7120 | 0.5993 |\n",
+    "baselines": [
+      {
+        "baseline": "all_negative",
+        "description": "Negative for every finding",
+        "mean_weighted_f1_5": 0.6182336548878795,
+        "weighted_f1": 0.7288388672790953,
+        "weighted_precision": 0.8616140626137494,
+        "weighted_recall": 0.8088054187192119
+      },
+      {
+        "baseline": "all_positive",
+        "description": "Positive for every finding",
+        "mean_weighted_f1_5": 0.08818955337980809,
+        "weighted_f1": 0.06119249272680594,
+        "weighted_precision": 0.8813676114874351,
+        "weighted_recall": 0.15785538353272344
+      },
+      {
+        "baseline": "all_uncertain",
+        "description": "Uncertain for every finding",
+        "mean_weighted_f1_5": 0.005661312308976015,
+        "weighted_f1": 0.004145232536375427,
+        "weighted_precision": 0.9689010294431173,
+        "weighted_recall": 0.03333919774806475
+      },
+      {
+        "baseline": "majority_class",
+        "description": "each finding's most frequent class in this split",
+        "mean_weighted_f1_5": 0.6182336548878795,
+        "weighted_f1": 0.7288388672790953,
+        "weighted_precision": 0.8616140626137494,
+        "weighted_recall": 0.8088054187192119
+      },
+      {
+        "baseline": "prior_random",
+        "description": "class drawn from this split's frequencies (seed 42)",
+        "mean_weighted_f1_5": 0.5992643242822876,
+        "weighted_f1": 0.7120251597526549,
+        "weighted_precision": 0.711802592382554,
+        "weighted_recall": 0.7123724489795918
+      }
+    ],
+    "confusion": {
+      "Atelectasis": [
+        [
+          1351,
+          970,
+          5
+        ],
+        [
+          122,
+          606,
+          3
+        ],
+        [
+          45,
+          145,
+          1
+        ]
+      ],
+      "Cardiomegaly": [
+        [
+          782,
+          1485,
+          0
+        ],
+        [
+          40,
+          826,
+          0
+        ],
+        [
+          21,
+          94,
+          0
+        ]
+      ],
+      "Consolidation": [
+        [
+          2387,
+          544,
+          0
+        ],
+        [
+          100,
+          120,
+          0
+        ],
+        [
+          65,
+          32,
+          0
+        ]
+      ],
+      "Edema": [
+        [
+          1631,
+          508,
+          137
+        ],
+        [
+          111,
+          520,
+          52
+        ],
+        [
+          88,
+          155,
+          46
+        ]
+      ],
+      "Enlarged Cardiomediastinum": [
+        [
+          2893,
+          0,
+          0
+        ],
+        [
+          151,
+          0,
+          0
+        ],
+        [
+          204,
+          0,
+          0
+        ]
+      ],
+      "Fracture": [
+        [
+          3155,
+          0,
+          0
+        ],
+        [
+          89,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          0
+        ]
+      ],
+      "Lung Lesion": [
+        [
+          3028,
+          79,
+          0
+        ],
+        [
+          108,
+          15,
+          0
+        ],
+        [
+          17,
+          1,
+          0
+        ]
+      ],
+      "Lung Opacity": [
+        [
+          1228,
+          903,
+          0
+        ],
+        [
+          263,
+          775,
+          0
+        ],
+        [
+          24,
+          55,
+          0
+        ]
+      ],
+      "No Finding": [
+        [
+          2543,
+          137,
+          0
+        ],
+        [
+          329,
+          239,
+          0
+        ],
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "Pleural Effusion": [
+        [
+          1496,
+          548,
+          0
+        ],
+        [
+          107,
+          967,
+          0
+        ],
+        [
+          37,
+          93,
+          0
+        ]
+      ],
+      "Pleural Other": [
+        [
+          3161,
+          8,
+          0
+        ],
+        [
+          61,
+          2,
+          0
+        ],
+        [
+          15,
+          1,
+          0
+        ]
+      ],
+      "Pneumonia": [
+        [
+          1992,
+          550,
+          21
+        ],
+        [
+          140,
+          195,
+          0
+        ],
+        [
+          154,
+          195,
+          1
+        ]
+      ],
+      "Pneumothorax": [
+        [
+          2910,
+          207,
+          0
+        ],
+        [
+          50,
+          62,
+          0
+        ],
+        [
+          13,
+          6,
+          0
+        ]
+      ],
+      "Support Devices": [
+        [
+          1559,
+          560,
+          0
+        ],
+        [
+          83,
+          1042,
+          0
+        ],
+        [
+          2,
+          2,
+          0
+        ]
+      ]
+    },
+    "intervals": {
+      "auroc_negative_mean": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.7705524575510683,
+        "method": "percentile",
+        "metric": "auroc_negative_mean",
+        "point_estimate": 0.7780128709936536,
+        "seed": 42,
+        "upper": 0.7863380536645704,
+        "valid_replicates": 1000
+      },
+      "auroc_positive_mean": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.7752551636287269,
+        "method": "percentile",
+        "metric": "auroc_positive_mean",
+        "point_estimate": 0.7836401191925241,
+        "seed": 42,
+        "upper": 0.7921104185588528,
+        "valid_replicates": 1000
+      },
+      "auroc_uncertain_mean": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.630813584741739,
+        "method": "percentile",
+        "metric": "auroc_uncertain_mean",
+        "point_estimate": 0.6633015044653712,
+        "seed": 42,
+        "upper": 0.6926010623504647,
+        "valid_replicates": 1000
+      },
+      "macro_recall": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.4560961238076099,
+        "method": "percentile",
+        "metric": "macro_recall",
+        "point_estimate": 0.46089170342575736,
+        "seed": 42,
+        "upper": 0.4729113339714027,
+        "valid_replicates": 1000
+      },
+      "mean_weighted_f1_5": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.6595684737744341,
+        "method": "percentile",
+        "metric": "mean_weighted_f1_5",
+        "point_estimate": 0.6686803325036567,
+        "seed": 42,
+        "upper": 0.6775469957311057,
+        "valid_replicates": 1000
+      },
+      "weighted_f1": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.7747579853613973,
+        "method": "percentile",
+        "metric": "weighted_f1",
+        "point_estimate": 0.779519948452231,
+        "seed": 42,
+        "upper": 0.7841683203325135,
+        "valid_replicates": 1000
+      },
+      "weighted_precision": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.8351259475967159,
+        "method": "percentile",
+        "metric": "weighted_precision",
+        "point_estimate": 0.8392368581018393,
+        "seed": 42,
+        "upper": 0.8434723287982083,
+        "valid_replicates": 1000
+      },
+      "weighted_recall": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.776586423593168,
+        "method": "percentile",
+        "metric": "weighted_recall",
+        "point_estimate": 0.7814259324419423,
+        "seed": 42,
+        "upper": 0.7856933355154578,
+        "valid_replicates": 1000
+      }
+    },
+    "per_pathology": [
+      {
+        "accuracy": 0.8565270935960592,
+        "auprc_negative": 0.9528653760521953,
+        "auprc_positive": 0.5695780257430816,
+        "auprc_uncertain": null,
+        "auroc_negative": 0.8323224327307126,
+        "auroc_positive": 0.8323221042673954,
+        "auroc_uncertain": null,
+        "f1_negative": 0.9160662824207493,
+        "f1_positive": 0.5063559322033898,
+        "f1_uncertain": 1.0,
+        "macro_recall": 0.6848276224511246,
+        "n_negative": 2680,
+        "n_positive": 568,
+        "n_uncertain": 0,
+        "pathology": "No Finding",
+        "precision_negative": 0.8854456824512534,
+        "precision_positive": 0.6356382978723404,
+        "precision_uncertain": 1.0,
+        "recall_negative": 0.9488805970149253,
+        "recall_positive": 0.42077464788732394,
+        "recall_uncertain": 1.0,
+        "weighted_f1": 0.8444174280723934,
+        "weighted_precision": 0.8417601546061726,
+        "weighted_recall": 0.8565270935960592
+      },
+      {
+        "accuracy": 0.8907019704433498,
+        "auprc_negative": 0.9283402717783706,
+        "auprc_positive": 0.08183674533246557,
+        "auprc_uncertain": 0.07865184782992911,
+        "auroc_negative": 0.6205600697166059,
+        "auroc_positive": 0.6430234771098713,
+        "auroc_uncertain": 0.5914592512432042,
+        "f1_negative": 0.9421918254355968,
+        "f1_positive": 0.0,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.3333333333333333,
+        "n_negative": 2893,
+        "n_positive": 151,
+        "n_uncertain": 204,
+        "pathology": "Enlarged Cardiomediastinum",
+        "precision_negative": 0.8907019704433498,
+        "precision_positive": 1.0,
+        "precision_uncertain": 1.0,
+        "recall_negative": 1.0,
+        "recall_positive": 0.0,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.8392121154511026,
+        "weighted_precision": 0.9026480297083161,
+        "weighted_recall": 0.8907019704433498
+      },
+      {
+        "accuracy": 0.49507389162561577,
+        "auprc_negative": 0.8806594884584571,
+        "auprc_positive": 0.5125283782796651,
+        "auprc_uncertain": 0.03472624963141253,
+        "auroc_negative": 0.7608298293963786,
+        "auroc_positive": 0.7695311060823768,
+        "auroc_uncertain": 0.49939077700217877,
+        "f1_negative": 0.5028938906752412,
+        "f1_positive": 0.5050443289513911,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.43291996524081333,
+        "n_negative": 2267,
+        "n_positive": 866,
+        "n_uncertain": 115,
+        "pathology": "Cardiomegaly",
+        "precision_negative": 0.9276393831553974,
+        "precision_positive": 0.34345114345114347,
+        "precision_uncertain": 1.0,
+        "recall_negative": 0.34494927216585797,
+        "recall_positive": 0.953810623556582,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.48566158837212947,
+        "weighted_precision": 0.7744418632518401,
+        "weighted_recall": 0.49507389162561577
+      },
+      {
+        "accuracy": 0.6166871921182266,
+        "auprc_negative": 0.8286085557740615,
+        "auprc_positive": 0.5367881059802597,
+        "auprc_uncertain": 0.03424932997122903,
+        "auroc_negative": 0.7238341622810648,
+        "auroc_positive": 0.7255071970984925,
+        "auroc_uncertain": 0.5611960807026934,
+        "f1_negative": 0.673614920460779,
+        "f1_positive": 0.5593648502345724,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.44096113674427745,
+        "n_negative": 2131,
+        "n_positive": 1038,
+        "n_uncertain": 79,
+        "pathology": "Lung Opacity",
+        "precision_negative": 0.8105610561056106,
+        "precision_positive": 0.447201384881708,
+        "precision_uncertain": 1.0,
+        "recall_negative": 0.5762552792116378,
+        "recall_positive": 0.7466281310211946,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.6207186299400881,
+        "weighted_precision": 0.699045766030871,
+        "weighted_recall": 0.6166871921182266
+      },
+      {
+        "accuracy": 0.936884236453202,
+        "auprc_negative": 0.982148356046367,
+        "auprc_positive": 0.1220270415573825,
+        "auprc_uncertain": 0.013880783432589167,
+        "auroc_negative": 0.7419040053687966,
+        "auroc_positive": 0.7469372357723577,
+        "auroc_uncertain": 0.695717234262126,
+        "f1_negative": 0.9674121405750798,
+        "f1_positive": 0.13761467889908258,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.3655082543744652,
+        "n_negative": 3107,
+        "n_positive": 123,
+        "n_uncertain": 18,
+        "pathology": "Lung Lesion",
+        "precision_negative": 0.9603552172534094,
+        "precision_positive": 0.15789473684210525,
+        "precision_uncertain": 1.0,
+        "recall_negative": 0.9745735436112005,
+        "recall_positive": 0.12195121951219512,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.9306268861672907,
+        "weighted_precision": 0.9301861799993603,
+        "weighted_recall": 0.936884236453202
+      },
+      {
+        "accuracy": 0.6764162561576355,
+        "auprc_negative": 0.9233694888710382,
+        "auprc_positive": 0.5755545389059673,
+        "auprc_uncertain": 0.1721613421529255,
+        "auroc_negative": 0.8383408550124035,
+        "auroc_positive": 0.8412050950542127,
+        "auroc_uncertain": 0.7058203755827918,
+        "f1_negative": 0.7944471505114467,
+        "f1_positive": 0.5573419078242229,
+        "f1_uncertain": 0.17557251908396945,
+        "macro_recall": 0.5457082110224685,
+        "n_negative": 2276,
+        "n_positive": 683,
+        "n_uncertain": 289,
+        "pathology": "Edema",
+        "precision_negative": 0.8912568306010928,
+        "precision_positive": 0.43956043956043955,
+        "precision_uncertain": 0.19574468085106383,
+        "recall_negative": 0.7166080843585237,
+        "recall_positive": 0.7613469985358712,
+        "recall_uncertain": 0.15916955017301038,
+        "weighted_f1": 0.6895217658938619,
+        "weighted_precision": 0.7343874813527786,
+        "weighted_recall": 0.6764162561576355
+      },
+      {
+        "accuracy": 0.7718596059113301,
+        "auprc_negative": 0.9580478763014636,
+        "auprc_positive": 0.18800545529484425,
+        "auprc_uncertain": 0.027721966712028156,
+        "auroc_negative": 0.7296408348912474,
+        "auroc_positive": 0.7602452864176774,
+        "auroc_uncertain": 0.485916760184134,
+        "f1_negative": 0.870691227430239,
+        "f1_positive": 0.26200873362445415,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.4532841206331482,
+        "n_negative": 2931,
+        "n_positive": 220,
+        "n_uncertain": 97,
+        "pathology": "Consolidation",
+        "precision_negative": 0.9353448275862069,
+        "precision_positive": 0.1724137931034483,
+        "precision_uncertain": 1.0,
+        "recall_negative": 0.8143978164448994,
+        "recall_positive": 0.5454545454545454,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.8034599473508036,
+        "weighted_precision": 0.8855993608799048,
+        "weighted_recall": 0.7718596059113301
+      },
+      {
+        "accuracy": 0.6736453201970444,
+        "auprc_negative": 0.9073364374522123,
+        "auprc_positive": 0.2728213459195633,
+        "auprc_uncertain": 0.21409560699987132,
+        "auroc_negative": 0.7489216275407184,
+        "auroc_positive": 0.7242612888185233,
+        "auroc_uncertain": 0.7122744750073943,
+        "f1_negative": 0.8216127036502372,
+        "f1_positive": 0.3058823529411765,
+        "f1_uncertain": 0.005376344086021506,
+        "macro_recall": 0.4540536324009516,
+        "n_negative": 2563,
+        "n_positive": 335,
+        "n_uncertain": 350,
+        "pathology": "Pneumonia",
+        "precision_negative": 0.8713910761154856,
+        "precision_positive": 0.2074468085106383,
+        "precision_uncertain": 0.045454545454545456,
+        "recall_negative": 0.777214202106906,
+        "recall_positive": 0.582089552238806,
+        "recall_uncertain": 0.002857142857142857,
+        "weighted_f1": 0.6804635677712314,
+        "weighted_precision": 0.7139098213805865,
+        "weighted_recall": 0.6736453201970444
+      },
+      {
+        "accuracy": 0.6028325123152709,
+        "auprc_negative": 0.891646558703499,
+        "auprc_positive": 0.42960023212019177,
+        "auprc_uncertain": 0.10297905077885877,
+        "auroc_negative": 0.76401911430346,
+        "auroc_positive": 0.7582518219472838,
+        "auroc_uncertain": 0.6588072692147624,
+        "f1_negative": 0.7029136316337149,
+        "f1_positive": 0.49429037520391517,
+        "f1_uncertain": 0.01,
+        "macro_recall": 0.4716874738340138,
+        "n_negative": 2326,
+        "n_positive": 731,
+        "n_uncertain": 191,
+        "pathology": "Atelectasis",
+        "precision_negative": 0.8899868247694335,
+        "precision_positive": 0.35212085996513653,
+        "precision_uncertain": 0.1111111111111111,
+        "recall_negative": 0.5808254514187446,
+        "recall_positive": 0.8290013679890561,
+        "recall_uncertain": 0.005235602094240838,
+        "weighted_f1": 0.6152134764329072,
+        "weighted_precision": 0.7231317503911452,
+        "weighted_recall": 0.6028325123152709
+      },
+      {
+        "accuracy": 0.9150246305418719,
+        "auprc_negative": 0.9907017635917545,
+        "auprc_positive": 0.2746600726983661,
+        "auprc_uncertain": 0.02100291295869603,
+        "auroc_negative": 0.8365893022014219,
+        "auroc_positive": 0.853099945335277,
+        "auroc_uncertain": 0.7481377646656127,
+        "f1_negative": 0.9556650246305419,
+        "f1_positive": 0.32041343669250644,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.49572047298226324,
+        "n_negative": 3117,
+        "n_positive": 112,
+        "n_uncertain": 19,
+        "pathology": "Pneumothorax",
+        "precision_negative": 0.9788092835519677,
+        "precision_positive": 0.22545454545454546,
+        "precision_uncertain": 1.0,
+        "recall_negative": 0.933589990375361,
+        "recall_positive": 0.5535714285714286,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.9281693924516502,
+        "weighted_precision": 0.9529554944342341,
+        "weighted_recall": 0.9150246305418719
+      },
+      {
+        "accuracy": 0.7583128078817734,
+        "auprc_negative": 0.9335472494454743,
+        "auprc_positive": 0.8088825926713897,
+        "auprc_uncertain": 0.07964211726840531,
+        "auroc_negative": 0.8932102547932202,
+        "auroc_positive": 0.8925142063218775,
+        "auroc_uncertain": 0.674140227956777,
+        "f1_negative": 0.8121606948968513,
+        "f1_positive": 0.72110365398956,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.5440902260753795,
+        "n_negative": 2044,
+        "n_positive": 1074,
+        "n_uncertain": 130,
+        "pathology": "Pleural Effusion",
+        "precision_negative": 0.9121951219512195,
+        "precision_positive": 0.6013681592039801,
+        "precision_uncertain": 1.0,
+        "recall_negative": 0.7318982387475538,
+        "recall_positive": 0.9003724394785847,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.7495448844685811,
+        "weighted_precision": 0.8129298744622435,
+        "weighted_recall": 0.7583128078817734
+      },
+      {
+        "accuracy": 0.9738300492610837,
+        "auprc_negative": 0.9938252515661813,
+        "auprc_positive": 0.0753087823887379,
+        "auprc_uncertain": 0.012048749800837748,
+        "auroc_negative": 0.8095034571461668,
+        "auroc_positive": 0.8347711245670429,
+        "auroc_uncertain": 0.693958849009901,
+        "f1_negative": 0.98688729316266,
+        "f1_positive": 0.05405405405405406,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.3430738586939281,
+        "n_negative": 3169,
+        "n_positive": 63,
+        "n_uncertain": 16,
+        "pathology": "Pleural Other",
+        "precision_negative": 0.9765214704973741,
+        "precision_positive": 0.18181818181818182,
+        "precision_uncertain": 1.0,
+        "recall_negative": 0.9974755443357526,
+        "recall_positive": 0.031746031746031744,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.9639320312308729,
+        "weighted_precision": 0.9612226248339668,
+        "weighted_recall": 0.9738300492610837
+      },
+      {
+        "accuracy": 0.9713669950738916,
+        "auprc_negative": 0.9853111692523997,
+        "auprc_positive": 0.06279941055166376,
+        "auprc_uncertain": 0.016066283928163772,
+        "auroc_negative": 0.6890615680861578,
+        "auroc_positive": 0.6849451006754378,
+        "auroc_uncertain": 0.7553945745992602,
+        "f1_negative": 0.9854755583320318,
+        "f1_positive": 0.0,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.3333333333333333,
+        "n_negative": 3155,
+        "n_positive": 89,
+        "n_uncertain": 4,
+        "pathology": "Fracture",
+        "precision_negative": 0.9713669950738916,
+        "precision_positive": 1.0,
+        "precision_uncertain": 1.0,
+        "recall_negative": 1.0,
+        "recall_positive": 0.0,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.9572584318157513,
+        "weighted_precision": 0.97218684404499,
+        "weighted_recall": 0.9713669950738916
+      },
+      {
+        "accuracy": 0.8008004926108374,
+        "auprc_negative": 0.9471830578179721,
+        "auprc_positive": 0.8022479803453697,
+        "auprc_uncertain": 0.008178309236626182,
+        "auroc_negative": 0.9034426804427945,
+        "auroc_positive": 0.9043466792275082,
+        "auroc_uncertain": 0.8407059186189889,
+        "f1_negative": 0.8285942067499336,
+        "f1_positive": 0.7636496885305973,
+        "f1_uncertain": 0.0,
+        "macro_recall": 0.5539822068411026,
+        "n_negative": 2119,
+        "n_positive": 1125,
+        "n_uncertain": 4,
+        "pathology": "Support Devices",
+        "precision_negative": 0.9482968369829684,
+        "precision_positive": 0.6496259351620948,
+        "precision_uncertain": 1.0,
+        "recall_negative": 0.7357243983010854,
+        "recall_positive": 0.9262222222222222,
+        "recall_uncertain": 0.0,
+        "weighted_f1": 0.8050791329125712,
+        "weighted_precision": 0.8449107680493432,
+        "weighted_recall": 0.8008004926108374
+      }
+    ],
+    "settings": {
+      "decision": "argmax",
+      "five_findings": [
+        "Atelectasis",
+        "Cardiomegaly",
+        "Consolidation",
+        "Edema",
+        "Pleural Effusion"
+      ],
+      "num_findings": 14,
+      "protocol": "META-CXR paper: three-class argmax, per-finding sklearn-weighted P/R/F1 (zero_division=1), mean over findings; one-vs-rest AUROC per class",
+      "zero_division": 1.0
+    },
+    "subgroup_table": "| Subgroup | Samples | weighted_f1 | mean_weighted_f1_5 | auroc_positive_mean |\n| --- | ---: | ---: | ---: | ---: |\n| normal_studies | 138 | 0.8145 | 0.7374 | n/a |\n| abnormal_studies | 3131 | 0.7794 | 0.6678 | 0.7839 |\n",
+    "subgroups": [
+      {
+        "auroc_positive_mean": null,
+        "description": "no pathology labelled positive",
+        "mean_weighted_f1_5": 0.7374297936588139,
+        "reliable": true,
+        "samples": 138,
+        "subgroup": "normal_studies",
+        "weighted_f1": 0.8145328507471045
+      },
+      {
+        "auroc_positive_mean": 0.7838926656916333,
+        "description": "at least one pathology labelled positive",
+        "mean_weighted_f1_5": 0.6677662564925412,
+        "reliable": true,
+        "samples": 3131,
+        "subgroup": "abnormal_studies",
+        "weighted_f1": 0.7794485895994949
+      }
+    ]
+  },
+  "metadata": {
+    "checkpoint": "/home/phuong/run_20261005_paper/phase1c/checkpoint_best.pth",
+    "config": "pretraining/configs/mimic_cxr_full.yaml",
+    "created_utc": "2026-10-05T19:40:35.711568+00:00",
+    "device": "cpu",
+    "git_commit": "206fb0ea8038fb809b29d490ac86ec86b4f5f564",
+    "git_dirty": false,
+    "num_pathologies": 14,
+    "num_samples": 3269,
+    "package_versions": {
+      "bert-score": "0.3.13",
+      "matplotlib": "3.11.1",
+      "nltk": "3.9.1",
+      "numpy": "1.26.4",
+      "pandas": "2.2.3",
+      "pycocoevalcap": "1.2",
+      "python": "3.11.16",
+      "scikit-learn": "1.5.2",
+      "torch": "2.9.1+cu130"
+    },
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.43",
+    "seed": 42,
+    "split": "test",
+    "threshold_source": "argmax (paper)"
+  }
+}

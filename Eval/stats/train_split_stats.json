@@ -1,0 +1,87 @@
+{
+  "scale": {
+    "images": 368960,
+    "studies": 222758,
+    "patients": 64586
+  },
+  "views": {
+    "AP": 143556,
+    "PA": 94416,
+    "LATERAL": 81317,
+    "LL": 34330,
+    "UNKNOWN": 15320,
+    "PA LLD": 4,
+    "LAO": 3,
+    "RAO": 3,
+    "AP AXIAL": 2,
+    "AP LLD": 2,
+    "XTABLE LATERAL": 2,
+    "AP RLD": 2,
+    "SWIMMERS": 1,
+    "PA RLD": 1,
+    "LPO": 1
+  },
+  "images_per_study": {
+    "1": 100098,
+    "2": 101501,
+    "3": 18974,
+    "4": 2046,
+    "5": 98,
+    "6": 33,
+    "7": 2,
+    "8": 4,
+    "9": 1,
+    "11": 1
+  },
+  "text": {
+    "target_valid": 176312,
+    "impression_valid": 183770,
+    "has_chexpert_label": 220379,
+    "findings_token_count": {
+      "n": 178204,
+      "median": 52.0,
+      "p10": 26.0,
+      "p90": 90.0,
+      "max": 420.0
+    },
+    "impression_token_count": {
+      "n": 185860,
+      "median": 20.0,
+      "p10": 5.0,
+      "p90": 66.0,
+      "max": 269.0
+    }
+  },
+  "extraction_method": {
+    "FINDINGS_TAG": 146416,
+    "IMPRESSION_ONLY": 44394,
+    "NARRATIVE_BODY": 31748,
+    "FINDINGS_IMPRESSION_COMBINED": 135,
+    "NARRATIVE_AFTER_COMPARISON": 40,
+    "NO_FINDINGS": 25
+  },
+  "label_matrix_totals": {
+    "cells": 3118612,
+    "mentioned": 640600,
+    "blank": 2478012,
+    "blank_pct": 79.46,
+    "labels_per_study": 2.88,
+    "positive": 412459,
+    "negative": 155282,
+    "uncertain": 72859
+  },
+  "explanation_masks": {
+    "studies_with_mask": 208987,
+    "lung_chexmask": 208118,
+    "bbox_ms_cxr": 869,
+    "bbox_label_pairs": 928,
+    "bbox_studies": 869
+  },
+  "provenance": {
+    "manifest": "processed/full_allviews_v2/train.csv",
+    "chexpert": "mimic-cxr-2.0.0-chexpert.csv.gz",
+    "mask_cache": "/home/phuong/explanation_masks_v2",
+    "generated_utc": "2026-08-16T11:19:44+00:00",
+    "note": "Aggregate counts only. No subject_id / study_id / dicom_id / report text."
+  }
+}

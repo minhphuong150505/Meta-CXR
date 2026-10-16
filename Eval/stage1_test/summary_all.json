@@ -1,0 +1,971 @@
+{
+  "run": {
+    "run_dir": "run_20260819_xmpoff",
+    "checkpoint": "checkpoint_best.pth",
+    "best_epoch": 6,
+    "epochs": 10,
+    "wall_clock": "12h35m (18:15:29 -> 06:50:54)",
+    "s_per_it": 0.3505,
+    "max_mem_MiB": 8526,
+    "test_studies": 3269,
+    "val_studies": 1808,
+    "kernel_faults": 0,
+    "config": "pretraining/configs/mimic_cxr_full.yaml",
+    "source_commit_for_gate_export": "0f1003d",
+    "note": "q is bit-identical between the training run's checkpoint_best evaluation and the separate evaluate-only export that added the mention gate (max abs diff 0.0), so the two are directly comparable."
+  },
+  "arms": {
+    "masked_polarity_f1": {
+      "dir": "eval_f1",
+      "aggregates": {
+        "accuracy": 0.7110865968008825,
+        "balanced_accuracy": 0.6586355347049965,
+        "binary_accuracy": 0.8583344366476897,
+        "macro_auprc": 0.8951111467730422,
+        "macro_auroc": 0.7857223325917172,
+        "macro_f1": 0.6648012061521482,
+        "macro_npv": 0.6755489046573463,
+        "macro_precision": 0.6724626373447147,
+        "macro_recall": 0.4502078296094934,
+        "macro_specificity": 0.4196688122443721,
+        "micro_auprc": 0.9293924343306758,
+        "micro_auroc": 0.8680160328238259,
+        "micro_f1": 0.7110865968008825,
+        "micro_precision": 0.7110865968008825,
+        "micro_recall": 0.7110865968008825,
+        "positive_macro_f1": 0.8717323497947066,
+        "positive_macro_precision": 0.8454514356601011,
+        "positive_macro_recall": 0.906135402401819,
+        "positive_micro_f1": 0.9056603773584905,
+        "positive_micro_precision": 0.8768994365716237,
+        "positive_micro_recall": 0.9363719234275296,
+        "positive_weighted_f1": 0.9100219359782279,
+        "positive_weighted_precision": 0.8867695904496419,
+        "positive_weighted_recall": 0.9363719234275296,
+        "weighted_f1": 0.776351964210955,
+        "weighted_precision": 0.7283648102122676,
+        "weighted_recall": 0.7147487634961411
+      },
+      "bootstrap": null,
+      "baselines": [
+        {
+          "accuracy": 0.27379849066596057,
+          "baseline": "all_negative",
+          "description": "predict negative for every pathology on every study",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.0,
+          "positive_macro_recall": 0.0
+        },
+        {
+          "accuracy": 0.7262015093340395,
+          "baseline": "all_positive",
+          "description": "predict positive for every pathology on every study",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.8396522251571068,
+          "positive_macro_recall": 1.0
+        },
+        {
+          "accuracy": 0.8076261088309281,
+          "baseline": "majority_class",
+          "description": "predict each pathology's majority class, decided per pathology",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.8200237638882668,
+          "positive_macro_recall": 0.9166666666666666
+        },
+        {
+          "accuracy": 0.7190520323050443,
+          "baseline": "prevalence_random",
+          "description": "sample each prediction from the pathology's prevalence (seed=42)",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.7616759735737766,
+          "positive_macro_recall": 0.761338568696373
+        },
+        {
+          "accuracy": 0.8539653117966371,
+          "baseline": "threshold_half",
+          "description": "the model's own probabilities at the uncalibrated 0.5 threshold",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.871330074472008,
+          "positive_macro_recall": 0.9056220436278773
+        }
+      ],
+      "settings": {
+        "class_names": [
+          "negative",
+          "positive",
+          "uncertain"
+        ],
+        "decision_rule": "threshold",
+        "include_meta_labels": false,
+        "num_pathologies": 14,
+        "num_samples": 3269,
+        "thresholds": {
+          "Atelectasis": 0.5710514916648864,
+          "Cardiomegaly": 0.4282846301794052,
+          "Consolidation": 0.35434359312057495,
+          "Edema": 0.5783798098564148,
+          "Enlarged Cardiomediastinum": 0.512811154127121,
+          "Fracture": 0.5,
+          "Lung Lesion": 0.5980239047279358,
+          "Lung Opacity": 0.25495272874832153,
+          "No Finding": 0.5,
+          "Pleural Effusion": 0.41490161418914795,
+          "Pleural Other": 0.5,
+          "Pneumonia": 0.5382073223590851,
+          "Pneumothorax": 0.5036519765853882,
+          "Support Devices": 0.09328771010041237
+        },
+        "uncertain_policy": "ignore_uncertain",
+        "uncertain_policy_description": "uncertain dropped from binary metrics (U-Ignore)"
+      }
+    },
+    "masked_polarity_youden": {
+      "dir": "eval_youden",
+      "aggregates": {
+        "accuracy": 0.7110865968008825,
+        "balanced_accuracy": 0.7051809122340085,
+        "binary_accuracy": 0.8183503243744208,
+        "macro_auprc": 0.8951111467730422,
+        "macro_auroc": 0.7857223325917172,
+        "macro_f1": 0.6648012061521482,
+        "macro_npv": 0.5258212417053255,
+        "macro_precision": 0.6724626373447147,
+        "macro_recall": 0.4502078296094934,
+        "macro_specificity": 0.557960528522428,
+        "micro_auprc": 0.9293924343306758,
+        "micro_auroc": 0.8680160328238259,
+        "micro_f1": 0.7110865968008825,
+        "micro_precision": 0.7110865968008825,
+        "micro_recall": 0.7110865968008825,
+        "positive_macro_f1": 0.8516725185454201,
+        "positive_macro_precision": 0.8553557015830736,
+        "positive_macro_recall": 0.8647011879501232,
+        "positive_micro_f1": 0.8733382570162481,
+        "positive_micro_precision": 0.8846081915092575,
+        "positive_micro_recall": 0.8623518687329079,
+        "positive_weighted_f1": 0.8817819031791906,
+        "positive_weighted_precision": 0.9082174430381468,
+        "positive_weighted_recall": 0.8623518687329079,
+        "weighted_f1": 0.776351964210955,
+        "weighted_precision": 0.7283648102122676,
+        "weighted_recall": 0.7147487634961411
+      },
+      "bootstrap": null,
+      "baselines": [
+        {
+          "accuracy": 0.27379849066596057,
+          "baseline": "all_negative",
+          "description": "predict negative for every pathology on every study",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.0,
+          "positive_macro_recall": 0.0
+        },
+        {
+          "accuracy": 0.7262015093340395,
+          "baseline": "all_positive",
+          "description": "predict positive for every pathology on every study",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.8396522251571068,
+          "positive_macro_recall": 1.0
+        },
+        {
+          "accuracy": 0.8076261088309281,
+          "baseline": "majority_class",
+          "description": "predict each pathology's majority class, decided per pathology",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.8200237638882668,
+          "positive_macro_recall": 0.9166666666666666
+        },
+        {
+          "accuracy": 0.7190520323050443,
+          "baseline": "prevalence_random",
+          "description": "sample each prediction from the pathology's prevalence (seed=42)",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.7616759735737766,
+          "positive_macro_recall": 0.761338568696373
+        },
+        {
+          "accuracy": 0.8539653117966371,
+          "baseline": "threshold_half",
+          "description": "the model's own probabilities at the uncalibrated 0.5 threshold",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.871330074472008,
+          "positive_macro_recall": 0.9056220436278773
+        }
+      ],
+      "settings": {
+        "class_names": [
+          "negative",
+          "positive",
+          "uncertain"
+        ],
+        "decision_rule": "threshold",
+        "include_meta_labels": false,
+        "num_pathologies": 14,
+        "num_samples": 3269,
+        "thresholds": {
+          "Atelectasis": 0.7300074100494385,
+          "Cardiomegaly": 0.6607606410980225,
+          "Consolidation": 0.4365983009338379,
+          "Edema": 0.6167770624160767,
+          "Enlarged Cardiomediastinum": 0.5316165387630463,
+          "Fracture": 0.5,
+          "Lung Lesion": 0.7831839323043823,
+          "Lung Opacity": 0.5438396036624908,
+          "No Finding": 0.5,
+          "Pleural Effusion": 0.6752103567123413,
+          "Pleural Other": 0.5,
+          "Pneumonia": 0.5382073223590851,
+          "Pneumothorax": 0.44328394532203674,
+          "Support Devices": 0.19107429683208466
+        },
+        "uncertain_policy": "ignore_uncertain",
+        "uncertain_policy_description": "uncertain dropped from binary metrics (U-Ignore)"
+      }
+    },
+    "masked_polarity_thr0.5": {
+      "dir": "eval_uncalibrated",
+      "aggregates": {
+        "accuracy": 0.7110865968008825,
+        "balanced_accuracy": 0.6706401324567379,
+        "binary_accuracy": 0.8539653117966371,
+        "macro_auprc": 0.8951111467730422,
+        "macro_auroc": 0.7857223325917172,
+        "macro_f1": 0.6648012061521482,
+        "macro_npv": 0.7342668774383292,
+        "macro_precision": 0.6724626373447147,
+        "macro_recall": 0.4502078296094934,
+        "macro_specificity": 0.4442380355012461,
+        "micro_auprc": 0.9293924343306758,
+        "micro_auroc": 0.8680160328238259,
+        "micro_f1": 0.7110865968008825,
+        "micro_precision": 0.7110865968008825,
+        "micro_recall": 0.7110865968008825,
+        "positive_macro_f1": 0.871330074472008,
+        "positive_macro_precision": 0.846406627730961,
+        "positive_macro_recall": 0.9056220436278773,
+        "positive_micro_f1": 0.9021555930098466,
+        "positive_micro_precision": 0.8785418106427091,
+        "positive_micro_recall": 0.927073837739289,
+        "positive_weighted_f1": 0.9075529850260512,
+        "positive_weighted_precision": 0.8915132887898997,
+        "positive_weighted_recall": 0.927073837739289,
+        "weighted_f1": 0.776351964210955,
+        "weighted_precision": 0.7283648102122676,
+        "weighted_recall": 0.7147487634961411
+      },
+      "bootstrap": null,
+      "baselines": [
+        {
+          "accuracy": 0.27379849066596057,
+          "baseline": "all_negative",
+          "description": "predict negative for every pathology on every study",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.0,
+          "positive_macro_recall": 0.0
+        },
+        {
+          "accuracy": 0.7262015093340395,
+          "baseline": "all_positive",
+          "description": "predict positive for every pathology on every study",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.8396522251571068,
+          "positive_macro_recall": 1.0
+        },
+        {
+          "accuracy": 0.8076261088309281,
+          "baseline": "majority_class",
+          "description": "predict each pathology's majority class, decided per pathology",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.8200237638882668,
+          "positive_macro_recall": 0.9166666666666666
+        },
+        {
+          "accuracy": 0.7190520323050443,
+          "baseline": "prevalence_random",
+          "description": "sample each prediction from the pathology's prevalence (seed=42)",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.7616759735737766,
+          "positive_macro_recall": 0.761338568696373
+        },
+        {
+          "accuracy": 0.8539653117966371,
+          "baseline": "threshold_half",
+          "description": "the model's own probabilities at the uncalibrated 0.5 threshold",
+          "macro_auprc": 0.8951111467730422,
+          "macro_auroc": 0.7857223325917172,
+          "positive_macro_f1": 0.871330074472008,
+          "positive_macro_recall": 0.9056220436278773
+        }
+      ],
+      "settings": {
+        "class_names": [
+          "negative",
+          "positive",
+          "uncertain"
+        ],
+        "decision_rule": "threshold",
+        "include_meta_labels": false,
+        "num_pathologies": 14,
+        "num_samples": 3269,
+        "thresholds": {
+          "Atelectasis": 0.5,
+          "Cardiomegaly": 0.5,
+          "Consolidation": 0.5,
+          "Edema": 0.5,
+          "Enlarged Cardiomediastinum": 0.5,
+          "Fracture": 0.5,
+          "Lung Lesion": 0.5,
+          "Lung Opacity": 0.5,
+          "No Finding": 0.5,
+          "Pleural Effusion": 0.5,
+          "Pleural Other": 0.5,
+          "Pneumonia": 0.5,
+          "Pneumothorax": 0.5,
+          "Support Devices": 0.5
+        },
+        "uncertain_policy": "ignore_uncertain",
+        "uncertain_policy_description": "uncertain dropped from binary metrics (U-Ignore)"
+      }
+    },
+    "study_presence_qpos": {
+      "dir": "eval_presence_qpos",
+      "aggregates": {
+        "accuracy": 0.36812990720913635,
+        "balanced_accuracy": 0.6072189874167853,
+        "binary_accuracy": 0.6340369124095034,
+        "macro_auprc": 0.26565217252333234,
+        "macro_auroc": 0.6767075457860069,
+        "macro_f1": 0.3316184237386154,
+        "macro_npv": 0.9038997191412619,
+        "macro_precision": 0.4927320412718231,
+        "macro_recall": 0.5942152091679862,
+        "macro_specificity": 0.6358615566605643,
+        "micro_auprc": 0.22759571247684518,
+        "micro_auroc": 0.6383978893924209,
+        "micro_f1": 0.36812990720913635,
+        "micro_precision": 0.36812990720913635,
+        "micro_recall": 0.36812990720913635,
+        "positive_macro_f1": 0.3074465281551552,
+        "positive_macro_precision": 0.256375699131455,
+        "positive_macro_recall": 0.5785764181730063,
+        "positive_micro_f1": 0.33159512058850915,
+        "positive_micro_precision": 0.2226599137122491,
+        "positive_micro_recall": 0.6492251595259799,
+        "positive_weighted_f1": 0.47239107364008626,
+        "positive_weighted_precision": 0.39491691846516946,
+        "positive_weighted_recall": 0.6492251595259799,
+        "weighted_f1": 0.38434803699966175,
+        "weighted_precision": 0.7157084225099871,
+        "weighted_recall": 0.36812990720913635
+      },
+      "bootstrap": null,
+      "baselines": [
+        {
+          "accuracy": 0.8601764046089528,
+          "baseline": "all_negative",
+          "description": "predict negative for every pathology on every study",
+          "macro_auprc": 0.26565217252333234,
+          "macro_auroc": 0.6767075457860069,
+          "positive_macro_f1": 0.0,
+          "positive_macro_recall": 0.0
+        },
+        {
+          "accuracy": 0.13982359539104722,
+          "baseline": "all_positive",
+          "description": "predict positive for every pathology on every study",
+          "macro_auprc": 0.26565217252333234,
+          "macro_auroc": 0.6767075457860069,
+          "positive_macro_f1": 0.2280437070360404,
+          "positive_macro_recall": 1.0
+        },
+        {
+          "accuracy": 0.8601764046089528,
+          "baseline": "majority_class",
+          "description": "predict each pathology's majority class, decided per pathology",
+          "macro_auprc": 0.26565217252333234,
+          "macro_auroc": 0.6767075457860069,
+          "positive_macro_f1": 0.0,
+          "positive_macro_recall": 0.0
+        },
+        {
+          "accuracy": 0.7863770775976343,
+          "baseline": "prevalence_random",
+          "description": "sample each prediction from the pathology's prevalence (seed=42)",
+          "macro_auprc": 0.26565217252333234,
+          "macro_auroc": 0.6767075457860069,
+          "positive_macro_f1": 0.14183412428042833,
+          "positive_macro_recall": 0.14192219914983772
+        },
+        {
+          "accuracy": 0.36812990720913635,
+          "baseline": "threshold_half",
+          "description": "the model's own probabilities at the uncalibrated 0.5 threshold",
+          "macro_auprc": 0.26565217252333234,
+          "macro_auroc": 0.6767075457860069,
+          "positive_macro_f1": 0.27972850695821694,
+          "positive_macro_recall": 0.9056220436278773
+        }
+      ],
+      "settings": {
+        "class_names": [
+          "negative",
+          "positive",
+          "uncertain"
+        ],
+        "decision_rule": "threshold",
+        "include_meta_labels": false,
+        "num_pathologies": 14,
+        "num_samples": 3269,
+        "thresholds": {
+          "Atelectasis": 0.7576505541801453,
+          "Cardiomegaly": 0.7900936007499695,
+          "Consolidation": 0.9651211500167847,
+          "Edema": 0.8665266036987305,
+          "Enlarged Cardiomediastinum": 0.9125444889068604,
+          "Fracture": 0.5,
+          "Lung Lesion": 0.8956994116306305,
+          "Lung Opacity": 0.6050110161304474,
+          "No Finding": 0.974956601858139,
+          "Pleural Effusion": 0.8097645342350006,
+          "Pleural Other": 0.5,
+          "Pneumonia": 0.8313719630241394,
+          "Pneumothorax": 0.7009206414222717,
+          "Support Devices": 0.19493666291236877
+        },
+        "uncertain_policy": "ignore_uncertain",
+        "uncertain_policy_description": "uncertain dropped from binary metrics (U-Ignore)"
+      }
+    },
+    "study_presence_marginal_argmax": {
+      "dir": "eval_presence_marginal",
+      "aggregates": {
+        "accuracy": 0.7673855409401448,
+        "balanced_accuracy": 0.6237406212958304,
+        "binary_accuracy": 0.8118435811155297,
+        "macro_auprc": 0.3003864405334163,
+        "macro_auroc": 0.7441165810812228,
+        "macro_f1": 0.6173231446912023,
+        "macro_npv": 0.9231859185115568,
+        "macro_precision": 0.6269453809740112,
+        "macro_recall": 0.6425029717663319,
+        "macro_specificity": 0.8213862368280352,
+        "micro_auprc": 0.4428683661540987,
+        "micro_auroc": 0.818335900641643,
+        "micro_f1": 0.7673855409401448,
+        "micro_precision": 0.7673855409401448,
+        "micro_recall": 0.7673855409401448,
+        "positive_macro_f1": 0.32237067098917743,
+        "positive_macro_precision": 0.29885092608676,
+        "positive_macro_recall": 0.42609500576362547,
+        "positive_micro_f1": 0.488105971287884,
+        "positive_micro_precision": 0.3938885157824043,
+        "positive_micro_recall": 0.6415679124886053,
+        "positive_weighted_f1": 0.49419485649367767,
+        "positive_weighted_precision": 0.4212514147638983,
+        "positive_weighted_recall": 0.6415679124886053,
+        "weighted_f1": 0.7974465131702644,
+        "weighted_precision": 0.8618381948401935,
+        "weighted_recall": 0.7673855409401448
+      },
+      "bootstrap": null,
+      "baselines": [
+        {
+          "accuracy": 0.8601764046089528,
+          "baseline": "all_negative",
+          "description": "predict negative for every pathology on every study",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.0,
+          "positive_macro_recall": 0.0
+        },
+        {
+          "accuracy": 0.13982359539104722,
+          "baseline": "all_positive",
+          "description": "predict positive for every pathology on every study",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.2280437070360404,
+          "positive_macro_recall": 1.0
+        },
+        {
+          "accuracy": 0.8601764046089528,
+          "baseline": "majority_class",
+          "description": "predict each pathology's majority class, decided per pathology",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.0,
+          "positive_macro_recall": 0.0
+        },
+        {
+          "accuracy": 0.7863770775976343,
+          "baseline": "prevalence_random",
+          "description": "sample each prediction from the pathology's prevalence (seed=42)",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.14183412428042833,
+          "positive_macro_recall": 0.14192219914983772
+        },
+        {
+          "accuracy": 0.7673855409401448,
+          "baseline": "threshold_half",
+          "description": "the model's own probabilities at the uncalibrated 0.5 threshold",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.3173223271226751,
+          "positive_macro_recall": 0.5181720997631202
+        }
+      ],
+      "settings": {
+        "class_names": [
+          "negative",
+          "positive",
+          "uncertain"
+        ],
+        "decision_rule": "threshold",
+        "include_meta_labels": false,
+        "num_pathologies": 14,
+        "num_samples": 3269,
+        "thresholds": {
+          "Atelectasis": 0.5369855571785287,
+          "Cardiomegaly": 0.5539927725083427,
+          "Consolidation": 0.6864682311879555,
+          "Edema": 0.6868638936190052,
+          "Enlarged Cardiomediastinum": 0.5528365231984402,
+          "Fracture": 0.5,
+          "Lung Lesion": 0.45362437835261105,
+          "Lung Opacity": 0.40181263997562056,
+          "No Finding": 0.6459087220005877,
+          "Pleural Effusion": 0.623992496929846,
+          "Pleural Other": 0.5,
+          "Pneumonia": 0.6790707742006727,
+          "Pneumothorax": 0.6352359901049223,
+          "Support Devices": 0.1328147134948452
+        },
+        "uncertain_policy": "ignore_uncertain",
+        "uncertain_policy_description": "uncertain dropped from binary metrics (U-Ignore)"
+      }
+    },
+    "study_presence_marginal_plateau": {
+      "dir": "eval_presence_plateau",
+      "aggregates": {
+        "accuracy": 0.7673855409401448,
+        "balanced_accuracy": 0.6453554284093643,
+        "binary_accuracy": 0.7873202814316305,
+        "macro_auprc": 0.3003864405334163,
+        "macro_auroc": 0.7441165810812228,
+        "macro_f1": 0.6173231446912023,
+        "macro_npv": 0.9269563778679557,
+        "macro_precision": 0.6269453809740112,
+        "macro_recall": 0.6425029717663319,
+        "macro_specificity": 0.7900745385254256,
+        "micro_auprc": 0.4428683661540987,
+        "micro_auroc": 0.818335900641643,
+        "micro_f1": 0.7673855409401448,
+        "micro_precision": 0.7673855409401448,
+        "micro_recall": 0.7673855409401448,
+        "positive_macro_f1": 0.33974785172546934,
+        "positive_macro_precision": 0.2775811455842776,
+        "positive_macro_recall": 0.5006363182933031,
+        "positive_micro_f1": 0.4684971650633879,
+        "positive_micro_precision": 0.3600665883274579,
+        "positive_micro_recall": 0.6703737465815861,
+        "positive_weighted_f1": 0.49655062866635813,
+        "positive_weighted_precision": 0.40516268474128003,
+        "positive_weighted_recall": 0.6703737465815861,
+        "weighted_f1": 0.7974465131702644,
+        "weighted_precision": 0.8618381948401935,
+        "weighted_recall": 0.7673855409401448
+      },
+      "bootstrap": null,
+      "baselines": [
+        {
+          "accuracy": 0.8601764046089528,
+          "baseline": "all_negative",
+          "description": "predict negative for every pathology on every study",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.0,
+          "positive_macro_recall": 0.0
+        },
+        {
+          "accuracy": 0.13982359539104722,
+          "baseline": "all_positive",
+          "description": "predict positive for every pathology on every study",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.2280437070360404,
+          "positive_macro_recall": 1.0
+        },
+        {
+          "accuracy": 0.8601764046089528,
+          "baseline": "majority_class",
+          "description": "predict each pathology's majority class, decided per pathology",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.0,
+          "positive_macro_recall": 0.0
+        },
+        {
+          "accuracy": 0.7863770775976343,
+          "baseline": "prevalence_random",
+          "description": "sample each prediction from the pathology's prevalence (seed=42)",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.14183412428042833,
+          "positive_macro_recall": 0.14192219914983772
+        },
+        {
+          "accuracy": 0.7673855409401448,
+          "baseline": "threshold_half",
+          "description": "the model's own probabilities at the uncalibrated 0.5 threshold",
+          "macro_auprc": 0.3003864405334163,
+          "macro_auroc": 0.7441165810812228,
+          "positive_macro_f1": 0.3173223271226751,
+          "positive_macro_recall": 0.5181720997631202
+        }
+      ],
+      "settings": {
+        "class_names": [
+          "negative",
+          "positive",
+          "uncertain"
+        ],
+        "decision_rule": "threshold",
+        "include_meta_labels": false,
+        "num_pathologies": 14,
+        "num_samples": 3269,
+        "thresholds": {
+          "Atelectasis": 0.5388108640652902,
+          "Cardiomegaly": 0.4715620049653513,
+          "Consolidation": 0.6829532497308985,
+          "Edema": 0.6903545793708368,
+          "Enlarged Cardiomediastinum": 0.5423110997489662,
+          "Fracture": 0.2439031476332172,
+          "Lung Lesion": 0.44546059840787944,
+          "Lung Opacity": 0.4247678223154523,
+          "No Finding": 0.6386280845692252,
+          "Pleural Effusion": 0.5657703640500564,
+          "Pleural Other": 0.23141917033128045,
+          "Pneumonia": 0.6480344225047112,
+          "Pneumothorax": 0.6311680521848757,
+          "Support Devices": 0.12440039089437605
+        },
+        "uncertain_policy": "ignore_uncertain",
+        "uncertain_policy_description": "uncertain dropped from binary metrics (U-Ignore)"
+      }
+    }
+  },
+  "mention_gate_contribution": {
+    "per_label": {
+      "No Finding": {
+        "prevalence": 0.1737534414193943,
+        "auroc_conditional": 0.5445172888497218,
+        "auroc_marginal": 0.8048512288093612,
+        "auroc_delta": 0.2603,
+        "f1_conditional": 0.310192023633678,
+        "f1_marginal": 0.5004240882103478,
+        "specificity_conditional": 0.36319881525360975,
+        "specificity_marginal": 0.883006293965198
+      },
+      "Enlarged Cardiomediastinum": {
+        "prevalence": 0.04619149587029673,
+        "auroc_conditional": 0.553689536084007,
+        "auroc_marginal": 0.612648624309181,
+        "auroc_delta": 0.059,
+        "f1_conditional": 0.08695652173913043,
+        "f1_marginal": 0.09942638623326959,
+        "specificity_conditional": 0.8649775497113534,
+        "specificity_marginal": 0.8890314304041051
+      },
+      "Cardiomegaly": {
+        "prevalence": 0.26491281737534417,
+        "auroc_conditional": 0.7386883601041423,
+        "auroc_marginal": 0.7594803070449851,
+        "auroc_delta": 0.0208,
+        "f1_conditional": 0.5259574468085106,
+        "f1_marginal": 0.5423584504044275,
+        "specificity_conditional": 0.6396171452351228,
+        "specificity_marginal": 0.6479400749063671
+      },
+      "Lung Opacity": {
+        "prevalence": 0.31752829611501987,
+        "auroc_conditional": 0.6406708674147522,
+        "auroc_marginal": 0.6914609258745873,
+        "auroc_delta": 0.0508,
+        "f1_conditional": 0.5179900744416873,
+        "f1_marginal": 0.5364154528182394,
+        "specificity_conditional": 0.39444195428059164,
+        "specificity_marginal": 0.4294038547736441
+      },
+      "Lung Lesion": {
+        "prevalence": 0.037626185377791374,
+        "auroc_conditional": 0.6507321207986396,
+        "auroc_marginal": 0.7261408214845022,
+        "auroc_delta": 0.0754,
+        "f1_conditional": 0.11630847029077118,
+        "f1_marginal": 0.155425219941349,
+        "specificity_conditional": 0.8022886204704387,
+        "specificity_marginal": 0.8391608391608392
+      },
+      "Edema": {
+        "prevalence": 0.20893239522789844,
+        "auroc_conditional": 0.810019091424825,
+        "auroc_marginal": 0.8244755236836712,
+        "auroc_delta": 0.0145,
+        "f1_conditional": 0.5278667520819986,
+        "f1_marginal": 0.5449904275686024,
+        "specificity_conditional": 0.819798917246713,
+        "specificity_marginal": 0.8232791956689869
+      },
+      "Consolidation": {
+        "prevalence": 0.0672988681553992,
+        "auroc_conditional": 0.716345150421897,
+        "auroc_marginal": 0.7445645368078952,
+        "auroc_delta": 0.0282,
+        "f1_conditional": 0.16714697406340057,
+        "f1_marginal": 0.2162162162162162,
+        "specificity_conditional": 0.9678583142013775,
+        "specificity_marginal": 0.9530993768448671
+      },
+      "Pneumonia": {
+        "prevalence": 0.10247782196390333,
+        "auroc_conditional": 0.6507686516293787,
+        "auroc_marginal": 0.6992898493218976,
+        "auroc_delta": 0.0485,
+        "f1_conditional": 0.26480836236933797,
+        "f1_marginal": 0.28498727735368956,
+        "specificity_conditional": 0.7747102931152011,
+        "specificity_marginal": 0.8844580777096115
+      },
+      "Atelectasis": {
+        "prevalence": 0.2236157846436219,
+        "auroc_conditional": 0.6628640020525226,
+        "auroc_marginal": 0.7229380179142963,
+        "auroc_delta": 0.0601,
+        "f1_conditional": 0.4244315648684797,
+        "f1_marginal": 0.47767857142857145,
+        "specificity_conditional": 0.5918045705279747,
+        "specificity_marginal": 0.6162332545311269
+      },
+      "Pneumothorax": {
+        "prevalence": 0.034261241970021415,
+        "auroc_conditional": 0.8206508213041314,
+        "auroc_marginal": 0.8283293361690575,
+        "auroc_delta": 0.0077,
+        "f1_conditional": 0.282258064516129,
+        "f1_marginal": 0.28813559322033894,
+        "specificity_conditional": 0.9680076021539437,
+        "specificity_marginal": 0.9714919227114349
+      },
+      "Pleural Effusion": {
+        "prevalence": 0.32854083817681246,
+        "auroc_conditional": 0.8541282243799392,
+        "auroc_marginal": 0.8682340514882733,
+        "auroc_delta": 0.0141,
+        "f1_conditional": 0.6848112379280071,
+        "f1_marginal": 0.7000871839581517,
+        "specificity_conditional": 0.8068337129840547,
+        "specificity_marginal": 0.8100227790432801
+      },
+      "Pleural Other": {
+        "prevalence": 0.019271948608137045,
+        "auroc_conditional": 0.536612898434483,
+        "auroc_marginal": 0.7866896394656844,
+        "auroc_delta": 0.2501,
+        "f1_conditional": 0.03781512605042017,
+        "f1_marginal": 0.022727272727272728,
+        "specificity_conditional": 0.0,
+        "specificity_marginal": 0.9925140361821585
+      },
+      "Fracture": {
+        "prevalence": 0.027225451208320588,
+        "auroc_conditional": 0.48532082538336513,
+        "auroc_marginal": 0.6651473394106423,
+        "auroc_delta": 0.1798,
+        "f1_conditional": 0.053007742703990474,
+        "f1_marginal": 0.0,
+        "specificity_conditional": 0.0,
+        "specificity_marginal": 1.0
+      },
+      "Support Devices": {
+        "prevalence": 0.3441419394310187,
+        "auroc_conditional": 0.7835512023217247,
+        "auroc_marginal": 0.8783134328358209,
+        "auroc_delta": 0.0948,
+        "f1_conditional": 0.6488214143028365,
+        "f1_marginal": 0.7445021991203519,
+        "specificity_conditional": 0.7360074626865671,
+        "specificity_marginal": 0.7924440298507462
+      }
+    },
+    "mean_auroc_delta": 0.0831,
+    "labels_improved": "14/14"
+  },
+  "robust_macros_masked_polarity": {
+    "shipped_meta_excluded": {
+      "auroc": [
+        0.7857,
+        11
+      ],
+      "auprc": [
+        0.8951,
+        12
+      ],
+      "f1": [
+        0.8717,
+        12
+      ],
+      "sensitivity": [
+        0.9061,
+        12
+      ],
+      "specificity": [
+        0.4197,
+        11
+      ]
+    },
+    "meta_and_degenerate_excluded": {
+      "auroc": [
+        0.8021,
+        10
+      ],
+      "auprc": [
+        0.8758,
+        10
+      ],
+      "f1": [
+        0.8477,
+        10
+      ],
+      "sensitivity": [
+        0.8874,
+        10
+      ],
+      "specificity": [
+        0.4616,
+        10
+      ]
+    },
+    "degenerate_labels_on_test": [
+      "Fracture",
+      "No Finding",
+      "Pleural Other"
+    ]
+  },
+  "headline": {
+    "arm": "study_presence_marginal_plateau",
+    "dir": "eval_presence_plateau",
+    "positive_macro_f1": 0.3397,
+    "positive_macro_f1_ci": [
+      0.3275,
+      0.3515
+    ],
+    "macro_auroc": 0.7441,
+    "macro_auroc_ci": [
+      0.7341,
+      0.754
+    ],
+    "positive_macro_precision": 0.2776,
+    "positive_macro_recall": 0.5006
+  },
+  "f1_optimisation": {
+    "paired_bootstrap_plateau_vs_argmax": {
+      "resamples": 2000,
+      "delta_f1": [
+        0.0174,
+        0.0102,
+        0.0243
+      ],
+      "delta_precision": [
+        -0.0211,
+        -0.0303,
+        -0.0137
+      ],
+      "delta_recall": [
+        0.0747,
+        0.0619,
+        0.088
+      ],
+      "all_significant": true
+    },
+    "thresholding_ceiling_test_oracle": 0.3532,
+    "gap_decomposition": {
+      "Fracture": 0.1345,
+      "Pleural Other": 0.0827,
+      "other_10_labels_each": "0.0015-0.0333"
+    },
+    "val_cv_selection": {
+      "method": "5-fold x 10 repeats inside validation",
+      "plateau_0.95_minpos5": 0.3246,
+      "argmax_minpos20": 0.3202
+    },
+    "did_not_help": {
+      "m^a*q^(1-a)": 0.3228,
+      "logistic_stack": 0.3225,
+      "q_alone": 0.3155,
+      "ensemble_mean_4_6_9": 0.3266,
+      "ensemble_mean_6_9": 0.328,
+      "checkpoint_9_instead_of_best": {
+        "cv_f1": 0.3291,
+        "delta_vs_ep6": 0.0041,
+        "fold_ci": [
+          -0.0155,
+          0.0237
+        ],
+        "conclusive": false
+      }
+    },
+    "precision_floor_sweep": {
+      "none_plateau": [
+        0.3409,
+        0.2778,
+        0.5044
+      ],
+      "0.35": [
+        0.2647,
+        0.3023,
+        0.3987
+      ],
+      "0.40": [
+        0.2646,
+        0.333,
+        0.3506
+      ],
+      "0.50": [
+        0.2321,
+        0.3975,
+        0.2329
+      ],
+      "0.60": [
+        0.158,
+        0.3924,
+        0.141
+      ],
+      "0.70": [
+        0.1045,
+        0.4074,
+        0.0815
+      ],
+      "columns": [
+        "test_macro_f1",
+        "test_macro_precision",
+        "test_macro_recall"
+      ]
+    }
+  }
+}

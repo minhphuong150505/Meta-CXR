@@ -1,0 +1,70 @@
+{
+  "scale": {
+    "images": 5159,
+    "studies": 3269,
+    "patients": 293
+  },
+  "views": {
+    "AP": 2405,
+    "PA": 998,
+    "LATERAL": 903,
+    "LL": 528,
+    "UNKNOWN": 325
+  },
+  "images_per_study": {
+    "1": 1742,
+    "2": 1198,
+    "3": 296,
+    "4": 32,
+    "5": 1
+  },
+  "text": {
+    "target_valid": 2984,
+    "impression_valid": 2177,
+    "has_chexpert_label": 3248,
+    "findings_token_count": {
+      "n": 3041,
+      "median": 63.0,
+      "p10": 31.0,
+      "p90": 105.0,
+      "max": 378.0
+    },
+    "impression_token_count": {
+      "n": 2222,
+      "median": 23.0,
+      "p10": 5.0,
+      "p90": 72.0,
+      "max": 193.0
+    }
+  },
+  "extraction_method": {
+    "FINDINGS_TAG": 2143,
+    "NARRATIVE_BODY": 898,
+    "IMPRESSION_ONLY": 222,
+    "FINDINGS_IMPRESSION_COMBINED": 6
+  },
+  "label_matrix_totals": {
+    "cells": 45766,
+    "mentioned": 10796,
+    "blank": 34970,
+    "blank_pct": 76.41,
+    "labels_per_study": 3.3,
+    "positive": 7178,
+    "negative": 2102,
+    "uncertain": 1516
+  },
+  "explanation_masks": {
+    "studies_with_mask": 2959,
+    "lung_chexmask": 2795,
+    "bbox_ms_cxr": 164,
+    "bbox_label_pairs": 188,
+    "bbox_studies": 164
+  },
+  "provenance": {
+    "manifest": "processed/full_allviews_v2/test.csv",
+    "chexpert": "mimic-cxr-2.0.0-chexpert.csv.gz",
+    "mask_cache": "/home/phuong/explanation_masks_v2",
+    "generated_utc": "2026-08-16T11:19:31+00:00",
+    "note": "Aggregate counts only. No subject_id / study_id / dicom_id / report text."
+  }
+}

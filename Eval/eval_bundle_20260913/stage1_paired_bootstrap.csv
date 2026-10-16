@@ -1,0 +1,19 @@
+comparison,n_studies,metric,a,b,delta,ci_lower,ci_upper,ci_excludes_zero,source
+deep - shallow_ft,3269,macro_auroc,0.7643,0.7692,0.0049,-0.0003,0.01,False,eval_deep/paired_deep_vs_ft.json
+deep - shallow_ft,3269,micro_auroc,0.8166,0.8187,0.0021,0.0001,0.004,True,eval_deep/paired_deep_vs_ft.json
+deep - shallow_ft,3269,positive_macro_f1,0.3542,0.3518,-0.0023,-0.0128,0.0088,False,eval_deep/paired_deep_vs_ft.json
+deep - shallow_ft,3269,positive_macro_precision,0.2931,0.3008,0.0077,-0.0031,0.0204,False,eval_deep/paired_deep_vs_ft.json
+deep - shallow_ft,3269,positive_macro_recall,0.5373,0.4436,-0.0937,-0.1106,-0.0769,True,eval_deep/paired_deep_vs_ft.json
+deep - shallow_ft,3269,macro_specificity,0.802,0.8395,0.0375,0.0343,0.0407,True,eval_deep/paired_deep_vs_ft.json
+mc_shallow - ft,3269,macro_auroc,0.7643,0.769,0.0047,-0.0002,0.0096,False,eval_mc_shallow/paired_mcshallow_vs_ft.json
+mc_shallow - ft,3269,micro_auroc,0.8166,0.844,0.0273,0.0247,0.0299,True,eval_mc_shallow/paired_mcshallow_vs_ft.json
+mc_shallow - ft,3269,positive_macro_f1,0.3542,0.3536,-0.0006,-0.01,0.0093,False,eval_mc_shallow/paired_mcshallow_vs_ft.json
+mc_shallow - ft,3269,positive_macro_precision,0.2931,0.3075,0.0145,0.0036,0.0265,True,eval_mc_shallow/paired_mcshallow_vs_ft.json
+mc_shallow - ft,3269,positive_macro_recall,0.5373,0.4614,-0.0759,-0.0898,-0.0616,True,eval_mc_shallow/paired_mcshallow_vs_ft.json
+mc_shallow - ft,3269,macro_specificity,0.802,0.8325,0.0305,0.0277,0.0336,True,eval_mc_shallow/paired_mcshallow_vs_ft.json
+mentcond - deep,3269,macro_auroc,0.7692,0.7693,0.0002,-0.0045,0.0046,False,eval_mentioncond/paired_mentcond_vs_deep.json
+mentcond - deep,3269,micro_auroc,0.8187,0.8434,0.0247,0.0222,0.0273,True,eval_mentioncond/paired_mentcond_vs_deep.json
+mentcond - deep,3269,positive_macro_f1,0.3518,0.3617,0.0099,-0.0013,0.0203,False,eval_mentioncond/paired_mentcond_vs_deep.json
+mentcond - deep,3269,positive_macro_precision,0.3008,0.3082,0.0074,-0.0049,0.0183,False,eval_mentioncond/paired_mentcond_vs_deep.json
+mentcond - deep,3269,positive_macro_recall,0.4436,0.4781,0.0345,0.0181,0.0498,True,eval_mentioncond/paired_mentcond_vs_deep.json
+mentcond - deep,3269,macro_specificity,0.8395,0.8294,-0.0101,-0.0129,-0.0073,True,eval_mentioncond/paired_mentcond_vs_deep.json

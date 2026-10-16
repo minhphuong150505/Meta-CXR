@@ -6,43 +6,160 @@ Mọi con số dưới đây là **output thật** của code trong repo, chạy
 chính tài liệu này định nghĩa. **Không có số nào của mô hình thật** — chưa có lần inference nào
 trên MIMIC-CXR được thực hiện. Mục đích là chứng minh evaluator hành xử đúng, không phải báo cáo
 chất lượng mô hình.
+   no Stage-1 model, checkpoint, Q-Former or MHCAC
+2. "MedGemma vision tower" — SigLIP, patch 14, 896×896 (aspect NOT preserved)
+   → projector pools 4× → 256 image tokens (1chắc hơn là nhờ mô hình sinh ảnh vẽ lại hơn 60 nhãn chữ nhỏ.
+- XOÁ dòng vàng cuối "Target guided architecture: ...".
 
-Tái lập:
+=========== NHÁNH 1 — STAGE 1 (4 hộp) =======
+1. "Multi-view vision encoders"
+   BioViL-T · 448² · 14×14 = 196 tokens
+   PubMedCLIP · 224² · 1 CLS + 7×7 = 50 token
+   Per-encoder view fusion: anchor = Query, auxiliary = Key/Value
+2. "Projection & concatenation"
+   FC → d_model = 1408 ·  246 visual tokens =
+   (KHÔNG ghi "shared" — Stage 2 không dùng các token này)
+3. "MHCAC"
+   14 learnable class queries · multi-head cr
+   Report text is a TRAINING-ONLY teacher; inference is image-only
+4. "Two prediction heads"  ← đây là điểm đóng góp, phải vẽ rõ hai đầu:
+   · Classification head → q : Positive / Negion
 
-```bash
-python -m pytest tests/test_classification_metrics.py tests/test_threshold_calibration.py \
-                 tests/test_generation_metrics.py tests/test_evaluation_integration.py \
-                 tests/test_stage1_eval_hook.py tests/test_evaluation_config.py
-```
+        Stage 2: 4 MedGemma QLoRA fine-tuning (arm A / arm B) -> 5 Report generation
+        XAI:     6 Post-hoc sentence-level attribution + 2 sanity gates
+
+================ NHỮNG GÌ ĐANG ĐÚNG — GIỮ NGUYÊN ================
+- Input: một STUDY, không phải một ảnh. Ancho lateral),
+  tối đa 1 auxiliary view (thường là lateral). Cả hai view đi qua CẢ HAI encoder.
+- Hai encoder, Swin đã bị loại bỏ.
+- Phép cộng token: 246 = 196 (BioViL) + 1 CLS + 49 (PubMedCLIP), chiếu về d_model = 1408.
+- Mỗi encoder giữ nguyên độ phân giải gốc của nó; không pooling, không bỏ CLS.
+- Positional encoding riêng cho từng encoder.
+- Text embeddings chỉ đi vào MHCAC trong lúc TRAIN (teacher), suy luận chỉ dùng ảnh.
+- Đầu ra: FINDINGS + IMPRESSION.
 
 ---
 
-## Phần A — Classification
+Một điều cần nói thẳng: mô hình sinh ảnh sẽ l hơn 100 nhãn, khả năng cao chữ sẽ bị nhoèhoặc sai chính tả, và một hình như thế không dùng được trong luận văn.
 
-### A1. Accuracy cao trong khi positive F1 bằng 0
+Đường chắc ăn hơn: dán đúng prompt trên nhưngã draw.io XML (hoặc SVG) để tôi mở và chỉnh".Chữ sẽ là text thật, sắc nét ở mọi kích thước, và bạn sửa được. Nếu bạn muốn, tôi tự sinh file draw.io/SVG đó luôn — tôi đã có đủ số liệu chính xác.
 
-200 study × 3 pathology, prevalence 5%. Mô hình dự đoán **toàn negative**.
+✻ Brewed for 1m 29s · done 7:22 PM
 
-```
-binary_accuracy    = 0.9617
-positive_macro_f1  = 0.0000
-positive_macro_recall = 0.0000
-```
+❯ [Image #2] bạn đánh giá pipeline này đã đúng rce code chưa tôi muốn một pipeline chínhtôi để xác minh
+[Image #2]
 
-✅ **Đạt.** Đây là lý do tồn tại của bảng baseline: 96,17% accuracy trông rất tốt trong khi mô
-hình không phát hiện được một bất thường nào. Hàng `all_negative` trong
-`baseline_table()` khiến điều này lộ ra ngay trong report.
+Để trả lời chính xác chứ không đoán, tôi đọc
 
-Lưu ý thêm: `positive_macro_precision` ở tình huống này là **`nan`** (undefined), không phải 0 —
-mô hình chưa từng dự đoán positive nên precision không xác định. Nhưng `f1` vẫn là **0**, không
-phải `nan`, vì recall xác định và bằng 0. Phân biệt này được ép trong `_positive_f1()` và có test
-riêng; nếu F1 bị trả `nan` ở đây thì pathology đó sẽ bị loại khỏi macro và một mô hình dự đoán
-rỗng lại đạt macro hoàn hảo.
 
-### A2. Macro F1 khác Micro F1
+Tôi đã đọc source. Kết luận: sơ đồ này mô tả mục tiêu, không mô tả code. Dòng cảnh báo đỏ của chính nó là đúng — và còn
+nhẹ hơn thực tế.
 
-P0: 8 study, phân loại đúng hết. P1: 2 study, bỏ sót cả hai positive.
+Vấn đề chặn: arm B hiện là no-op im lặng
 
+Không phải "chưa implement nên sẽ báo lỗi". Ncho ra một model giống hệt arm A, chỉ khácseed. Chuỗi bằng chứng:
+
+┌────────────────────┬─────────────────────────────────────────────────────────────────┐
+│        bước        │                 file:line                  │                     thực tế                     │
+├────────────────────┼────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+│ Native records     │                        sample_key, ref, image_path,             │
+│ sinh ra ở đâu      │ training/dataio/manifest.py:229-243        │ anchor_view, auxiliary_views — không có         │
+│                    │                                            │ pred_groups                                     │
+├────────────────────┼─────────────────────────────────────────────────────────────────┤
+│ Thiếu field thì    │ stage2/prompts/records.py:41-43            │ _as_tuple(None) → (), im lặng, không lỗi        │
+│ sao                │                                            │                                                 │
+├────────────────────┼─────────────────────────────────────────────────────────────────┤
+│ Có chốt chặn không │ builder.py / validation.py                 │ không có guard nào raise khi guided mode nhận 0 │
+│                    │                                            │  finding                                        │
+├────────────────────┼─────────────────────────────────────────────────────────────────┤
+│ Ai sinh            │ train_eval_figure9_llm_variants_200.py:545 │ chỉ build_stage1_records — và docstring của nó  │
+│ pred_groups        │                                            │ (dòng 475-481) cấm native mode gọi vào          │
+└────────────────────┴─────────────────────────────────────────────────────────────────┘
+
+(Ghi chú: arm A đang chạy full dataset nhưng --train-epochs 1, batch 2 × accum 8.)
+
+Ba điều tôi không tự quyết được:
+
+● User answered Claude's questions:
+· Arm B hiện sẽ chạy 70h và cho ra prompt  nào). Xử lý thế nào trước khi arm A xong? →Bỏ arm B khỏi pipeline
+· Nếu nối cue vào arm B, dùng điểm nào của Stage 1 để sinh cue P/N/U? → marginal_presence = m × q_pos, ngưỡng
+calibrate trên val (Khuyến nghị)
+· Hình pipeline chính thức cho luận văn nên bao gồm những gì? → Lớp XAI Stage-2, "Chỉ luồng chính, gọn nhất có thể"
+
+Rõ. Bỏ arm B là việc gấp — nó đang nằm trong ain trước.
+
+
+Máy sống, mạng thông — vậy là Tailscale SSH đòi phê duyệt lại. Lấy link:
+
+  Ran 1 shell command
+
+Cần bạn bấm duyệt: https://login.tailscale.co
+
+Trong lúc chờ, tôi soạn sẵn pipeline mới — và lần này đưa vào repo thay vì để file rời trên host, đúng như cách supervise_stage1.sh được quản lý:
+
+
+Hai cổng kiểm chứng vẫn có giá trị — chúng kiểm phương pháp, không kiểm bản fine-tune. Nhưng không được trích chúng như
+kết quả về model đã train.
+vg.
+
+Đúng phạm vi bạn chọn: luồng chính + lớp XAI. Không arm B, không Q-Former dạng hộp.
+
+Điểm khác biệt lớn nhất so với hình cũ: hai nhánh xuất phát từ input và không bao giờ gặp nhau. Stage 2 đọc thẳng manifest, không import code Stage 1. Mũi tên "MHCAC → prompt" trong hình cũ không tồn tại trong code. MHCAC được vẽ với
+cả hai đầu — classification q và mention gate_pos, thứ mà bootstrap đo là tốt hơn ở 14/14nhãn.
+
+Q-Former nằm ở phần "Design notes" dưới cùng,át, bốn phép đo độc lập đều ra mức ngẫu nhiên, nguyên nhân là batch contrastive nhỏ hơn BLIP-2 khoảng 210 lần.
+
+⚠ Tôi chưa xem được hình render — máy này khôairosvg. Tôi mới chỉ kiểm XML hợp lệ và ước
+
+Xong, mọi thứ đã đúng chỗ.
+
+Trạng thái
+
+┌────────────────────────┬─────────────────────────────────────────────┐
+│                        │
+
+│ XAI trên model đã fine-tune     │ +30 phút    │
+└─────────────────────────────────┴─────────────┘
+
+Toàn bộ xong ~04/09 sáng — thay vì 6,2 ngày như lịch cũ. Bỏ arm B tiết kiệm đúng 70 giờ vốn sẽ cho ra một bản sao của arm A.
+
+Một bài học đáng ghi
+
+pgrep -f "bash /home/phuong/pipeline_rest.sh"ủa tôi, vì chuỗi đó nằm trong command line của
+
+Cùng họ với lỗi grep ghim epoch: [0] hôm trước: cả hai đều là công cụ giám sát tự lừa mình. Tôi ghi vào CLAUDE.md để lần
+sau không mất thời gian lại.
+
+- Đầu ra của Stage 1 đi sang khối OUTPUT (đánh giá phân loại), không đi sang Stage 2.
+- Thêm một dòng ghi chú dưới hình:
+  "Stage 1 and Stage 2 are decoupled. Stage 2ectly
+
+1. "Anchor image"  — read straight from the split manifest;
+   no Stage-1 model, checkpoint, Q-Former or MHCAC
+2. "MedGemma vision tower" — SigLIP, patch 14ed)
+
+   AUROC · AUPRC · F1 · Precision · Recall · Specificity
+2. "Generated report" — FINDINGS
+   BLEU-1..4 · ROUGE-L · METEOR · CIDEr · BER
+   dòng nhỏ màu đỏ nhạt: "Clinical metrics (CheXbert / RadGraph / RadCliQ) are
+   not implemented — reported as unavailable, never as 0."
+3. "Explanation maps" — one map per sentence,
+
+=========== CHÚ GIẢI MÀU ===========
+Cam = Stage 1 · Xanh dương = Stage 2 · Tím = XAI · Xanh lá = Output
+(BỎ mục "Green = MHCAC predictions & guided p
+
+=========== GIỮ NGUYÊN, ĐANG ĐÚNG ===========
+Hộp INPUT: một STUDY chứ không phải một ảnh;  AP >
+lateral); tối đa một auxiliary view, thường là lateral. Hai ảnh X-quang minh hoạ.
+
+---
+
+
+Cụm "MHCAC-Guided" là thứ phải bỏ, không phải thứ để sửa chữ. Nó nằm ở tiêu đề, ở tên Stage 2, ở chuỗi xanh lá và ở dòng
+vàng cuối — bốn chỗ. Nếu chỉ sửa tiêu đề mà g
+
+Bạn đã có bản chính xác rồi: docs/figures/pip55d4a) — vector, chữ thật, đúng phạm vi "gọn + có XAI" bạn chọn lúc nãy. Mở bằng xdg-open docs/figures/pipeline_official.svg. Nếu nó dùng được thì prompt trên chỉ còn là phương án dự phòng; nếu bố cục có chỗ lệch, bạn báo tôi sửa trực tiếp trong SVG — nhanh và chắc hơn là nhờ mô hìnhsinh ảnh vẽ lại hơn 60 nhãn chữ nhỏ.
 ```
 positive_macro_f1  = 0.5000     # (1.0 + 0.0) / 2
 positive_micro_f1  = 0.6667     # gộp tp=2, fp=0, fn=2 -> P=1.0, R=0.5

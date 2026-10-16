@@ -1,0 +1,10 @@
+metric,run01_study_presence,run02_study_presence,run01_masked_polarity,run02_masked_polarity
+positive_macro_f1,0.3397,0.3542,0.8717,0.8841
+positive_macro_precision,0.2776,0.2931,0.8455,0.8679
+positive_macro_recall,0.5006,0.5373,0.9061,0.9017
+macro_specificity,0.7901,0.802,0.4197,0.4536
+balanced_accuracy,0.6454,0.6696,0.6586,0.6732
+binary_accuracy,0.7873,0.7944,0.8583,0.8754
+macro_auroc,0.7441,0.7643,0.7857,0.7985
+macro_auprc,0.3004,0.3203,0.8951,0.9099
+micro_auroc,0.8183,0.8166,0.868,0.8849

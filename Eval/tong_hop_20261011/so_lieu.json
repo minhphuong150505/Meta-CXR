@@ -1,0 +1,13 @@
+{
+  "s1": {"f1w": 0.820, "f1w_paper": 0.73, "f15": 0.749, "f15_lo": 0.741, "f15_paper": 0.701,
+         "b_vs_c_auroc_lo": -0.0012, "b_vs_c_auroc_hi": 0.0095},
+  "biovil": {"BA_hi": -0.0103, "CA_hi": -0.0247},
+  "pilot": {"p1p0_beam_rouge_lo": 0.0229, "p1p0_beam_bs_lo": 0.0143,
+            "p1p0_greedy_rouge_lo": 0.0372, "p1p0_greedy_bs_lo": 0.0319,
+            "p2p1_beam_ce": 0.0190, "p2p1_beam_ce_lo": -0.0075, "p2p1_beam_f15_lo": 0.0158},
+  "oracle": {"bs_lo": -0.0079, "bs_hi": 0.0032, "cider_lo": -0.0104, "cider_hi": 0.0196},
+  "prior": {"cider_lo": 0.0210, "bleu1": 0.391, "bleu4": 0.106, "paper_bleu1": 0.390, "paper_bleu4": 0.102},
+  "collapse": {"cos_init": 0.445, "cos_1a": 0.9989},
+  "labels": {"kappa_min": 0.493, "kappa_max": 0.933},
+  "probe": {"swin": 0.734, "raddino": 0.721, "soft_1a": 0.721, "soft_1b": 0.689}
+}

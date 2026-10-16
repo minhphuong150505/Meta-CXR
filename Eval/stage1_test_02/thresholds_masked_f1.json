@@ -1,0 +1,189 @@
+{
+  "details": {
+    "Atelectasis": {
+      "calibrated": true,
+      "default_threshold_score": 0.9749303621169917,
+      "n_negative": 9,
+      "n_positive": 359,
+      "n_uncertain": 95,
+      "n_valid": 368,
+      "objective_score": 0.9876203576341127,
+      "reason": "",
+      "threshold": 0.45211882727050784
+    },
+    "Cardiomegaly": {
+      "calibrated": true,
+      "default_threshold_score": 0.8522238163558107,
+      "n_negative": 124,
+      "n_positive": 377,
+      "n_uncertain": 59,
+      "n_valid": 501,
+      "objective_score": 0.9042821158690176,
+      "reason": "",
+      "threshold": 0.25864481925964355
+    },
+    "Consolidation": {
+      "calibrated": true,
+      "default_threshold_score": 0.8701298701298701,
+      "n_negative": 55,
+      "n_positive": 82,
+      "n_uncertain": 48,
+      "n_valid": 137,
+      "objective_score": 0.9146341463414634,
+      "reason": "",
+      "threshold": 0.33600568771362305
+    },
+    "Edema": {
+      "calibrated": true,
+      "default_threshold_score": 0.8611670020120725,
+      "n_negative": 203,
+      "n_positive": 242,
+      "n_uncertain": 108,
+      "n_valid": 445,
+      "objective_score": 0.8646464646464647,
+      "reason": "",
+      "threshold": 0.5088323056697845
+    },
+    "Enlarged Cardiomediastinum": {
+      "calibrated": true,
+      "default_threshold_score": 0.7768595041322314,
+      "n_negative": 51,
+      "n_positive": 60,
+      "n_uncertain": 88,
+      "n_valid": 111,
+      "objective_score": 0.7903225806451613,
+      "reason": "",
+      "threshold": 0.4847595542669296
+    },
+    "Fracture": {
+      "calibrated": false,
+      "default_threshold_score": NaN,
+      "n_negative": 6,
+      "n_positive": 18,
+      "n_uncertain": 3,
+      "n_valid": 24,
+      "objective_score": NaN,
+      "reason": "only 18 positive and 6 negative samples; need at least 20 positive and 1 negative",
+      "threshold": 0.5
+    },
+    "Lung Lesion": {
+      "calibrated": true,
+      "default_threshold_score": 0.9295774647887323,
+      "n_negative": 7,
+      "n_positive": 70,
+      "n_uncertain": 9,
+      "n_valid": 77,
+      "objective_score": 0.9523809523809523,
+      "reason": "",
+      "threshold": 0.3708024753799439
+    },
+    "Lung Opacity": {
+      "calibrated": true,
+      "default_threshold_score": 0.9413333333333334,
+      "n_negative": 18,
+      "n_positive": 388,
+      "n_uncertain": 26,
+      "n_valid": 406,
+      "objective_score": 0.9785624211853721,
+      "reason": "",
+      "threshold": 0.24462001770734787
+    },
+    "No Finding": {
+      "calibrated": false,
+      "default_threshold_score": NaN,
+      "n_negative": 0,
+      "n_positive": 582,
+      "n_uncertain": 0,
+      "n_valid": 582,
+      "objective_score": NaN,
+      "reason": "only 582 positive and 0 negative samples; need at least 20 positive and 1 negative",
+      "threshold": 0.5
+    },
+    "Pleural Effusion": {
+      "calibrated": true,
+      "default_threshold_score": 0.9203539823008849,
+      "n_negative": 203,
+      "n_positive": 467,
+      "n_uncertain": 45,
+      "n_valid": 670,
+      "objective_score": 0.9333333333333333,
+      "reason": "",
+      "threshold": 0.35159069299697876
+    },
+    "Pleural Other": {
+      "calibrated": false,
+      "default_threshold_score": NaN,
+      "n_negative": 0,
+      "n_positive": 15,
+      "n_uncertain": 6,
+      "n_valid": 15,
+      "objective_score": NaN,
+      "reason": "only 15 positive and 0 negative samples; need at least 20 positive and 1 negative",
+      "threshold": 0.5
+    },
+    "Pneumonia": {
+      "calibrated": true,
+      "default_threshold_score": 0.728,
+      "n_negative": 166,
+      "n_positive": 128,
+      "n_uncertain": 144,
+      "n_valid": 294,
+      "objective_score": 0.7557251908396947,
+      "reason": "",
+      "threshold": 0.42659813165664673
+    },
+    "Pneumothorax": {
+      "calibrated": true,
+      "default_threshold_score": 0.5413533834586466,
+      "n_negative": 358,
+      "n_positive": 75,
+      "n_uncertain": 9,
+      "n_valid": 433,
+      "objective_score": 0.5732484076433121,
+      "reason": "",
+      "threshold": 0.391573041677475
+    },
+    "Support Devices": {
+      "calibrated": true,
+      "default_threshold_score": 0.0,
+      "n_negative": 30,
+      "n_positive": 565,
+      "n_uncertain": 3,
+      "n_valid": 595,
+      "objective_score": 0.9756521739130435,
+      "reason": "",
+      "threshold": 0.15212222933769226
+    }
+  },
+  "metadata": {
+    "constraint": 0.5,
+    "created_utc": "2026-08-21T00:58:10.133650+00:00",
+    "default_threshold": 0.5,
+    "num_samples": 1808,
+    "objective": "f1",
+    "plateau_fraction": 0.95,
+    "selection": "argmax",
+    "source_metadata": {
+      "label_framing": "masked_polarity",
+      "score": "conditional_positive"
+    },
+    "split": "validation",
+    "uncertain_policy": "ignore_uncertain"
+  },
+  "thresholds": {
+    "Atelectasis": 0.45211882727050784,
+    "Cardiomegaly": 0.25864481925964355,
+    "Consolidation": 0.33600568771362305,
+    "Edema": 0.5088323056697845,
+    "Enlarged Cardiomediastinum": 0.4847595542669296,
+    "Fracture": 0.5,
+    "Lung Lesion": 0.3708024753799439,
+    "Lung Opacity": 0.24462001770734787,
+    "No Finding": 0.5,
+    "Pleural Effusion": 0.35159069299697876,
+    "Pleural Other": 0.5,
+    "Pneumonia": 0.42659813165664673,
+    "Pneumothorax": 0.391573041677475,
+    "Support Devices": 0.15212222933769226
+  }
+}

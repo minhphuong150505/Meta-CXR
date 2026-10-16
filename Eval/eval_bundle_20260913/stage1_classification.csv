@@ -1,0 +1,8 @@
+eval,n_studies,thresholds,framing,comparable,macro_auroc,micro_auroc,macro_auprc,positive_macro_f1,positive_macro_precision,positive_macro_recall,macro_specificity
+eval_deep/deep,3269,calibrated on val,study_presence + marginal_presence,yes,0.7692,0.8187,0.3269,0.3518,0.3008,0.4436,0.8395
+eval_deep/ft,3269,calibrated on val,study_presence + marginal_presence,yes,0.7643,0.8166,0.3203,0.3542,0.2931,0.5373,0.802
+eval_final/stage1_test,3269,calibrated on val,study_presence + marginal_presence,yes,0.7643,0.8166,0.3203,0.3542,0.2931,0.5373,0.802
+eval_kho_noi/stage1,3269,calibrated on val,study_presence + marginal_presence,yes,0.7643,0.8166,0.3203,0.3542,0.2931,0.5373,0.802
+eval_kho_noi/stage1_pnu,3269,default 0.5 for every pathology,masked_polarity (inferred) - DO NOT COMPARE,NO,0.7985,0.8849,0.9099,0.876,0.8858,0.868,0.5403
+eval_mc_shallow/test,3269,calibrated on val,study_presence + marginal_presence,yes,0.769,0.844,0.3262,0.3536,0.3075,0.4614,0.8325
+eval_mentioncond/test,3269,calibrated on val,study_presence + marginal_presence,yes,0.7693,0.8434,0.3286,0.3617,0.3082,0.4781,0.8294

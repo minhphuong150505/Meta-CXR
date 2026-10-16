@@ -1,0 +1,7 @@
+{
+  "note": "So lieu minh hoa cho file mau, KHONG phai ket qua that.",
+  "baseline": {"macro_auroc": 0.7441, "f1": 0.3397},
+  "proposed": {"macro_auroc": 0.7643, "f1": 0.3542},
+  "delta": {"macro_auroc": 0.0201, "lo": 0.0136, "hi": 0.0263},
+  "n_test": 3269
+}

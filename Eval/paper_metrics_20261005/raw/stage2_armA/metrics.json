@@ -1,0 +1,261 @@
+{
+  "generation": {
+    "clinical": {},
+    "corpus": {
+      "bertscore_f1": 0.22888335451204195,
+      "bertscore_precision": 0.29884462933758915,
+      "bertscore_recall": 0.16134907982924163,
+      "bleu_1": 0.20565586280787634,
+      "bleu_2": 0.12464845612818397,
+      "bleu_3": 0.08321398244137057,
+      "bleu_4": 0.058298333053115714,
+      "cider": 0.1194354337775889,
+      "meteor": 0.21430430317706672,
+      "rouge_1": 0.32866564374716645,
+      "rouge_2": 0.12530061791465527,
+      "rouge_l": 0.23559040132996362
+    },
+    "errors": {
+      "caveat": "All possible_* rates are lexicon heuristics over surface text, not radiologist-confirmed clinical error rates.",
+      "empty_output_rate": 0.0,
+      "flag_counts": {
+        "empty_output": 0,
+        "excessive_repetition": 2,
+        "possible_device_location_error": 394,
+        "possible_false_positive_finding": 1083,
+        "possible_laterality_error": 628,
+        "possible_negation_error": 411,
+        "possible_omitted_finding": 2035,
+        "possible_severity_error": 788,
+        "possible_temporal_hallucination": 850,
+        "report_too_long": 0,
+        "report_too_short": 0
+      },
+      "flag_rates": {
+        "empty_output": 0.0,
+        "excessive_repetition": 0.0007215007215007215,
+        "possible_device_location_error": 0.14213564213564214,
+        "possible_false_positive_finding": 0.3906926406926407,
+        "possible_laterality_error": 0.22655122655122656,
+        "possible_negation_error": 0.14826839826839827,
+        "possible_omitted_finding": 0.7341269841269841,
+        "possible_severity_error": 0.2842712842712843,
+        "possible_temporal_hallucination": 0.30663780663780665,
+        "report_too_long": 0.0,
+        "report_too_short": 0.0
+      },
+      "generated_length": {
+        "max": 160.0,
+        "mean": 36.09920634920635,
+        "median": 36.0,
+        "min": 5.0,
+        "p25": 11.0,
+        "p75": 51.0
+      },
+      "num_samples": 2772,
+      "possible_temporal_hallucination_rate": 0.30663780663780665,
+      "reference_length": {
+        "max": 157.0,
+        "mean": 66.3510101010101,
+        "median": 64.0,
+        "min": 4.0,
+        "p25": 48.0,
+        "p75": 84.0
+      },
+      "repetition_rate": 0.0007215007215007215
+    },
+    "intervals": {
+      "bertscore_f1": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.2163411738034709,
+        "method": "percentile",
+        "metric": "bertscore_f1",
+        "point_estimate": 0.22888335451204195,
+        "seed": 42,
+        "upper": 0.24025430502913858,
+        "valid_replicates": 1000
+      },
+      "bertscore_precision": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.2863858365932439,
+        "method": "percentile",
+        "metric": "bertscore_precision",
+        "point_estimate": 0.29884462933758915,
+        "seed": 42,
+        "upper": 0.31063881702725,
+        "valid_replicates": 1000
+      },
+      "bertscore_recall": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.14864757531775502,
+        "method": "percentile",
+        "metric": "bertscore_recall",
+        "point_estimate": 0.16134907982924163,
+        "seed": 42,
+        "upper": 0.1736440918011036,
+        "valid_replicates": 1000
+      },
+      "cider": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.09579351848164176,
+        "method": "percentile",
+        "metric": "cider",
+        "point_estimate": 0.1194354337775889,
+        "seed": 42,
+        "upper": 0.14424391977690595,
+        "valid_replicates": 1000
+      },
+      "meteor": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.2079174761664,
+        "method": "percentile",
+        "metric": "meteor",
+        "point_estimate": 0.21430430317706672,
+        "seed": 42,
+        "upper": 0.22033341733216055,
+        "valid_replicates": 1000
+      },
+      "rouge_1": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.32208605565844417,
+        "method": "percentile",
+        "metric": "rouge_1",
+        "point_estimate": 0.32866564374716617,
+        "seed": 42,
+        "upper": 0.33500474752319015,
+        "valid_replicates": 1000
+      },
+      "rouge_2": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.12013948277358452,
+        "method": "percentile",
+        "metric": "rouge_2",
+        "point_estimate": 0.12530061791465497,
+        "seed": 42,
+        "upper": 0.1302880281533857,
+        "valid_replicates": 1000
+      },
+      "rouge_l": {
+        "bootstrap_samples": 1000,
+        "confidence": 0.95,
+        "lower": 0.2298804079811973,
+        "method": "percentile",
+        "metric": "rouge_l",
+        "point_estimate": 0.23559040132996328,
+        "seed": 42,
+        "upper": 0.24087876554243212,
+        "valid_replicates": 1000
+      }
+    },
+    "provenance": {
+      "bertscore": {
+        "implementation": "bert_score.score",
+        "model_type": "distilroberta-base",
+        "note": "absolute BERTScore values sit in a narrow high band even for unrelated text; compare against a baseline, not against 0",
+        "rescale_with_baseline": true,
+        "version": "0.3.13"
+      },
+      "bleu": {
+        "implementation": "training.evaluation.generation_metrics.corpus_bleu",
+        "variant": "corpus BLEU, single reference, add-1 smoothing for n>=2"
+      },
+      "cider": {
+        "implementation": "pycocoevalcap.cider.Cider",
+        "version": "1.2"
+      },
+      "empty_predictions": 0,
+      "meteor": {
+        "implementation": "nltk.translate.meteor_score",
+        "version": "3.9.1"
+      },
+      "normalization": {
+        "collapse_whitespace": true,
+        "lowercase": true,
+        "protected_tokens_preserved": true,
+        "remove_stopwords": false,
+        "strip_punctuation": false
+      },
+      "num_samples": 2772,
+      "rouge": {
+        "implementation": "training.evaluation.generation_metrics.rouge_l/rouge_n",
+        "variant": "sentence-level F-measure, beta=1.2, averaged over samples"
+      }
+    },
+    "subgroup_table": "| Subgroup | Samples | rouge_l | meteor | cider | bertscore_f1 |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| view_PA | 822 | 0.2582 | 0.2470 | 0.2440 | 0.3408 |\n| view_AP | 1950 | 0.2261 | 0.2005 | 0.0669 | 0.1817 |\n| short_reports | 717 | 0.2956 | 0.2830 | 0.3242 | 0.2708 |\n| long_reports | 715 | 0.1843 | 0.1521 | 0.0108 | 0.1551 |\n",
+    "subgroups": [
+      {
+        "bertscore_f1": 0.3408429932496182,
+        "cider": 0.24398168667632428,
+        "description": "anchor view is PA",
+        "meteor": 0.24696028076992083,
+        "reliable": true,
+        "rouge_l": 0.2581578728480992,
+        "samples": 822,
+        "subgroup": "view_PA"
+      },
+      {
+        "bertscore_f1": 0.18168806064420212,
+        "cider": 0.06693439794027584,
+        "description": "anchor view is AP",
+        "meteor": 0.20053855262254056,
+        "reliable": true,
+        "rouge_l": 0.2260773441053952,
+        "samples": 1950,
+        "subgroup": "view_AP"
+      },
+      {
+        "bertscore_f1": 0.2708384860618718,
+        "cider": 0.3242064231949692,
+        "description": "reference length <= 48 tokens",
+        "meteor": 0.2830293102383053,
+        "reliable": true,
+        "rouge_l": 0.2956379866707418,
+        "samples": 717,
+        "subgroup": "short_reports"
+      },
+      {
+        "bertscore_f1": 0.1551033324698781,
+        "cider": 0.010788566432452474,
+        "description": "reference length >= 84 tokens",
+        "meteor": 0.1521151241845667,
+        "reliable": true,
+        "rouge_l": 0.1842508119631587,
+        "samples": 715,
+        "subgroup": "long_reports"
+      }
+    ],
+    "unavailable": {}
+  },
+  "metadata": {
+    "checkpoint": "armA",
+    "config": "unknown",
+    "created_utc": "2026-10-05T03:05:43.514615+00:00",
+    "device": "cuda:0 (NVIDIA GeForce RTX 5060 Ti)",
+    "git_commit": "8809995d4fbc281027283ccab7d21555e53fb8a1",
+    "git_dirty": false,
+    "num_pathologies": 0,
+    "num_samples": 2772,
+    "package_versions": {
+      "bert-score": "0.3.13",
+      "matplotlib": "3.11.1",
+      "nltk": "3.9.1",
+      "numpy": "1.26.4",
+      "pandas": "2.2.3",
+      "pycocoevalcap": "1.2",
+      "python": "3.11.16",
+      "scikit-learn": "1.5.2",
+      "torch": "2.9.1+cu130"
+    },
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.43",
+    "seed": 42,
+    "split": "test",
+    "threshold_source": "n/a (generation)"
+  }
+}
