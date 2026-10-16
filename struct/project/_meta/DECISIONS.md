@@ -31,7 +31,7 @@ ghi đè (kèm `Supersedes: D-00X`) thay vì sửa lịch sử.
 | [D-021](#d-021--gradient-checkpointing-q-former-gradcache-pha-1a-siglip-mở-lại-khối-encoder-ở-1c) | Checkpointing Q-Former, GradCache pha 1a, SigLIP, mở lại khối encoder ở 1c | ✅ Confirmed (quyết định của user); chỉ smoke GPU | 2026-09-24 |
 | [D-026](#d-026--siêu-tham-số-mhcac-theo-bài-báo-2026-10-05) | MHCAC: 8 common expert token, label smoothing 0 (theo bài báo) | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
 | [D-027](#d-027--stage-2-theo-bài-báo-không-ảnh-gốc-prompt-nguyên-văn-2026-10-05) | Stage 2 `--prompt-style paper`: không ảnh gốc, 32 soft token + P/N/U, prompt nguyên văn bài báo | ✅ Confirmed (quyết định của user); chưa chạy GPU | 2026-10-05 |
-| [D-028](#d-028--sửa-soft-token-sụp-train-lại-meta-former-trên-checkpoint-đã-xong-2026-10-15) | Sửa soft token sụp: pha `phase1q` train lại chỉ META-Former trên checkpoint 1c đóng băng; norm đầu vào Q-Former, loss đa dạng query, file gộp bắt buộc | ✅ Confirmed (user duyệt); refit 2026-10-15 trượt cổng sụp (loss đa dạng bị lách qua dropout) | 2026-10-15 |
+| [D-028](#d-028--sửa-soft-token-sụp-train-lại-meta-former-trên-checkpoint-đã-xong-2026-10-15) | Sửa soft token sụp: pha `phase1q` train lại chỉ META-Former trên checkpoint 1c đóng băng; norm đầu vào Q-Former, loss đa dạng query, file gộp bắt buộc | ✅ Confirmed (user duyệt); refit 2026-10-15 trượt cổng sụp (loss đa dạng bị lách qua dropout); lần 2 (16/10): smoke đạt, refit đang chạy | 2026-10-15 |
 
 ---
 
@@ -1357,7 +1357,8 @@ dạng tính trên trạng thái lúc train (dropout 0,1 trong Q-Former) và b�
 dropout lên 3,9 lần phần phụ thuộc ảnh (0,4 lần khi không có loss), PR lúc train ~30, loss 0,014 so
 với 0,77 trên val. Số đo đầy đủ: báo cáo thực thi của plan.
 
-**Lần 2 (user chọn phương án A, 2026-10-15; chưa chạy GPU).** Giữ thiết kế, chỉ bỏ nhiễu chỉ có lúc
+**Lần 2 (user chọn phương án A, 2026-10-15; chạy từ 2026-10-16 07:55: kiểm tra vi mô và smoke 600 update
+đạt — PR theo batch 26,5, bản đồ 0,36, ITC R@5 0,46 / 0,43, lệch train/val 0,009; refit đang chạy).** Giữ thiết kế, chỉ bỏ nhiễu chỉ có lúc
 train trên đường đi của query: khóa mới `model.qformer_dropout` (đặt `p` cho mọi lớp dropout của
 Q-Former, module vẫn ở train để giữ gradient checkpointing) và `feature_mask_ratio: 0.0` trong
 `phase1q`; `__init__` từ chối `lambda_query_diversity > 0` nếu thiếu một trong hai. Không đổi λ, cổng
