@@ -437,8 +437,8 @@ biệt so với bài báo: [`docs/CHI_MUC_TINH_MOI.md`](docs/CHI_MUC_TINH_MOI.md
 bài báo (hai checkpoint được báo cáo và cấu hình của chúng, kết quả theo các phép đo của bài
 báo, sai khác và lý do, giải thích chênh lệch): [`docs/SO_SANH_VOI_BAI_BAO.md`](docs/SO_SANH_VOI_BAI_BAO.md).
 
-**Sửa soft token sụp (2026-10-15, tùy chọn, user duyệt; đã chạy 2026-10-15 — KHÔNG đạt cổng, xem
-cuối đoạn).** Pha `phase1q` train lại
+**Sửa soft token sụp (2026-10-15, tùy chọn, user duyệt) — KHÔNG áp dụng: lần 1 trượt cổng, lần 2 đạt
+mọi cổng nhưng pilot Stage 2 không nhận (xem cuối đoạn).** Pha `phase1q` train lại
 CHỈ META-Former trên một checkpoint Stage 1 đã xong và đóng băng (`run_20261005_paper/phase1c`), nên
 MHCAC, ngưỡng, cue và mọi số Stage 1 không đổi. Q-Former khởi tạo lại từ BLIP-2
 (`init_from.skip`), đọc token qua LayerNorm riêng từng luồng (`model.qformer_input_norm:
@@ -453,12 +453,19 @@ ITC R@5 0,58 / 0,56 đạt. Pipeline dừng trước probe và pilot; Stage 2 kh
 "lách" qua dropout: nó được tính lúc train khi Q-Former còn dropout 0,1, và mô hình học cách khuếch
 đại nhiễu dropout lên 3,9 lần phần phụ thuộc ảnh, nên lúc train loss đọc ~30 hướng (0,014) trong khi
 val (chế độ eval) là 0,77. Không dùng `lambda_query_diversity` khi Q-Former còn dropout.
-**Lần 2 (user chọn 2026-10-15; đang chạy từ 2026-10-16 07:55, `~/qrefit2_20261015/`):** kiểm tra vi mô,
-smoke 600 update và cổng refit đã đạt. Refit 2 epoch (chọn epoch 1): PR theo batch 26,9 (1c 1,00; lần 1
+**Lần 2 (user chọn 2026-10-15; chạy 2026-10-16 07:55 → 21:02, `~/qrefit2_20261015/`):** kiểm tra vi mô,
+smoke 600 update, cổng refit và cổng thông tin đều đạt, nhưng pilot Stage 2 không nhận B. Refit 2 epoch (chọn epoch 1): PR theo batch 26,9 (1c 1,00; lần 1
 2,32), bản đồ 0,34, ITC R@5 0,63 / 0,61, lệch loss đa dạng train/val 0,009 (lần 1: 0,75). Cổng thông tin
 đạt (probe tuyến tính trên token gộp: AUROC phần giữ lại 0,7845 so với 0,7669 của token cũ; test 0,7325
-so với 0,7155, MHCAC 0,7454, n = 2.780, không có CI); pilot Stage 2 A/B chạy từ 14:44 ngày 16/10. PR cao chỉ nói phần thay
-đổi theo ảnh trải trên nhiều hướng, chưa nói nó có ích. Khóa mới `model.qformer_dropout` (vắng = dropout
+so với 0,7155, MHCAC 0,7454, n = 2.780, không có CI). PR cao chỉ nói phần thay
+đổi theo ảnh trải trên nhiều hướng, chưa nói nó có ích. **Pilot Stage 2 (quy tắc chốt trước): không nhận
+B.** Cùng 10.000 study train, P2 + LR 3e-4, 1 epoch (476 update mỗi nhánh); beam 4 / lp 2 trên cả 1.360
+study val, B − A: BERTScore +0,0007 [−0,0057; +0,0067] (cần cận dưới > 0), CheXbert micro F1-14 +0,0094
+[−0,0047; +0,0234]; ROUGE-L, CIDEr và các chỉ số CE khác đều cắt 0. Giữ mô hình đã báo cáo, không train
+Stage 2 đầy đủ trên token refit. ⚠ Hoán đổi soft token giữa các study (greedy, 500 study val) làm cả hai
+adapter tụt rõ, kể cả nhánh token đã sụp (A: BERTScore −0,040, CheXbert micro F1-14 −0,083; B: −0,037 /
+−0,061, đều có ý nghĩa): Stage 2 có đọc kênh ảnh; các hướng mới của refit không thêm được gì đo được ở
+ngân sách này. Một seed mỗi nhánh, chỉ val, ngân sách pilot. Khóa mới `model.qformer_dropout` (vắng = dropout
 0,1 của BERT, giống từng bit) đặt xác suất cho mọi lớp dropout của Q-Former mà vẫn để module ở chế độ
 train (giữ gradient checkpointing); `phase1q` đặt `qformer_dropout: 0.0` và `feature_mask_ratio: 0.0`,
 và mô hình từ chối `lambda_query_diversity > 0` nếu thiếu một trong hai. Smoke 600 update phải đạt

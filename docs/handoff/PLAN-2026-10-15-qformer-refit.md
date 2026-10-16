@@ -2,7 +2,9 @@
 
 Trạng thái: **lần 1 (15/10) trượt cổng cuối (PR 2,32 < 4; loss đa dạng bị lách qua dropout). Lần 2
 (16/10, đường đi của query không còn nhiễu chỉ có lúc train): kiểm tra vi mô, smoke, cổng refit (PR theo
-batch 26,9) và cổng thông tin (probe 0,7845 so với 0,7669) đạt; pilot đang chạy.** Quy tắc dưới đây chốt và commit
+batch 26,9) và cổng thông tin (probe 0,7845 so với 0,7669) đạt, nhưng pilot Stage 2 KHÔNG nhận B (BERTScore
+B − A +0,0007 [−0,0057; +0,0067]) → giữ mô hình đã báo cáo, ghi kết quả âm. Hoán đổi soft token làm cả hai
+adapter tụt rõ: Stage 2 có đọc kênh ảnh, kể cả token đã sụp.** Quy tắc dưới đây chốt và commit
 trước khi có bất kỳ kết quả nào. Stage 1 gốc: `run_20261005_paper/phase1c` (checkpoint của mọi
 số Stage 1 đã báo cáo và của Stage 2 P2 + LR 3e-4).
 
@@ -411,3 +413,74 @@ thiên phụ thuộc ảnh có ích với vô ích; điều đó chỉ cổng th
   dương trên test nên dao động lớn. Probe tuyến tính chỉ nói thông tin có trong token; Stage 2 có đọc nó
   hay không là việc của pilot.
 - Pilot A bắt đầu ngay sau cổng (14:44:53): dựng record Stage 1 cho 10.000 study train (68 % lúc 14:48).
+
+### Pilot A/B — 14:44:53 → 21:02:02: **B KHÔNG được nhận** (quy tắc chốt trước), `QREFIT2_PIPELINE_DONE`
+
+- Hai nhánh, cùng 10.000 study train đầu, công thức P2 + LR 3e-4, 1 epoch (**476 update** ở batch 2 × 8 cho
+  mỗi nhánh), seed 16; cue `cutpoints` từ cùng MHCAC. A: soft token `run_20261005_paper/phase1c`; B: file gộp
+  của refit, dựng với `qformer_input_norm=per_stream`. Hai nhánh nạp Stage 1 như nhau (`missing=758
+  unexpected=0`). Mỗi nhánh: train ~72 phút (gồm dựng record), beam cả val ~80 phút (4.705 / 4.788 s sinh),
+  greedy 500 ~17 phút mỗi lượt; 0 lỗi sinh, VRAM đỉnh 8,9 GiB. Chấm điểm 3,7 phút. Pilot 6 h 17 phút; cả
+  pipeline lần 2 07:55:40 → 21:02:02 (13 h 06 phút), 0 lỗi kernel, báo động RAM không kích hoạt.
+- Val loss (300 study val, teacher-forced): A 1,18770, B 1,18495 (−0,0028, không có CI). Train loss
+  1,21095 / 1,21145.
+
+Beam 4 / lp 2 trên cả 1.360 study val: cùng study, cùng thứ tự, reference trùng từng dòng; 327 / 1.360 báo
+cáo giống hệt nhau giữa A và B. Bootstrap ghép cặp 2.000 lần, seed 16.
+
+| | A (token cũ) | B (token refit) | B − A, CI 95% |
+|---|---:|---:|---|
+| **BERTScore** (quy tắc: cận dưới > 0) | 0,4645 | 0,4652 | **+0,0007 [−0,0057; +0,0067] — không đạt** |
+| **CheXbert micro F1-14** (quy tắc: cận trên > 0) | 0,4804 | 0,4898 | +0,0094 [−0,0047; +0,0234] — đạt |
+| CheXbert macro F1-14 | 0,3699 | 0,3660 | −0,0040 [−0,0231; +0,0145] |
+| CheXbert micro F1-5 | 0,5191 | 0,5331 | +0,0140 [−0,0061; +0,0342] |
+| CheXbert macro F1-5 | 0,4539 | 0,4653 | +0,0114 [−0,0140; +0,0373] |
+| ROUGE-L | 0,3591 | 0,3563 | −0,0028 [−0,0081; +0,0023] |
+| CIDEr | 0,5304 | 0,5081 | −0,0223 [−0,0641; +0,0184] |
+| BLEU-4 (cột điểm: corpus; hiệu: trung bình theo study) | 0,1904 | 0,1883 | −0,0060 [−0,0117; −0,0004] |
+| lexicon CE macro F1 | 0,3160 | 0,3034 | −0,0126 [−0,0291; +0,0029] |
+| BLEU-1 / METEOR (corpus, không có CI) | 0,4300 / 0,1782 | 0,4335 / 0,1792 | |
+| số từ, trung vị (reference: 45) | 35 | 36 | |
+
+- **Quyết định theo quy tắc: không nhận B.** Giữ mô hình đã báo cáo (Stage 1 `run_20261005_paper/phase1c`,
+  Stage 2 P2 + LR 3e-4); không đề xuất train Stage 2 đầy đủ trên token refit. Ngoài BLEU-4 theo study, không
+  hiệu nào khác 0; cận trên của BLEU-4 (−0,0004) nằm trong 0,0005 quanh 0, theo chuẩn của repo là "ở biên",
+  không kết luận được theo hướng nào.
+
+Mức tụt khi hoán đổi soft token (chỉ báo cáo): greedy, 500 study val (cùng 500 study cho hai nhánh, tập con
+của 1.360). N = soft token của chính study; P = soft token của study khác (`--soft-token-ablation
+permute_across`). Cue, indication và FINDINGS lần chụp trước giữ nguyên.
+
+| P − N, CI 95% | nhánh A (token cũ) | nhánh B (token refit) |
+|---|---|---|
+| BERTScore | −0,0404 [−0,0535; −0,0273] | −0,0372 [−0,0491; −0,0253] |
+| ROUGE-L | −0,0370 [−0,0491; −0,0249] | −0,0356 [−0,0474; −0,0243] |
+| CIDEr | −0,1749 [−0,2732; −0,0820] | −0,1717 [−0,2725; −0,0861] |
+| BLEU-4 (theo study) | −0,0317 [−0,0441; −0,0197] | −0,0290 [−0,0405; −0,0176] |
+| lexicon CE macro F1 | −0,0669 [−0,1011; −0,0318] | −0,0212 [−0,0557; +0,0134] |
+| CheXbert micro F1-14 | −0,0833 [−0,1129; −0,0536] | −0,0606 [−0,0884; −0,0328] |
+| CheXbert macro F1-14 | −0,0786 [−0,1186; −0,0382] | −0,0372 [−0,0729; +0,0003] |
+| CheXbert micro F1-5 | −0,0852 [−0,1250; −0,0452] | −0,0487 [−0,0887; −0,0093] |
+| CheXbert macro F1-5 | −0,0985 [−0,1415; −0,0569] | −0,0178 [−0,0697; +0,0323] |
+| báo cáo không đổi khi hoán đổi | 81 / 500 | 96 / 500 |
+| điểm N: BERTScore / CheXbert micro F1-14 | 0,4830 / 0,4920 | 0,4860 / 0,4913 |
+
+- **Đọc kết quả.**
+  1. Cả hai adapter đều đọc kênh soft token, kể cả nhánh A với token đã sụp: thay bằng token của study khác
+     làm tụt rõ mọi chỉ số. Token đã sụp (một vector hiệu dụng mỗi study) vẫn mang thông tin ảnh mà Stage 2
+     dùng; "kênh ảnh chỉ còn một vector" đúng về hình học, nhưng không có nghĩa là Stage 2 bỏ qua ảnh. Đây là phép thử
+     ngoài phân phối: mức tụt gộp cả việc mất ảnh đúng lẫn bị ảnh sai dẫn lạc, nên nó chứng minh adapter đọc
+     kênh này chứ không đo chính xác kênh này đóng góp bao nhiêu.
+  2. Token refit không được đọc nhiều hơn: điểm ước lượng mức tụt của B bằng hoặc nhỏ hơn của A. Không có CI
+     cho hiệu giữa hai mức tụt, nên không kết luận B "ít phụ thuộc ảnh hơn".
+  3. Hình học tốt hơn (PR theo batch 1,00 → 26,9) và probe nhỉnh hơn (+0,018 trên phần giữ lại) không thành
+     báo cáo tốt hơn ở ngân sách pilot. Khớp với probe: lượng thông tin nhãn thêm vào nhỏ, và ở ngân sách
+     này Stage 2 không lấy thêm được gì đo được từ các hướng mới.
+  4. Khoảng 1/4 báo cáo beam giống hệt nhau giữa hai nhánh, và 16–19 % báo cáo greedy không đổi khi hoán đổi
+     token: với một phần đáng kể study, đầu ra do phần chữ của prompt (FINDINGS lần trước, indication, cue)
+     quyết định.
+- Giới hạn: một seed mỗi nhánh; 476 update, nên pilot âm không loại trừ hiệu ứng ở 2 epoch đầy đủ; chỉ val,
+  không chạm test; không phải giao thức bài báo (prompt có indication và FINDINGS lần chụp trước).
+- File trên máy train: `~/qrefit2_20261015/score/{pilot_beam,reliance_A,reliance_B}_{paper,ce}.json`, adapter
+  `pilot_{A,B}/adapters/medgemma_qlora_meta_cxr_qformer_with_mhcac_prompt/`, báo cáo sinh `gen_*/` (dữ liệu
+  bệnh nhân, chỉ ở máy train).
