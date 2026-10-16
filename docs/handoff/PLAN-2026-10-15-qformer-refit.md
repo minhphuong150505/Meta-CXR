@@ -1,6 +1,8 @@
 # PLAN 2026-10-15 — Sửa soft token sụp: train lại META-Former trên checkpoint 1c đóng băng
 
-Trạng thái: **smoke 2026-10-15 không đạt cổng (PR 3,15 < 4); user chọn A — refit đầy đủ đang chạy, cổng cuối giữ nguyên.** Quy tắc dưới đây chốt và commit
+Trạng thái: **lần 1 (15/10) trượt cổng cuối (PR 2,32 < 4; loss đa dạng bị lách qua dropout). Lần 2
+(16/10, đường đi của query không còn nhiễu chỉ có lúc train): kiểm tra vi mô, smoke và cổng refit đạt
+(PR theo batch 26,9); cổng thông tin đang chạy.** Quy tắc dưới đây chốt và commit
 trước khi có bất kỳ kết quả nào. Stage 1 gốc: `run_20261005_paper/phase1c` (checkpoint của mọi
 số Stage 1 đã báo cáo và của Stage 2 P2 + LR 3e-4).
 
@@ -300,3 +302,67 @@ thiên phụ thuộc ảnh có ích với vô ích; điều đó chỉ cổng th
   nằm ở từng query, không ở trung bình của chúng. PR 26,5 chỉ nói phần thay đổi theo ảnh trải trên nhiều
   hướng; nó có ích hay không là việc của cổng thông tin và pilot.
 - Refit 2 epoch bắt đầu ngay sau cổng (08:46:40); ước tính xong ~13:30.
+
+### Refit 2 epoch — 08:46:40 → 13:33:16: `REFIT_GATE_PASSED`
+
+- Train 2 epoch × 1.740 update: `Training time 4:44:49`; epoch 0 2:20:30 (4,85 s/update), epoch 1
+  2:21:31 (4,88 s/update). Không OOM, không dòng `Traceback`/`NaN` trong log; `journalctl -k` từ 07:55
+  không có Oops/Xid/NVRM/lỗi `ntfs3`/hết RAM. Checkpoint chọn theo val loss: epoch 1, epoch cuối
+  (5,3852 → 5,1857). Gộp: như smoke (346 thay, 6 norm thêm, 445 trùng từng bit với 1c, 82 giữ nguyên),
+  `refit_epoch` 1.
+- RAM: swap tăng dần trong lúc train (0,5 GB lúc 09:52, 4,1/8 GB lúc 10:34), không lần đo nào (10 phút
+  một lần) chạm ngưỡng báo động (RAM trống < 1,5 GB hoặc swap > 7,2 GB); train xong còn 0,6 GB swap,
+  RAM trống 21,9 GB. Hai epoch gần cùng tốc độ (4,85 / 4,88 s/update).
+
+| | epoch 0, train (TB) | epoch 0, val | epoch 1, train (TB) | epoch 1, val |
+|---|---:|---:|---:|---:|
+| ITC | 3,5627 | 2,9230 | 2,8494 | 2,7896 |
+| LM | 2,7207 | 2,3987 | 2,3254 | 2,3357 |
+| `loss_query_div` | 0,0965 | 0,0635 | 0,0517 | 0,0604 |
+| tổng | 6,3799 | 5,3852 | 5,2265 | 5,1857 |
+
+- Trung bình train của epoch 0 gồm cả warm-up (loss đa dạng bắt đầu ở 0,895), nên cao hơn val. Val ở
+  chế độ eval (`phase_metrics`); lần 1, epoch 0 / 1: ITC 3,0408 / 2,9134, LM 2,4321 / 2,3738, loss đa
+  dạng 0,7636 / 0,7666.
+- `loss_query_div` lúc train (giá trị của update được log): 0,895 (update 0) → 0,113 (200) → 0,069 (400)
+  → 0,058 (600) → 0,055 (800) → 0,053 (1.000) → 0,052 (1.400) → 0,052 (1.600); cả epoch 1 nằm trong
+  0,051–0,056. Độ lệch train/val (chỉ báo cáo; trung bình 1/4 cuối epoch): epoch 0 0,0521 / 0,0635 →
+  0,0114; epoch 1 0,0510 / 0,0604 → 0,0094 (lần 1: 0,014 / 0,77).
+- Cổng ITC (256 cặp val; quét 416 study, 61,5 % có FINDINGS dùng được):
+
+| | epoch 0 | epoch 1 | ngẫu nhiên |
+|---|---:|---:|---:|
+| `loss_itc` | 3,0240 | 2,7188 | 5,5452 |
+| `delta_nats` | +2,5211 | +2,8263 | 0 |
+| hạng TB của cặp đúng, i2t / t2i | 10,41 / 11,98 | 7,53 / 9,18 | 127,5 |
+| R@1 i2t / t2i | 0,2500 / 0,2344 | 0,3242 / 0,3047 | 0,0039 |
+| R@5 i2t / t2i | 0,5586 / 0,5703 | 0,6250 / 0,6094 | 0,0195 |
+| nhiệt độ (học) | 0,0889 | 0,0851 | — |
+
+| 200 study val | 1c | lần 1: refit 2 epoch | lần 2: smoke 600 | **lần 2: refit 2 epoch** | cổng |
+|---|---:|---:|---:|---:|---|
+| `final_pr_batch_centred` | 1,0010 | 2,3166 | 26,4733 | **26,8605** | ≥ 4 — đạt |
+| `xattn_mean_query_map_cos` | 0,7974 | 0,5065 | 0,3643 | **0,3412** | ≤ 0,6 — đạt |
+| ITC R@5 i2t / t2i | ≈0,17 | 0,5781 / 0,5625 | 0,4570 / 0,4297 | **0,6250 / 0,6094** | trên ngẫu nhiên — đạt |
+| \|loss đa dạng train − val\| | — | 0,75 | 0,0094 | 0,0094 | chỉ báo cáo |
+| `query_diversity_loss` (eval) | 0,9997 | 0,7579 | 0,0547 | 0,0505 | — |
+| `final_within_cos` (thô) | 0,9997 | 0,9405 | 0,2274 | 0,2722 | — |
+| `final_pr` (thô, không trừ trung bình) | 1,0006 | 1,0847 | 12,9776 | 8,0787 | — |
+| `meanimage_vs_real_token_cos` | 0,8051 | 0,9032 | 0,5425 | 0,6617 | — |
+| `pooled_across_studies_cos` | 0,3416 | 0,9601 | 0,8972 | 0,9485 | — |
+
+- Theo tầng: cosine thô giữa 32 query 0,110 ở đầu vào, 0,27–0,34 qua các tầng, 0,272 ở đầu ra.
+  `query_map_cos` của 6 tầng cross-attention: 0,198 / 0,296 / 0,333 / 0,338 / 0,339 / 0,544 (lần 1
+  refit: 0,161 ở tầng đầu, 0,921 ở tầng cuối). Cross-attention đầu chia khối lượng BioViL 0,44 /
+  PubMedCLIP 0,36 / Swin 0,20; CLS của PubMedCLIP (index 196) nhận 0,029 khối lượng, vẫn là token được
+  nhìn nhiều nhất (trung bình qua head và query) cho 47 % study; 57 token khác nhau đứng đầu ở ít nhất
+  một study.
+- Đọc kết quả. Hai epoch giữ hình học của smoke (PR theo batch 26,5 → 26,9; bản đồ 0,36 → 0,34) trong
+  khi ITC tốt lên (R@5 0,46 → 0,63; lần 1 0,58; trước 1c 0,65). Lần 1 thì ngược lại: ITC tốt lên còn PR
+  giảm 3,15 → 2,32. So với smoke, PR thô giảm 12,98 → 8,08 và cosine giữa trung bình token của các study
+  tăng 0,90 → 0,95: trung bình của 32 token càng giống nhau giữa các study, phần thay đổi theo ảnh nằm ở
+  độ lệch của từng query. Probe của cổng thông tin chuẩn hóa từng chiều (z-score trên train) trước khi
+  fit, nên phần chung đó tự nó không làm probe thua; cổng đo 14 nhãn đọc tuyến tính được từ trung bình 32
+  token đến đâu so với token cũ.
+- Pipeline tự sang cổng thông tin lúc 13:33:16: dựng record Stage 1 (60.000 study train + test) cho token
+  cũ rồi token mới, ~28 study/s, rồi probe tuyến tính từng bên; ước tính xong ~15:00.
