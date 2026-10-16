@@ -453,9 +453,10 @@ ITC R@5 0,58 / 0,56 đạt. Pipeline dừng trước probe và pilot; Stage 2 kh
 "lách" qua dropout: nó được tính lúc train khi Q-Former còn dropout 0,1, và mô hình học cách khuếch
 đại nhiễu dropout lên 3,9 lần phần phụ thuộc ảnh, nên lúc train loss đọc ~30 hướng (0,014) trong khi
 val (chế độ eval) là 0,77. Không dùng `lambda_query_diversity` khi Q-Former còn dropout.
-**Lần 2 (user chọn 2026-10-15; đang chạy từ 2026-10-16 07:55, `~/qrefit2_20261015/`):** kiểm tra vi mô
-và smoke 600 update đã đạt (PR theo batch 26,5, bản đồ 0,36, ITC R@5 0,46 / 0,43, lệch loss đa dạng
-train/val 0,009 so với 0,65 ở lần 1); refit, cổng thông tin và pilot đang chờ. PR cao chỉ nói phần thay
+**Lần 2 (user chọn 2026-10-15; đang chạy từ 2026-10-16 07:55, `~/qrefit2_20261015/`):** kiểm tra vi mô,
+smoke 600 update và cổng refit đã đạt. Refit 2 epoch (chọn epoch 1): PR theo batch 26,9 (1c 1,00; lần 1
+2,32), bản đồ 0,34, ITC R@5 0,63 / 0,61, lệch loss đa dạng train/val 0,009 (lần 1: 0,75). Cổng thông tin
+đang chạy từ 13:33 ngày 16/10, pilot đang chờ. PR cao chỉ nói phần thay
 đổi theo ảnh trải trên nhiều hướng, chưa nói nó có ích. Khóa mới `model.qformer_dropout` (vắng = dropout
 0,1 của BERT, giống từng bit) đặt xác suất cho mọi lớp dropout của Q-Former mà vẫn để module ở chế độ
 train (giữ gradient checkpointing); `phase1q` đặt `qformer_dropout: 0.0` và `feature_mask_ratio: 0.0`,
