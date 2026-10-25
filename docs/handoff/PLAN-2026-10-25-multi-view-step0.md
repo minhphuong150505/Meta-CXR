@@ -178,3 +178,41 @@ Reading rule, fixed before the run, on `views_2`, A - N under cutpoints:
 
 Note: N's cutpoints also change the decision on `views_1`, so `views_1` deltas
 here are a calibration difference, not an input difference.
+
+### Step 0b — execution report (2026-10-25 11:40 -> 11:48)
+
+Attempt 1 aborted correctly on its dataset-line guard: `run.test_splits=[val]`
+was overridden by the phase1c block (`test_splits: [test]`, YAML line 1148),
+so it scored test again. Its stray test `.npz` was deleted from A's result dir;
+log kept as `~/step0b.attempt1.log`. Attempt 2 used
+`run.phases.phase1c.run.test_splits=[val]`. A's cutpoints refit from its val
+file reproduce the committed file exactly (max diff 0.0).
+
+Headline rule, each arm its own val cutpoints, paired bootstrap 1,000 x seed 16.
+A = ON with aux view, N = ON with aux view removed, B = `run_20261024_nomv`.
+
+| | views_2 (1,247): A - N | views_2: A - B | views_1 (2,022): A - N | views_1: A - B | all: A - B |
+|---|---|---|---|---|---|
+| weighted F1 | **+0.0053 [+0.0014, +0.0090]** * | **+0.0093** * | **-0.0025** * | **-0.0030** * | **+0.0021** * |
+| F1-5 | +0.0067 [-0.0006, +0.0132] | **+0.0146 [+0.0083, +0.0208]** * | **-0.0038** * | **-0.0084** * | +0.0008 |
+| macro recall | **+0.0193 [+0.0117, +0.0275]** * | **+0.0147** * | -0.0031 | +0.0006 | **+0.0057** * |
+| weighted precision | **+0.0079** * | **+0.0068** * | +0.0010 | **+0.0034** * | **+0.0054** * |
+| wF1 Pleural Effusion | **+0.0162** * | **+0.0138** * | 0 | -0.0027 | +0.0041 |
+
+Values on views_2 (A / N / B): weighted F1 0.8517 / 0.8464 / 0.8423, F1-5
+0.8142 / 0.8075 / 0.7996, macro recall 0.4546 / 0.4353 / 0.4398. Per finding on
+views_2, A - N, significant: Pleural Effusion +0.016, Edema +0.017, Lung Lesion
++0.019; nothing significantly negative.
+
+**Reading, by the pre-declared 0b rule: "aux view helps after calibration"** --
+weighted F1 +0.0053 excludes zero and F1-5 is not significantly negative. The
+step-0 argmax harm was an operating-point artefact.
+
+Descriptive (A - B by subgroup under cutpoints was computed but not part of the
+0b rule): under the headline rule the multi-view model beats the OFF run on
+two-view studies on all five metrics (F1-5 +0.0146) and LOSES on single-view
+studies (F1-5 -0.0084); the A - N deltas on `views_1` are pure calibration (same
+probabilities, different cutpoints), which says one cutpoint set fitted on a
+mix of one- and two-view studies is mis-set for the single-view ones. That is a
+hypothesis for the next step (cutpoints per view count, fitted on val), not a
+result. One run per arm; test, many metrics, no multiplicity correction.

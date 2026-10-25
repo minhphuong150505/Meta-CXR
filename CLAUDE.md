@@ -1121,6 +1121,10 @@ study (not image) → anchor + ≤1 auxiliary view
   Pleural Effusion on every metric (wF1 +0.022, AUROC Pos +0.015, Unc +0.092)
   and costs Atelectasis / Consolidation wF1 ~-0.04 with their AUROC flat, i.e.
   an operating-point shift. Record: `docs/handoff/PLAN-2026-10-25-multi-view-step0.md`.
+  **Step 0b (same file): under per-arm val cutpoints the aux view HELPS** on
+  two-view studies (A - A_noaux weighted F1 +0.0053 [+0.0014, +0.0090], macro
+  recall +0.0193, F1-5 +0.0067 crossing 0); ON - OFF there F1-5 +0.0146
+  [+0.0083, +0.0208], but ON is worse on single-view studies (F1-5 -0.0084).
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

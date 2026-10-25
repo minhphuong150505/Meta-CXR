@@ -57,6 +57,16 @@ The novelty only counts if it survives review. So:
   +0.092) and costs Atelectasis / Consolidation wF1 ≈ −0.04 with AUROC flat →
   looks like an operating-point shift. Step 0b (same comparison under per-arm
   val cutpoints) is in `docs/handoff/PLAN-2026-10-25-multi-view-step0.md`.
+- **Step 0b (2026-10-25), headline cutpoints, each arm its own val cutpoints:
+  the aux view HELPS on two-view studies** -- A - A_noaux weighted F1 +0.0053
+  [+0.0014, +0.0090], macro recall +0.0193, F1-5 +0.0067 [-0.0006, +0.0132];
+  Pleural Effusion +0.016, Edema +0.017, Lung Lesion +0.019. ON vs OFF
+  (`run_20261024_nomv`) under cutpoints: two-view studies F1-5 +0.0146
+  [+0.0083, +0.0208] and all five metrics significant; single-view studies
+  F1-5 -0.0084 (ON worse). So the step-0 harm was an operating-point artefact,
+  and the remaining loss on single-view studies looks like one cutpoint set
+  fitted on a mix of one- and two-view studies (hypothesis: fit cutpoints per
+  view count on val). Descriptive, one run per arm.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 
