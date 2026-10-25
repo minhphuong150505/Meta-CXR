@@ -1,8 +1,7 @@
 # PLAN 2026-10-24 — Ablation: does the multi-view package help Stage 1?
 
 Planner: Claude (dev box). Executor: whoever runs on the training host.
-Status: **plan only, nothing run.** Needs the user's go-ahead before any GPU step
-(CLAUDE.md: confirm before every new big GPU step).
+Status: **DONE 2026-10-25** (user go-ahead 2026-10-24). Result: execution report at the end.
 
 ## Question
 
@@ -209,4 +208,89 @@ aggregate numbers only — no ids, paths to patient images, or report text.
 
 ## Execution report
 
-(executor appends here)
+Executor: Claude, planning session over SSH; one chain script (`~/nomv_chain.sh`,
+launched once, `~/nomv_chain.log`), host checkout at `0cf2df0`.
+
+### G0 -- passed, after one host hang
+
+- The first `git pull` + pytest over SSH (2026-10-24 ~16:10) coincided with a
+  **hard hang of the host**: offline ~1 h, rebooted 17:18:46, nothing in
+  `journalctl -b -1` (no Oops, Xid, MCE). Cause unknown. Re-run detached
+  (`setsid`): pytest exit 0 in 45 s. `/mnt/drive1tb` `ntfs3`, GPU idle, no other
+  job. No further hang during the ~10 h that followed.
+
+### G1 -- passed (17:36)
+
+Evaluate-only re-score of arm A at HEAD (`Loading evaluation weights from` = 1)
+vs A's training-time test `.npz`: every delta and `changed_argmax_fraction` 0
+(|v| <= 1e-3 check). ⚠ A's training-time `.npz` predates the `num_views` export
+(2026-10-06), so the compare runs `--subgroups-from candidate`, and step C uses
+the re-score as A (identical by this gate). Evaluate-only writes
+`test_predictions_epoch_provided.npz` next to A's checkpoint; the script moves it
+to `~/nomv_probe_20261024/A_rescore.npz`.
+
+### S -- passed (17:43)
+
+2,000 / 400 / 400 studies, 1b 5 epochs + 1c 1 epoch: dataset line `0 with a
+complementary view (multi_view=False, max_aux_views=0)`, no fusion built,
+`loss_mpc` / `loss_view_consistency` 0.0000, no NaN/inf/OOM/size mismatch.
+`max mem` 7,026 MiB (A's smoke 7,988). The two `"multi_view": true` lines in the
+logged config are the phase1a/phase1q blocks, which do not run.
+
+### F -- completed, rc=0 (17:43 -> 03:12)
+
+| | arm B | arm A (record) |
+|---|---|---|
+| phase 1b, 5 epochs | **5h11m37s**, 0.24-0.31 s/it, `max mem` 4,816 MiB | 7h08m |
+| phase 1c, 1 epoch | **4h12m09s**, 0.540 s/it, `max mem` 7,977 MiB | 4h40m |
+
+`checkpoint_best` of 1b updated through epoch index 3; 0 Traceback / OOM in the log.
+
+### C -- B vs A, test n = 3,269, argmax (paper protocol)
+
+Script reports B - A; the table flips it to **A - B** (positive = multi-view
+package better). Paired bootstrap 1,000 x seed 16. `*` = CI excludes zero.
+
+| A - B | all (3,269) | views_1 (2,022) | views_2 (1,247) |
+|---|---|---|---|
+| `auroc_mean` | +0.0054 [-0.0005, +0.0112] | -0.0003 [-0.0067, +0.0059] | **+0.0107 [+0.0007, +0.0207]** * |
+| `mean_weighted_f1_5` | **+0.0129 [+0.0090, +0.0174]** * | **+0.0126 [+0.0081, +0.0173]** * | **+0.0131 [+0.0062, +0.0203]** * |
+| `weighted_f1` | **+0.0057 [+0.0037, +0.0078]** * | **+0.0050** * | **+0.0062** * |
+| `macro_recall` | **+0.0060 [+0.0028, +0.0092]** * | **+0.0069** * | +0.0049 [-0.0009, +0.0106] |
+| `weighted_precision` | **-0.0071 [-0.0094, -0.0047]** * | **-0.0087** * | **-0.0055** * |
+| AUROC Pos / Neg / Unc | -0.0024 / +0.0009 / **+0.0187** * | -0.0051 * / -0.0030 / +0.0077 | -0.0025 / +0.0038 / **+0.0324** * |
+
+Arm A argmax: weighted F1 0.7795, F1-5 0.6687, macro recall 0.4609, AUROC mean
+0.7436; arm B 0.7738 / 0.6558 / 0.4548 / 0.7382. `changed_argmax_fraction` 0.053
+(views_1 0.039, views_2 0.075). No test study has more than two views
+(`max_aux_views: 1`), so `views_3plus` is empty and `views_2plus` = `views_2`.
+
+Supplementary, headline rule (B's own val cutpoints, `~/nomv_probe_20261024/
+cutpoints_nomv.json`, not committed): B weighted P/R/F1 **0.822 / 0.835 / 0.817**,
+F1-5 **0.748**, macro recall 0.440, against A's recorded 0.827 / 0.834 / 0.820,
+F1-5 0.749, macro recall 0.446 -- equal within ~0.005, no paired CI computed.
+
+### Reading, by the pre-declared rule
+
+1. **Rule 1 ("the package helps") is NOT met.** A - B on `mean_weighted_f1_5` is
+   +0.0129 with a CI excluding zero, but below the ~0.015 noise bar; `auroc_mean`
+   +0.0054 crosses zero. A is significantly better on weighted F1 (+0.0057) and
+   macro recall (+0.0060) too, so nothing in A is worse -- the direction is
+   consistent, the size is below the bar.
+2. **Rule 2 ("the aux view itself helps") is NOT met on F1:** the F1-5 gain is the
+   same on single-view studies (+0.0126), whose input is identical in both arms,
+   as on two-view studies (+0.0131). By the rule that is adapters / MPC / noise,
+   not the second view. **AUROC splits the other way:** zero on `views_1`
+   (-0.0003), +0.0107 [+0.0007, +0.0207] on `views_2`, carried by the Uncertain
+   class (+0.0324). Not pre-declared as decisive; report it as a hint.
+3. **Verdict: no measurable benefit beyond the noise bar at this budget.** The
+   package gives a small, consistent argmax gain (F1-5 +0.013, weighted F1
+   +0.006, macro recall +0.006, all significant) that is NOT specific to
+   multi-view studies, and disappears under the headline cutpoint rule (F1-5
+   0.749 vs 0.748). Arm B trains 1b ~27% faster and uses less memory.
+
+Limitations: one run per arm, seed variance not separated (the bar is the
+2026-10-09 smoke's 0.013 AUROC at n = 400); B also removes the anchor-path
+StreamAdapters, so `views_1` deltas mix adapters, MPC and noise; the training
+path at HEAD was not re-checked against A's (G1 covers evaluation only).
+Shipped YAML unchanged (multi-view stays on): that is the user's decision.

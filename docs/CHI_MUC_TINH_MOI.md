@@ -112,8 +112,12 @@ căn chỉnh vượt ngẫu nhiên nhưng token vẫn sụp.
 một ảnh neo (PA > AP > lateral) + tối đa 1 ảnh phụ, `ViewFusionModule` (query là
 token ảnh neo, K/V là ảnh phụ, khởi tạo đồng nhất), `MultiPositiveContrastiveLoss`
 và `StreamAdapter` (ý tưởng từ EVOKE, arXiv 2411.10224), `view_consistency_loss`
-có lề và cổng độ tự tin. **Chưa có ablation đa góc chụp so với chỉ frontal**; các
-biến thể đã thử đều không tốt hơn (TM-17, TM-18).
+có lề và cổng độ tự tin. Các biến thể đã thử đều không tốt hơn (TM-17, TM-18). **Ablation cả gói
+(2026-10-25, `multi_view: false`, cùng ảnh neo):** gói đa góc chụp hơn F1 5 bệnh
++0,013 và weighted F1 +0,006 (có ý nghĩa), AUROC +0,005 (CI qua 0); dưới ngưỡng
+nhiễu ~0,015 và bằng nhau ở study một ảnh lẫn hai ảnh, nên không chứng minh được
+lợi ích của ảnh phụ; theo luật cutpoint hai bên ngang nhau. Một run mỗi bên
+(`docs/handoff/PLAN-2026-10-24-multi-view-ablation.md`).
 
 **TM-06 — Luồng PubMedCLIP.** Bài báo dùng tiền xử lý riêng từng encoder, không
 nêu chi tiết token. Dự án: đọc patch qua `post_layernorm` rồi trừ trung bình theo

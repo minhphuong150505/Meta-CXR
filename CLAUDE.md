@@ -1086,6 +1086,20 @@ study (not image) → anchor + ≤1 auxiliary view
   EVOKE's `main_224.py` imports `..._v0425_ablation.py`, whose `forward` reads
   an `args['pretrain_loss']` that argparse never defines; the full loss is in
   `_ori.py` (read, not run).
+- **Multi-view package vs `multi_view: false`, measured 2026-10-25 -- small
+  consistent gain, below the noise bar, not specific to multi-view studies.**
+  `run_20261024_nomv` (1b 5 epochs + 1c from `run_20261005_paper`'s phase-1a,
+  no fusion / StreamAdapters / MPC / view consistency; overrides go in
+  `run.phases.<phase>.model.*`, since the phase block beats `--options`) vs
+  `run_20261005_paper`, test n=3,269, argmax, A - B: F1-5 +0.0129
+  [+0.0090, +0.0174], weighted F1 +0.0057, macro recall +0.0060 (all
+  significant), AUROC mean +0.0054 [-0.0005, +0.0112]. The F1-5 gain is the same
+  on the 2,022 single-view studies (+0.0126) as on the 1,247 two-view ones
+  (+0.0131), so by the pre-declared rule it is adapters/MPC/noise, not the second
+  view; only AUROC splits (views_1 -0.0003, views_2 +0.0107 [+0.0007, +0.0207],
+  mostly the Uncertain class). Under the headline cutpoints the arms tie (B
+  F1-5 0.748 vs 0.749). B's 1b is ~27% faster (5h12m vs 7h08m). One run per arm.
+  YAML unchanged. Record: `docs/handoff/PLAN-2026-10-24-multi-view-ablation.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and
