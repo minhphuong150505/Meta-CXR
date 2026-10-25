@@ -1100,6 +1100,14 @@ study (not image) → anchor + ≤1 auxiliary view
   mostly the Uncertain class). Under the headline cutpoints the arms tie (B
   F1-5 0.748 vs 0.749). B's 1b is ~27% faster (5h12m vs 7h08m). One run per arm.
   YAML unchanged. Record: `docs/handoff/PLAN-2026-10-24-multi-view-ablation.md`.
+  **Step 0, 2026-10-25 (A scored with `model.data.max_aux_views=0`, inference
+  only): fusion is used and HURTS argmax.** On the 1,247 two-view test studies
+  A - A_noaux: F1-5 -0.0116 [-0.0176, -0.0051], weighted F1 -0.0056 (both
+  significant), AUROC mean -0.0005 (flat); changed argmax 6.4%; zero-init
+  weights reached 25-65% of random-init RMS. Per finding the aux view helps
+  Pleural Effusion on every metric (wF1 +0.022, AUROC Pos +0.015, Unc +0.092)
+  and costs Atelectasis / Consolidation wF1 ~-0.04 with their AUROC flat, i.e.
+  an operating-point shift. Record: `docs/handoff/PLAN-2026-10-25-multi-view-step0.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

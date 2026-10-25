@@ -118,6 +118,10 @@ có lề và cổng độ tự tin. Các biến thể đã thử đều không t
 nhiễu ~0,015 và bằng nhau ở study một ảnh lẫn hai ảnh, nên không chứng minh được
 lợi ích của ảnh phụ; theo luật cutpoint hai bên ngang nhau. Một run mỗi bên
 (`docs/handoff/PLAN-2026-10-24-multi-view-ablation.md`).
+**Bước 0 (2026-10-25, chấm lại A bỏ ảnh phụ):** fusion có hoạt động nhưng làm
+giảm F1 5 bệnh trên study hai ảnh (−0,012, có ý nghĩa), AUROC không đổi; ảnh phụ
+giúp Pleural Effusion ở mọi metric, làm giảm F1 Atelectasis/Consolidation
+(`docs/handoff/PLAN-2026-10-25-multi-view-step0.md`).
 
 **TM-06 — Luồng PubMedCLIP.** Bài báo dùng tiền xử lý riêng từng encoder, không
 nêu chi tiết token. Dự án: đọc patch qua `post_layernorm` rồi trừ trung bình theo
