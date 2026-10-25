@@ -95,6 +95,13 @@ The novelty only counts if it survives review. So:
   F - noPMC: nothing but wP +0.0032*. Total F - N on val: wF1 +0.0041*, AUROC +0.0219*.
   Pre-declared verdict "H supported" -- but its wording "BioViL carries nothing" is
   too strong given AUROC. Nothing adopted. `docs/handoff/PLAN-2026-10-25-fusion-per-stream.md`.
+- **Training with fusion in the Swin stream only FAILED its val pilot (2026-10-25;
+  aux-drop pilot recipe, in-memory `_fuse` patch, P15/OFF reused):** SW - P15 all-val
+  F1-5 -0.0071*, macro recall -0.0075*, AUROC -0.0149*, also on single-view studies
+  (F1-5 -0.0088*), where no fusion block runs. The inference-time "Swin carries the
+  gain" does not transfer to training. Seed noise at pilot budget is unmeasured (P15 -
+  OFF views_1 AUROC -0.0123, crossing 0). Do not retry stream-subset fusion unchanged.
+  `docs/handoff/PLAN-2026-10-25-swin-only-fusion.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 

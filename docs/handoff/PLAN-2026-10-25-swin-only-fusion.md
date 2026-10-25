@@ -1,6 +1,6 @@
 # PLAN 2026-10-25 — train with fusion in the Swin stream only (val pilot)
 
-Status: **user go-ahead 2026-10-25 ("ok")** for the Swin-only arm. The optional
+Status: **DONE 2026-10-25 23:36 -- FAILED the pre-declared rule; SW is worse than P15 and OFF (report below). No full run.** User go-ahead 2026-10-25 ("ok") for the Swin-only arm. The optional
 "Swin + BioViL" arm was offered and is NOT part of this go-ahead. No repo code or
 YAML change; test is not scored. ~50 min GPU.
 
@@ -74,3 +74,52 @@ small from noise; the rule only screens out what clearly does not help.
 `.npz`, checkpoints and logs stay on the host. Only aggregates come back here.
 
 ## Execution report
+
+Launched once 22:43 (host code `dd850c7`). The CPU dry runs came first: the
+checkpoint check FAILs on A's checkpoint, as it must since A's BioViL fusion was
+trained, and the probe with SW = P15 gives "no candidate".
+
+- Smoke passed 22:44: max mem 5,685 MiB; BioViL / PubMedCLIP `w_o` + `ffn.3` exactly 0,
+  Swin's 0.0034.
+- SW trained 22:44 -> 23:32 (47m35s): best epoch = index 1 (the last), max mem 5,682 MiB.
+  The wrapper skipped BioViL and PubMedCLIP in all 7,818 batches that had an aux view,
+  and fused Swin in all of them. Checkpoint check PASS: BioViL / PubMedCLIP exactly 0,
+  Swin 0.041. Logged `p_view_drop` 0.15. Test not scored. Probe 23:36.
+- (The chain's "max mem: 56822026" is the known log-grep artefact; the value is 5,682 MiB.)
+
+### Result — val n=1,808 (988 one-view / 820 two-view), cross-fitted cutpoints
+
+Values (wP / wR / wF1 / F1-5 / macro recall / AUROC mean):
+
+| arm | all | views_1 | views_2 |
+|---|---|---|---|
+| P15 | 0.8503 / 0.8647 / 0.8535 / 0.7993 / 0.4555 / 0.7403 | 0.8128 / 0.8291 / 0.8148 / 0.7370 / 0.4370 / 0.6995 | 0.8979 / 0.9085 / 0.8992 / 0.8756 / 0.4535 / 0.7580 |
+| SW | 0.8520 / 0.8655 / 0.8522 / 0.7922 / 0.4480 / 0.7253 | 0.8173 / 0.8279 / 0.8124 / 0.7282 / 0.4302 / 0.6862 | 0.8981 / 0.9116 / 0.8968 / 0.8699 / 0.4360 / 0.7503 |
+| OFF | 0.8507 / 0.8650 / 0.8534 / 0.7994 / 0.4504 / 0.7394 | 0.8155 / 0.8293 / 0.8155 / 0.7358 / 0.4333 / 0.7117 | 0.8953 / 0.9088 / 0.8982 / 0.8763 / 0.4470 / 0.7542 |
+
+Paired bootstrap (1,000, seed 16), * = CI excludes 0:
+
+| | all wF1 | all F1-5 | all macro recall | all AUROC | views_1 F1-5 | views_2 F1-5 | views_2 macro recall |
+|---|---|---|---|---|---|---|---|
+| SW - P15 | -0.0013 | **-0.0071** * | **-0.0075** * | **-0.0149** * | **-0.0088** * | -0.0057 | **-0.0175** * |
+| SW - OFF | -0.0011 | **-0.0072** * | -0.0024 | **-0.0140** * | -0.0077 | -0.0063 | -0.0109 |
+| P15 - OFF | +0.0002 | -0.0000 | **+0.0052** * | +0.0009 | +0.0012 | -0.0007 | +0.0066 |
+
+Rule: all three conditions fail (wF1 gain over P15 -0.0013, needs >= +0.002; views_1
+F1-5 vs OFF -0.0077, worse than P15's +0.0012; views_2 F1-5 vs OFF -0.0063 < 0).
+**VERDICT: no candidate passes -> no full run.**
+
+**Reading.**
+- Training with fusion in the Swin stream only is worse than all-stream fusion, and
+  worse than no fusion, on F1-5 and AUROC. That holds even on single-view studies,
+  where no fusion block runs at all (views_1 SW - P15 F1-5 -0.0088*, AUROC -0.0132*).
+  So either removing the BioViL / PubMedCLIP fusion blocks changes how MHCAC trains
+  (not only what the two-view input looks like), or run-to-run noise at this budget is
+  this large (next bullet). This pilot cannot tell the two apart.
+- The per-stream inference result (Swin carries the gain in a model trained with all
+  three) does not become a better training recipe.
+- **Seed noise at this budget is not measured.** P15 - OFF views_1 AUROC is
+  -0.0123 [-0.0191, +0.0045] on inputs where fusion never runs, so run-to-run
+  differences of ~0.01 AUROC are plausible. One seed per arm; the controls were
+  trained earlier the same day with identical code. Do not read the SW deficit as
+  more than "it does not help".

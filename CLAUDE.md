@@ -1140,6 +1140,9 @@ study (not image) → anchor + ≤1 auxiliary view
   +0.0162*; Swin off alone = no-fusion level). BioViL fusion: wF1/F1-5 flat, AUROC
   +0.0097*; PubMedCLIP fusion: nothing but wP. Record:
   `docs/handoff/PLAN-2026-10-25-fusion-per-stream.md`.
+  **Training with Swin-only fusion FAILED its val pilot** (same pilot recipe; SW - P15
+  all-val F1-5 -0.0071*, AUROC -0.0149*, single-view studies included). No full run.
+  Pilot seed noise is unmeasured. Record: `docs/handoff/PLAN-2026-10-25-swin-only-fusion.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and
