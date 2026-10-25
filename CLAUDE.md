@@ -1125,6 +1125,10 @@ study (not image) → anchor + ≤1 auxiliary view
   two-view studies (A - A_noaux weighted F1 +0.0053 [+0.0014, +0.0090], macro
   recall +0.0193, F1-5 +0.0067 crossing 0); ON - OFF there F1-5 +0.0146
   [+0.0083, +0.0208], but ON is worse on single-view studies (F1-5 -0.0084).
+  **Step 0c (same file): cutpoints fitted per view count do NOT make ON beat OFF**
+  (all 3,269: wF1 +0.0019 [-0.0001, +0.0038], F1-5 +0.0022 crossing 0); they barely
+  move A's single-view deficit, so that deficit is the model, not the cutpoints.
+  Single-cutpoint ON - OFF wF1 +0.0021 [+0.0001, +0.0041] is at the zero boundary.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

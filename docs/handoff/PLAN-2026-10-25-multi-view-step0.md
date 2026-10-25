@@ -243,3 +243,33 @@ weighted P / R / F1, F1-5, macro recall has a CI below zero. Anything else:
 views_1 / views_2 subgroups; A per-view minus A single (does it fix views_1);
 B per-view minus B single. A win does NOT change the headline rule by itself;
 adopting per-view cutpoints is a separate user decision.
+
+### Step 0c — execution report (2026-10-25 13:29 -> 13:39)
+
+Commit `2c6a194`. A's val re-score with its aux view reproduced the
+training-time val npz exactly (max |dprob| 0.0, changed argmax 0); val groups
+988 one-view / 820 two-view, test 2,022 / 1,247. Artifacts (host, never
+committed): `~/nomv_probe_20261024/{A_val.npz,pv_probe.json,pv_probe.log}`.
+
+Test, 1,000 paired draws, seed 16, `*` = CI excludes 0:
+
+| comparison (all 3,269) | wP | wR | wF1 | F1-5 | macro R |
+|---|---|---|---|---|---|
+| **A_pv - B_pv (primary)** | -0.0018 | +0.0026* | +0.0019 [-0.0001, +0.0038] | +0.0022 [-0.0020, +0.0061] | +0.0007 |
+| A_pv - A_single | -0.0083* | +0.0032* | +0.0008 | +0.0018 | -0.0027 |
+| B_pv - B_single | -0.0010 | -0.0004 | +0.0011 | +0.0005 | +0.0022 |
+| A_single - B_single (0b, descriptive) | +0.0054* | -0.0010 | +0.0021 [+0.0001, +0.0041]* | +0.0008 | +0.0057* |
+
+Subgroups, A_pv - B_pv: views_2 wF1 +0.0074*, F1-5 +0.0115 [+0.0051, +0.0175]*,
+wR +0.0093*; views_1 F1-5 -0.0050 [-0.0100, +0.0002], wF1 -0.0017, wP +0.0039*.
+
+**Verdict by the pre-declared rule: per-view cutpoints do NOT make ON beat
+OFF.** wF1's lower bound is -0.0001 and F1-5 crosses zero. The hypothesis is
+also only partly right: per-view cutpoints move A's views_1 F1-5 by just
++0.0016 (CI crosses 0), and they help B on two-view studies too (wF1 +0.0032*),
+so they shrink ON's views_2 margin (F1-5 +0.0146 -> +0.0115). A's single-view
+deficit vs B is therefore mostly the MODEL (A's probabilities on single-view
+studies equal A_noaux's), not the cutpoints. Note the single-cutpoint headline
+pair (last row) meets the same rule formally (wF1 lower bound +0.0001, nothing
+significantly negative), but a bound 0.0001 from zero is "at the zero
+boundary", not established. Headline rule unchanged.

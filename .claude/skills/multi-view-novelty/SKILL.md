@@ -67,6 +67,17 @@ The novelty only counts if it survives review. So:
   and the remaining loss on single-view studies looks like one cutpoint set
   fitted on a mix of one- and two-view studies (hypothesis: fit cutpoints per
   view count on val). Descriptive, one run per arm.
+- **Step 0c (2026-10-25): per-view-count cutpoints FAILED the pre-declared
+  rule.** A_pv - B_pv on all 3,269: wF1 +0.0019 [-0.0001, +0.0038], F1-5
+  +0.0022 [-0.0020, +0.0061]. They moved A's single-view F1-5 only +0.0016 and
+  also helped B on two-view studies, so the single-view deficit is the MODEL
+  (A trained with fusion is weaker on single-view inputs), not the cutpoints.
+  Do not retry cutpoint tricks; the lever must be training-side (protect
+  single-view quality, e.g. direction 4/1). Single-cutpoint ON - OFF wF1
+  +0.0021 [+0.0001, +0.0041] = at the zero boundary, not established.
+- **Proposed, NOT approved: raise `p_view_drop`** (YAML ships 0.15, not 0.2; the
+  drop is drawn independently per encoder). Plan with val pilot + reading rules:
+  `docs/handoff/PLAN-2026-10-25-aux-view-drop.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 
@@ -75,7 +86,7 @@ The novelty only counts if it survives review. So:
 1. Per-finding gated fusion (each finding learns how much to use the aux view).
 2. Aux tokens fed straight into MHCAC's token axis with a view-type embedding.
 3. Late fusion: per-view MHCAC logits pooled by attention over views.
-4. Train-side: separate LR for `view_fusion`, change the 20% aux-view drop.
+4. Train-side: separate LR for `view_fusion`, change the aux-view drop (`p_view_drop`, shipped 0.15).
 5. Seed replicates of ON and OFF to measure the noise bar properly.
 
 Pilot recipe used before (cheap): phase 1b only, ~60,000 studies, 2 epochs,
