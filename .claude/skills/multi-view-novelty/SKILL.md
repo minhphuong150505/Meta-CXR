@@ -86,8 +86,15 @@ The novelty only counts if it survives review. So:
   measured):** fusion receives BioViL tokens through `_biovil_tokens` with the
   default `legacy_reshape`, so its 196 BioViL "tokens" are channel groups, not
   patches, and 1b's BioViL projector is random and frozen. Only the PubMedCLIP
-  (and Swin) streams give fusion real spatial tokens. Untested next step: per-stream
-  ablation of fusion on the existing checkpoint (inference only).
+  (and Swin) streams give fusion real spatial tokens.
+- **Per-stream ablation DONE (2026-10-25, inference only, val views_2 n=820,
+  cross-fitted cutpoints): the SWIN stream carries the fusion gain.** F - noSW wF1
+  +0.0045*, F1-5 +0.0070*, macro recall +0.0107*, AUROC +0.0162*; turning off Swin
+  fusion alone ends at the no-fusion level. F - noBV: wF1 / F1-5 flat (-0.0001 /
+  -0.0006) but AUROC +0.0097* (BioViL fusion helps ranking, not the operating point).
+  F - noPMC: nothing but wP +0.0032*. Total F - N on val: wF1 +0.0041*, AUROC +0.0219*.
+  Pre-declared verdict "H supported" -- but its wording "BioViL carries nothing" is
+  too strong given AUROC. Nothing adopted. `docs/handoff/PLAN-2026-10-25-fusion-per-stream.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 

@@ -1134,6 +1134,12 @@ study (not image) → anchor + ≤1 auxiliary view
   drop makes single-view val studies worse (P50 - P15 wF1 -0.0056*), P30 trades
   two-view gain for single-view loss; no full run. Record:
   `docs/handoff/PLAN-2026-10-25-aux-view-drop.md`.
+  **Per-stream fusion ablation (2026-10-25, inference only on A's checkpoint, val
+  two-view n=820, `Blip2Qformer._fuse` patched in memory, no repo change): the SWIN
+  stream carries the fusion gain** (F - noSW wF1 +0.0045*, F1-5 +0.0070*, AUROC
+  +0.0162*; Swin off alone = no-fusion level). BioViL fusion: wF1/F1-5 flat, AUROC
+  +0.0097*; PubMedCLIP fusion: nothing but wP. Record:
+  `docs/handoff/PLAN-2026-10-25-fusion-per-stream.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

@@ -1,6 +1,6 @@
 # PLAN 2026-10-25 — which encoder stream's fusion does the work? (inference only, val)
 
-Status: **user go-ahead 2026-10-25 ("làm ý 1").** Inference only: no training, no
+Status: **DONE 2026-10-25 22:31 -- the Swin stream carries the fusion gain; BioViL adds AUROC only (report below).** User go-ahead 2026-10-25 ("làm ý 1"). Inference only: no training, no
 code or YAML change in the repo, test is never scored. ~10–15 min GPU + ~10 min CPU.
 
 ## Why
@@ -84,3 +84,62 @@ on test once.
 `.npz`, JSON and logs stay on the host. Only aggregates come back here.
 
 ## Execution report
+
+Launched once 22:17 (host code `3c8256a`), five val passes 22:17 -> 22:25 (~1.5 min
+each), probe done 22:31; GPU idle afterwards. The probe was first dry-run on CPU with
+existing files (every "arm" = A without aux view): sanity PASS, the four comparisons
+identical, as they must be.
+
+**Guards: all passed.** Weights line x1 and the 820-complementary-view dataset line in
+every log, no test split built or scored. The wrapper skipped each listed stream in
+all 199 val batches that carried an aux view, and F skipped nothing. max |Δp| was
+F vs `A_val` 0, N vs `A_noaux_val` 0, and 0 on views_1 for every arm (bit-identical).
+On views_2 the off-arms changed probabilities by up to 0.61 (BioViL) / 0.32
+(PubMedCLIP) / 0.76 (Swin) / 0.75 (all).
+
+### Result — views_2 (820 two-view val studies), cross-fitted cutpoints
+
+Values (wP / wR / wF1 / F1-5 / macro recall / AUROC mean):
+
+| arm | views_2 |
+|---|---|
+| F (all fused) | 0.9022 / 0.9130 / 0.9035 / 0.8830 / 0.4538 / 0.7968 |
+| noBV | 0.9020 / 0.9137 / 0.9037 / 0.8836 / 0.4538 / 0.7870 |
+| noPMC | 0.8990 / 0.9130 / 0.9034 / 0.8833 / 0.4547 / 0.7944 |
+| noSW | 0.8993 / 0.9121 / 0.8991 / 0.8760 / 0.4430 / 0.7806 |
+| N (none fused) | 0.8992 / 0.9127 / 0.8994 / 0.8791 / 0.4432 / 0.7749 |
+
+Paired bootstrap 1,000 x seed 16, * = CI excludes 0:
+
+| views_2 | wF1 | F1-5 | macro recall | AUROC mean | wP | label |
+|---|---|---|---|---|---|---|
+| F - N (all fusion) | **+0.0041 [+0.0007, +0.0078]** * | +0.0039 [-0.0021, +0.0102] | **+0.0106** * | **+0.0219 [+0.0076, +0.0346]** * | +0.0030 | helps |
+| F - noBV | -0.0001 [-0.0026, +0.0020] | -0.0006 [-0.0047, +0.0033] | -0.0000 | **+0.0097 [+0.0012, +0.0142]** * | +0.0002 | not separable |
+| F - noPMC | +0.0001 [-0.0013, +0.0017] | -0.0003 [-0.0028, +0.0025] | -0.0009 | +0.0024 [-0.0023, +0.0062] | **+0.0032** * | not separable |
+| F - noSW | **+0.0045 [+0.0011, +0.0079]** * | **+0.0070 [+0.0009, +0.0128]** * | **+0.0107** * | **+0.0162 [+0.0039, +0.0273]** * | +0.0029 | helps |
+
+All val (1,808), descriptive: F - N wF1 +0.0017 [-0.0002, +0.0036], AUROC +0.0130 *.
+On views_1, AUROC deltas are exactly 0 (identical inputs). The other views_1 deltas are
+calibration only (each arm fits its cutpoints on all of val).
+
+**VERDICT by the pre-declared rule: H SUPPORTED.** F - noBV is "not separable" with the
+wF1 and F1-5 point estimates <= 0, and F - noSW is "helps".
+
+**Reading.**
+- **The Swin stream carries the whole operating-point gain of fusion on two-view
+  studies.** Turning off Swin fusion alone removes it: noSW ends at N's wF1 / F1-5 /
+  macro recall.
+- **The verdict's wording "BioViL fusion carries nothing measurable" is too strong.**
+  Removing BioViL fusion costs AUROC +0.0097 *. BioViL fusion improves ranking but adds
+  nothing to wF1 / F1-5 at the cutpoint operating point. The rule ignored AUROC in its
+  "not separable" branch; that is recorded here, not changed after the fact.
+- **PubMedCLIP fusion adds nothing measurable except weighted precision**, although its
+  tokens are real patches plus CLS. So "only BioViL's channel-group layout is the
+  problem" does not explain everything.
+- **Consistent with step 0's weights.** The Swin block's zero-init `w_o` moved the
+  most (RMS 1.8e-2 vs 7.1e-3 BioViL, 7.7e-3 PubMedCLIP).
+
+**Limits.**
+- Inference only, one checkpoint, val n = 820.
+- The 24 cells (6 metrics x 4 comparisons) carry no multiplicity correction.
+- Nothing is adopted. Test was not touched.
