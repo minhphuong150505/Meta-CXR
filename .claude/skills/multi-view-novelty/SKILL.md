@@ -75,9 +75,19 @@ The novelty only counts if it survives review. So:
   Do not retry cutpoint tricks; the lever must be training-side (protect
   single-view quality, e.g. direction 4/1). Single-cutpoint ON - OFF wF1
   +0.0021 [+0.0001, +0.0041] = at the zero boundary, not established.
-- **Proposed, NOT approved: raise `p_view_drop`** (YAML ships 0.15, not 0.2; the
-  drop is drawn independently per encoder). Plan with val pilot + reading rules:
-  `docs/handoff/PLAN-2026-10-25-aux-view-drop.md`.
+- **Raising `p_view_drop` FAILED its pre-declared val rule (pilot 2026-10-25).**
+  YAML ships 0.15 (not 0.2); the drop is drawn independently per encoder. Pilot:
+  1b only, 60,000 studies, 2 epochs, val n=1,808, cross-fitted cutpoints. More
+  drop makes single-view studies WORSE, not better (P50 - P15 views_1 wF1
+  -0.0056*, P30 -0.0029*); P50 is worse everywhere; P30 helps two-view studies
+  (F1-5 +0.0058* over P15) but the total does not move. Full run NOT launched.
+  Do not retry a higher drop unchanged. `docs/handoff/PLAN-2026-10-25-aux-view-drop.md`.
+- **Structural reason fusion may help little (read from code 2026-10-25, not
+  measured):** fusion receives BioViL tokens through `_biovil_tokens` with the
+  default `legacy_reshape`, so its 196 BioViL "tokens" are channel groups, not
+  patches, and 1b's BioViL projector is random and frozen. Only the PubMedCLIP
+  (and Swin) streams give fusion real spatial tokens. Untested next step: per-stream
+  ablation of fusion on the existing checkpoint (inference only).
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 

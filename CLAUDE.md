@@ -1129,6 +1129,11 @@ study (not image) → anchor + ≤1 auxiliary view
   (all 3,269: wF1 +0.0019 [-0.0001, +0.0038], F1-5 +0.0022 crossing 0); they barely
   move A's single-view deficit, so that deficit is the model, not the cutpoints.
   Single-cutpoint ON - OFF wF1 +0.0021 [+0.0001, +0.0041] is at the zero boundary.
+  **Raising `model.view_fusion.p_view_drop` (ships 0.15, drawn per encoder) FAILED
+  its pre-declared val pilot (2026-10-25; 1b only, 60,000 studies, 2 epochs):** more
+  drop makes single-view val studies worse (P50 - P15 wF1 -0.0056*), P30 trades
+  two-view gain for single-view loss; no full run. Record:
+  `docs/handoff/PLAN-2026-10-25-aux-view-drop.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and
