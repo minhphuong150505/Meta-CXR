@@ -16,6 +16,19 @@ and refuse to start if your output directory already exists. On 2026-09-08 two
 agents used this host hours apart without colliding precisely because the second
 one ran those three checks.
 
+## ⚠⚠⚠ USER GOAL (2026-10-25): multi-view fusion is the novelty — fusion ON must beat OFF; confirm EVERY change
+
+The user wants View Fusion (multi-view) to be the paper's novelty, so work on
+Stage 1 now aims at **fusion ON scoring better than fusion OFF** (paired, same
+recipe and budget, test n = 3,269, three classes). **Every change toward that
+goal — code, YAML, loss, recipe, data, decision rule, evaluation, GPU launch —
+must be confirmed with the user in plain Vietnamese BEFORE it is made**; one
+approval does not cover the next change. The gain must be real: select on val
+only, pre-declare the reading rule, score test once, keep the OFF arm at the
+same budget, report it honestly if ON does not win. Current evidence, rules and
+candidate directions: **`.claude/skills/multi-view-novelty/SKILL.md` — load it
+first.**
+
 ## Your role: execute the plan, report back compactly
 
 One session plans and edits; you run. Concretely:
