@@ -152,3 +152,29 @@ multiplicity correction; "multi-view training + single-view inference" being
 best on `views_2` is a post-hoc observation on test and must not be adopted
 from this table. Val predictions without aux were saved on the host
 (`A_noaux_val.npz`) for a val-side check.
+
+## Step 0b — does the harm survive calibration? (user go-ahead 2026-10-25)
+
+Step 0 found AUROC flat but argmax F1 down, i.e. possibly an operating-point
+shift. Here each arm is scored under the headline rule with **its own**
+val-fitted cutpoints: A with its aux view uses the committed
+`configs/stage1_cutpoints/run_20261005_paper.json` (refit on A's val first and
+required to match to 1e-9); A without aux view (N) gets cutpoints fitted on a
+new evaluate-only val pass with `model.data.max_aux_views=0` (~2 min GPU); arm
+B uses `cutpoints_nomv.json` from the 2026-10-24 plan. Paired bootstrap 1,000 x
+seed 16 on all / views_1 / views_2, metrics weighted P/R/F1, F1-5, macro
+recall, plus per-finding weighted F1 for seven findings (descriptive).
+Scripts: `~/step0b.sh`, `~/cut_probe.py` (ad hoc, aggregates only).
+
+Reading rule, fixed before the run, on `views_2`, A - N under cutpoints:
+
+- **Aux view helps after calibration:** F1-5 or weighted F1 > 0 with CI
+  excluding zero, neither significantly < 0. → the novelty claim is supported
+  under the headline rule.
+- **Harm was an operating-point artefact:** both CIs cross zero. → aux view is
+  neutral in aggregate; the per-finding Pleural Effusion result is the
+  evidence to report; step 2 (per-finding gated fusion) is the next design.
+- **Aux view hurts even after calibration:** either significantly < 0. → step 2.
+
+Note: N's cutpoints also change the decision on `views_1`, so `views_1` deltas
+here are a calibration difference, not an input difference.
