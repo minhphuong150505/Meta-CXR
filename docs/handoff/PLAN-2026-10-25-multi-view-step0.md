@@ -216,3 +216,30 @@ probabilities, different cutpoints), which says one cutpoint set fitted on a
 mix of one- and two-view studies is mis-set for the single-view ones. That is a
 hypothesis for the next step (cutpoints per view count, fitted on val), not a
 result. One run per arm; test, many metrics, no multiplicity correction.
+
+## Step 0c — cutpoints fitted per view count (user go-ahead 2026-10-25)
+
+Hypothesis from 0b: one cutpoint set fitted on val mixing one- and two-view
+studies is mis-set for single-view studies (ON loses F1-5 -0.0084 there while
+its probabilities equal A_noaux's). Fit cutpoints on val SEPARATELY for
+`num_views == 1` and `num_views >= 2`, for BOTH arms, and score test once.
+
+- GPU (~3 min): evaluate-only VAL pass of arm A at HEAD with its aux view
+  (`run.phases.phase1c.run.test_splits=[val]`), because A's training-time val
+  npz predates `num_views`. Sanity: probabilities must match that npz
+  (max |dprob| < 1e-3, changed argmax 0), else abort.
+- Groups come from A's `num_views` for both arms (B ran `multi_view=false`, so
+  its own field is the anchor only); rows aligned by `sample_key`, asserted.
+- Per arm, per group: `fit_severity_cutpoints` (weighted F1, same grid as the
+  headline file) on that group's val rows. Test rows are decided with their
+  group's cutpoints; metrics computed by `evaluate_classification` on the whole
+  split. 1,000 paired bootstrap draws, seed 16.
+
+**Reading rule, fixed before any result.** Primary comparison: test, all
+3,269 studies, A (ON) per-view cutpoints minus B (OFF) per-view cutpoints.
+ON WINS iff the 95% CI of F1-5 OR weighted F1 lies above zero AND none of
+weighted P / R / F1, F1-5, macro recall has a CI below zero. Anything else:
+"per-view cutpoints do not make ON beat OFF". Descriptive only (no claim):
+views_1 / views_2 subgroups; A per-view minus A single (does it fix views_1);
+B per-view minus B single. A win does NOT change the headline rule by itself;
+adopting per-view cutpoints is a separate user decision.
