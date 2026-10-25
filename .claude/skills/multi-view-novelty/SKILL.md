@@ -99,9 +99,19 @@ The novelty only counts if it survives review. So:
   aux-drop pilot recipe, in-memory `_fuse` patch, P15/OFF reused):** SW - P15 all-val
   F1-5 -0.0071*, macro recall -0.0075*, AUROC -0.0149*, also on single-view studies
   (F1-5 -0.0088*), where no fusion block runs. The inference-time "Swin carries the
-  gain" does not transfer to training. Seed noise at pilot budget is unmeasured (P15 -
-  OFF views_1 AUROC -0.0123, crossing 0). Do not retry stream-subset fusion unchanged.
+  gain" does not transfer to training. Its F1-5 losses are beyond the seed-noise bar
+  measured next; its AUROC losses are not. Do not retry stream-subset fusion unchanged.
   `docs/handoff/PLAN-2026-10-25-swin-only-fusion.md`.
+- **Seed noise at the pilot budget MEASURED (2026-10-26; P15 and OFF rerun at seed 17).**
+  The same recipe at another seed moves val AUROC by -0.0159* (ON) / -0.0112* (OFF), and
+  macro recall by -0.0073*. **The val bootstrap does not cover seed noise, so a
+  single-seed "*" on AUROC or macro recall means nothing.** Noise bar NB (all val, 2 x
+  RMS of the two seed deltas, from two draws only): wF1 0.0027, F1-5 0.0031, macro recall
+  0.0110, AUROC 0.0276; views_2 F1-5 0.0047. **ON - OFF at pilot budget: seed 42 ~0, seed
+  17 ON worse (F1-5 -0.0031); two-seed mean -0.0015.** Fusion does not beat OFF at this
+  budget. P50 and SW are worse beyond NB; P30 is noise except views_2 F1-5 +0.0058 (NB
+  0.0047). Whether future pilots must also clear NB is the user's decision (proposed, not
+  adopted). `docs/handoff/PLAN-2026-10-26-pilot-seed-noise.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 
