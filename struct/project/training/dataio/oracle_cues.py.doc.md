@@ -17,3 +17,12 @@ thường đúng để mô hình học dựa vào cue. Val/test vẫn dùng cue 
 | `mix_oracle_cues(records, codes, findings, model_share, seed)` | ★ thay `pred_groups`, đặt `cue_source="oracle_mix"`, trả số đếm |
 
 `tests/test_oracle_cues.py` ghim ánh xạ khớp `model/lavis/data/chexpert_labels.map_chexpert_labels`.
+
+## ⚠ "Study" trong lượt bốc là `sample_key` của record (ghi nhận 2026-10-26)
+
+`_uniform(seed, key, finding)` dùng `key = record["sample_key"]`. Với record Stage-1,
+`sample_key = stable_fingerprint({cohort_id, dicom_id})`, và `cohort_id` chứa `file_identity()`
+(kích thước + `mtime_ns`) của YAML Stage-1, checkpoint và CSV split. Hệ quả: cùng seed, cùng commit
+nhưng clone mới (mtime khác) cho lượt bốc khác; hai nhánh có checkpoint / cutpoints /
+`--stage1-options` khác nhau cũng có lượt bốc khác nhau. Seed truyền từ
+`run_medgemma_qlora.py --seed` (mặc định 16). Chưa sửa trong code.

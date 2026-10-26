@@ -77,3 +77,26 @@ runs, so this measures Stage-2 seed noise only, not Stage-1 run-to-run variation
 Reports, JSONL, adapters and caches stay on the host. Only aggregates come back here.
 
 ## Execution report
+
+### Attempt 1 — 08:00, ABORTED at step G (as designed)
+
+G1 (old code) and G2 (new code, `--seed 16`) differed on all 478 adapter tensors (val loss 1.63044
+vs 1.63389). Cause, from the logs, NOT the seed flag: the `oracle_mix` draw keys its uniform numbers on
+the record `sample_key` = `stable_fingerprint({cohort_id, dicom_id})`, and `cohort_id` contains
+`file_identity()` (size + **mtime_ns**) of `pretraining/configs/mimic_cxr_full.yaml`. The fresh clone
+had the same bytes but mtime 2026-10-26 instead of 2026-10-15, so at seed 16 the draw differed (from
+MHCAC 435 cells in G1, 429 in G2; train cache ids `4c12...` vs `bbb8...`).
+
+Consequences, recorded:
+- A fresh clone of the same commit does not reproduce a Stage-2 run bit for bit; ON' == A held only
+  because both ran in the same checkout.
+- In S1-a, ON and OFF already used different oracle draws (their `cohort_id`s differ by checkpoint,
+  cutpoints and `--stage1-options`). Random, not a bias; seed 17 moves the draw as well, so the noise bar
+  covers this source.
+
+User go-ahead 2026-10-26 ("ok") for the fix, no code change: aborted dir moved to
+`~/s2seed_20261026_abort1`; `touch -r` copied the old checkout's mtime to the new one (content already
+identical); the chain gained a guard that the config's size and `st_mtime_ns` match across checkouts.
+A code fix (draw independent of file mtime) would change every default result and is left to the user.
+
+### Attempt 2 — launched once 08:21 (host code `948964e`)

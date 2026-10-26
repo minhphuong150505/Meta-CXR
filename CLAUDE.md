@@ -1860,6 +1860,15 @@ sample and the in-training val subset keep `fig9.SEED`). A non-default seed adds
 to the augmented train records' cache fingerprint, so default caches still hit and a
 seed-17 cache is never reused at 16. Written to `summary.json` / `run_manifest.json`. Do
 not resume a run under another seed. Pinned by `tests/test_stage2_seed.py`.
+⚠⚠ **A Stage-2 run also depends on the Stage-1 config file's MTIME (found 2026-10-26).**
+The record `sample_key` is `stable_fingerprint({cohort_id, dicom_id})` and `cohort_id`
+contains `file_identity()` (size + `mtime_ns`) of the Stage-1 YAML, checkpoint and split CSVs;
+`oracle_mix` keys its draw on `sample_key`. So a fresh clone of the SAME commit trains a
+different adapter at the same seed (all 478 tensors differed, from MHCAC 435 vs 429 cue cells).
+To reproduce a run from another checkout, `touch -r` the YAML from the original one and check
+`st_mtime_ns`. Also: arms with different checkpoints / cutpoints / `--stage1-options` get
+different draws. Not fixed in code (a fix changes every default result). Record:
+`docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
 
 ⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
 EPOCH. Every arm A number must be reported that way.** The planned
