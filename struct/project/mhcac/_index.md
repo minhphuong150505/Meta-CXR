@@ -20,6 +20,7 @@ bệnh lý × 3 lớp, cộng các hàm loss của Stage 1 và module hợp nh�
 | `explanation.py` | 🟡 | explanation-aware loss. **TẮT trong production từ 2026-08-17** (`lambda_explanation` = `lambda_explanation_strong` = 0.0), xem [D-017](../_meta/DECISIONS.md#d-017--dừng-explanation-aware-loss-trong-production) |
 | `loss.py` | ✅ | `blip2_qformer.py:36` |
 | `view_fusion.py` | 🟡 | `blip2_qformer.py:42`, chỉ khi `multi_view: true` |
+| `late_view_pool.py` | 🧪 | `blip2_qformer.py`, chỉ khi `view_fusion.mode: late` (2026-10-26, opt-in) |
 | `mhcac.py`, `mhcac_2.py` … `mhcac_11.py` (11 file) | 🕰 | **zero reference** |
 | `utils.py` (624 dòng) | 🕰 | ⚠ **không còn caller nào** — notebook 03 đã bị xóa 2026-08-13 |
 | `aggregator.py` | 🕰 | không có `import`; chỉ còn chuỗi `"aggregator"` trong freeze-list `runner_base.py:189` |
@@ -54,6 +55,7 @@ trọng nhất của Stage 1.
 | `explanation.py` (160) | [📄](explanation.py.doc.md) | 🟡 | Logit Difference Squared, Grad-CAM, explanation loss, warmup |
 | `loss.py` (628) | [📄](loss.py.doc.md) | ✅ | `ClassificationLoss`, `soft_target_kl_loss`, `MultiPositiveContrastiveLoss`, `view_consistency_loss`, `AbnormalitySpecificLoss`, `AttentionLoss` |
 | `view_fusion.py` | [📄](view_fusion.py.doc.md) | 🟡 | `ViewFusionModule`, `ViewFusionBlock` |
+| `late_view_pool.py` | [📄](late_view_pool.py.doc.md) | 🧪 | `LateViewPooling`, `late_classification_loss`, `resolve_view_fusion_mode` — late fusion |
 | `__init__.py` | — | ✅ | **Rỗng** — mọi import phải nêu đủ tên module |
 | 13 file legacy | — | 🕰 | [LEGACY_AND_OPTIONAL.md](../_meta/LEGACY_AND_OPTIONAL.md#l1--mhcac-variants) |
 
@@ -64,7 +66,8 @@ trọng nhất của Stage 1.
    `text_embeddings=None` hay không.
 3. **Loss Stage 1** — objective cũ ở `loss.py`; explanation-aware objective khả vi
    bậc hai ở `explanation.py`.
-4. **Hợp nhất đa view** — `view_fusion.py`, một module cho mỗi encoder.
+4. **Hợp nhất đa view** — `view_fusion.py`, một module cho mỗi encoder (early, mặc định);
+   hoặc `late_view_pool.py`, gộp logit MHCAC của từng view (late, opt-in 2026-10-26).
 
 ## Entry points
 
@@ -79,10 +82,11 @@ thuộc `vision_encoders/` (nhận `SharedVisualTokens` như một duck-typed ob
 
 | Ai | Import gì |
 |---|---|
-| `model/lavis/models/blip2_models/blip2_qformer.py` | `mhcac_12.AbnormalityClassificationModel` · `explanation.{ExplanationLoss, explanation_lambda}` · `loss.*` · `view_fusion.ViewFusionModule` |
+| `model/lavis/models/blip2_models/blip2_qformer.py` | `mhcac_12.AbnormalityClassificationModel` · `explanation.{ExplanationLoss, explanation_lambda}` · `loss.*` · `view_fusion.ViewFusionModule` · `late_view_pool.{LateViewPooling, late_classification_loss, resolve_view_fusion_mode}` |
 | `tests/test_stage1_objectives.py` | `mhcac_12`, `loss` |
 | `tests/test_explanation_loss.py` | `explanation`, `mhcac_12` |
 | `tests/test_view_fusion.py` | `view_fusion` |
+| `tests/test_late_view_fusion.py` | `late_view_pool`, `loss.ClassificationLoss` |
 | `tests/test_evoke_multiview_flags.py` | `view_fusion.detach_aux`, `MultiPositiveContrastiveLoss` temperature |
 | `tests/test_multiview_losses.py` | `loss.MultiPositiveContrastiveLoss`, `view_consistency_loss` (gồm margin + confidence gate) |
 
@@ -120,6 +124,8 @@ Trong khối `model:` của run YAML:
 | `mhcac.class_weights` | 14×3 sqrt inverse-frequency | `[]` → tắt weighting (ablation) |
 | `multi_view` | `false` (prod: `true`) | Có dựng `ViewFusionModule` không |
 | `view_fusion.*` | heads 8, ffn_ratio 4, blocks 1, dropout 0.1, p_view_drop 0.15, detach_aux false | `detach_aux` từ 2026-10-09 (EVOKE) |
+| `view_fusion.mode` | vắng = `early` | `late` (2026-10-26): không dựng `view_fusion` / `stream_adapters` / `mpc_heads`, dựng `late_view_pool`; cần `multi_view: true`, `lambda_mpc = lambda_view_consistency = 0` |
+| `view_fusion.late_anchor_weight` | `0.5` | Chỉ ở `late`: loss = `(1-w) CE(pooled) + w CE(anchor)` |
 | `loss.mpc_temperature` | 0.07 | Từ 2026-10-09; EVOKE dùng 0.5 |
 | `loss.lambda_*` | xem [ARCHITECTURE.md §2.6](../_meta/ARCHITECTURE.md#26-tổng-hợp-loss) | Trọng số loss, gồm `lambda_explanation` conditional |
 | `explanation.*` | top-k, warmup, danh sách stream | Chỉ có hiệu lực khi lambda > 0 |

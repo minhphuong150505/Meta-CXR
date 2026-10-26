@@ -204,6 +204,7 @@ Meta-CXR-source/
 │   ├── explanation.py              🟡 explanation-aware loss (lambda-gated)
 │   ├── loss.py                     ✅ ★ 11 objective Stage-1 hiện hữu (628)
 │   ├── view_fusion.py              🟡 multi_view: true
+│   ├── late_view_pool.py           🧪 view_fusion.mode: late (opt-in)
 │   ├── utils.py                    🕰 (624 — chỉ notebook legacy gọi)
 │   ├── aggregator.py               🕰 ⚠ chỉ còn string trong freeze-list
 │   └── mhcac.py, mhcac_2..11.py    🕰 11 variant, zero reference
@@ -370,6 +371,7 @@ Meta-CXR-source/
 - [`explanation.py`](project/mhcac/explanation.py.doc.md) 🟡
 - [`loss.py`](project/mhcac/loss.py.doc.md) ★
 - [`view_fusion.py`](project/mhcac/view_fusion.py.doc.md)
+- [`late_view_pool.py`](project/mhcac/late_view_pool.py.doc.md) 🧪
 
 ### `vision_encoders/`
 [📁 Directory documentation](project/vision_encoders/_index.md)

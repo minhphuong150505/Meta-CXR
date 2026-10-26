@@ -657,6 +657,12 @@ model:
     # false reproduces every recorded run. Measured 2026-10-10: true together
     # with mpc_temperature 0.5 LOSES to the defaults on test -- keep false.
     detach_aux: false
+    # mode (absent = early, every recorded run). `late` (2026-10-26, opt-in) builds
+    # no fusion block / adapter / MPC head: MHCAC reads each view on its own and
+    # `late_view_pool` pools the logits per finding (mhcac/late_view_pool.py). It
+    # needs multi_view: true and lambda_mpc = lambda_view_consistency = 0, set in
+    # the phase blocks. late_anchor_weight (0.5): loss = 0.5 CE(pooled) + 0.5 CE(anchor).
+    # Plan: docs/handoff/PLAN-2026-10-26-late-view-fusion.md.
   data:
     study_sampling: true
     anchor_priority: [PA, AP, lateral]
@@ -1024,7 +1030,7 @@ run:
       init_from: {phase: phase1a}
       trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias,
                   shared_visual_projector, ln_vision, stream_adapters, view_fusion,
-                  mpc_heads]
+                  mpc_heads, late_view_pool]
       # Paper: "progressively unfreeze the MHCAC module while gradually freezing
       # the META-Former". Formula not given; implemented as LR x (0 -> 1) for
       # MHCAC and x (1 -> 0) for META-Former over the first 10% of the phase's
@@ -1086,7 +1092,7 @@ run:
       unfreeze_encoder_blocks: true
       trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias,
                   shared_visual_projector, ln_vision, visual_encoder.projector,
-                  stream_adapters, view_fusion, mpc_heads]
+                  stream_adapters, view_fusion, mpc_heads, late_view_pool]
       itc_gate:
         every_epoch: true     # logged, never stops 1c
         pairs: 256

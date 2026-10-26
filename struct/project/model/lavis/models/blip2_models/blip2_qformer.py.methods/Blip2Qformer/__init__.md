@@ -93,3 +93,12 @@ Không encoder nào bật → `ValueError` (`:174`) · `itc_queue_size < 0` → 
 | Bỏ `disabled_train` | `model.train()` bật lại encoder → encoder học, phá giả định |
 | Đổi `VISUAL_DIM` | Kéo theo projector, MHCAC, Q-Former, và mọi checkpoint cũ |
 | Đổi `default_class_weights` | Đổi cân bằng loss; giá trị hiện tại tính từ cohort train thật |
+
+## `view_fusion.mode` — 2026-10-26
+
+`resolve_view_fusion_mode` (mhcac/late_view_pool.py) đọc `view_fusion_cfg["mode"]`
+(vắng = `early`) và từ chối `late` khi `multi_view: false`, `lambda_mpc > 0`,
+`lambda_view_consistency > 0` hoặc explanation loss bật. `late` dựng
+`self.late_view_pool = LateViewPooling(14, 3, num_view_types)` và KHÔNG dựng
+`view_fusion`, `stream_adapters`, `mpc_heads`. `early` dựng như trước, không tiêu thêm
+RNG. `late_anchor_weight` (0.5) cũng được pop khỏi `view_fusion_cfg`.

@@ -84,3 +84,11 @@ Ghi `self._last_prefusion_streams`, `self._last_raddino_patches`.
 ## Modification risk
 Đổi thứ tự fuse ↔ project sẽ đổi ngữ nghĩa **và** làm checkpoint không tương thích.
 Fusion **phải** chạy trên output thô.
+
+## Late fusion — 2026-10-26
+
+Khi `late_view_pool` có (mode `late`), ảnh phụ vẫn được encode (`_encode_aux_streams`,
+rồi `mask_aux_tokens` khi train) nhưng KHÔNG fuse: tuple
+`(aux_streams, aux_mask, anchor_view_id, aux_view_ids)` được cất vào
+`self._last_late_aux` (reset mỗi lần gọi) và anchor đi đúng đường OFF (không adapter,
+không fusion). `_late_view_logits` đọc và xóa nó.

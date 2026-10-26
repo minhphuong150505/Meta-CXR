@@ -320,6 +320,11 @@ def _compute_batch_cams(model, batch, device, amp_context) -> dict[str, np.ndarr
     explanation_valid = _to_device(batch["explanation_mask_valid"], device).bool()
     valid = classification_mask & explanation_valid
 
+    if getattr(model, "late_view_pool", None) is not None:
+        # model.view_fusion.mode: late (2026-10-26): MHCAC called here sees the
+        # anchor only, which is not the late-fusion prediction.
+        raise SystemExit("this script reads anchor-only MHCAC output; it does not support "
+                         "model.view_fusion.mode: late")
     model.zero_grad(set_to_none=True)
     with torch.enable_grad(), amp_context:
         shared_visual = model._encode_image_streams(

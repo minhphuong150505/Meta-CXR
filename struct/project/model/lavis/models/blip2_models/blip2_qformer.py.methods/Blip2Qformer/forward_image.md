@@ -25,3 +25,9 @@ student. Aux view chỉ ảnh hưởng qua configured view fusion/cache.
 invariant gián tiếp trong `tests/test_stage1_objectives.py`.
 
 ← [`Blip2Qformer`](_index.md) · [`blip2_qformer.py`](../../blip2_qformer.py.doc.md)
+
+## Late fusion — 2026-10-26
+
+Ở `view_fusion.mode: late`, `classification_logits` là logit đã gộp qua các view
+thật (`_late_view_logits`, không text). Soft token Q-Former vẫn đọc token của anchor.
+Ở `early`, `_late_view_logits` trả nguyên logit vào.

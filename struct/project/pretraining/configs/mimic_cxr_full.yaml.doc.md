@@ -42,6 +42,7 @@ run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba ov
 | `mhcac.num_common_tokens` | **8** (từ 2026-10-05, D-026; trước đó 14 cứng trong code) | Fig. 10 bài báo. Đánh giá run cũ cần `--options model.mhcac.num_common_tokens=14` |
 | `multi_view` | **`true`** | |
 | `view_fusion.p_view_drop` | 0.15 | |
+| `view_fusion.mode` | vắng (= `early`) | 2026-10-26, opt-in `late` (`mhcac/late_view_pool.py`). Đặt trong khối phase, cùng `lambda_mpc = lambda_view_consistency = 0`. `late_view_pool` có trong `trainable` của phase1b/1c (prefix không khớp gì khi `early`) |
 | `view_fusion.detach_aux` | `false` | Từ 2026-10-09. `true` = detach K/V ảnh phụ như code EVOKE. Full run 2026-10-10: bật cùng cờ kia (D) kém mặc định, giữ tắt |
 | `loss.mpc_temperature` | `0.07` | Từ 2026-10-09. EVOKE dùng 0.5. Full run 2026-10-10: bật cùng cờ kia (D) kém mặc định, giữ tắt |
 | `data.study_sampling` | `true` | ★ Một dòng = một study |

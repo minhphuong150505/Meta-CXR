@@ -27,6 +27,7 @@ projector, MHCAC, Q-Former, và tổng hợp 12 loss.
 | `visual_encoder` + `ln_vision` | BioViL-T | ❌ đóng băng (+ `disabled_train`) |
 | `pubmedclip`, `swin`, `raddino` | encoder | ❌ `.eval()` |
 | `view_fusion` | `ModuleDict` (1/encoder) | ✅ |
+| `late_view_pool` | `LateViewPooling` hoặc `None` | ✅; chỉ dựng khi `view_fusion.mode: late` (khi đó không có `view_fusion` / `stream_adapters` / `mpc_heads`) |
 | `shared_visual_projector` | `SharedVisualTokenProjector` | ✅ |
 | `mhcac` | `AbnormalityClassificationModel` | ✅ |
 | `Qformer` + `query_tokens` | Q-Former | ✅ |

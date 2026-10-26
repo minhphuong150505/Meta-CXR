@@ -64,6 +64,11 @@ from mhcac.loss import (
     view_consistency_loss,
 )
 from mhcac.view_fusion import ViewFusionModule, real_aux_rows, scatter_aux_rows
+from mhcac.late_view_pool import (
+    LateViewPooling,
+    late_classification_loss,
+    resolve_view_fusion_mode,
+)
 from vision_encoders.feature_mask import mask_aux_tokens, mask_encoder_tokens
 
 chexpert_cols = ["No Finding", "Enlarged Cardiomediastinum",
@@ -548,13 +553,35 @@ class Blip2Qformer(Blip2Base):
         )
         self.view_fusion = None
         self.mpc_loss_fn = None
+        # model.view_fusion.mode (2026-10-26): absent = "early", every recorded
+        # run. "late" builds none of the early-fusion modules below; MHCAC reads
+        # each view on its own and late_view_pool pools the logits
+        # (mhcac/late_view_pool.py, docs/handoff/PLAN-2026-10-26-late-view-fusion.md).
+        vf_cfg = dict(view_fusion_cfg or {})
+        self.view_fusion_mode = resolve_view_fusion_mode(
+            vf_cfg.pop("mode", None),
+            multi_view=self.multi_view,
+            lambda_mpc=self.lambda_mpc,
+            lambda_view_consistency=self.lambda_view_consistency,
+            lambda_explanation=self.lambda_explanation,
+            lambda_explanation_strong=self.lambda_explanation_strong,
+        )
+        self.late_anchor_weight = float(vf_cfg.pop("late_anchor_weight", 0.5))
+        self.late_view_pool = None
+        self._last_late_aux = None
         # Pre-fusion streams are only stashed when an auxiliary loss consumes
         # them; otherwise holding the references just wastes memory.
         self._keep_prefusion = bool(multi_view) and (
             self.lambda_mpc > 0 or self.lambda_view_consistency > 0
         )
-        if self.multi_view:
-            vf_cfg = dict(view_fusion_cfg or {})
+        if self.multi_view and self.view_fusion_mode == "late":
+            self.late_view_pool = LateViewPooling(
+                num_findings=14,
+                num_classes=3,
+                num_view_types=int(vf_cfg.get("num_view_types", 4)),
+            )
+            logging.info("multi-view LATE fusion enabled: per-view MHCAC logits, pooled")
+        elif self.multi_view:
             vf_cfg.pop("dim_source", None)
             stream_dims = {}
             if self.use_biovil:
@@ -1016,13 +1043,17 @@ class Blip2Qformer(Blip2Base):
             aux_image is not None and aux_image.shape[1] > 0
         ) or any(v is not None and v.shape[1] > 0 for v in (aux_cached or {}).values())
         fuse_on = self.multi_view and self.view_fusion is not None
+        # Late fusion encodes the auxiliary view the same way but never fuses
+        # it into the anchor: it is stashed for _late_view_logits instead.
+        late_on = getattr(self, "late_view_pool", None) is not None
+        self._last_late_aux = None
         aux_streams = (
             self._encode_aux_streams(
                 aux_image, cached=aux_cached, aux_mask=aux_mask,
                 aux_swin_image=aux_swin_image,
                 aux_pubmedclip_image=aux_pubmedclip_image,
             )
-            if fuse_on and has_aux_input
+            if (fuse_on or late_on) and has_aux_input
             else {}
         )
         if self.training and self.feature_mask_ratio > 0:
@@ -1036,6 +1067,11 @@ class Blip2Qformer(Blip2Base):
             name: self._adapt(name, tokens)
             for name, tokens in aux_streams.items()
         }
+        if late_on:
+            # Late mode builds no adapters, so these are the raw (masked) frozen
+            # features. The anchor below then takes exactly the fusion-OFF path.
+            self._last_late_aux = (aux_streams, aux_mask, anchor_view_id, aux_view_ids)
+            aux_streams = {}
 
         if self.use_biovil:
             cnn_raw = cached["biovil"] if "biovil" in cached else (
@@ -1089,7 +1125,56 @@ class Blip2Qformer(Blip2Base):
         # One merge, one representation, consumed by both downstream branches.
         shared = self.shared_visual_projector(raw_streams)
         return self._apply_encoder_ablation(shared)
-    
+
+    def _late_view_logits(self, anchor_logits, text_embeddings=None,
+                          text_attention_mask=None, text_row_mask=None):
+        """Late mode: pool the anchor logits with MHCAC's logits on each real aux view.
+
+        Reads what the last ``_encode_image_streams`` call stashed. The aux view
+        goes through the same ln_vision / shared projector / MHCAC as the anchor
+        (same weights), with the same report text and row mask when training is
+        text-guided; only its logits are used. A batch, or a study, without a
+        real aux view gets the anchor logits unchanged.
+        """
+        if getattr(self, "late_view_pool", None) is None:
+            return anchor_logits
+        stash = self._last_late_aux
+        self._last_late_aux = None
+        if stash is None:
+            return anchor_logits
+        aux_streams, aux_mask, anchor_view_id, aux_view_ids = stash
+        names = self.shared_visual_projector.stream_names
+        if aux_mask is None or not aux_streams or any(n not in aux_streams for n in names):
+            return anchor_logits
+        batch, views = aux_mask.shape[:2]
+        keep = real_aux_rows(aux_mask, batch * views, anchor_logits.device)
+        if keep is not None and not bool(keep.any()):
+            return anchor_logits
+        raw = {}
+        for name in names:
+            flat = aux_streams[name].flatten(0, 1)
+            flat = flat if keep is None else flat[keep]
+            raw[name] = self.ln_vision(flat) if name == "biovil" else flat
+        aux_shared = self._apply_encoder_ablation(self.shared_visual_projector(raw))
+        # Batch index of every real aux slot, to give each its study's report.
+        rows = torch.arange(batch * views, device=anchor_logits.device) // views
+        rows = rows if keep is None else rows[keep]
+
+        def take(x):
+            return None if x is None else x[rows]
+
+        aux_logits, _, _, _, _ = self.mhcac(
+            aux_shared,
+            text_embeddings=take(text_embeddings),
+            text_attention_mask=take(text_attention_mask),
+            labels=None,
+            text_row_mask=take(text_row_mask),
+        )
+        aux_logits = scatter_aux_rows(aux_logits.to(anchor_logits.dtype), keep, batch, views)
+        return self.late_view_pool(
+            anchor_logits, aux_logits, aux_mask, anchor_view_id, aux_view_ids
+        )
+
     def initialize_expert_tokens(self, chexpert_cols, embed_dim):
         # Initialize expert tokens based on text embeddings of abnormality names
         expert_embeddings = []
@@ -1905,6 +1990,18 @@ class Blip2Qformer(Blip2Base):
                 self.mhcac.capture_streams = False
                 self.mhcac._last_cam_streams = None
 
+        # Late multi-view fusion: student_logits stay the ANCHOR's (the OFF path);
+        # the study's prediction is the pool over its real views.
+        late_on = getattr(self, "late_view_pool", None) is not None
+        classification_logits = student_logits
+        if late_on and student_logits is not None:
+            classification_logits = self._late_view_logits(
+                student_logits,
+                text_embeddings=text_output.last_hidden_state if text_guided else None,
+                text_attention_mask=text_tokens.attention_mask if text_guided else None,
+                text_row_mask=generation_mask if text_guided else None,
+            )
+
         loss_explanation = None
         if self.explanation_loss_fn is not None:
             loss_explanation = zero
@@ -1949,9 +2046,17 @@ class Blip2Qformer(Blip2Base):
                     + (self.lambda_explanation_strong / peak)
                     * loss_explanation_strong
                 )
-        cls_loss = self.cls_loss_fn(
-            student_logits, cls_labels, sample_mask=classification_mask
-        ) if self.lambda_cls > 0 else zero
+        if self.lambda_cls <= 0:
+            cls_loss = zero
+        elif late_on:
+            cls_loss = late_classification_loss(
+                self.cls_loss_fn, classification_logits, student_logits, cls_labels,
+                sample_mask=classification_mask, anchor_weight=self.late_anchor_weight,
+            )
+        else:
+            cls_loss = self.cls_loss_fn(
+                student_logits, cls_labels, sample_mask=classification_mask
+            )
 
         # The teacher may read only a valid FINDINGS target.  The image-only
         # student remains the sole classification path exported at inference.
@@ -2061,7 +2166,7 @@ class Blip2Qformer(Blip2Base):
             loss_mpc=loss_mpc,
             loss_view_consistency=loss_view_consistency,
             loss_query_div=loss_query_div,
-            classification_logits=student_logits,
+            classification_logits=classification_logits,
             classification_mask=classification_mask,
         )
 
@@ -2213,6 +2318,8 @@ class Blip2Qformer(Blip2Base):
             text_embeddings=None,
             labels=None,
         )
+        # Late multi-view fusion: the study's logits pool its real views.
+        classification_logits = self._late_view_logits(classification_logits)
 
         image_atts = torch.ones(
             concat_image_embeds.shape[:-1],
@@ -2476,6 +2583,9 @@ class Blip2Qformer(Blip2Base):
             "dropout": float(view_fusion_cfg_raw.get("dropout", 0.1)),
             "p_view_drop": float(view_fusion_cfg_raw.get("p_view_drop", 0.2)),
             "detach_aux": cfg_bool(view_fusion_cfg_raw.get("detach_aux", False)),
+            # Absent = "early" (every recorded run); "late" = mhcac/late_view_pool.py.
+            "mode": view_fusion_cfg_raw.get("mode"),
+            "late_anchor_weight": float(view_fusion_cfg_raw.get("late_anchor_weight", 0.5)),
         }
         loss_cfg = cfg.get("loss", {}) or {}
         lambda_mpc = float(loss_cfg.get("lambda_mpc", 0.0))

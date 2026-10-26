@@ -1161,6 +1161,19 @@ study (not image) → anchor + ≤1 auxiliary view
   0.0054). The ON recipe alone moved CheXbert micro F1-14 by +0.0134 between seeds. Direction still
   leans OFF (seed-17 delta negative on all 9 metrics), and ON does not beat OFF. Record:
   `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
+  🧪 **Late fusion, opt-in since 2026-10-26 (user-approved): `model.view_fusion.mode: late`**
+  (absent = `early` = every recorded run). Builds no `view_fusion` / `stream_adapters` /
+  `mpc_heads`: the anchor takes the OFF path, MHCAC (same weights) also classifies each real
+  aux view, and `late_view_pool` (`mhcac/late_view_pool.py`, 112 params) pools the logits per
+  finding by attention over the real views. A one-view study gets exactly its anchor logits.
+  Loss `0.5 CE(pooled) + 0.5 CE(anchor)` (`late_anchor_weight`). Needs `multi_view: true`
+  and refuses MPC / view consistency / explanation loss; set it in the phase blocks
+  (`run.phases.phase1b.model.view_fusion.mode=late`). `late_view_pool` is in the 1b/1c
+  `trainable` lists (matches nothing under `early`). `scripts/evaluate_explanation.py` and
+  `diagnose_stream_scale.py` refuse it. Pinned by `tests/test_late_view_fusion.py`. ⚠ That
+  YAML edit changes the Stage-1 config's size/mtime, so Stage-2 caches and `oracle_mix` draws
+  keyed on its file identity change in a checkout that pulls it (see the mtime trap below).
+  Val pilot (2 seeds, NB rule): `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

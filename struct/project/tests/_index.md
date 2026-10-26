@@ -85,6 +85,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | `test_explanation_loss.py` | Logit Difference Squared, disease-positive gate, Grad-CAM FP32, top-k mềm có gradient, double backprop, warmup, resize mask và vòng đời capture stream |
 | `test_explanation_mask_pipeline.py` | RLE row-major round-trip, union phổi, bbox override, Dice gate, memmap lazy, affine dùng chung params, geometry 512→448 và no-cache regression |
 | `test_view_fusion.py` | `ViewFusionBlock` là **identity chính xác tại step 0** (zero-init `W_O` + FFN cuối) → checkpoint single-view load không hỏng |
+| `test_late_view_fusion.py` | Late fusion (2026-10-26): study một view nhận đúng logit anchor; slot đệm không bị đọc; zero-init = trung bình; trọng số cộng 1; từ chối khi `multi_view: false` / MPC / view consistency / explanation; loss study một view = loss OFF; mặc định không dựng gì mới; YAML ship giữ `early` |
 | `test_multiview_losses.py` | `MultiPositiveContrastiveLoss`, `view_consistency_loss` |
 | `test_evoke_multiview_flags.py` | Hai cờ theo EVOKE (2026-10-09): `view_fusion.detach_aux` cắt gradient vào aux nhưng giữ output và `view_emb`; `loss.mpc_temperature` được dùng; YAML ship giữ `false`/`0.07`; `from_config` đọc cả hai key |
 | `test_shared_visual_tokens.py` (209) | Thứ tự stream chuẩn hóa, `spans` đúng, `without()` zero-out mà không đổi shape, gradient chảy đúng luồng |

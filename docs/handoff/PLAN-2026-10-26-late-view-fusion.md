@@ -1,8 +1,14 @@
 # PLAN 2026-10-26 — late fusion: one MHCAC per view, logits pooled over views
 
-Status: **PROPOSED, NOT APPROVED, NOT RUN.** The user said "ok" (2026-10-26) to writing this plan.
-No code, YAML or GPU change is made until the user approves it (multi-view-novelty skill, Rule 1).
-Direction 3 of the skill's candidate list.
+Status: **APPROVED by the user 2026-10-26 ("ok" to all three: the code change, step G + step P
+(~2.5 h GPU), and the reading rule below). Code implemented; GPU not yet run.** Direction 3 of the
+multi-view-novelty skill's candidate list.
+
+Implementation note: besides the planned refusals, `late` also refuses the explanation loss
+(`lambda_explanation*` > 0, which Grad-CAMs a single token sequence; off in production).
+`scripts/evaluate_explanation.py` and `scripts/diagnose_stream_scale.py` read MHCAC directly
+and stop with `SystemExit` in `late`. CPU suite: 1,224 passed (baseline 1,213 + 11 new), the
+same 21 failures as the baseline (missing nltk / torchvision / env config on the dev box).
 
 ## Why
 

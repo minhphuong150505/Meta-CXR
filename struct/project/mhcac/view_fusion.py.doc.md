@@ -28,6 +28,9 @@ aux raw [B,N,P,D] ──────┘
 
 Một module **cho mỗi encoder bật**, vì mỗi encoder có `D` khác nhau.
 
+> 2026-10-26: `model.view_fusion.mode: late` không dựng module này; xem
+> [late_view_pool.py](late_view_pool.py.doc.md). Vắng key = `early` = module này.
+
 ## Status
 
 ```text

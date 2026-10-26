@@ -102,6 +102,7 @@ from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector  # :
 from mhcac.loss import (ClassificationLoss, MultiPositiveContrastiveLoss,
                         soft_target_kl_loss, view_consistency_loss)  # :36
 from mhcac.view_fusion import ViewFusionModule                # :42
+from mhcac.late_view_pool import LateViewPooling, late_classification_loss, resolve_view_fusion_mode  # 2026-10-26
 ```
 
 `VISUAL_DIM = 1408` (`:33`) — hằng số neo cả kiến trúc.
@@ -161,6 +162,7 @@ dòng đọc ở đây = key đó không làm gì.
 | `_create_mask` | Mask ngẫu nhiên patch — ⚠ không thấy caller trong forward |
 | `_stash_prefusion` | Giữ tensor pre-fusion khi loss phụ cần |
 | `_fuse` | Wrapper gọi `ViewFusionModule[name]` |
+| `_late_view_logits` | 2026-10-26, chỉ ở `view_fusion.mode: late`: chạy MHCAC (cùng trọng số) trên ảnh phụ thật đã cất ở `_last_late_aux`, gộp với logit anchor qua `late_view_pool`; trả nguyên logit anchor khi không có ảnh phụ thật hoặc ở `early` |
 | `_gather_with_local_grad` | All-gather giữ grad ở rank cục bộ |
 | `_batch_mask` | Đọc mask từ samples, có fallback |
 | `initialize_expert_tokens` | Khởi tạo expert token từ embedding tên bệnh lý |
@@ -336,3 +338,13 @@ GradCache dùng lại token: khi `_gradcache_reuse` thấy token ảnh không c�
 Q-Former đóng băng — pha `phase1q`), lượt 1 encode mỗi chunk MỘT lần, ghi RNG SAU encode, lượt 3
 phát lại từ đó với token đã giữ → cùng dropout của Q-Former, gradient như khi tính lại (test trên
 máy train). Ngược lại (1a có projector train được) giữ nguyên hành vi cũ.
+
+## Late fusion đa view — 2026-10-26 (opt-in, chưa chạy GPU)
+
+`model.view_fusion.mode: late` ([late_view_pool.py](../../../../mhcac/late_view_pool.py.doc.md)):
+anchor đi đúng đường OFF; MHCAC phân loại thêm từng ảnh phụ thật với cùng trọng số;
+`late_view_pool` gộp logit theo từng finding. Vắng key = `early` = mọi run đã ghi.
+Hai script đọc MHCAC trực tiếp (`scripts/evaluate_explanation.py`,
+`scripts/diagnose_stream_scale.py`) dừng với `SystemExit` ở mode `late`, vì chúng chỉ
+thấy logit của anchor. Plan: `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
+Test: `tests/test_late_view_fusion.py`.

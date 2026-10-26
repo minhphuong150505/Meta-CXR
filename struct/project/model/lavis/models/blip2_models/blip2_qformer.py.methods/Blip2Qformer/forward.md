@@ -127,3 +127,13 @@ Các điều kiện này quyết định MHCAC chạy 1, 2 hay 3 lần và có d
 | Thêm loss mới | Phải thêm cả `lambda_` và trường trong `BlipOutput` |
 | Không clear `_last_cam_streams` | Giữ graph qua batch → rò bộ nhớ |
 | Gọi autograd khi lambda bằng 0 | Phá gate hiệu năng classification-only |
+
+## Late fusion — 2026-10-26 (`view_fusion.mode: late`, opt-in)
+
+`student_logits` vẫn là logit của ANCHOR (đường OFF). Ngay sau lời gọi MHCAC của
+anchor, `classification_logits = self._late_view_logits(student_logits, text...)`:
+MHCAC chạy thêm một lần trên các ảnh phụ thật (cùng text/row mask khi text-guided) và
+`late_view_pool` gộp logit. Loss phân loại là
+`late_classification_loss` = `(1-w) CE(pooled) + w CE(anchor)`, `w = late_anchor_weight`
+(0.5). `BlipOutput.classification_logits` là logit đã gộp (eval hook ghi vào `.npz`).
+Ở `early` (vắng key): `classification_logits = student_logits`, loss như cũ.

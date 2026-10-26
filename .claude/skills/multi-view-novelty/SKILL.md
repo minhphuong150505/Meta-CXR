@@ -144,7 +144,9 @@ The novelty only counts if it survives review. So:
 
 1. Per-finding gated fusion (each finding learns how much to use the aux view).
 2. Aux tokens fed straight into MHCAC's token axis with a view-type embedding.
-3. Late fusion: per-view MHCAC logits pooled by attention over views.
+3. Late fusion: per-view MHCAC logits pooled by attention over views. **APPROVED by the user
+   2026-10-26 and implemented opt-in (`model.view_fusion.mode: late`, `mhcac/late_view_pool.py`);
+   val pilot at 2 seeds with the NB rule: `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.**
 4. Train-side: separate LR for `view_fusion`, change the aux-view drop (`p_view_drop`, shipped 0.15).
 5. Seed replicates of ON and OFF to measure the noise bar properly.
 

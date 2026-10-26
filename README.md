@@ -402,6 +402,15 @@ ngưỡng đó, kết luận "Stage 2 trên Stage-1 OFF tốt hơn ON" nằm tro
 -0,0115 (CheXbert) và -0,0020 (BERTScore), chưa vượt NB/√2. Fusion ON không đem lại lợi ích đo được
 cho Stage 2 ở ngân sách này. Chi tiết: `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
 
+**Late fusion đa view (`model.view_fusion.mode: late`, opt-in 2026-10-26, user đã duyệt):**
+không đặt khóa thì giữ early fusion như mọi run trước. Ở chế độ `late`, ảnh chính đi đúng
+đường của OFF (không adapter, không khối fusion, không MPC); MHCAC (cùng trọng số) phân
+loại thêm từng ảnh phụ, rồi `late_view_pool` (`mhcac/late_view_pool.py`, 112 tham số) gộp
+logit theo từng finding. Study một view nhận đúng logit của ảnh chính. Loss =
+0,5 CE(gộp) + 0,5 CE(ảnh chính). Cần `multi_view: true`, `lambda_mpc = lambda_view_consistency = 0`,
+đặt trong khối phase. Chưa chạy GPU; pilot val 2 seed theo quy tắc ngưỡng nhiễu:
+`docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**
