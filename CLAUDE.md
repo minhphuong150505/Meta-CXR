@@ -1867,8 +1867,12 @@ contains `file_identity()` (size + `mtime_ns`) of the Stage-1 YAML, checkpoint a
 different adapter at the same seed (all 478 tensors differed, from MHCAC 435 vs 429 cue cells).
 To reproduce a run from another checkout, `touch -r` the YAML from the original one and check
 `st_mtime_ns`. Also: arms with different checkpoints / cutpoints / `--stage1-options` get
-different draws. Not fixed in code (a fix changes every default result). Record:
-`docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
+different draws. **FIXED ON BRANCH `fix/oracle-mix-stable-key` (2026-10-26, user decision: kept
+on its own branch, not merged):** `oracle_cues.draw_key` keys the draw on the anchor image's
+file stem (dicom_id), falling back to `sample_key` only without an image path. This CHANGES
+every `oracle_mix` draw, so runs recorded before it (P2 pilot, full Stage 2 `stage2_p2_20261011`,
+the 2026-10-16 refit pilot, S1-a and the seed-noise runs) are not reproducible on this branch.
+Pinned by `tests/test_oracle_cues.py`. Record: `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
 
 ⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
 EPOCH. Every arm A number must be reported that way.** The planned

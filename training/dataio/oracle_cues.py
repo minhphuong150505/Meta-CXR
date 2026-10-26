@@ -8,8 +8,8 @@ usually right is expected to learn to rely on them (RaDialog: structured
 findings raised CE 26.1 -> 39.4). At inference the cues are MHCAC's.
 
 Per (study, finding) the training cue is the true class, except with
-probability ``model_share`` (deterministic in seed, study and finding) it is
-the class MHCAC predicted -- so the model also sees the classifier's typical
+probability ``model_share`` (deterministic in seed, study and finding; the study
+is the anchor image's file stem, see ``draw_key``) it is the class MHCAC predicted -- so the model also sees the classifier's typical
 errors. A finding with no CheXpert information keeps MHCAC's class.
 
 Label mapping is the Stage-1 rule (D-018, ``blank_label_policy: negative``,
@@ -77,6 +77,19 @@ def _uniform(seed: int, study: str, finding: str) -> float:
     return int(digest, 16) / 2**64
 
 
+def draw_key(record: dict) -> str:
+    """The study key of the draw: the anchor image's file stem (its dicom_id).
+
+    Not ``sample_key``: for Stage-1 records that is a fingerprint of the cohort,
+    which carries the size and mtime of the Stage-1 config, checkpoint and split
+    CSVs, so the same study drew differently in a fresh clone of the same commit
+    and under another checkpoint (2026-10-26). ``sample_key`` remains the
+    fallback for a record without an image path.
+    """
+    stem = Path(str(record.get("image_path", "") or "")).stem
+    return stem or str(record.get("sample_key", ""))
+
+
 def model_classes(record: dict) -> dict[str, int]:
     """finding -> class index of the record's current (MHCAC) cue groups."""
     groups = record.get("pred_groups") or {}
@@ -101,7 +114,7 @@ def mix_oracle_cues(
               "changed": 0, "unknown_truth": 0}
     for record, row in zip(records, codes):
         current = model_classes(record)
-        key = str(record.get("sample_key", record.get("image_path", "")))
+        key = draw_key(record)
         groups: dict[str, list[str]] = {name: [] for name in GROUP_NAMES}
         for finding, code in zip(findings, row):
             if finding in skip:

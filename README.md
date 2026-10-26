@@ -398,6 +398,11 @@ thứ tự batch, phần 20% cue MHCAC của `oracle_mix`); tập study train/va
 Trước đó seed cố định trong code nên chạy lại cùng lệnh cho ra báo cáo giống hệt từng chữ và
 không đo được nhiễu seed của Stage 2.
 
+**Branch `fix/oracle-mix-stable-key` (2026-10-26, chưa merge):** lượt bốc 20% cue MHCAC của
+`oracle_mix` trước đây phụ thuộc vào mtime của file YAML Stage-1 (qua `sample_key`), nên clone mới
+cùng commit cho kết quả khác. Trên branch này lượt bốc dựa vào tên file ảnh anchor; mọi kết quả
+`oracle_mix` cũ không tái lập được ở đây.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**

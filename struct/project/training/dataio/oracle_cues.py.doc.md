@@ -25,4 +25,13 @@ thường đúng để mô hình học dựa vào cue. Val/test vẫn dùng cue 
 (kích thước + `mtime_ns`) của YAML Stage-1, checkpoint và CSV split. Hệ quả: cùng seed, cùng commit
 nhưng clone mới (mtime khác) cho lượt bốc khác; hai nhánh có checkpoint / cutpoints /
 `--stage1-options` khác nhau cũng có lượt bốc khác nhau. Seed truyền từ
-`run_medgemma_qlora.py --seed` (mặc định 16). Chưa sửa trong code.
+`run_medgemma_qlora.py --seed` (mặc định 16).
+
+**Đã sửa trên branch `fix/oracle-mix-stable-key` (2026-10-26, chưa merge):** `draw_key(record)` trả
+về tên file (không đuôi) của ảnh anchor, tức dicom_id, và chỉ dùng `sample_key` khi record không có
+`image_path`. Lượt bốc giờ chỉ phụ thuộc seed, study và bệnh; mọi kết quả `oracle_mix` ghi trước
+bản sửa không tái lập được trên branch này.
+
+| Hàm | Vai trò |
+|---|---|
+| `draw_key(record)` | khóa study của lượt bốc: stem của `image_path`, dự phòng `sample_key` |

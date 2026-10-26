@@ -15,6 +15,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from training.dataio.oracle_cues import (  # noqa: E402
     UNKNOWN,
+    draw_key,
     map_chexpert_rows,
     mix_oracle_cues,
     true_label_codes,
@@ -79,6 +80,29 @@ def test_mix_is_deterministic_and_near_the_requested_share():
     assert [r["pred_groups"] for r in a] == [r["pred_groups"] for r in b]
     assert 0.1 < ca["from_model"] / ca["cells"] < 0.3
     assert all("No Finding" not in sum(r["pred_groups"].values(), []) for r in a)
+
+
+def test_the_draw_follows_the_image_not_the_cohort_fingerprint():
+    """2026-10-26: sample_key carried the config file's mtime, so a fresh clone drew differently."""
+    codes = np.tile(np.array([[1, 1, 0, 1]]), (50, 1))
+    a, b = _records(), _records()
+    for i, (ra, rb) in enumerate(zip(a, b)):
+        ra.update(sample_key=f"cohortA-{i}", image_path=f"files/p10/p1/s1/img{i}.jpg")
+        rb.update(sample_key=f"cohortB-{i}", image_path=f"/abs/root/files/p10/p1/s1/img{i}.jpg")
+    mix_oracle_cues(a, codes, FINDINGS, model_share=0.2, seed=16)
+    mix_oracle_cues(b, codes, FINDINGS, model_share=0.2, seed=16)
+    assert [r["pred_groups"] for r in a] == [r["pred_groups"] for r in b]
+    c = _records()
+    for i, rc in enumerate(c):
+        rc.update(image_path=f"files/p10/p1/s1/img{i}.jpg")
+    mix_oracle_cues(c, codes, FINDINGS, model_share=0.2, seed=17)
+    assert [r["pred_groups"] for r in c] != [r["pred_groups"] for r in a]
+
+
+def test_draw_key_falls_back_to_sample_key_without_an_image():
+    assert draw_key({"image_path": "/x/abc.jpg", "sample_key": "k"}) == "abc"
+    assert draw_key({"sample_key": "k"}) == "k"
+    assert draw_key({"image_path": "", "sample_key": "k"}) == "k"
 
 
 def test_bad_share_is_refused():
