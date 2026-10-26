@@ -396,7 +396,11 @@ Pilot chọn công thức Stage 2: `docs/handoff/PLAN-2026-10-11-stage2-context-
 nhiên của việc train Stage 2 (khởi tạo LoRA/projector, dropout, augmentation của record train,
 thứ tự batch, phần 20% cue MHCAC của `oracle_mix`); tập study train/val không đổi theo seed.
 Trước đó seed cố định trong code nên chạy lại cùng lệnh cho ra báo cáo giống hệt từng chữ và
-không đo được nhiễu seed của Stage 2.
+không đo được nhiễu seed của Stage 2. **Đã đo 2026-10-26** (công thức pilot S1-a, seed 16 và 17,
+1.360 study val): ngưỡng nhiễu NB của BERTScore là 0,0054, của CheXbert micro F1-14 là 0,0192. Với
+ngưỡng đó, kết luận "Stage 2 trên Stage-1 OFF tốt hơn ON" nằm trong nhiễu seed: trung bình hai seed
+-0,0115 (CheXbert) và -0,0020 (BERTScore), chưa vượt NB/√2. Fusion ON không đem lại lợi ích đo được
+cho Stage 2 ở ngân sách này. Chi tiết: `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
 
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở

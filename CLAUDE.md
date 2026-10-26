@@ -1154,9 +1154,13 @@ study (not image) → anchor + ≤1 auxiliary view
   **Stage 2 on ON vs OFF Stage-1, val pilot 2026-10-26 -- OFF BETTER by the pre-declared rule**
   (both retrained, 2026-10-16 refit-pilot recipe, own cutpoint cues, beam 4, 1,360 val): ON' - OFF
   CheXbert micro F1-14 -0.0171 [-0.0329, -0.0012], BERTScore -0.0006 [-0.0073, +0.0061], all else
-  crosses 0. ON' matched the old arm A on 1,360/1,360 reports: Stage 2 is deterministic at its fixed
-  seed (`fig9.SEED`, no `--seed` flag), so its seed noise is unmeasured. Full Stage 2 not run.
-  Record: `docs/handoff/PLAN-2026-10-26-stage2-fusion-on-off.md`.
+  crosses 0. Full Stage 2 not run. Record: `docs/handoff/PLAN-2026-10-26-stage2-fusion-on-off.md`.
+  ⚠ **Seed replicate (both arms again at `--seed 17`, 2026-10-26): "OFF better" is WITHIN Stage-2
+  seed noise.** Seed 17 ON - OFF CheXbert micro F1-14 -0.0058 [-0.0205, +0.0098], BERTScore -0.0035;
+  two-seed means -0.0115 / -0.0020 against Stage-2 noise bars NB/sqrt2 0.0136 / 0.0038 (NB 0.0192 /
+  0.0054). The ON recipe alone moved CheXbert micro F1-14 by +0.0134 between seeds. Direction still
+  leans OFF (seed-17 delta negative on all 9 metrics), and ON does not beat OFF. Record:
+  `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and
@@ -1863,6 +1867,10 @@ sample and the in-training val subset keep `fig9.SEED`). A non-default seed adds
 to the augmented train records' cache fingerprint, so default caches still hit and a
 seed-17 cache is never reused at 16. Written to `summary.json` / `run_manifest.json`. Do
 not resume a run under another seed. Pinned by `tests/test_stage2_seed.py`.
+**Stage-2 seed noise MEASURED 2026-10-26** (S1-a pilot recipe, seeds 16 vs 17, val 1,360): NB
+(2 x RMS of the two arms' seed deltas) BERTScore 0.0054, CheXbert micro F1-14 0.0192, ROUGE-L 0.0062,
+BLEU-4 0.0084, CIDEr 0.0319; 211-248 of 1,360 reports identical across seeds. A single-seed bootstrap CI
+does not cover it (ROUGE-L / BLEU-4 ON - OFF significant at seed 17, flat at seed 16).
 ⚠⚠ **A Stage-2 run also depends on the Stage-1 config file's MTIME (found 2026-10-26).**
 The record `sample_key` is `stable_fingerprint({cohort_id, dicom_id})` and `cohort_id`
 contains `file_identity()` (size + `mtime_ns`) of the Stage-1 YAML, checkpoint and split CSVs;

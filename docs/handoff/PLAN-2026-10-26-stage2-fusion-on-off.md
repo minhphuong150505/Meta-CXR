@@ -1,7 +1,10 @@
 # PLAN 2026-10-26 — does fusion ON beat OFF in Stage 2 report generation?
 
 Status: **DONE 2026-10-26 -- S1-a verdict: OFF better than ON in Stage 2 (CheXbert micro F1-14 -0.0171
-[-0.0329, -0.0012]; BERTScore flat). S2 not triggered.** User go-ahead 2026-10-26 for S1-a ("cách a"). The user asked (2026-10-26) to "train and
+[-0.0329, -0.0012]; BERTScore flat). S2 not triggered.** ⚠ **Superseded by the seed replicate (2026-10-26,
+`PLAN-2026-10-26-stage2-seed-noise.md`): at seed 17 the gap is -0.0058 [-0.0205, +0.0098]; the two-seed
+mean -0.0115 does not clear the Stage-2 noise bar (0.0136), so "OFF better" is WITHIN seed noise. ON still
+does not beat OFF.** User go-ahead 2026-10-26 for S1-a ("cách a"). The user asked (2026-10-26) to "train and
 recompute the Stage-2 NLG metrics, like the earlier report" after the seed-noise run. Read here as:
 compare Stage 2 trained on Stage-1 ON (`run_20261005_paper`) vs Stage-1 OFF (`run_20261024_nomv`),
 which is how EVOKE (arXiv 2411.10224) measured multi-view, on report metrics. No repo code or YAML

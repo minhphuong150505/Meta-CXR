@@ -44,8 +44,9 @@ The novelty only counts if it survives review. So:
   macro recall is not evidence. Every new plan writes the NB check into its
   reading rule. NB at the Stage-1 pilot budget (all val): wF1 0.0027, F1-5 0.0031,
   macro recall 0.0110, AUROC 0.0276 (views_1 / views_2 in
-  `PLAN-2026-10-26-pilot-seed-noise.md`); Stage 2 at its pilot budget:
-  `PLAN-2026-10-26-stage2-seed-noise.md`. Where no NB exists for a budget (full
+  `PLAN-2026-10-26-pilot-seed-noise.md`); Stage 2 at its pilot budget (val 1,360, beam 4):
+  BERTScore 0.0054, CheXbert micro F1-14 0.0192, ROUGE-L 0.0062, BLEU-4 0.0084, CIDEr 0.0319
+  (`PLAN-2026-10-26-stage2-seed-noise.md`). Where no NB exists for a budget (full
   runs), say so and ask the user before treating a CI alone as decisive.
 
 ## Where things stand (2026-10-25)
@@ -127,9 +128,15 @@ The novelty only counts if it survives review. So:
   recipe (10,000 studies, 476 updates, P2 + LR 3e-4, own cutpoint cues), beam 4 on all 1,360 val.
   ON' - OFF: CheXbert micro F1-14 -0.0171 [-0.0329, -0.0012] (precision and recall both lower),
   BERTScore -0.0006 [-0.0073, +0.0061]; every other metric crosses 0. ON' reproduced the old arm A
-  on 1,360/1,360 reports, so Stage 2 is deterministic at its fixed seed and its seed noise is still
-  unmeasured. One seed per arm, two single Stage-1 runs. Full Stage 2 (S2) not run.
+  on 1,360/1,360 reports (Stage 2 was deterministic at its fixed seed). Full Stage 2 (S2) not run.
   `docs/handoff/PLAN-2026-10-26-stage2-fusion-on-off.md`.
+- **Stage-2 seed replicate (2026-10-26, both arms at `--seed 17`): "OFF better" is WITHIN Stage-2
+  seed noise.** Seed 17 ON - OFF CheXbert micro F1-14 -0.0058 [-0.0205, +0.0098], BERTScore -0.0035;
+  two-seed means -0.0115 / -0.0020 vs NB/sqrt2 0.0136 / 0.0038. The ON recipe alone moved CheXbert micro
+  F1-14 +0.0134 between seeds. Seed-17 delta negative on all 9 metrics; three non-deciding CheXbert
+  metrics have means beyond NB/sqrt2 in OFF's favour (descriptive). **Fusion ON gives Stage 2 no
+  measurable benefit at this budget; do not claim either direction.** Two Stage-2 seeds, one Stage-1 run
+  per arm. `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 
