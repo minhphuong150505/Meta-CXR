@@ -90,13 +90,13 @@ section ở entrypoint chính.
 
 | Hàm | Dòng | Vai trò |
 |---|---|---|
-| `build_stage1_records` | 467 | ★ Dựng record qua Stage 1; `:316` import lazy `training.stage1.lavis_loader` |
+| `build_stage1_records` | 467 | ★ Dựng record qua Stage 1; `:316` import lazy `training.stage1.lavis_loader`; `train_seed` (mặc định `SEED`) chỉ đi vào fingerprint |
 | `classify_with_thresholds` | 352 | Logits → nhóm P/N/U theo threshold |
 | `compute_nlg` | 1385 | BLEU/ROUGE/METEOR/CIDEr/BERTScore |
 | `compute_sectioned_nlg` | 1455 | Tách FINDINGS/IMPRESSION rồi chấm |
 | `evaluate_variant` | 1487 | Vòng eval một variant |
 | `assert_private_gcs_destination` | 263 | ★ Chặn upload lên bucket public |
-| `stage1_cohort_fingerprint` | 445 | Vân tay cohort để phát hiện lệch; thêm `stage1_options` chỉ khi `context.config_options` khác rỗng (2026-10-15) |
+| `stage1_cohort_fingerprint` | 445 | Vân tay cohort để phát hiện lệch; thêm `stage1_options` chỉ khi `context.config_options` khác rỗng (2026-10-15); thêm `train_seed` chỉ cho split train có augmentation khi `train_seed != SEED` (2026-10-26, `run_medgemma_qlora.py --seed`) |
 | `run_family`, `plot_family` | 1651, 1611 | Phần "figure9" thật sự |
 | `field_value` | 343 | ⚠ `except Exception: return str(field)` — nuốt lỗi ([S7 trong docs](../_meta/LEGACY_AND_OPTIONAL.md)) |
 

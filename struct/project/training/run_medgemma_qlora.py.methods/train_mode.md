@@ -21,7 +21,7 @@ fig9.VariantLLM(mode, prompt_config, ...)
    ├─ (mode Q-Former) SoftTokenEmbeddingWrapper + img_proj
    └─ assert_vision_tower_frozen()
    ↓
-train_fine(train_records, val_records, ...)   ← chọn checkpoint theo validation CE
+train_fine(train_records, val_records, ..., seed=args.seed)   ← chọn checkpoint theo validation CE; seed = --seed (2026-10-26)
    ↓
 generate cho test cohort — ĐÚNG MỘT LẦN
    ↓

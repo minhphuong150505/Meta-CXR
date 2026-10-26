@@ -646,6 +646,7 @@ def stage1_cohort_fingerprint(
     cue_rule: str = DEFAULT_CUE_RULE,
     finding_tokens: str = FINDING_TOKENS_OFF,
     clean_train_images: bool = False,
+    train_seed: int = SEED,
 ) -> tuple[str, dict[str, Any]]:
     ckpt_path = stage1_checkpoint_path(context, checkpoint_root)
     cfg_path = context.resolve_config_path(
@@ -681,6 +682,11 @@ def stage1_cohort_fingerprint(
     # Only when the clean variant is asked for, so existing caches still hit.
     if clean_train_images and split == "train":
         payload["train_images"] = "clean"
+    # The augmentation draws of those train records follow the global seed
+    # (run_medgemma_qlora.py --seed, 2026-10-26). Only for another seed, so
+    # every existing cache still hits; clean train records do not depend on it.
+    elif split == "train" and train_seed != SEED:
+        payload["train_seed"] = int(train_seed)
     # --stage1-options (2026-10-15): another model built from the same files.
     # Only when given, so every existing cache still hits.
     if getattr(context, "config_options", ()):
@@ -752,6 +758,7 @@ def build_stage1_records(
     cue_rule: str = DEFAULT_CUE_RULE,
     finding_tokens: str = FINDING_TOKENS_OFF,
     clean_train_images: bool = False,
+    train_seed: int = SEED,
 ) -> list[dict]:
     """Build Q-Former records. Stage-1 only -- native MedGemma must not call this.
 
@@ -765,7 +772,7 @@ def build_stage1_records(
     validate_finding_token_mode(finding_tokens)
     cohort_id, cohort = stage1_cohort_fingerprint(
         context, checkpoint_root, split, sample_limit, cue_rule, finding_tokens,
-        clean_train_images,
+        clean_train_images, train_seed,
     )
     limit_name = str(sample_limit) if sample_limit and sample_limit > 0 else "all"
     # This local-only cache necessarily contains target report text and image

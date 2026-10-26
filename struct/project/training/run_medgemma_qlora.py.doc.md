@@ -177,3 +177,18 @@ trở thành arm không có cue). Được truyền vào cả ba lần
 `resumable_adapter`, và vào `stage1_cohort_fingerprint` khi chấm val/test — nếu
 bỏ sót chỗ cuối, `cohort_id` của evaluation sẽ không khớp cohort của records.
 Ghi vào `run_manifest.json` và `training_config`.
+
+## `--seed` — 2026-10-26, mặc định = `fig9.SEED` (16)
+
+Chỉ điều khiển phần ngẫu nhiên của việc TRAIN: `fig9.set_seed(args.seed)` (khởi tạo LoRA /
+`img_proj`, dropout, và các lần vẽ augmentation khi encode record Stage-1 của split train),
+`train_fine(seed=args.seed)` (thứ tự batch, `DataLoader` generator) và `mix_oracle_cues(seed=...)`
+(20% cue giữ của MHCAC trong `oracle_mix`). **Cohort không đổi theo seed**: tập train
+(`--train-limit` lấy N study đầu), `build_native_records` và tập val sinh trong lúc train
+(`deterministic_subset(..., fig9.SEED + 1)`) vẫn dùng `fig9.SEED`. Seed khác 16 thêm
+`train_seed` vào fingerprint của record train có augmentation
+(`stage1_cohort_fingerprint`), nên cache cũ vẫn trúng ở seed mặc định và không bao giờ
+trúng nhầm ở seed khác. Ghi vào `summary.json` và `run_manifest.json`. Không resume
+một run sang seed khác. Trước đó seed cố định trong code: chạy lại cùng lệnh cho ra
+báo cáo giống hệt từng chữ (2026-10-26, 1.360/1.360), nên không đo được nhiễu seed
+Stage 2. Test: `tests/test_stage2_seed.py`.

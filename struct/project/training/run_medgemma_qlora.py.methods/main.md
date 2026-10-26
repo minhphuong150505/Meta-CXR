@@ -30,6 +30,8 @@ modes_require_stage1(modes)?
    ↓
 tạo immutable Stage1Context(run_name, config, checkpoint, thresholds)  (:418-423)
    ↓
+fig9.set_seed(args.seed)   ← --seed, mặc định fig9.SEED = 16 (2026-10-26); record train nhận train_seed=args.seed
+   ↓
 FOR mode in modes: train_mode(mode, records, context=stage1_context, ...)
    ↓
 --no-upload? ✗ → upload_safe_run(root, adapter_dirs, gcs_output)
@@ -47,7 +49,7 @@ phục vụ `findings_and_impression`.
 nên hai run trong cùng process không còn ghi đè identity của nhau.
 
 ## Returns
-`None`. Kết quả nằm ở đĩa + GCS.
+`None`. Kết quả nằm ở đĩa + GCS. `summary.json` và `run_manifest.json` ghi `seed` (2026-10-26).
 
 ## Side effects
 Ghi adapter/JSONL/meta.json · Upload GCS · Cấp phát GPU

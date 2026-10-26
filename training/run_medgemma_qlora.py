@@ -128,6 +128,13 @@ def parse_args() -> argparse.Namespace:
                         help="oracle_mix only: share of (study, finding) cues taken "
                              "from MHCAC instead of the true label.")
     parser.add_argument(
+        "--seed", type=int, default=fig9.SEED,
+        help="Training randomness only: global RNG (LoRA / projector init, dropout, "
+             "the augmentation of the train Stage-1 records), batch order and the "
+             "oracle_mix draw. Cohorts (which studies are trained and scored) do not "
+             "depend on it. Default = the historical fixed seed, bit-identical.",
+    )
+    parser.add_argument(
         "--pipeline-mode",
         choices=list(CHOICES),
         default=DEFAULT_PIPELINE_MODE,
@@ -386,6 +393,7 @@ def train_mode(
             max_grad_norm=args.max_grad_norm,
             max_length=args.max_length,
             patience=args.patience,
+            seed=args.seed,
             resume_state=resume_dir,
             save_every_updates=args.save_every_updates,
         )
@@ -549,7 +557,7 @@ def attach_prompt_inputs(args, train_records: list[dict], val_records: list[dict
         codes = true_label_codes(train_records, split_csv=fig9._split_csv_for("train"),
                                  chexpert_csv=CHEXPERT_CSV, findings=fig9.ABNORMALITIES_14)
         counts = mix_oracle_cues(train_records, codes, fig9.ABNORMALITIES_14,
-                                 model_share=args.train_cue_model_share, seed=fig9.SEED)
+                                 model_share=args.train_cue_model_share, seed=args.seed)
         report["train_cues"] = counts
         print(f"[cues] train oracle_mix share={args.train_cue_model_share}: {counts}", flush=True)
     return report
@@ -628,7 +636,7 @@ def main() -> None:
                    if args.cue_rule == fig9.CUE_RULE_CUTPOINTS else {}),
         config_options=tuple(args.stage1_options or ()),
     )
-    fig9.set_seed(fig9.SEED)
+    fig9.set_seed(args.seed)
     root = Path(args.output_dir)
     root.mkdir(parents=True, exist_ok=True)
     (root / "eval").mkdir(parents=True, exist_ok=True)
@@ -661,7 +669,7 @@ def main() -> None:
         train_records = fig9.build_stage1_records(
             context, checkpoint_root, root, "train", args.train_limit, args.num_workers,
             cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
-            clean_train_images=args.clean_train_records,
+            clean_train_images=args.clean_train_records, train_seed=args.seed,
         )
         print(f"[stage1] validation limit={args.val_limit or 'all'}", flush=True)
         val_records = fig9.build_stage1_records(
@@ -712,6 +720,7 @@ def main() -> None:
         "cue_rule": args.cue_rule if needs_stage1 else None,
         "train_cues": args.train_cues if needs_stage1 else None,
         "clean_train_records": bool(args.clean_train_records) if needs_stage1 else None,
+        "seed": args.seed,
         "train_cue_model_share": (
             args.train_cue_model_share if args.train_cues == "oracle_mix" else None
         ),
@@ -743,6 +752,7 @@ def main() -> None:
         "cue_rule": args.cue_rule if needs_stage1 else None,
         "train_cues": args.train_cues if needs_stage1 else None,
         "clean_train_records": bool(args.clean_train_records) if needs_stage1 else None,
+        "seed": args.seed,
         "finding_tokens": args.finding_tokens,
         "prompt_style": None if prompt_config or not needs_stage1 else args.prompt_style,
     }

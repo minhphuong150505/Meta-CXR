@@ -1850,6 +1850,17 @@ caches still hit. Default unchanged. Piloted 2026-10-12 against P2: no gain (nor
 from LoRA r16); only LR 3e-4 passed
 (`docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`).
 
+**`run_medgemma_qlora.py --seed` (2026-10-26, default `fig9.SEED` = 16, bit-identical).**
+Before it the Stage-2 training seed was hardwired, and rerunning a recipe reproduced its
+reports word for word (1,360/1,360 val, 2026-10-26), so Stage-2 seed noise could not be
+measured. It drives training randomness only: `set_seed` (LoRA / `img_proj` init, dropout,
+the augmentation draws of the train Stage-1 records), `train_fine`'s batch order and the
+`oracle_mix` draw. Cohorts do not move (`--train-limit` takes the first N studies; the native
+sample and the in-training val subset keep `fig9.SEED`). A non-default seed adds `train_seed`
+to the augmented train records' cache fingerprint, so default caches still hit and a
+seed-17 cache is never reused at 16. Written to `summary.json` / `run_manifest.json`. Do
+not resume a run under another seed. Pinned by `tests/test_stage2_seed.py`.
+
 ⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
 EPOCH. Every arm A number must be reported that way.** The planned
 `shutdown -h now` on 2026-09-03 09:33:31 killed it at 61h17m, batch

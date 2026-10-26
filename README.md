@@ -392,6 +392,12 @@ paper_context` (thêm INDICATION/HISTORY và FINDINGS lần chụp trước vào
 và CE thật bằng CheXbert `scripts/score_ce_chexbert.py` (venv riêng `~/.venvs/chexbert`).
 Pilot chọn công thức Stage 2: `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
 
+**`run_medgemma_qlora.py --seed` (2026-10-26, mặc định 16 = giống hệt trước):** đổi phần ngẫu
+nhiên của việc train Stage 2 (khởi tạo LoRA/projector, dropout, augmentation của record train,
+thứ tự batch, phần 20% cue MHCAC của `oracle_mix`); tập study train/val không đổi theo seed.
+Trước đó seed cố định trong code nên chạy lại cùng lệnh cho ra báo cáo giống hệt từng chữ và
+không đo được nhiễu seed của Stage 2.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**
