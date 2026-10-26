@@ -1187,8 +1187,14 @@ study (not image) → anchor + ≤1 auxiliary view
   MHCAC, the projector and the text tower learn from the anchor only; `late_view_pool` still trains.
   Refused outside `late`. Not in the YAML (an edit would move its mtime); set
   `run.phases.phase1b.model.view_fusion.late_detach_aux=true`. The pooled CE still reaches the anchor
-  logits of two-view studies, so MHCAC's objective is not exactly OFF's. Val pilot (2 seeds, same rule
-  as LF): `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+  logits of two-view studies, so MHCAC's objective is not exactly OFF's.
+  ❌ **Val pilot (2 seeds, same rule as LF) 2026-10-27: STOP -- LD does not beat OFF.** LD - OFF two-seed
+  mean, all val: wF1 +0.0001 [-0.0017, +0.0018], F1-5 +0.0007 [-0.0024, +0.0037] (Δ42 negative on both),
+  so rule 1 fails; rules 2/3 pass. The detach fixed LF's single-view loss (views_1 LD - LF wF1 +0.0023*,
+  F1-5 +0.0037*; LD - OFF there flat) and removed LF's two-view gain (views_2 LD - LF wF1 -0.0029*, macro
+  recall -0.0073*): with one shared MHCAC the aux view helps two-view studies only when MHCAC trains on
+  laterals, and that costs the anchor path about as much. Pool again ~0.5 per finding. No full run.
+  Record: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

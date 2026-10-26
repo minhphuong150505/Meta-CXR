@@ -1,7 +1,8 @@
 # PLAN 2026-10-26 — late fusion with the aux-view pass detached from MHCAC
 
-Status: **APPROVED by the user 2026-10-26 ("ok" to all three: the code change, step G + step P
-(~1h45m GPU), and the reading rule). Code implemented; GPU not yet run.** Follows the late-fusion pilot
+Status: **DONE 2026-10-27 -- VERDICT STOP: LD does not beat OFF** (rule 1 fails, rules 2/3 pass; see
+the execution report). Approved by the user 2026-10-26 ("ok" to the code change, step G + step P and
+the reading rule). Follows the late-fusion pilot
 (STOP, `PLAN-2026-10-26-late-view-fusion.md`).
 
 Implementation note: CPU suite = the same 21 failures as the baseline (missing nltk / torchvision /
@@ -135,3 +136,81 @@ tries at one bar slightly raise the chance of a lucky pass. NB rests on two draw
 ## Data handling
 
 `.npz`, checkpoints and logs stay on the host. Only aggregates come back here.
+
+## Execution report
+
+The probe (`~/ldetach_probe.py`) was dry-run first on CPU with LD := LF and LDn := LF without aux. The
+sanity check reproduced both earlier probes exactly (max diff 0.0). "LD" - OFF came out at LF - OFF to
+the last digit, CIs included, and LD - LF was 0.
+
+Launched once 22:39 (host code `a0e1eb0`, `~/ldetach.sh` -> `~/latefusion_detach_20261026/`, log
+`~/ldetach.log`; LF code for G1 in a fresh clone `~/Meta-CXR-9d39156`).
+
+**Step G passed 22:44 (smokes: 2,000 train / 400 val studies, 1 epoch, seed 42).**
+- G1: late mode with the key absent, new code vs LF code `9d39156`: 724 of 724 checkpoint tensors
+  equal (max abs diff 0), val probabilities equal. So LF_s42 / LF_s17 stay valid comparators.
+  Both 51-54 s, max mem 5,219 MiB.
+- G2: `late_detach_aux=true` smoke rc=0, key logged, the no-grad assertion was never hit.
+  - The pool trained (|w| max 3.9e-3).
+  - 191 MHCAC tensors differ from G1, so the change is live; same key set.
+  - Max mem 4,907 MiB, ~300 MiB below LF (no backward through the aux pass).
+- G3: the 237 single-view studies are bit-identical with and without the aux view; all 163 two-view
+  studies move (no argmax cell changed at smoke size). Evaluate-only reproduces the training-time npz.
+
+**Step P ran 22:44 -> 00:36 (`LDETACH_DONE`), code `a0e1eb0`, one card, no other job.**
+- Guards: both arms rc=0, no Traceback / OOM / NaN, logged seeds 42 / 17, `"mode": "late"` and
+  `"late_detach_aux": true` in the logged config, no test `.npz`. LD_s42 47m52s, best epoch 1;
+  LD_s17 47m32s, best epoch 0 (LF: 53m / 50m, same best epochs). Max mem 4,940 / 4,935 MiB (the log
+  line reads "49402026" -- a block-buffered timestamp glued on, as in the LF log).
+- Evaluate-only reproduces each arm's training-time val npz. G3 on both pilot models: the 988
+  single-view val studies are bit-identical with and without the aux view; all 820 two-view studies
+  move, argmax cells changed 4.02% / 4.09%.
+- Probe sanity: the OFF / P15 / LF values reproduce the earlier probes exactly (max diff 0.0).
+
+**All val, n=1,808, LD - OFF** (cross-fitted cutpoints, paired bootstrap 1,000 draws):
+
+| | Δ42 | Δ17 | Δ̄ [CI] | NB/√2 |
+|---|---|---|---|---|
+| weighted F1 | -0.0006 | +0.0008 | +0.0001 [-0.0017, +0.0018] | 0.0019 |
+| F1-5 | -0.0004 | +0.0017 | +0.0007 [-0.0024, +0.0037] | 0.0022 |
+| macro recall | -0.0021 | +0.0023 | +0.0001 [-0.0032, +0.0034] | 0.0077 |
+| weighted P | -0.0053* | -0.0005 | -0.0029 [-0.0053, +0.0001] | 0.0029 |
+| AUROC mean | +0.0028 | +0.0064* | +0.0046* [+0.0003, +0.0093] | 0.0195 |
+
+**Rule 1 fails** (Δ42 < 0 on both wF1 and F1-5; neither CI excludes 0; both Δ̄ below NB/√2).
+Rule 2 passes, rule 3 passes. **VERDICT: STOP, no full run.** AUROC +0.0046* is a quarter of its noise
+bar and not deciding.
+
+By view count (descriptive):
+
+| Δ̄, two-seed mean | views_1 (988) | views_2 (820) |
+|---|---|---|
+| LD - OFF wF1 | -0.0001 [-0.0020, +0.0018] | -0.0009 [-0.0038, +0.0022] |
+| LD - OFF F1-5 | +0.0016 [-0.0023, +0.0054] | -0.0012 [-0.0062, +0.0037] |
+| LD - OFF macro recall | +0.0038* | -0.0105* [-0.0201, -0.0021] |
+| LD - OFF AUROC | -0.0013 | +0.0134* [+0.0040, +0.0224] |
+| **LD - LF wF1** | **+0.0023*** [+0.0007, +0.0042] | **-0.0029*** [-0.0047, -0.0012] |
+| **LD - LF F1-5** | **+0.0037*** [+0.0001, +0.0075] | -0.0027 [-0.0062, +0.0002] |
+| LD - LF macro recall | +0.0027 | -0.0073* |
+| LD - LD scored without aux, wF1 | (identical logits) | -0.0005 [-0.0032, +0.0023] |
+| LD - LD without aux, macro recall | -- | -0.0114* |
+
+Other descriptive items, all val: LD - LF wF1 +0.0001, F1-5 +0.0011, weighted P -0.0055*; LD - P15
+wF1 +0.0012, F1-5 +0.0022, both crossing 0. LD seed delta (17 - 42) wF1 +0.0021*, macro recall
++0.0071* -- the same size as the effects being read, which is why NB exists. Mean aux pool weight per
+finding 0.472-0.502 (s42) and 0.474-0.501 (s17): the pool again stayed at plain averaging.
+
+**Reading.** The detach did what it was designed to do and the trade simply moved:
+- It removed LF's single-view loss: on single-view studies LD - LF wF1 +0.0023*, F1-5 +0.0037*, and
+  LD - OFF there is flat (wF1 -0.0001). So the hypothesis in "Why" holds: LF's single-view cost came
+  from MHCAC also training on laterals.
+- It also removed LF's two-view gain: on two-view studies LD - LF wF1 -0.0029*, macro recall -0.0073*,
+  and the aux view now adds nothing to wF1 there and lowers macro recall (LD - LD without aux wF1
+  -0.0005, macro recall -0.0114*). An MHCAC that never trains on laterals reads them worse, which is the risk
+  the plan named.
+- Net over all val: zero, as for LF. With one shared MHCAC the aux view helps two-view studies only
+  when MHCAC trains on it, and that training costs the anchor path by about the same amount.
+
+Limits: two seeds per arm, pilot budget (60,000 studies, 2 epochs, phase 1b only), val only; NB rests
+on two draws per arm; this is the second late-fusion variant read against the same OFF arms. Test was
+not scored. Nothing here says what a full run would do.

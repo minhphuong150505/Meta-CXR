@@ -66,4 +66,6 @@ trong plan trên.
 
 Biến thể tiếp theo, `model.view_fusion.late_detach_aux: true` (2026-10-26): lượt ảnh phụ không
 truyền gradient vào MHCAC, chỉ pool học từ nó. Module này không đổi; công tắc nằm trong
-`Blip2Qformer._late_view_logits`. Plan: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+`Blip2Qformer._late_view_logits`. **Pilot val 2 seed 2026-10-27: DỪNG, không thắng OFF** (wF1 trung
+bình hai seed +0,0001, F1-5 +0,0007). Hết phần kém ở study một view, nhưng cũng mất phần lợi ở study hai
+view; trọng số gộp vẫn ~0,5. Plan: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.

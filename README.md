@@ -416,8 +416,13 @@ không học (trọng số ảnh phụ ~0,5, tức là lấy trung bình). Khôn
 `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`. Biến thể tiếp theo (user đã duyệt 2026-10-26):
 `model.view_fusion.late_detach_aux: true` (vắng = tắt) cho lượt chấm ảnh phụ chạy không gradient,
 để MHCAC chỉ học từ ảnh chính; bộ gộp vẫn được train. Không sửa YAML, đặt qua
-`run.phases.phase1b.model.view_fusion.late_detach_aux=true`. Pilot val 2 seed, cùng quy tắc đọc:
-`docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+`run.phases.phase1b.model.view_fusion.late_detach_aux=true`. **Pilot val 2 seed (2026-10-27), cùng
+quy tắc đọc: DỪNG, không thắng OFF.** LD - OFF trung bình hai seed trên toàn val: weighted F1 +0,0001
+[-0,0017; +0,0018], F1-5 +0,0007 [-0,0024; +0,0037], seed 42 âm ở cả hai. Tách gradient đã xoá phần
+kém ở study một view (so với LF: wF1 +0,0023, F1-5 +0,0037, có ý nghĩa) nhưng cũng xoá phần lợi ở study
+hai view (so với LF: wF1 -0,0029, macro recall -0,0073, có ý nghĩa). Nghĩa là với một MHCAC dùng
+chung, ảnh phụ chỉ giúp khi MHCAC được học trên ảnh nghiêng, và việc học đó làm ảnh chính kém đi gần
+bằng chừng ấy. Không chạy full. Chi tiết: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
 
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở

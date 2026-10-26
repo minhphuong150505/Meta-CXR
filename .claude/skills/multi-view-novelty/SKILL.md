@@ -145,6 +145,15 @@ The novelty only counts if it survives review. So:
   ~0.5 aux weight per finding = plain averaging. So neither early nor late fusion beats OFF at the pilot
   budget; the aux view's small two-view gain is offset by a small single-view loss every time.
   `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
+- **Late fusion with the aux pass detached (LD, `late_detach_aux`), val pilot 2026-10-27, same rule:
+  STOP.** LD - OFF two-seed mean, all val: wF1 +0.0001 [-0.0017, +0.0018], F1-5 +0.0007
+  [-0.0024, +0.0037], Δ42 negative on both; rule 1 fails, rules 2/3 pass. The detach removed LF's
+  single-view loss (views_1 LD - LF wF1 +0.0023*, F1-5 +0.0037*) AND LF's two-view gain (views_2
+  LD - LF wF1 -0.0029*, macro recall -0.0073*). Lesson: with ONE shared MHCAC, the aux view helps
+  two-view studies only if MHCAC trains on laterals, and that training costs the anchor about as much.
+  A direction that gives the aux view its own capacity (view-specific head / adapter, candidate 2)
+  is what this points at -- untested. Pool stayed ~0.5 again.
+  `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 
@@ -155,9 +164,9 @@ The novelty only counts if it survives review. So:
 3. Late fusion: per-view MHCAC logits pooled by attention over views. Implemented opt-in
    (`model.view_fusion.mode: late`, `mhcac/late_view_pool.py`). **Val pilot 2026-10-26 at 2 seeds
    with the NB rule: STOP, it does not beat OFF** (see "Current evidence"). Do not retry it unchanged.
-   **Variant APPROVED 2026-10-26: `model.view_fusion.late_detach_aux: true`** (the aux-view pass runs
-   without gradient, so MHCAC learns from the anchor only; aims at LF's single-view loss). Same pilot and
-   reading rule: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+   **Variant `model.view_fusion.late_detach_aux: true` (aux-view pass without gradient) -- val pilot
+   2026-10-27: STOP** (see "Current evidence"). Do not retry it unchanged.
+   `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
 4. Train-side: separate LR for `view_fusion`, change the aux-view drop (`p_view_drop`, shipped 0.15).
 5. Seed replicates of ON and OFF to measure the noise bar properly.
 
