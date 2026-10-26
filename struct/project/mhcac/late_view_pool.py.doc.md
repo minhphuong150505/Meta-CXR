@@ -63,3 +63,7 @@ view nhận đúng logit của anchor, có hay không có ảnh phụ (kiểm tr
 **Kết quả: DỪNG, không thắng OFF** (wF1 trung bình hai seed +0,0000, F1-5 -0,0005). Trọng số gộp
 gần như đứng yên ở 0,5 cho ảnh phụ (0,48-0,50 mỗi finding), tức là trung bình hai view. Chi tiết
 trong plan trên.
+
+Biến thể tiếp theo, `model.view_fusion.late_detach_aux: true` (2026-10-26): lượt ảnh phụ không
+truyền gradient vào MHCAC, chỉ pool học từ nó. Module này không đổi; công tắc nằm trong
+`Blip2Qformer._late_view_logits`. Plan: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.

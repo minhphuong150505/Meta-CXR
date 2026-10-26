@@ -1,8 +1,12 @@
 # PLAN 2026-10-26 — late fusion with the aux-view pass detached from MHCAC
 
-Status: **PROPOSED, not approved.** The user said "ok" to writing this plan, which follows on from the
-late-fusion pilot (STOP, `PLAN-2026-10-26-late-view-fusion.md`). The code change, the GPU steps and the
-reading rule each still need the user's yes.
+Status: **APPROVED by the user 2026-10-26 ("ok" to all three: the code change, step G + step P
+(~1h45m GPU), and the reading rule). Code implemented; GPU not yet run.** Follows the late-fusion pilot
+(STOP, `PLAN-2026-10-26-late-view-fusion.md`).
+
+Implementation note: CPU suite = the same 21 failures as the baseline (missing nltk / torchvision /
+env config on the dev box), 3 new tests passing. The `rows` index computation moved above the aux pass
+(pure indexing, no RNG); G1 checks that the default path is still bit-identical.
 
 ## Why
 

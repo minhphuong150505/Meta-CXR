@@ -413,7 +413,11 @@ fusion không thắng OFF.** Trung bình hai seed LF - OFF trên toàn val: weig
 [-0,0017; +0,0017], F1-5 -0,0005 [-0,0034; +0,0024], hai seed ngược dấu. Study một view kém nhẹ
 (wF1 -0,0024, trong ngưỡng nhiễu), study hai view nhỉnh nhẹ (wF1 +0,0021, CI qua 0). Bộ gộp hầu như
 không học (trọng số ảnh phụ ~0,5, tức là lấy trung bình). Không chạy full. Chi tiết:
-`docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
+`docs/handoff/PLAN-2026-10-26-late-view-fusion.md`. Biến thể tiếp theo (user đã duyệt 2026-10-26):
+`model.view_fusion.late_detach_aux: true` (vắng = tắt) cho lượt chấm ảnh phụ chạy không gradient,
+để MHCAC chỉ học từ ảnh chính; bộ gộp vẫn được train. Không sửa YAML, đặt qua
+`run.phases.phase1b.model.view_fusion.late_detach_aux=true`. Pilot val 2 seed, cùng quy tắc đọc:
+`docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
 
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở

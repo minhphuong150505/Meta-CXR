@@ -155,6 +155,9 @@ The novelty only counts if it survives review. So:
 3. Late fusion: per-view MHCAC logits pooled by attention over views. Implemented opt-in
    (`model.view_fusion.mode: late`, `mhcac/late_view_pool.py`). **Val pilot 2026-10-26 at 2 seeds
    with the NB rule: STOP, it does not beat OFF** (see "Current evidence"). Do not retry it unchanged.
+   **Variant APPROVED 2026-10-26: `model.view_fusion.late_detach_aux: true`** (the aux-view pass runs
+   without gradient, so MHCAC learns from the anchor only; aims at LF's single-view loss). Same pilot and
+   reading rule: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
 4. Train-side: separate LR for `view_fusion`, change the aux-view drop (`p_view_drop`, shipped 0.15).
 5. Seed replicates of ON and OFF to measure the noise bar properly.
 

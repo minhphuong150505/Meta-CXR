@@ -101,4 +101,6 @@ Không encoder nào bật → `ValueError` (`:174`) · `itc_queue_size < 0` → 
 `lambda_view_consistency > 0` hoặc explanation loss bật. `late` dựng
 `self.late_view_pool = LateViewPooling(14, 3, num_view_types)` và KHÔNG dựng
 `view_fusion`, `stream_adapters`, `mpc_heads`. `early` dựng như trước, không tiêu thêm
-RNG. `late_anchor_weight` (0.5) cũng được pop khỏi `view_fusion_cfg`.
+RNG. `late_anchor_weight` (0.5) cũng được pop khỏi `view_fusion_cfg`, và
+`late_detach_aux` (vắng = `False`, 2026-10-26) — bật mà không ở `late` thì `ValueError`
+(early fusion có `detach_aux` riêng). Plan: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.

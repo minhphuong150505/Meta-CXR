@@ -186,3 +186,50 @@ def test_shipped_yaml_keeps_early_fusion_and_trains_the_pool_when_late():
     for name in ("phase1b", "phase1c"):
         assert "late_view_pool" in phases[name]["trainable"]
         assert "view_fusion" in phases[name]["trainable"]
+
+
+def _late_helper_source():
+    source = _QFORMER.read_text()
+    helper = source[source.index("    def _late_view_logits("):]
+    return source, helper[: helper.index("    def initialize_expert_tokens")]
+
+
+def test_late_detach_aux_is_off_by_default_and_refused_outside_late():
+    """docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md: absent = the LF path."""
+    source, _ = _late_helper_source()
+    assert 'self.late_detach_aux = bool(vf_cfg.pop("late_detach_aux", False))' in source
+    assert ('if self.late_detach_aux and not (self.multi_view and self.view_fusion_mode == "late"):'
+            in source)
+    assert '"late_detach_aux": cfg_bool(view_fusion_cfg_raw.get("late_detach_aux", False)),' in source
+    cfg = yaml.safe_load(_CONFIG.read_text())
+    assert "late_detach_aux" not in cfg["model"]["view_fusion"]
+
+
+def test_late_detach_aux_wraps_the_aux_pass_and_not_the_pool():
+    _, helper = _late_helper_source()
+    guard = "        with torch.no_grad() if detach else contextlib.nullcontext():\n"
+    assert helper.count(guard) == 1
+    inside = helper[helper.index(guard) + len(guard):]
+    inside = inside[: inside.index("\n        if detach and aux_logits.requires_grad:")]
+    # every line of the aux pass is indented under the guard
+    assert all(line.startswith("            ") or not line.strip() for line in inside.splitlines())
+    assert "self.shared_visual_projector(raw)" in inside
+    assert "self.mhcac(" in inside
+    assert "late_view_pool" not in inside
+    after = helper[helper.index("if detach and aux_logits.requires_grad:"):]
+    assert "return self.late_view_pool(" in after
+    assert 'raise RuntimeError("late_detach_aux: the aux-view logits still require grad")' in after
+
+
+def test_no_grad_pass_still_trains_the_pool():
+    """The mechanism on the pool itself: detached aux logits, gradient to the pool and anchor only."""
+    pool = _pool()
+    anchor, aux, aux_mask, av, xv = _inputs()
+    anchor.requires_grad_(True)
+    aux.requires_grad_(True)
+    with torch.no_grad():
+        aux_detached = aux * 1.0
+    pool(anchor, aux_detached, aux_mask, av, xv).sum().backward()
+    assert pool.weight.grad.abs().sum() > 0
+    assert anchor.grad[2].abs().sum() > 0
+    assert aux.grad is None

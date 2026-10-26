@@ -4,6 +4,7 @@
  SPDX-License-Identifier: BSD-3-Clause
  For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
 """
+import contextlib
 import logging
 import math
 from types import SimpleNamespace
@@ -567,6 +568,16 @@ class Blip2Qformer(Blip2Base):
             lambda_explanation_strong=self.lambda_explanation_strong,
         )
         self.late_anchor_weight = float(vf_cfg.pop("late_anchor_weight", 0.5))
+        # model.view_fusion.late_detach_aux (2026-10-26): absent = False = the late
+        # path as first run. True runs the aux-view pass without gradient, so MHCAC,
+        # the projector and the text tower learn from the anchor only
+        # (docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md).
+        self.late_detach_aux = bool(vf_cfg.pop("late_detach_aux", False))
+        if self.late_detach_aux and not (self.multi_view and self.view_fusion_mode == "late"):
+            raise ValueError(
+                "model.view_fusion.late_detach_aux needs model.view_fusion.mode: late "
+                "(early fusion has its own detach_aux); it would silently do nothing here"
+            )
         self.late_view_pool = None
         self._last_late_aux = None
         # Pre-fusion streams are only stashed when an auxiliary loss consumes
@@ -1150,12 +1161,6 @@ class Blip2Qformer(Blip2Base):
         keep = real_aux_rows(aux_mask, batch * views, anchor_logits.device)
         if keep is not None and not bool(keep.any()):
             return anchor_logits
-        raw = {}
-        for name in names:
-            flat = aux_streams[name].flatten(0, 1)
-            flat = flat if keep is None else flat[keep]
-            raw[name] = self.ln_vision(flat) if name == "biovil" else flat
-        aux_shared = self._apply_encoder_ablation(self.shared_visual_projector(raw))
         # Batch index of every real aux slot, to give each its study's report.
         rows = torch.arange(batch * views, device=anchor_logits.device) // views
         rows = rows if keep is None else rows[keep]
@@ -1163,13 +1168,24 @@ class Blip2Qformer(Blip2Base):
         def take(x):
             return None if x is None else x[rows]
 
-        aux_logits, _, _, _, _ = self.mhcac(
-            aux_shared,
-            text_embeddings=take(text_embeddings),
-            text_attention_mask=take(text_attention_mask),
-            labels=None,
-            text_row_mask=take(text_row_mask),
-        )
+        detach = bool(getattr(self, "late_detach_aux", False))
+        # Only the aux pass is under no_grad; the pool call below keeps its gradient.
+        with torch.no_grad() if detach else contextlib.nullcontext():
+            raw = {}
+            for name in names:
+                flat = aux_streams[name].flatten(0, 1)
+                flat = flat if keep is None else flat[keep]
+                raw[name] = self.ln_vision(flat) if name == "biovil" else flat
+            aux_shared = self._apply_encoder_ablation(self.shared_visual_projector(raw))
+            aux_logits, _, _, _, _ = self.mhcac(
+                aux_shared,
+                text_embeddings=take(text_embeddings),
+                text_attention_mask=take(text_attention_mask),
+                labels=None,
+                text_row_mask=take(text_row_mask),
+            )
+        if detach and aux_logits.requires_grad:
+            raise RuntimeError("late_detach_aux: the aux-view logits still require grad")
         aux_logits = scatter_aux_rows(aux_logits.to(anchor_logits.dtype), keep, batch, views)
         return self.late_view_pool(
             anchor_logits, aux_logits, aux_mask, anchor_view_id, aux_view_ids
@@ -2586,6 +2602,7 @@ class Blip2Qformer(Blip2Base):
             # Absent = "early" (every recorded run); "late" = mhcac/late_view_pool.py.
             "mode": view_fusion_cfg_raw.get("mode"),
             "late_anchor_weight": float(view_fusion_cfg_raw.get("late_anchor_weight", 0.5)),
+            "late_detach_aux": cfg_bool(view_fusion_cfg_raw.get("late_detach_aux", False)),
         }
         loss_cfg = cfg.get("loss", {}) or {}
         lambda_mpc = float(loss_cfg.get("lambda_mpc", 0.0))

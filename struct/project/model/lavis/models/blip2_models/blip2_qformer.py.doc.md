@@ -162,7 +162,7 @@ dòng đọc ở đây = key đó không làm gì.
 | `_create_mask` | Mask ngẫu nhiên patch — ⚠ không thấy caller trong forward |
 | `_stash_prefusion` | Giữ tensor pre-fusion khi loss phụ cần |
 | `_fuse` | Wrapper gọi `ViewFusionModule[name]` |
-| `_late_view_logits` | 2026-10-26, chỉ ở `view_fusion.mode: late`: chạy MHCAC (cùng trọng số) trên ảnh phụ thật đã cất ở `_last_late_aux`, gộp với logit anchor qua `late_view_pool`; trả nguyên logit anchor khi không có ảnh phụ thật hoặc ở `early` |
+| `_late_view_logits` | 2026-10-26, chỉ ở `view_fusion.mode: late`: chạy MHCAC (cùng trọng số) trên ảnh phụ thật đã cất ở `_last_late_aux`, gộp với logit anchor qua `late_view_pool`; trả nguyên logit anchor khi không có ảnh phụ thật hoặc ở `early`. Với `late_detach_aux: true` lượt ảnh phụ (ln_vision / projector / MHCAC) chạy dưới `torch.no_grad()` và raise nếu logit ảnh phụ còn `requires_grad`; lời gọi `late_view_pool` nằm ngoài nên pool vẫn có gradient |
 | `_gather_with_local_grad` | All-gather giữ grad ở rank cục bộ |
 | `_batch_mask` | Đọc mask từ samples, có fallback |
 | `initialize_expert_tokens` | Khởi tạo expert token từ embedding tên bệnh lý |

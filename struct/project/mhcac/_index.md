@@ -126,6 +126,7 @@ Trong khối `model:` của run YAML:
 | `view_fusion.*` | heads 8, ffn_ratio 4, blocks 1, dropout 0.1, p_view_drop 0.15, detach_aux false | `detach_aux` từ 2026-10-09 (EVOKE) |
 | `view_fusion.mode` | vắng = `early` | `late` (2026-10-26): không dựng `view_fusion` / `stream_adapters` / `mpc_heads`, dựng `late_view_pool`; cần `multi_view: true`, `lambda_mpc = lambda_view_consistency = 0` |
 | `view_fusion.late_anchor_weight` | `0.5` | Chỉ ở `late`: loss = `(1-w) CE(pooled) + w CE(anchor)` |
+| `view_fusion.late_detach_aux` | vắng = `false` | Chỉ ở `late` (2026-10-26, ngoài `late` bị từ chối): lượt ảnh phụ chạy `no_grad`, MHCAC / projector / text tower chỉ học từ anchor; pool vẫn train. Không có trong YAML; đặt qua `run.phases.phase1b.model.view_fusion.late_detach_aux=true` |
 | `loss.mpc_temperature` | 0.07 | Từ 2026-10-09; EVOKE dùng 0.5 |
 | `loss.lambda_*` | xem [ARCHITECTURE.md §2.6](../_meta/ARCHITECTURE.md#26-tổng-hợp-loss) | Trọng số loss, gồm `lambda_explanation` conditional |
 | `explanation.*` | top-k, warmup, danh sách stream | Chỉ có hiệu lực khi lambda > 0 |

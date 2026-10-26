@@ -1182,6 +1182,13 @@ study (not image) → anchor + ≤1 auxiliary view
   0.48-0.50 at both seeds, i.e. a plain average of the two views. Bit-identity of single-view studies
   with/without the aux view re-confirmed on both pilot models. No full run. Record:
   `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
+  🧪 **`model.view_fusion.late_detach_aux: true` (opt-in 2026-10-26, user-approved; absent = false =
+  the LF path):** the aux-view pass (ln_vision / projector / MHCAC) runs under `torch.no_grad()`, so
+  MHCAC, the projector and the text tower learn from the anchor only; `late_view_pool` still trains.
+  Refused outside `late`. Not in the YAML (an edit would move its mtime); set
+  `run.phases.phase1b.model.view_fusion.late_detach_aux=true`. The pooled CE still reaches the anchor
+  logits of two-view studies, so MHCAC's objective is not exactly OFF's. Val pilot (2 seeds, same rule
+  as LF): `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and
