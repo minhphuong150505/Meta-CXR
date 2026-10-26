@@ -137,6 +137,14 @@ The novelty only counts if it survives review. So:
   metrics have means beyond NB/sqrt2 in OFF's favour (descriptive). **Fusion ON gives Stage 2 no
   measurable benefit at this budget; do not claim either direction.** Two Stage-2 seeds, one Stage-1 run
   per arm. `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
+- **Late fusion val pilot (2026-10-26, 2 seeds, pilot recipe, NB rule): STOP.** LF - OFF two-seed
+  mean, all val: wF1 +0.0000 [-0.0017, +0.0017], F1-5 -0.0005 [-0.0034, +0.0024], seeds disagree in
+  sign; rule 1 fails, rules 2/3 pass. Single-view wF1 -0.0024* (within NB/sqrt2; logits are exactly the
+  anchor's, so the cost comes from MHCAC also training on laterals), two-view wF1 +0.0021 (crosses 0),
+  weighted recall +0.0036*. LF ~ P15 (early) on every deciding metric. The 112-parameter pool stayed at
+  ~0.5 aux weight per finding = plain averaging. So neither early nor late fusion beats OFF at the pilot
+  budget; the aux view's small two-view gain is offset by a small single-view loss every time.
+  `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 
@@ -144,9 +152,9 @@ The novelty only counts if it survives review. So:
 
 1. Per-finding gated fusion (each finding learns how much to use the aux view).
 2. Aux tokens fed straight into MHCAC's token axis with a view-type embedding.
-3. Late fusion: per-view MHCAC logits pooled by attention over views. **APPROVED by the user
-   2026-10-26 and implemented opt-in (`model.view_fusion.mode: late`, `mhcac/late_view_pool.py`);
-   val pilot at 2 seeds with the NB rule: `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.**
+3. Late fusion: per-view MHCAC logits pooled by attention over views. Implemented opt-in
+   (`model.view_fusion.mode: late`, `mhcac/late_view_pool.py`). **Val pilot 2026-10-26 at 2 seeds
+   with the NB rule: STOP, it does not beat OFF** (see "Current evidence"). Do not retry it unchanged.
 4. Train-side: separate LR for `view_fusion`, change the aux-view drop (`p_view_drop`, shipped 0.15).
 5. Seed replicates of ON and OFF to measure the noise bar properly.
 

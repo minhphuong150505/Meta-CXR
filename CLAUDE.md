@@ -1173,7 +1173,15 @@ study (not image) → anchor + ≤1 auxiliary view
   `diagnose_stream_scale.py` refuse it. Pinned by `tests/test_late_view_fusion.py`. ⚠ That
   YAML edit changes the Stage-1 config's size/mtime, so Stage-2 caches and `oracle_mix` draws
   keyed on its file identity change in a checkout that pulls it (see the mtime trap below).
-  Val pilot (2 seeds, NB rule): `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
+  ❌ **Val pilot (2 seeds, NB rule) 2026-10-26: STOP -- late fusion does NOT beat OFF.** LF - OFF,
+  two-seed mean, all val n=1,808: weighted F1 +0.0000 [-0.0017, +0.0017], F1-5 -0.0005
+  [-0.0034, +0.0024] (seeds disagree in sign), so rule 1 fails; rules 2/3 pass. Single-view studies
+  wF1 -0.0024* (within NB/sqrt2 0.0032; their logits ARE the anchor's, so this is MHCAC trained on
+  laterals too), two-view wF1 +0.0021 (CI crosses 0), weighted recall +0.0036*. LF - P15 (early)
+  wF1 +0.0011, F1-5 +0.0011, both crossing 0. The pool barely trained: mean aux weight per finding
+  0.48-0.50 at both seeds, i.e. a plain average of the two views. Bit-identity of single-view studies
+  with/without the aux view re-confirmed on both pilot models. No full run. Record:
+  `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

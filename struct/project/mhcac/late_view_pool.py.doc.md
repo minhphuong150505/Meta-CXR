@@ -58,5 +58,8 @@ Chỉ `torch`. Không LAVIS, nên kiểm được trên máy CPU.
 
 ## Status of evidence
 
-Chưa chạy trên GPU (2026-10-26). Pilot val 2 seed đã được user duyệt; kết quả sẽ ghi
-vào plan trên.
+Đã chạy trên GPU 2026-10-26 (pilot val 2 seed, phase 1b, 60.000 study, 2 epoch). Study một
+view nhận đúng logit của anchor, có hay không có ảnh phụ (kiểm trên cả hai model pilot, 988 study).
+**Kết quả: DỪNG, không thắng OFF** (wF1 trung bình hai seed +0,0000, F1-5 -0,0005). Trọng số gộp
+gần như đứng yên ở 0,5 cho ảnh phụ (0,48-0,50 mỗi finding), tức là trung bình hai view. Chi tiết
+trong plan trên.

@@ -408,7 +408,11 @@ không đặt khóa thì giữ early fusion như mọi run trước. Ở chế �
 loại thêm từng ảnh phụ, rồi `late_view_pool` (`mhcac/late_view_pool.py`, 112 tham số) gộp
 logit theo từng finding. Study một view nhận đúng logit của ảnh chính. Loss =
 0,5 CE(gộp) + 0,5 CE(ảnh chính). Cần `multi_view: true`, `lambda_mpc = lambda_view_consistency = 0`,
-đặt trong khối phase. Chưa chạy GPU; pilot val 2 seed theo quy tắc ngưỡng nhiễu:
+đặt trong khối phase. **Pilot val 2 seed (2026-10-26) theo quy tắc ngưỡng nhiễu: DỪNG, late
+fusion không thắng OFF.** Trung bình hai seed LF - OFF trên toàn val: weighted F1 +0,0000
+[-0,0017; +0,0017], F1-5 -0,0005 [-0,0034; +0,0024], hai seed ngược dấu. Study một view kém nhẹ
+(wF1 -0,0024, trong ngưỡng nhiễu), study hai view nhỉnh nhẹ (wF1 +0,0021, CI qua 0). Bộ gộp hầu như
+không học (trọng số ảnh phụ ~0,5, tức là lấy trung bình). Không chạy full. Chi tiết:
 `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
 
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
