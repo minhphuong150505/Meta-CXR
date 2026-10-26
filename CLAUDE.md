@@ -1148,6 +1148,12 @@ study (not image) → anchor + ≤1 auxiliary view
   NOT cover seed noise; noise bar (all val) wF1 0.0027, F1-5 0.0031, macro recall 0.0110,
   AUROC 0.0276. ON - OFF at pilot budget, two-seed mean F1-5 -0.0015 (no gain). Record:
   `docs/handoff/PLAN-2026-10-26-pilot-seed-noise.md`.
+  **Stage 2 on ON vs OFF Stage-1, val pilot 2026-10-26 -- OFF BETTER by the pre-declared rule**
+  (both retrained, 2026-10-16 refit-pilot recipe, own cutpoint cues, beam 4, 1,360 val): ON' - OFF
+  CheXbert micro F1-14 -0.0171 [-0.0329, -0.0012], BERTScore -0.0006 [-0.0073, +0.0061], all else
+  crosses 0. ON' matched the old arm A on 1,360/1,360 reports: Stage 2 is deterministic at its fixed
+  seed (`fig9.SEED`, no `--seed` flag), so its seed noise is unmeasured. Full Stage 2 not run.
+  Record: `docs/handoff/PLAN-2026-10-26-stage2-fusion-on-off.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

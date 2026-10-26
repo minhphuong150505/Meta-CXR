@@ -112,6 +112,14 @@ The novelty only counts if it survives review. So:
   budget. P50 and SW are worse beyond NB; P30 is noise except views_2 F1-5 +0.0058 (NB
   0.0047). Whether future pilots must also clear NB is the user's decision (proposed, not
   adopted). `docs/handoff/PLAN-2026-10-26-pilot-seed-noise.md`.
+- **Stage 2 ON vs OFF, val pilot (2026-10-26): OFF BETTER by the pre-declared rule.** Stage 2
+  retrained on each Stage-1 (`run_20261005_paper` vs `run_20261024_nomv`), 2026-10-16 refit-pilot
+  recipe (10,000 studies, 476 updates, P2 + LR 3e-4, own cutpoint cues), beam 4 on all 1,360 val.
+  ON' - OFF: CheXbert micro F1-14 -0.0171 [-0.0329, -0.0012] (precision and recall both lower),
+  BERTScore -0.0006 [-0.0073, +0.0061]; every other metric crosses 0. ON' reproduced the old arm A
+  on 1,360/1,360 reports, so Stage 2 is deterministic at its fixed seed and its seed noise is still
+  unmeasured. One seed per arm, two single Stage-1 runs. Full Stage 2 (S2) not run.
+  `docs/handoff/PLAN-2026-10-26-stage2-fusion-on-off.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 
