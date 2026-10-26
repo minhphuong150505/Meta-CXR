@@ -37,6 +37,16 @@ The novelty only counts if it survives review. So:
 - If ON still does not beat OFF, say so plainly and record it. Never present a
   post-hoc test-set observation as a result. A negative, well-controlled result
   is still reportable; a fabricated or cherry-picked one is not.
+- **Noise-bar rule (user decision 2026-10-26, "vẫn áp dụng quy tắc ngưỡng").** A
+  pilot advances, or an ON-vs-OFF claim is made, only if (1) its pre-declared CI
+  rule passes AND (2) the deciding difference exceeds the measured seed-noise bar
+  NB for that metric and subgroup at that budget. A single-seed "*" on AUROC or
+  macro recall is not evidence. Every new plan writes the NB check into its
+  reading rule. NB at the Stage-1 pilot budget (all val): wF1 0.0027, F1-5 0.0031,
+  macro recall 0.0110, AUROC 0.0276 (views_1 / views_2 in
+  `PLAN-2026-10-26-pilot-seed-noise.md`); Stage 2 at its pilot budget:
+  `PLAN-2026-10-26-stage2-seed-noise.md`. Where no NB exists for a budget (full
+  runs), say so and ask the user before treating a CI alone as decisive.
 
 ## Where things stand (2026-10-25)
 
@@ -110,8 +120,8 @@ The novelty only counts if it survives review. So:
   0.0110, AUROC 0.0276; views_2 F1-5 0.0047. **ON - OFF at pilot budget: seed 42 ~0, seed
   17 ON worse (F1-5 -0.0031); two-seed mean -0.0015.** Fusion does not beat OFF at this
   budget. P50 and SW are worse beyond NB; P30 is noise except views_2 F1-5 +0.0058 (NB
-  0.0047). Whether future pilots must also clear NB is the user's decision (proposed, not
-  adopted). `docs/handoff/PLAN-2026-10-26-pilot-seed-noise.md`.
+  0.0047). Future pilots must also clear NB: ADOPTED by the user 2026-10-26 (Rule 2).
+  `docs/handoff/PLAN-2026-10-26-pilot-seed-noise.md`.
 - **Stage 2 ON vs OFF, val pilot (2026-10-26): OFF BETTER by the pre-declared rule.** Stage 2
   retrained on each Stage-1 (`run_20261005_paper` vs `run_20261024_nomv`), 2026-10-16 refit-pilot
   recipe (10,000 studies, 476 updates, P2 + LR 3e-4, own cutpoint cues), beam 4 on all 1,360 val.

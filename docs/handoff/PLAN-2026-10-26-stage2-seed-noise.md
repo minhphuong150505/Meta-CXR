@@ -97,6 +97,6 @@ Consequences, recorded:
 User go-ahead 2026-10-26 ("ok") for the fix, no code change: aborted dir moved to
 `~/s2seed_20261026_abort1`; `touch -r` copied the old checkout's mtime to the new one (content already
 identical); the chain gained a guard that the config's size and `st_mtime_ns` match across checkouts.
-A code fix (draw independent of file mtime) would change every default result and is left to the user.
+A code fix (draw independent of file mtime) would change every default result; by user decision it lives on branch `fix/oracle-mix-stable-key` (`ed0af0a`), not merged. This run does not use it.
 
 ### Attempt 2 — launched once 08:21 (host code `948964e`)

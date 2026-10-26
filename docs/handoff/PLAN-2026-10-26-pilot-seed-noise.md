@@ -131,7 +131,7 @@ Re-read of the earlier pilots, descriptive (|Δ| vs NB):
 All three earlier "stop" verdicts stand. P50 and SW are worse beyond noise; P30 is noise apart from a
 small two-view F1-5 gain.
 
-**Consequences, to be decided by the user (not adopted here).**
+**Consequences.** Point 1 was ADOPTED by the user on 2026-10-26 ("vẫn áp dụng quy tắc ngưỡng"); see the multi-view-novelty skill, Rule 2.
 1. A pilot should not advance on AUROC or macro recall unless the gain also exceeds NB. NB on AUROC
    (~0.03) is larger than any effect seen so far.
 2. The full-run ON − OFF comparisons are one seed per arm too. Step 0c's single-cutpoint wF1 +0.0021

@@ -1147,7 +1147,10 @@ study (not image) → anchor + ≤1 auxiliary view
   moves -0.0159* / -0.0112* between seeds of the same recipe, so the val bootstrap does
   NOT cover seed noise; noise bar (all val) wF1 0.0027, F1-5 0.0031, macro recall 0.0110,
   AUROC 0.0276. ON - OFF at pilot budget, two-seed mean F1-5 -0.0015 (no gain). Record:
-  `docs/handoff/PLAN-2026-10-26-pilot-seed-noise.md`.
+  `docs/handoff/PLAN-2026-10-26-pilot-seed-noise.md`. **Noise-bar rule ADOPTED by the user
+  2026-10-26:** a pilot advances, or an ON-vs-OFF claim is made, only if its pre-declared CI
+  rule passes AND the deciding difference exceeds NB at that budget; a single-seed "*" on
+  AUROC or macro recall is not evidence (multi-view-novelty skill, Rule 2).
   **Stage 2 on ON vs OFF Stage-1, val pilot 2026-10-26 -- OFF BETTER by the pre-declared rule**
   (both retrained, 2026-10-16 refit-pilot recipe, own cutpoint cues, beam 4, 1,360 val): ON' - OFF
   CheXbert micro F1-14 -0.0171 [-0.0329, -0.0012], BERTScore -0.0006 [-0.0073, +0.0061], all else
@@ -1867,7 +1870,9 @@ contains `file_identity()` (size + `mtime_ns`) of the Stage-1 YAML, checkpoint a
 different adapter at the same seed (all 478 tensors differed, from MHCAC 435 vs 429 cue cells).
 To reproduce a run from another checkout, `touch -r` the YAML from the original one and check
 `st_mtime_ns`. Also: arms with different checkpoints / cutpoints / `--stage1-options` get
-different draws. Not fixed in code (a fix changes every default result). Record:
+different draws. Not fixed on this branch (a fix changes every default result); the fix
+(`oracle_cues.draw_key`, draw keyed on the anchor image stem) is kept on branch
+`fix/oracle-mix-stable-key`, not merged, by user decision 2026-10-26. Record:
 `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
 
 ⚠⚠ **ARM A (`medgemma_direct`, `~/ft_only_full`) STOPPED AT 0.86 OF ITS ONE
