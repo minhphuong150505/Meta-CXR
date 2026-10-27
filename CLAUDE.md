@@ -1195,6 +1195,21 @@ study (not image) → anchor + ≤1 auxiliary view
   recall -0.0073*): with one shared MHCAC the aux view helps two-view studies only when MHCAC trains on
   laterals, and that costs the anchor path about as much. Pool again ~0.5 per finding. No full run.
   Record: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+  ❌ **Val evidence package (2026-10-27, inference only): "the lateral view helps Pleural
+  Effusion" NOT CONFIRMED** (pre-declared; formed from step 0's test numbers). On 797 val
+  frontal+lateral studies, A `both − frontal` Pleural Effusion AUROC Pos +0.0056
+  [−0.0009, +0.0129]; positive in both pilot seeds too, but no CI excludes 0. Descriptive
+  only: `auroc_mean` +0.017 to +0.023* in all three models, wF1 / F1-5 flat. A lateral-only
+  pass works through `--options model.data.max_aux_views=0
+  model.data.anchor_priority=[lateral,PA,AP]`. ⚠ Prediction `sample_keys` digest the ANCHOR
+  image's annotation row (`batch["image_id"]`), not the study, so re-key a lateral-anchor
+  pass before pairing. Record: `docs/handoff/PLAN-2026-10-27-multi-view-evidence-val.md`.
+  ❌ **Its follow-up on test (pre-declared, CPU only, step-0 npz): "the lateral view raises
+  `auroc_mean` on frontal+lateral studies" NOT CONFIRMED** -- 1,196 test studies, A `both −
+  frontal` −0.0001 [−0.0080, +0.0105] (val +0.0229*). Not a clean held-out test: step 0 had
+  already shown ~0 on views_2. Test PE AUROC Pos +0.0159* is descriptive only (the PE claim
+  was pre-declared on val and failed). The two effects swap between splits; neither
+  replicates. Record: `docs/handoff/PLAN-2026-10-27-multi-view-test-auroc.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

@@ -154,6 +154,22 @@ The novelty only counts if it survives review. So:
   A direction that gives the aux view its own capacity (view-specific head / adapter, candidate 2)
   is what this points at -- untested. Pool stayed ~0.5 again.
   `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+- **Evidence package on val (2026-10-27, inference only, literature-guided: Hashir 2020,
+  van Tulder 2021): the pre-declared "lateral helps Pleural Effusion" (H1) is NOT CONFIRMED.**
+  On 797 val studies with a frontal anchor + lateral aux, A `both − frontal` Pleural Effusion
+  AUROC Pos +0.0056 [−0.0009, +0.0129]. The direction is positive in A and in both pilot seeds,
+  but no CI excludes 0. The H1 hypothesis came from step 0's TEST numbers, so the claim is
+  dropped. Descriptive only: `both − frontal` raises `auroc_mean` on those studies in all
+  three models (+0.023* / +0.019* / +0.017*), with wF1 / F1-5 flat. Not pre-declared, and
+  test step 0 showed −0.0005, so it is a hypothesis. The Hashir-style missing-view table
+  and the proportion curve are in the plan. `docs/handoff/PLAN-2026-10-27-multi-view-evidence-val.md`.
+- **Test follow-up (2026-10-27, user chose it, CPU only): the val `auroc_mean` gain does NOT
+  replicate.** Pre-declared rule (CI lower > 0, CI alone accepted by the user): 1,196 test
+  frontal+lateral studies, A `both − frontal` `auroc_mean` −0.0001 [−0.0080, +0.0105] -> NOT
+  CONFIRMED. Test PE AUROC Pos +0.0159* is descriptive (PE was pre-declared on val and failed;
+  this number was already known from step 0). Val shows the aggregate gain, test the PE gain:
+  neither effect replicates across splits, so no inference-only multi-view claim stands.
+  `docs/handoff/PLAN-2026-10-27-multi-view-test-auroc.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 
