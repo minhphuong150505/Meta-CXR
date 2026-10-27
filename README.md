@@ -423,6 +423,11 @@ kém ở study một view (so với LF: wF1 +0,0023, F1-5 +0,0037, có ý nghĩa
 hai view (so với LF: wF1 -0,0029, macro recall -0,0073, có ý nghĩa). Nghĩa là với một MHCAC dùng
 chung, ảnh phụ chỉ giúp khi MHCAC được học trên ảnh nghiêng, và việc học đó làm ảnh chính kém đi gần
 bằng chừng ấy. Không chạy full. Chi tiết: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+Biến thể thứ ba (user đã duyệt 2026-10-27): `model.view_fusion.late_aux_head: true` (vắng = tắt) cho ảnh
+phụ một MHCAC riêng (`mhcac_aux`, khởi đầu là bản sao MHCAC chính) với loss riêng theo view, kiểu AuxLoss,
+và cắt mọi đường gradient từ ảnh phụ sang nhánh ảnh chính, để MHCAC chính học đúng mục tiêu của OFF.
+Không sửa YAML; đặt key và thêm `mhcac_aux` vào danh sách `trainable` / `fade_in` của phase 1b qua dòng
+lệnh. **Chưa chạy trên GPU.** Chi tiết: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
 
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở

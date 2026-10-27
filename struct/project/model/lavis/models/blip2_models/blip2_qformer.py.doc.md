@@ -162,7 +162,8 @@ dòng đọc ở đây = key đó không làm gì.
 | `_create_mask` | Mask ngẫu nhiên patch — ⚠ không thấy caller trong forward |
 | `_stash_prefusion` | Giữ tensor pre-fusion khi loss phụ cần |
 | `_fuse` | Wrapper gọi `ViewFusionModule[name]` |
-| `_late_view_logits` | 2026-10-26, chỉ ở `view_fusion.mode: late`: chạy MHCAC (cùng trọng số) trên ảnh phụ thật đã cất ở `_last_late_aux`, gộp với logit anchor qua `late_view_pool`; trả nguyên logit anchor khi không có ảnh phụ thật hoặc ở `early`. Với `late_detach_aux: true` lượt ảnh phụ (ln_vision / projector / MHCAC) chạy dưới `torch.no_grad()` và raise nếu logit ảnh phụ còn `requires_grad`; lời gọi `late_view_pool` nằm ngoài nên pool vẫn có gradient |
+| `_late_view_logits` | 2026-10-26, chỉ ở `view_fusion.mode: late`: chạy MHCAC (cùng trọng số) trên ảnh phụ thật đã cất ở `_last_late_aux`, gộp với logit anchor qua `late_view_pool`; trả nguyên logit anchor khi không có ảnh phụ thật hoặc ở `early`. Với `late_detach_aux: true` lượt ảnh phụ (ln_vision / projector / MHCAC) chạy dưới `torch.no_grad()` và raise nếu logit ảnh phụ còn `requires_grad`; lời gọi `late_view_pool` nằm ngoài nên pool vẫn có gradient. Từ 2026-10-27 phần này nằm trong `mhcac.late_view_pool.late_aux_view_logits` (kết quả bit-identical). Với `late_aux_head: true` ảnh phụ đi qua `mhcac_aux`, projector `no_grad`, text detach, pool nhận logit anchor đã detach; khi train, `(aux_logits, aux_mask)` được cất ở `_last_late_aux_logits` cho `late_aux_head_loss` trong `forward` |
+| `sync_aux_head_from_anchor` | 2026-10-27, chỉ khi `late_aux_head`: chép `mhcac` vào `mhcac_aux` từng tensor; `pretraining/train.py:prepare_phase_model` gọi sau khi nạp checkpoint init không có `mhcac_aux.*` |
 | `_gather_with_local_grad` | All-gather giữ grad ở rank cục bộ |
 | `_batch_mask` | Đọc mask từ samples, có fallback |
 | `initialize_expert_tokens` | Khởi tạo expert token từ embedding tên bệnh lý |

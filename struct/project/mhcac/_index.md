@@ -127,6 +127,7 @@ Trong khối `model:` của run YAML:
 | `view_fusion.mode` | vắng = `early` | `late` (2026-10-26): không dựng `view_fusion` / `stream_adapters` / `mpc_heads`, dựng `late_view_pool`; cần `multi_view: true`, `lambda_mpc = lambda_view_consistency = 0` |
 | `view_fusion.late_anchor_weight` | `0.5` | Chỉ ở `late`: loss = `(1-w) CE(pooled) + w CE(anchor)` |
 | `view_fusion.late_detach_aux` | vắng = `false` | Chỉ ở `late` (2026-10-26, ngoài `late` bị từ chối): lượt ảnh phụ chạy `no_grad`, MHCAC / projector / text tower chỉ học từ anchor; pool vẫn train. Không có trong YAML; đặt qua `run.phases.phase1b.model.view_fusion.late_detach_aux=true` |
+| `view_fusion.late_aux_head` | vắng = `false` | Chỉ ở `late` (2026-10-27; ngoài `late` hoặc cùng `late_detach_aux` bị từ chối): dựng `mhcac_aux` (bản sao `mhcac`) cho ảnh phụ; projector chạy `no_grad` và text bị detach cho nhánh phụ, pool nhận logit anchor đã detach; loss `CE(anchor) + CE(ảnh phụ) + CE(pooled)`. Không có trong YAML; đặt qua `run.phases.phase1b.model.view_fusion.late_aux_head=true` và thêm `mhcac_aux` vào `trainable` / `transition.fade_in` của pha qua dòng lệnh |
 | `loss.mpc_temperature` | 0.07 | Từ 2026-10-09; EVOKE dùng 0.5 |
 | `loss.lambda_*` | xem [ARCHITECTURE.md §2.6](../_meta/ARCHITECTURE.md#26-tổng-hợp-loss) | Trọng số loss, gồm `lambda_explanation` conditional |
 | `explanation.*` | top-k, warmup, danh sách stream | Chỉ có hiệu lực khi lambda > 0 |

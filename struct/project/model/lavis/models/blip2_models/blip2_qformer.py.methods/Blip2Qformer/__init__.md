@@ -104,3 +104,6 @@ Không encoder nào bật → `ValueError` (`:174`) · `itc_queue_size < 0` → 
 RNG. `late_anchor_weight` (0.5) cũng được pop khỏi `view_fusion_cfg`, và
 `late_detach_aux` (vắng = `False`, 2026-10-26) — bật mà không ở `late` thì `ValueError`
 (early fusion có `detach_aux` riêng). Plan: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+`late_aux_head` (vắng = `False`, 2026-10-27) — bật mà không ở `late`, hoặc cùng `late_detach_aux`, thì
+`ValueError`; bật thì ngay sau `self.mhcac` dựng `self.mhcac_aux = copy.deepcopy(self.mhcac)` (tắt: `None`,
+không tiêu RNG, state dict không đổi). Plan: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.

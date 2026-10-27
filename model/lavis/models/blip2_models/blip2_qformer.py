@@ -5,6 +5,7 @@
  For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
 """
 import contextlib
+import copy
 import logging
 import math
 from types import SimpleNamespace
@@ -67,6 +68,8 @@ from mhcac.loss import (
 from mhcac.view_fusion import ViewFusionModule, real_aux_rows, scatter_aux_rows
 from mhcac.late_view_pool import (
     LateViewPooling,
+    late_aux_head_loss,
+    late_aux_view_logits,
     late_classification_loss,
     resolve_view_fusion_mode,
 )
@@ -578,8 +581,23 @@ class Blip2Qformer(Blip2Base):
                 "model.view_fusion.late_detach_aux needs model.view_fusion.mode: late "
                 "(early fusion has its own detach_aux); it would silently do nothing here"
             )
+        # model.view_fusion.late_aux_head (2026-10-27): absent = False. True gives the
+        # aux views their own MHCAC (mhcac_aux, built below as a copy of mhcac) and
+        # cuts every gradient path from the aux side into the anchor path
+        # (docs/handoff/PLAN-2026-10-27-late-aux-head.md).
+        self.late_aux_head = bool(vf_cfg.pop("late_aux_head", False))
+        if self.late_aux_head and not (self.multi_view and self.view_fusion_mode == "late"):
+            raise ValueError(
+                "model.view_fusion.late_aux_head needs model.multi_view: true and "
+                "model.view_fusion.mode: late; it would silently do nothing here"
+            )
+        if self.late_aux_head and self.late_detach_aux:
+            raise ValueError(
+                "model.view_fusion.late_aux_head and late_detach_aux are mutually exclusive"
+            )
         self.late_view_pool = None
         self._last_late_aux = None
+        self._last_late_aux_logits = None
         # Pre-fusion streams are only stashed when an auxiliary loss consumes
         # them; otherwise holding the references just wastes memory.
         self._keep_prefusion = bool(multi_view) and (
@@ -681,6 +699,11 @@ class Blip2Qformer(Blip2Base):
             layer_order=mhcac_layer_order,
             text_mask_mode=mhcac_text_mask_mode,
         )
+        # Separate aux-view head (late_aux_head). Absent key: no module and no RNG
+        # draw, so the state dict and every default run are unchanged. A deep copy
+        # starts it from mhcac's init; sync_aux_head_from_anchor re-copies it after a
+        # phase loads an init checkpoint that holds no mhcac_aux.
+        self.mhcac_aux = copy.deepcopy(self.mhcac) if self.late_aux_head else None
 
         # sqrt(negative prevalence / class prevalence), capped at 10, computed
         # from the full study-level training cohort (negative, positive, uncertain).
@@ -1145,12 +1168,15 @@ class Blip2Qformer(Blip2Base):
         goes through the same ln_vision / shared projector / MHCAC as the anchor
         (same weights), with the same report text and row mask when training is
         text-guided; only its logits are used. A batch, or a study, without a
-        real aux view gets the anchor logits unchanged.
+        real aux view gets the anchor logits unchanged. With ``late_aux_head`` the
+        aux view goes through ``mhcac_aux`` instead, and the gradient split of
+        ``late_aux_view_logits`` keeps the aux side out of the anchor path.
         """
         if getattr(self, "late_view_pool", None) is None:
             return anchor_logits
         stash = self._last_late_aux
         self._last_late_aux = None
+        self._last_late_aux_logits = None
         if stash is None:
             return anchor_logits
         aux_streams, aux_mask, anchor_view_id, aux_view_ids = stash
@@ -1165,31 +1191,36 @@ class Blip2Qformer(Blip2Base):
         rows = torch.arange(batch * views, device=anchor_logits.device) // views
         rows = rows if keep is None else rows[keep]
 
-        def take(x):
-            return None if x is None else x[rows]
-
-        detach = bool(getattr(self, "late_detach_aux", False))
-        # Only the aux pass is under no_grad; the pool call below keeps its gradient.
-        with torch.no_grad() if detach else contextlib.nullcontext():
+        def aux_shared_fn():
             raw = {}
             for name in names:
                 flat = aux_streams[name].flatten(0, 1)
                 flat = flat if keep is None else flat[keep]
                 raw[name] = self.ln_vision(flat) if name == "biovil" else flat
-            aux_shared = self._apply_encoder_ablation(self.shared_visual_projector(raw))
-            aux_logits, _, _, _, _ = self.mhcac(
-                aux_shared,
-                text_embeddings=take(text_embeddings),
-                text_attention_mask=take(text_attention_mask),
-                labels=None,
-                text_row_mask=take(text_row_mask),
-            )
-        if detach and aux_logits.requires_grad:
-            raise RuntimeError("late_detach_aux: the aux-view logits still require grad")
-        aux_logits = scatter_aux_rows(aux_logits.to(anchor_logits.dtype), keep, batch, views)
-        return self.late_view_pool(
-            anchor_logits, aux_logits, aux_mask, anchor_view_id, aux_view_ids
+            return self._apply_encoder_ablation(self.shared_visual_projector(raw))
+
+        separate = getattr(self, "mhcac_aux", None) is not None
+        pooled, aux_logits = late_aux_view_logits(
+            anchor_logits, aux_shared_fn,
+            self.mhcac_aux if separate else self.mhcac,
+            self.late_view_pool, aux_mask, anchor_view_id, aux_view_ids, keep, rows,
+            text_embeddings=text_embeddings,
+            text_attention_mask=text_attention_mask,
+            text_row_mask=text_row_mask,
+            detach_aux=bool(getattr(self, "late_detach_aux", False)),
+            separate_head=separate,
         )
+        if separate and self.training:
+            # Read (and cleared) by forward() for late_aux_head_loss.
+            self._last_late_aux_logits = (aux_logits, aux_mask)
+        return pooled
+
+    @torch.no_grad()
+    def sync_aux_head_from_anchor(self):
+        """Copy ``mhcac`` into ``mhcac_aux`` tensor by tensor (late_aux_head only)."""
+        if getattr(self, "mhcac_aux", None) is None:
+            raise ValueError("sync_aux_head_from_anchor needs model.view_fusion.late_aux_head")
+        self.mhcac_aux.load_state_dict(self.mhcac.state_dict())
 
     def initialize_expert_tokens(self, chexpert_cols, embed_dim):
         # Initialize expert tokens based on text embeddings of abnormality names
@@ -2064,6 +2095,15 @@ class Blip2Qformer(Blip2Base):
                 )
         if self.lambda_cls <= 0:
             cls_loss = zero
+        elif late_on and getattr(self, "mhcac_aux", None) is not None:
+            aux_stash = self._last_late_aux_logits
+            self._last_late_aux_logits = None
+            cls_loss, _ = late_aux_head_loss(
+                self.cls_loss_fn, classification_logits, student_logits,
+                None if aux_stash is None else aux_stash[0], cls_labels,
+                None if aux_stash is None else aux_stash[1],
+                sample_mask=classification_mask,
+            )
         elif late_on:
             cls_loss = late_classification_loss(
                 self.cls_loss_fn, classification_logits, student_logits, cls_labels,
@@ -2603,6 +2643,7 @@ class Blip2Qformer(Blip2Base):
             "mode": view_fusion_cfg_raw.get("mode"),
             "late_anchor_weight": float(view_fusion_cfg_raw.get("late_anchor_weight", 0.5)),
             "late_detach_aux": cfg_bool(view_fusion_cfg_raw.get("late_detach_aux", False)),
+            "late_aux_head": cfg_bool(view_fusion_cfg_raw.get("late_aux_head", False)),
         }
         loss_cfg = cfg.get("loss", {}) or {}
         lambda_mpc = float(loss_cfg.get("lambda_mpc", 0.0))

@@ -183,6 +183,9 @@ The novelty only counts if it survives review. So:
    **Variant `model.view_fusion.late_detach_aux: true` (aux-view pass without gradient) -- val pilot
    2026-10-27: STOP** (see "Current evidence"). Do not retry it unchanged.
    `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+   **Variant `model.view_fusion.late_aux_head: true` (separate `mhcac_aux` + per-view loss, AuxLoss-style,
+   no aux gradient into the anchor path) -- approved and implemented 2026-10-27, pilot pending.**
+   `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
 4. Train-side: separate LR for `view_fusion`, change the aux-view drop (`p_view_drop`, shipped 0.15).
 5. Seed replicates of ON and OFF to measure the noise bar properly.
 

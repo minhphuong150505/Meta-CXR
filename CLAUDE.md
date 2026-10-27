@@ -1195,6 +1195,17 @@ study (not image) → anchor + ≤1 auxiliary view
   recall -0.0073*): with one shared MHCAC the aux view helps two-view studies only when MHCAC trains on
   laterals, and that costs the anchor path about as much. Pool again ~0.5 per finding. No full run.
   Record: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+  🧪 **`model.view_fusion.late_aux_head: true` (opt-in 2026-10-27, user-approved; absent = false = the LF
+  path, bit-identical):** a second MHCAC, `mhcac_aux` (a deep copy of `mhcac`, re-copied by
+  `prepare_phase_model` when the init checkpoint holds no `mhcac_aux.*`), classifies the aux views; loss
+  `CE(anchor) + CE(aux views) + CE(pooled)` (`late_aux_head_loss`). Every gradient path from the aux side
+  into the anchor path is cut in `late_view_pool.late_aux_view_logits`: aux projection under `no_grad`,
+  report text detached, the pool reads `z_anchor.detach()` -- so `mhcac`, the projector and the text
+  tower train on exactly OFF's objective (a CPU test checks the gradients; each cut removed fails it).
+  Refused outside `late` and together with `late_detach_aux`. Not in the YAML: set
+  `run.phases.phase1b.model.view_fusion.late_aux_head=true` AND add `mhcac_aux` to
+  `run.phases.phase1b.trainable` and `transition.fade_in` on the command line (`mhcac` does not match it as
+  a prefix). **Not yet run on GPU.** Plan, gates, pilot rule: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
   ❌ **Val evidence package (2026-10-27, inference only): "the lateral view helps Pleural
   Effusion" NOT CONFIRMED** (pre-declared; formed from step 0's test numbers). On 797 val
   frontal+lateral studies, A `both − frontal` Pleural Effusion AUROC Pos +0.0056

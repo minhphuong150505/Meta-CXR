@@ -4,7 +4,10 @@ Pins the guarantees of docs/handoff/PLAN-2026-10-26-late-view-fusion.md that a
 CPU box can check: a single-view study gets exactly its anchor logits, padded
 slots are never read, zero-init is the mean of the real views, the refusals,
 the loss of a single-view study is the OFF loss, and the default (absent key)
-path builds nothing new. No GPU and no dataset required.
+path builds nothing new. Also the aux-pass gradient split of LD
+(``late_detach_aux``) and of the separate aux head (``late_aux_head``,
+docs/handoff/PLAN-2026-10-27-late-aux-head.md), on tiny stand-in modules.
+No GPU and no dataset required.
 """
 from pathlib import Path
 
@@ -14,14 +17,18 @@ import yaml
 
 from mhcac.late_view_pool import (
     LateViewPooling,
+    late_aux_head_loss,
+    late_aux_view_logits,
     late_classification_loss,
     resolve_view_fusion_mode,
 )
 from mhcac.loss import ClassificationLoss
+from mhcac.view_fusion import real_aux_rows
 
 _ROOT = Path(__file__).resolve().parents[1]
 _CONFIG = _ROOT / "pretraining" / "configs" / "mimic_cxr_full.yaml"
 _QFORMER = _ROOT / "model" / "lavis" / "models" / "blip2_models" / "blip2_qformer.py"
+_TRAIN = _ROOT / "pretraining" / "train.py"
 
 B, N, F, C = 4, 2, 14, 3
 
@@ -205,20 +212,160 @@ def test_late_detach_aux_is_off_by_default_and_refused_outside_late():
     assert "late_detach_aux" not in cfg["model"]["view_fusion"]
 
 
-def test_late_detach_aux_wraps_the_aux_pass_and_not_the_pool():
+def test_the_aux_pass_goes_through_the_shared_helper():
     _, helper = _late_helper_source()
-    guard = "        with torch.no_grad() if detach else contextlib.nullcontext():\n"
-    assert helper.count(guard) == 1
-    inside = helper[helper.index(guard) + len(guard):]
-    inside = inside[: inside.index("\n        if detach and aux_logits.requires_grad:")]
-    # every line of the aux pass is indented under the guard
-    assert all(line.startswith("            ") or not line.strip() for line in inside.splitlines())
-    assert "self.shared_visual_projector(raw)" in inside
-    assert "self.mhcac(" in inside
-    assert "late_view_pool" not in inside
-    after = helper[helper.index("if detach and aux_logits.requires_grad:"):]
-    assert "return self.late_view_pool(" in after
-    assert 'raise RuntimeError("late_detach_aux: the aux-view logits still require grad")' in after
+    assert helper.count("late_aux_view_logits(") == 1
+    assert "detach_aux=bool(getattr(self, \"late_detach_aux\", False))," in helper
+    assert "separate_head=separate," in helper
+    assert "self.mhcac_aux if separate else self.mhcac," in helper
+
+
+D, P, T = 8, 5, 3
+
+
+class _Head(torch.nn.Module):
+    """MHCAC stand-in: same call signature and 5-tuple return, reads tokens and text."""
+
+    def __init__(self, seed):
+        super().__init__()
+        torch.manual_seed(seed)
+        self.lin = torch.nn.Linear(D, F * C)
+
+    def forward(self, shared, text_embeddings=None, text_attention_mask=None,
+                labels=None, text_row_mask=None):
+        x = shared.mean(1)
+        if text_embeddings is not None:
+            x = x + text_embeddings.mean(1)
+        return self.lin(x).view(-1, F, C), None, None, None, None
+
+
+def _late_setup(separate=False, detach=False, seed=3, anchor_grad=True):
+    """Projector, text tower, anchor head, aux head and pool wired as Blip2Qformer does.
+
+    ``anchor_grad=False`` computes the anchor logits without gradient, so whatever
+    gradient the modules then receive came from the aux side alone.
+    """
+    torch.manual_seed(seed)
+    proj = torch.nn.Linear(D, D)
+    text_tower = torch.nn.Linear(D, D)
+    anchor_head = _Head(10)
+    aux_head = _Head(11) if separate else anchor_head
+    pool = _pool()
+    _, _, aux_mask, av, xv = _inputs()
+    anchor_raw = torch.randn(B, P, D)
+    aux_raw = torch.randn(B * N, P, D)                 # frozen encoder output
+    text = text_tower(torch.randn(B, T, D))
+    with torch.enable_grad() if anchor_grad else torch.no_grad():
+        anchor_logits, *_ = anchor_head(proj(anchor_raw), text_embeddings=text)
+    keep = real_aux_rows(aux_mask, B * N, anchor_logits.device)
+    rows = (torch.arange(B * N) // N)[keep]
+    pooled, aux_logits = late_aux_view_logits(
+        anchor_logits, lambda: proj(aux_raw[keep]), aux_head, pool, aux_mask, av, xv,
+        keep, rows, text_embeddings=text, detach_aux=detach, separate_head=separate,
+    )
+    mods = {"proj": proj, "text": text_tower, "anchor": anchor_head,
+            "aux": aux_head, "pool": pool}
+    return mods, anchor_logits, pooled, aux_logits, aux_mask
+
+
+def _grads(loss, module):
+    g = torch.autograd.grad(loss, list(module.parameters()), retain_graph=True, allow_unused=True)
+    return sum(0.0 if x is None else float(x.abs().sum()) for x in g)
+
+
+def _loss_and_labels():
+    torch.manual_seed(5)
+    loss_fn = ClassificationLoss(class_weights=[[1.0, 0.8, 1.5]] * F)
+    labels = torch.randint(0, C, (B, F))
+    labels[1, 2] = -100
+    return loss_fn, labels
+
+
+def test_aux_head_side_never_reaches_the_anchor_path():
+    """late_aux_head: CE(aux) + CE(pooled) train mhcac_aux and the pool, nothing else."""
+    mods, anchor_logits, pooled, aux_logits, aux_mask = _late_setup(separate=True)
+    loss_fn, labels = _loss_and_labels()
+    total, (l_anchor, l_aux, l_pooled) = late_aux_head_loss(
+        loss_fn, pooled, anchor_logits, aux_logits, labels, aux_mask)
+    side = l_aux + l_pooled
+    for name in ("proj", "text", "anchor"):
+        assert _grads(side, mods[name]) == 0.0, name
+    assert _grads(side, mods["aux"]) > 0
+    assert _grads(side, mods["pool"]) > 0
+    # so the anchor path's gradient under the full loss is exactly OFF's CE(anchor)
+    for name in ("proj", "text", "anchor"):
+        full = torch.autograd.grad(total, list(mods[name].parameters()), retain_graph=True)
+        off = torch.autograd.grad(l_anchor, list(mods[name].parameters()), retain_graph=True)
+        assert all(torch.equal(a, b) for a, b in zip(full, off)), name
+
+
+def test_aux_head_keeps_single_view_studies_at_their_anchor_logits():
+    _, anchor_logits, pooled, aux_logits, aux_mask = _late_setup(separate=True)
+    assert torch.equal(pooled[0], anchor_logits[0])          # study 0 has no aux view
+    assert not torch.equal(pooled[2], anchor_logits[2])
+    assert aux_logits.shape == (B, N, F, C)
+    assert torch.equal(aux_logits[0], torch.zeros(N, F, C))   # padded slots stay zero
+
+
+def test_late_detach_aux_trains_only_the_pool_from_the_aux_side():
+    mods, _, pooled, aux_logits, _ = _late_setup(detach=True, anchor_grad=False)
+    assert not aux_logits.requires_grad
+    loss = pooled[1:].sum()
+    for name in ("proj", "text", "anchor"):
+        assert _grads(loss, mods[name]) == 0.0, name
+    assert _grads(loss, mods["pool"]) > 0
+
+
+def test_lf_path_sends_the_aux_gradient_into_the_shared_path():
+    mods, _, pooled, aux_logits, _ = _late_setup(anchor_grad=False)
+    assert aux_logits.requires_grad
+    loss = pooled[1:].sum()
+    for name in ("proj", "text", "anchor", "pool"):         # mhcac is the aux head in LF
+        assert _grads(loss, mods[name]) > 0, name
+
+
+def test_aux_head_and_detach_aux_are_mutually_exclusive():
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        _late_setup(separate=True, detach=True)
+
+
+def test_aux_head_loss_is_the_sum_of_its_three_terms():
+    loss_fn, labels = _loss_and_labels()
+    torch.manual_seed(6)
+    anchor, aux, aux_mask, _, _ = _inputs()
+    pooled = torch.randn(B, F, C)
+    mask = torch.tensor([True, True, True, False])
+    total, (la, lx, lp) = late_aux_head_loss(loss_fn, pooled, anchor, aux, labels, aux_mask,
+                                             sample_mask=mask)
+    assert torch.allclose(la, loss_fn(anchor, labels, sample_mask=mask))
+    assert torch.allclose(lp, loss_fn(pooled, labels, sample_mask=mask & aux_mask.any(1)))
+    flat_mask = aux_mask.reshape(-1) & mask.repeat_interleave(N)
+    flat_labels = labels.repeat_interleave(N, dim=0)
+    assert torch.allclose(lx, loss_fn(aux.flatten(0, 1), flat_labels, sample_mask=flat_mask))
+    # slot (b, n) is scored against study b's labels
+    assert torch.equal(flat_labels[2 * N + 1], labels[2])
+    assert torch.allclose(total, la + lx + lp)
+    # a batch with no aux view: exactly the OFF loss
+    off, parts = late_aux_head_loss(loss_fn, anchor, anchor, None, labels, None, sample_mask=mask)
+    assert torch.equal(off, loss_fn(anchor, labels, sample_mask=mask))
+    assert float(parts[1]) == 0.0 and float(parts[2]) == 0.0
+
+
+def test_late_aux_head_is_off_by_default_and_refused_outside_late():
+    source, _ = _late_helper_source()
+    assert 'self.late_aux_head = bool(vf_cfg.pop("late_aux_head", False))' in source
+    assert ('if self.late_aux_head and not (self.multi_view and self.view_fusion_mode == "late"):'
+            in source)
+    assert "if self.late_aux_head and self.late_detach_aux:" in source
+    assert "self.mhcac_aux = copy.deepcopy(self.mhcac) if self.late_aux_head else None" in source
+    assert '"late_aux_head": cfg_bool(view_fusion_cfg_raw.get("late_aux_head", False)),' in source
+    body = source[source.index("    def forward(self, samples):"):]
+    assert 'elif late_on and getattr(self, "mhcac_aux", None) is not None:' in body
+    cfg = yaml.safe_load(_CONFIG.read_text())
+    assert "late_aux_head" not in cfg["model"]["view_fusion"]
+    train = _TRAIN.read_text()
+    assert 'name.startswith("mhcac_aux.") for name in state' in train
+    assert "model.sync_aux_head_from_anchor()" in train
 
 
 def test_no_grad_pass_still_trains_the_pool():

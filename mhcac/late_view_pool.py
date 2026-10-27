@@ -15,15 +15,24 @@ Guaranteed by construction: a study with one real view gets exactly its anchor
 logits (softmax over one element is 1). Not guaranteed: MHCAC is also trained on
 the auxiliary (mostly lateral) views, so single-view accuracy can still move.
 
+Separate aux head (opt-in since 2026-10-27, ``model.view_fusion.late_aux_head``;
+plan ``docs/handoff/PLAN-2026-10-27-late-aux-head.md``): the aux views go through a
+second MHCAC, ``mhcac_aux``, and nothing on the aux side sends gradient into the
+anchor path -- see :func:`late_aux_view_logits` and :func:`late_aux_head_loss`.
+
 Depends on torch only, so every invariant is testable on a CPU box
 (``tests/test_late_view_fusion.py``).
 """
 
 from __future__ import annotations
 
+import contextlib
+
 import torch
 from torch import nn
 from torch.nn import functional as F
+
+from mhcac.view_fusion import scatter_aux_rows
 
 VIEW_FUSION_MODES = ("early", "late")
 
@@ -185,3 +194,86 @@ def late_classification_loss(cls_loss_fn, pooled_logits, anchor_logits, labels,
         (1.0 - w) * cls_loss_fn(pooled_logits, labels, sample_mask=sample_mask)
         + w * cls_loss_fn(anchor_logits, labels, sample_mask=sample_mask)
     )
+
+
+def late_aux_view_logits(anchor_logits, aux_shared_fn, head, pool, aux_mask,
+                         anchor_view_id, aux_view_ids, keep, rows, *,
+                         text_embeddings=None, text_attention_mask=None,
+                         text_row_mask=None, detach_aux: bool = False,
+                         separate_head: bool = False):
+    """Classify the real aux views and pool them with the anchor -> ``(pooled, aux_logits)``.
+
+    ``aux_shared_fn()`` returns the projected tokens of the real aux slots (``keep``
+    selects them from the ``B * N`` flat slots, ``rows`` maps each to its study);
+    ``head`` is the MHCAC that classifies them; ``aux_logits`` comes back
+    ``[B, N, F, C]`` with zeros on padded slots.
+
+    - ``detach_aux`` (``late_detach_aux``, LD): projection and head run without
+      gradient; only the pool trains from the aux side.
+    - ``separate_head`` (``late_aux_head``, AH): ``head`` is ``mhcac_aux``. The
+      projection runs without gradient, the report text is detached, and the pool
+      receives the anchor logits detached. So the aux side trains ``head`` and
+      ``pool`` only, and never the projector, the text tower or the anchor MHCAC.
+    - neither (LF): everything carries gradient.
+    """
+    if detach_aux and separate_head:
+        raise ValueError("late_detach_aux and late_aux_head are mutually exclusive")
+
+    def take(x):
+        return None if x is None else x[rows]
+
+    batch, views = aux_mask.shape[:2]
+    no_grad_projection = detach_aux or separate_head
+    with torch.no_grad() if no_grad_projection else contextlib.nullcontext():
+        aux_shared = aux_shared_fn()
+    text = take(text_embeddings)
+    if separate_head and text is not None:
+        text = text.detach()
+    with torch.no_grad() if detach_aux else contextlib.nullcontext():
+        aux_logits, _, _, _, _ = head(
+            aux_shared,
+            text_embeddings=text,
+            text_attention_mask=take(text_attention_mask),
+            labels=None,
+            text_row_mask=take(text_row_mask),
+        )
+    if detach_aux and aux_logits.requires_grad:
+        raise RuntimeError("late_detach_aux: the aux-view logits still require grad")
+    aux_logits = scatter_aux_rows(aux_logits.to(anchor_logits.dtype), keep, batch, views)
+    pooled = pool(
+        anchor_logits.detach() if separate_head else anchor_logits,
+        aux_logits, aux_mask, anchor_view_id, aux_view_ids,
+    )
+    return pooled, aux_logits
+
+
+def late_aux_head_loss(cls_loss_fn, pooled_logits, anchor_logits, aux_logits, labels,
+                       aux_mask, sample_mask=None):
+    """``CE(anchor) + CE(aux views) + CE(pooled)`` -> ``(total, (anchor, aux, pooled))``.
+
+    The separate-aux-head objective (``late_aux_head``). CE(anchor) runs on every
+    labelled study with weight 1, as in fusion OFF. CE(aux) runs on every real aux
+    slot against its study's labels (``labels`` repeated per slot, matching
+    ``aux_logits.flatten(0, 1)``); CE(pooled) on the studies with a real aux view.
+    ``aux_logits=None`` (a batch with no aux view) leaves CE(anchor) alone. The
+    gradient split is :func:`late_aux_view_logits`'s job, not this function's.
+    """
+    batch = anchor_logits.shape[0]
+    if sample_mask is None:
+        mask = torch.ones(batch, dtype=torch.bool, device=anchor_logits.device)
+    else:
+        mask = torch.as_tensor(sample_mask, device=anchor_logits.device, dtype=torch.bool).reshape(-1)
+    loss_anchor = cls_loss_fn(anchor_logits, labels, sample_mask=mask)
+    if aux_logits is None or aux_mask is None or aux_logits.shape[1] == 0:
+        zero = loss_anchor * 0.0
+        return loss_anchor, (loss_anchor, zero, zero)
+    views = int(aux_logits.shape[1])
+    if tuple(aux_mask.shape) != (batch, views):
+        raise ValueError(f"aux_mask must be [{batch}, {views}]; got {tuple(aux_mask.shape)}")
+    aux_mask = aux_mask.to(device=anchor_logits.device, dtype=torch.bool)
+    loss_pooled = cls_loss_fn(pooled_logits, labels, sample_mask=mask & aux_mask.any(dim=1))
+    slot_valid = aux_mask.reshape(-1) & mask.repeat_interleave(views)
+    loss_aux = cls_loss_fn(
+        aux_logits.flatten(0, 1), labels.repeat_interleave(views, dim=0), sample_mask=slot_valid
+    )
+    return loss_anchor + loss_aux + loss_pooled, (loss_anchor, loss_aux, loss_pooled)

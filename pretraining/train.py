@@ -114,6 +114,16 @@ def prepare_phase_model(model, spec, cfg):
             spec.name, init_path, len(state), len(result.missing_keys),
             result.missing_keys[:5],
         )
+        # late_aux_head: an init checkpoint without mhcac_aux (every phase-1a one)
+        # starts the aux head as a copy of the loaded anchor MHCAC.
+        if getattr(model, "mhcac_aux", None) is not None and not any(
+            name.startswith("mhcac_aux.") for name in state
+        ):
+            model.sync_aux_head_from_anchor()
+            logging.info(
+                "Phase %s: mhcac_aux not in %s; copied from the loaded mhcac "
+                "(late_aux_head)", spec.name, init_path,
+            )
     never = () if getattr(model, "itc_temp_learnable", True) else ("temp",)
     extra = tuple(sorted(getattr(model, "encoder_finetune_param_names", ()) or ()))
     if extra and not spec.unfreeze_encoder_blocks:

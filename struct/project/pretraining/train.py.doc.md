@@ -9,6 +9,9 @@ lỗi), rồi `apply_trainable`; gắn `model.phase_spec` cho runner.
 Từ 2026-10-15 trước khi nạp nó bỏ các tensor dưới `init_from.skip`
 (`phases.filter_init_state`; skip không khớp tensor nào → lỗi) và ghi log "NOT loaded from":
 các module đó giữ khởi tạo của chính model (Q-Former BLIP-2 cho `phase1q`).
+Từ 2026-10-27: nếu model có `mhcac_aux` (`view_fusion.late_aux_head`) mà checkpoint init không chứa
+tensor `mhcac_aux.*` (mọi checkpoint phase 1a), gọi `model.sync_aux_head_from_anchor()` sau khi nạp và
+ghi log "mhcac_aux not in ...; copied from the loaded mhcac".
 
 # `pretraining/train.py`
 

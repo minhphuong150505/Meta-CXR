@@ -38,6 +38,8 @@ aux (chỉ hàng thật) ─► encoder (no_grad) ─► ln_vision / projector �
 | `LateViewPooling(num_findings=14, num_classes=3, num_view_types=4)` | `s[v,f] = w_f · [log_softmax(z[v,f]), onehot(loại view)] + b_f`; softmax trên các view THẬT; `out[f] = Σ_v a[v,f] z[v,f]`. `w = b = 0` lúc khởi tạo → trung bình các view thật. 14 × 8 = 112 tham số |
 | `LateViewPooling.weights(...)` | Trọng số gộp `[B, 1+N, 14]`, anchor đứng đầu, bằng 0 ở slot đệm |
 | `late_classification_loss(cls_loss_fn, pooled, anchor, labels, sample_mask, anchor_weight=0.5)` | `(1-w) CE(pooled) + w CE(anchor)`. Study một view: pooled == anchor → đúng loss của OFF |
+| `late_aux_view_logits(anchor_logits, aux_shared_fn, head, pool, aux_mask, anchor_view_id, aux_view_ids, keep, rows, *, text_..., detach_aux, separate_head)` | 2026-10-27. Lượt ảnh phụ dùng chung cho LF / LD / AH, gọi từ `Blip2Qformer._late_view_logits`; trả `(pooled, aux_logits [B,N,F,C])`. `detach_aux` (LD): projector + head dưới `no_grad`. `separate_head` (AH, `head = mhcac_aux`): projector dưới `no_grad`, text detach, pool nhận `anchor_logits.detach()`. Hai cờ loại trừ nhau |
+| `late_aux_head_loss(cls_loss_fn, pooled, anchor, aux_logits, labels, aux_mask, sample_mask=None)` | 2026-10-27. `CE(anchor)` trên mọi study có nhãn + `CE(aux)` trên mọi slot ảnh phụ thật (nhãn của study, lặp theo slot) + `CE(pooled)` trên study có ảnh phụ; trả `(total, (anchor, aux, pooled))`. `aux_logits=None` → chỉ `CE(anchor)` |
 
 ## Invariants (pinned by `tests/test_late_view_fusion.py`)
 
@@ -69,3 +71,8 @@ truyền gradient vào MHCAC, chỉ pool học từ nó. Module này không đ�
 `Blip2Qformer._late_view_logits`. **Pilot val 2 seed 2026-10-27: DỪNG, không thắng OFF** (wF1 trung
 bình hai seed +0,0001, F1-5 +0,0007). Hết phần kém ở study một view, nhưng cũng mất phần lợi ở study hai
 view; trọng số gộp vẫn ~0,5. Plan: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+
+Biến thể thứ ba, `model.view_fusion.late_aux_head: true` (2026-10-27, user đã duyệt): ảnh phụ có MHCAC
+riêng (`mhcac_aux`) và loss riêng theo view (kiểu AuxLoss), mọi đường gradient từ phía ảnh phụ vào
+nhánh anchor bị cắt (`late_aux_view_logits`, `late_aux_head_loss`), nên MHCAC anchor học đúng mục tiêu
+của OFF. Test CPU kiểm cả ba chỗ cắt bằng gradient thật. **Chưa chạy trên GPU.** Plan: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
