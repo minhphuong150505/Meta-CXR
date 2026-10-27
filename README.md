@@ -434,6 +434,14 @@ cả hai vượt ngưỡng nhiễu. Nhánh ảnh chính giữ đúng mức của
 phụ vẫn không đem lại lợi ích ở các chỉ số quyết định. Không chạy full. Chi tiết:
 `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
 
+Hướng thứ tư (user đã duyệt 2026-10-27, "TK"): `model.view_fusion.mode: tokens` (vắng = `early`). Token
+của ảnh phụ, qua cùng projector với ảnh chính, được nối vào trục key ảnh của MHCAC, kèm positional
+encoding riêng cho ảnh phụ và một embedding theo loại view. Như vậy mỗi finding tự chọn đọc ảnh frontal,
+ảnh lateral hay cả hai. Study không có ảnh phụ bị che các key đó (trọng số 0), nên đi đúng đường tính
+của OFF. Không sửa YAML; đặt `run.phases.phase1b.model.view_fusion.mode=tokens`. Test CPU:
+`tests/test_aux_token_fusion.py`. **Chưa chạy trên GPU.** Pilot 2 seed với cùng quy tắc đọc như LF / LD /
+AH: `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**

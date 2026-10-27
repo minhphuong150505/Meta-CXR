@@ -34,7 +34,7 @@ from torch.nn import functional as F
 
 from mhcac.view_fusion import scatter_aux_rows
 
-VIEW_FUSION_MODES = ("early", "late")
+VIEW_FUSION_MODES = ("early", "late", "tokens")
 
 # Additive mask value for padded view slots. Finite, as in view_fusion.MASK_NEG,
 # so the softmax stays NaN-free; the anchor slot is always real.
@@ -50,24 +50,27 @@ def resolve_view_fusion_mode(
     lambda_explanation: float = 0.0,
     lambda_explanation_strong: float = 0.0,
 ) -> str:
-    """``model.view_fusion.mode`` -> ``"early"`` | ``"late"``; refuses what late cannot serve.
+    """``model.view_fusion.mode`` -> ``"early"`` | ``"late"`` | ``"tokens"``.
 
     Absent (``None``) is ``"early"``, the historical path. ``"late"`` needs
     ``multi_view: true`` (that is what makes the dataset load the auxiliary view,
     so without it a "late" run would silently train as OFF), and it refuses the
     terms that read early fusion's pre-fusion streams (MPC, view consistency)
     and the explanation loss, which Grad-CAMs a single token sequence.
+    ``"tokens"`` (2026-10-27, aux-view tokens appended to MHCAC's key axis;
+    ``docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md``) has the same
+    requirements and refusals.
     """
     resolved = "early" if mode is None else str(mode)
     if resolved not in VIEW_FUSION_MODES:
         raise ValueError(
             f"model.view_fusion.mode must be one of {VIEW_FUSION_MODES}; got {mode!r}"
         )
-    if resolved != "late":
+    if resolved == "early":
         return resolved
     if not multi_view:
         raise ValueError(
-            "model.view_fusion.mode: late needs model.multi_view: true in the same "
+            f"model.view_fusion.mode: {resolved} needs model.multi_view: true in the same "
             "phase (it is what loads the auxiliary view); without it the run would "
             "train as fusion OFF"
         )
@@ -80,7 +83,7 @@ def resolve_view_fusion_mode(
     live = [key for key, value in refused.items() if float(value) > 0]
     if live:
         raise ValueError(
-            f"model.view_fusion.mode: late does not support {live}; set them to 0.0 "
+            f"model.view_fusion.mode: {resolved} does not support {live}; set them to 0.0 "
             "(MPC and view consistency read early fusion's pre-fusion streams, the "
             "explanation loss Grad-CAMs one token sequence)"
         )

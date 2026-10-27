@@ -104,6 +104,10 @@ def build_model_and_dataset(args):
         # model.view_fusion.mode: late (2026-10-26): the MHCAC attention read here
         # is the anchor's only, not the late-fusion prediction.
         raise SystemExit("diagnose_stream_scale.py does not support model.view_fusion.mode: late")
+    if getattr(model, "aux_tokens_on", False):
+        # model.view_fusion.mode: tokens (2026-10-27): same reason, the aux tokens are
+        # not passed to the MHCAC call read here.
+        raise SystemExit("diagnose_stream_scale.py does not support model.view_fusion.mode: tokens")
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)

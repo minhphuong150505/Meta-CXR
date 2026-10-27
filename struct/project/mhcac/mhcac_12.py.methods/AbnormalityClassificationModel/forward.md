@@ -16,9 +16,17 @@
 ## Signature
 ```python
 def forward(self, shared_visual_tokens, text_embeddings=None,
-            text_attention_mask=None, labels=None, sample_mask=None)
+            text_attention_mask=None, labels=None, sample_mask=None,
+            text_row_mask=None, aux_visual_tokens=None, aux_slot_mask=None,
+            aux_view_ids=None)
     -> (logits, attention_weights_list, contrastive_loss, orth_loss, sparsity_loss)
 ```
+
+`aux_*` (2026-10-27, `view_fusion.mode: tokens`): `aux_visual_tokens` là `SharedVisualTokens` trên
+`B·N` slot ảnh phụ, `aux_slot_mask` [B, N] đánh dấu slot thật, `aux_view_ids` [B, N] loại view. Token
+ảnh phụ được nối vào trục key ảnh (sau token anchor), key của slot không thật bị che → trọng số
+attention đúng 0; `attention_weights_list` khi đó có `K = K_anchor + N·K_aux`. Không có slot thật nào
+→ đường cũ bit-identical. Truyền `aux_*` vào MHCAC dựng không có `aux_view_tokens` → `ValueError`.
 
 ## ★ `text_embeddings` là ranh giới teacher/student
 `None` → **student** (đường inference). Có giá trị → **teacher** (chỉ lúc train).

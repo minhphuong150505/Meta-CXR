@@ -163,6 +163,7 @@ dòng đọc ở đây = key đó không làm gì.
 | `_stash_prefusion` | Giữ tensor pre-fusion khi loss phụ cần |
 | `_fuse` | Wrapper gọi `ViewFusionModule[name]` |
 | `_late_view_logits` | 2026-10-26, chỉ ở `view_fusion.mode: late`: chạy MHCAC (cùng trọng số) trên ảnh phụ thật đã cất ở `_last_late_aux`, gộp với logit anchor qua `late_view_pool`; trả nguyên logit anchor khi không có ảnh phụ thật hoặc ở `early`. Với `late_detach_aux: true` lượt ảnh phụ (ln_vision / projector / MHCAC) chạy dưới `torch.no_grad()` và raise nếu logit ảnh phụ còn `requires_grad`; lời gọi `late_view_pool` nằm ngoài nên pool vẫn có gradient. Từ 2026-10-27 phần này nằm trong `mhcac.late_view_pool.late_aux_view_logits` (kết quả bit-identical). Với `late_aux_head: true` ảnh phụ đi qua `mhcac_aux`, projector `no_grad`, text detach, pool nhận logit anchor đã detach; khi train, `(aux_logits, aux_mask)` được cất ở `_last_late_aux_logits` cho `late_aux_head_loss` trong `forward` |
+| `_aux_token_inputs` | 2026-10-27, chỉ ở `view_fusion.mode: tokens`: đọc (và xoá) `_last_aux_tokens` do `_encode_image_streams` cất; đưa các slot ảnh phụ thật qua `ln_vision` (BioViL) và CÙNG shared projector (có gradient), scatter về `B·N` slot (slot đệm = 0) và trả kwargs `aux_visual_tokens` / `aux_slot_mask` / `aux_view_ids` cho `self.mhcac(...)`; `{}` ở mode khác hoặc khi không có ảnh phụ thật. `forward` gọi ngay sau `encode_samples`, `forward_image` ngay sau `_encode_image_streams` |
 | `sync_aux_head_from_anchor` | 2026-10-27, chỉ khi `late_aux_head`: chép `mhcac` vào `mhcac_aux` từng tensor; `pretraining/train.py:prepare_phase_model` gọi sau khi nạp checkpoint init không có `mhcac_aux.*` |
 | `_gather_with_local_grad` | All-gather giữ grad ở rank cục bộ |
 | `_batch_mask` | Đọc mask từ samples, có fallback |
@@ -349,3 +350,13 @@ Hai script đọc MHCAC trực tiếp (`scripts/evaluate_explanation.py`,
 `scripts/diagnose_stream_scale.py`) dừng với `SystemExit` ở mode `late`, vì chúng chỉ
 thấy logit của anchor. Plan: `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
 Test: `tests/test_late_view_fusion.py`.
+
+## Tokens fusion — 2026-10-27 (opt-in, chưa chạy GPU)
+
+`model.view_fusion.mode: tokens` (`self.aux_tokens_on`): ảnh phụ được mã hoá như ở `late`
+(frozen, feature mask, không adapter) và cất ở `_last_aux_tokens`; anchor đi đúng đường OFF.
+`_aux_token_inputs` chiếu ảnh phụ qua cùng projector và đưa vào hai lời gọi MHCAC student
+(`forward`, `forward_image`), nơi token ảnh phụ được nối vào trục key ảnh
+([mhcac_12.py](../../../../mhcac/mhcac_12.py.doc.md), `aux_view_tokens`). Q-Former chỉ đọc anchor.
+Hai script đọc MHCAC trực tiếp dừng với `SystemExit` ở `tokens`. Plan:
+`docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`. Test: `tests/test_aux_token_fusion.py`.

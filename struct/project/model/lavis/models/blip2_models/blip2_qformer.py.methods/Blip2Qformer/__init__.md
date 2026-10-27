@@ -107,3 +107,8 @@ RNG. `late_anchor_weight` (0.5) cũng được pop khỏi `view_fusion_cfg`, và
 `late_aux_head` (vắng = `False`, 2026-10-27) — bật mà không ở `late`, hoặc cùng `late_detach_aux`, thì
 `ValueError`; bật thì ngay sau `self.mhcac` dựng `self.mhcac_aux = copy.deepcopy(self.mhcac)` (tắt: `None`,
 không tiêu RNG, state dict không đổi). Plan: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
+`view_fusion.mode: tokens` (2026-10-27): `self.aux_tokens_on = multi_view and mode == "tokens"`; không dựng
+module fusion nào (nhánh `elif self.aux_tokens_on:` chỉ log), và MHCAC được dựng với
+`aux_view_tokens=self.aux_tokens_on, num_view_types=view_fusion.num_view_types` — tắt thì MHCAC không
+có tham số mới và không tiêu RNG. `late_detach_aux` / `late_aux_head` vẫn đòi `late`, nên bị từ chối ở
+`tokens`. Plan: `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`.

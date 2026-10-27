@@ -20,7 +20,7 @@ bệnh lý × 3 lớp, cộng các hàm loss của Stage 1 và module hợp nh�
 | `explanation.py` | 🟡 | explanation-aware loss. **TẮT trong production từ 2026-08-17** (`lambda_explanation` = `lambda_explanation_strong` = 0.0), xem [D-017](../_meta/DECISIONS.md#d-017--dừng-explanation-aware-loss-trong-production) |
 | `loss.py` | ✅ | `blip2_qformer.py:36` |
 | `view_fusion.py` | 🟡 | `blip2_qformer.py:42`, chỉ khi `multi_view: true` |
-| `late_view_pool.py` | 🧪 | `blip2_qformer.py`, chỉ khi `view_fusion.mode: late` (2026-10-26, opt-in) |
+| `late_view_pool.py` | 🧪 | `blip2_qformer.py`, chỉ khi `view_fusion.mode: late` (2026-10-26, opt-in); `VIEW_FUSION_MODES` / `resolve_view_fusion_mode` cũng phục vụ `tokens` (2026-10-27) |
 | `mhcac.py`, `mhcac_2.py` … `mhcac_11.py` (11 file) | 🕰 | **zero reference** |
 | `utils.py` (624 dòng) | 🕰 | ⚠ **không còn caller nào** — notebook 03 đã bị xóa 2026-08-13 |
 | `aggregator.py` | 🕰 | không có `import`; chỉ còn chuỗi `"aggregator"` trong freeze-list `runner_base.py:189` |
@@ -128,6 +128,7 @@ Trong khối `model:` của run YAML:
 | `view_fusion.late_anchor_weight` | `0.5` | Chỉ ở `late`: loss = `(1-w) CE(pooled) + w CE(anchor)` |
 | `view_fusion.late_detach_aux` | vắng = `false` | Chỉ ở `late` (2026-10-26, ngoài `late` bị từ chối): lượt ảnh phụ chạy `no_grad`, MHCAC / projector / text tower chỉ học từ anchor; pool vẫn train. Không có trong YAML; đặt qua `run.phases.phase1b.model.view_fusion.late_detach_aux=true` |
 | `view_fusion.late_aux_head` | vắng = `false` | Chỉ ở `late` (2026-10-27; ngoài `late` hoặc cùng `late_detach_aux` bị từ chối): dựng `mhcac_aux` (bản sao `mhcac`) cho ảnh phụ; projector chạy `no_grad` và text bị detach cho nhánh phụ, pool nhận logit anchor đã detach; loss `CE(anchor) + CE(ảnh phụ) + CE(pooled)`. Không có trong YAML; đặt qua `run.phases.phase1b.model.view_fusion.late_aux_head=true` và thêm `mhcac_aux` vào `trainable` / `transition.fade_in` của pha qua dòng lệnh |
+| `view_fusion.mode: tokens` | — | 2026-10-27 (opt-in, chưa chạy GPU): token ảnh phụ (qua cùng `ln_vision` / shared projector, có gradient) được nối vào trục key ảnh của MHCAC, kèm `aux_pos_enc` riêng từng stream và `aux_view_emb` theo loại view; key của study không có ảnh phụ bị che (trọng số 0). Không dựng `view_fusion` / `stream_adapters` / `mpc_heads` / `late_view_pool`; cùng yêu cầu và từ chối như `late`; `late_detach_aux` / `late_aux_head` bị từ chối. Đặt qua `run.phases.phase1b.model.view_fusion.mode=tokens`. Plan: `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md` |
 | `loss.mpc_temperature` | 0.07 | Từ 2026-10-09; EVOKE dùng 0.5 |
 | `loss.lambda_*` | xem [ARCHITECTURE.md §2.6](../_meta/ARCHITECTURE.md#26-tổng-hợp-loss) | Trọng số loss, gồm `lambda_explanation` conditional |
 | `explanation.*` | top-k, warmup, danh sách stream | Chỉ có hiệu lực khi lambda > 0 |

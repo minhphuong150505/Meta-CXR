@@ -1215,6 +1215,18 @@ study (not image) → anchor + ≤1 auxiliary view
   -0.0248* and wF1 -0.0043*, both beyond NB/sqrt2 at both seeds. The aux head alone is weaker than the pool
   (views_2 F1-5 -0.0161*); AHnoaux - OFF within NB on every metric, so the gradient cut holds. Pool ~0.5
   again. 47-49 min per arm, 6,481 MiB. Third late variant against the same OFF arms; none passes. No full run.
+  🧪 **`model.view_fusion.mode: tokens` (opt-in 2026-10-27, user-approved; candidate 2 "TK"):** the aux
+  view's tokens (frozen encode as in `late`, then `ln_vision` + the SAME shared projector, with gradient)
+  are appended to MHCAC's image key axis, with their own per-stream `aux_pos_enc` and an `aux_view_emb`
+  by view type (`mhcac_12.py`, `aux_view_tokens`; 230,400 params at the shipped layout, under the `mhcac`
+  prefix so the trainable / fade-in lists need no override). Each finding's expert token can attend to
+  either view; keys of studies without a real aux view are masked (zero weight), and a batch with no real
+  aux view runs the old path bit for bit. The sparsity term is a mean over real attention cells. Builds no
+  early/late module; same requirements and refusals as `late`; `late_detach_aux` / `late_aux_head` refused.
+  `evaluate_explanation.py` / `diagnose_stream_scale.py` refuse it. Not in the YAML: set
+  `run.phases.phase1b.model.view_fusion.mode=tokens`. Pinned by `tests/test_aux_token_fusion.py`. **Not yet
+  run on GPU.** Plan, gates, reading rule (same as LF/LD/AH; fourth variant against the same OFF arms):
+  `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`.
   ❌ **Val evidence package (2026-10-27, inference only): "the lateral view helps Pleural
   Effusion" NOT CONFIRMED** (pre-declared; formed from step 0's test numbers). On 797 val
   frontal+lateral studies, A `both − frontal` Pleural Effusion AUROC Pos +0.0056

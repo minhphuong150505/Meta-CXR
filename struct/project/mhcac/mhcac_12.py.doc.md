@@ -1,6 +1,6 @@
 > Source: `mhcac/mhcac_12.py` (560 dòng)
 > Status: ✅ ACTIVE — ★ bản DUY NHẤT được wire
-> Last verified against source: 2026-08-14
+> Last verified against source: 2026-10-27
 
 ⚠ **Cập nhật 2026-09-24 (D-020):** `ExpertTokenCrossAttention` có
 `layer_order` (`text_first` cũ | `self_first` = Eq. 2→4→5 của bài báo) và
@@ -10,6 +10,18 @@ chỉ-ảnh trong layer text. Mặc định (khóa vắng) = hành vi cũ, ghim 
 `tests/test_paper_mode.py::test_the_historical_layer_is_unchanged`.
 
 # `mhcac/mhcac_12.py`
+
+> 🧪 **2026-10-27 — `aux_view_tokens` (chỉ ở `model.view_fusion.mode: tokens`, opt-in, chưa chạy
+> GPU).** `__init__(..., aux_view_tokens=False, num_view_types=4)`: bật thì dựng ở CUỐI `__init__`
+> `aux_pos_enc` (ModuleDict, một `TrainablePositionalEncoding` mỗi stream, std 0.02) và
+> `aux_view_emb = nn.Embedding(num_view_types, embed_dim)` (std 0.02); tắt thì không có tham số mới,
+> không tiêu RNG, state dict không đổi. Cần `stream_layouts`. `forward(...,
+> aux_visual_tokens=None, aux_slot_mask=None, aux_view_ids=None)`: `_aux_image_patches` chiếu token
+> ảnh phụ qua cùng `embedding_alignment`, cộng `aux_pos_enc[name]` và `aux_view_emb[view_id]`, nối
+> sau token anchor trên trục key; key của slot không thật bị che bằng `image_key_padding_mask`
+> (truyền qua `ExpertTokenCrossAttention.forward` / `_self_then_image` vào `expert_to_image_attention`;
+> `None` = lời gọi cũ). Batch không có ảnh phụ thật nào → đúng đường cũ, bit-identical. Sparsity
+> loss nhận `attention_key_mask` và chia cho số ô THẬT. Test: `tests/test_aux_token_fusion.py`.
 
 > ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `mention_heads` và tham số `uncertain_policy` đã bị XÓA. `forward` trả `(logits, attention_weights_list, contrastive_loss, orth_loss, sparsity_loss)`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
 

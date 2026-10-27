@@ -21,9 +21,9 @@ Nhận trọng số cho từng thành phần.
 ## Methods
 | Method | Dòng | Vai trò |
 |---|---|---|
-| `forward(expert_tokens, attention_weights_list, labels, sample_mask)` | 338 | ★ Trả `(pooled, orth, contrastive, sparsity)` |
+| `forward(expert_tokens, attention_weights_list, labels, sample_mask, attention_key_mask=None)` | 398 | ★ Trả `(pooled, orth, contrastive, sparsity)` |
 | `orthogonality_loss(common_representations)` | 272 | ★ Ép 14 token **trực giao** nhau |
-| `compute_weighted_sparsity_loss(attention_weights_list)` | 298 | ★ Ép attention **tập trung** |
+| `compute_weighted_sparsity_loss(attention_weights_list, attention_key_mask=None)` | 358 | ★ Ép attention **tập trung**. `attention_key_mask` [B, K] (2026-10-27, `view_fusion.mode: tokens`): mẫu số là số ô THẬT `E · Σ(~mask)` thay vì `numel`, để key ảnh phụ bị che không làm nhỏ term; `None` = `numel` như cũ |
 
 `AttentionPooling` (`:215`) gộp attention thành `pooled_representations [B,14,D]`.
 

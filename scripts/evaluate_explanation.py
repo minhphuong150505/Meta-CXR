@@ -325,6 +325,11 @@ def _compute_batch_cams(model, batch, device, amp_context) -> dict[str, np.ndarr
         # anchor only, which is not the late-fusion prediction.
         raise SystemExit("this script reads anchor-only MHCAC output; it does not support "
                          "model.view_fusion.mode: late")
+    if getattr(model, "aux_tokens_on", False):
+        # model.view_fusion.mode: tokens (2026-10-27): the MHCAC call below passes
+        # no aux tokens, so it is not the tokens-mode prediction either.
+        raise SystemExit("this script reads anchor-only MHCAC output; it does not support "
+                         "model.view_fusion.mode: tokens")
     model.zero_grad(set_to_none=True)
     with torch.enable_grad(), amp_context:
         shared_visual = model._encode_image_streams(

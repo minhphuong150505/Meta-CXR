@@ -42,7 +42,7 @@ from vision_encoders.stream_adapter import (
     StreamAdapter,
     pool_stream,
 )
-from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector
+from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector, SharedVisualTokens
 from vision_encoders.qformer_inputs import (
     QformerInputNorm,
     assert_noise_free_query_path,
@@ -598,6 +598,13 @@ class Blip2Qformer(Blip2Base):
         self.late_view_pool = None
         self._last_late_aux = None
         self._last_late_aux_logits = None
+        # model.view_fusion.mode: tokens (2026-10-27): the aux view's shared tokens
+        # are appended to MHCAC's image key axis (mhcac_12.py, aux_view_tokens), so
+        # each finding's expert token can read either view. Builds none of the
+        # early- or late-fusion modules
+        # (docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md).
+        self.aux_tokens_on = bool(self.multi_view and self.view_fusion_mode == "tokens")
+        self._last_aux_tokens = None
         # Pre-fusion streams are only stashed when an auxiliary loss consumes
         # them; otherwise holding the references just wastes memory.
         self._keep_prefusion = bool(multi_view) and (
@@ -610,6 +617,10 @@ class Blip2Qformer(Blip2Base):
                 num_view_types=int(vf_cfg.get("num_view_types", 4)),
             )
             logging.info("multi-view LATE fusion enabled: per-view MHCAC logits, pooled")
+        elif self.aux_tokens_on:
+            logging.info(
+                "multi-view TOKENS fusion enabled: aux-view tokens appended to MHCAC's key axis"
+            )
         elif self.multi_view:
             vf_cfg.pop("dim_source", None)
             stream_dims = {}
@@ -698,6 +709,8 @@ class Blip2Qformer(Blip2Base):
             stream_layouts=self._native_stream_layouts(img_size),
             layer_order=mhcac_layer_order,
             text_mask_mode=mhcac_text_mask_mode,
+            aux_view_tokens=self.aux_tokens_on,
+            num_view_types=int(vf_cfg.get("num_view_types", 4)),
         )
         # Separate aux-view head (late_aux_head). Absent key: no module and no RNG
         # draw, so the state dict and every default run are unchanged. A deep copy
@@ -1080,14 +1093,16 @@ class Blip2Qformer(Blip2Base):
         # Late fusion encodes the auxiliary view the same way but never fuses
         # it into the anchor: it is stashed for _late_view_logits instead.
         late_on = getattr(self, "late_view_pool", None) is not None
+        tokens_on = bool(getattr(self, "aux_tokens_on", False))
         self._last_late_aux = None
+        self._last_aux_tokens = None
         aux_streams = (
             self._encode_aux_streams(
                 aux_image, cached=aux_cached, aux_mask=aux_mask,
                 aux_swin_image=aux_swin_image,
                 aux_pubmedclip_image=aux_pubmedclip_image,
             )
-            if (fuse_on or late_on) and has_aux_input
+            if (fuse_on or late_on or tokens_on) and has_aux_input
             else {}
         )
         if self.training and self.feature_mask_ratio > 0:
@@ -1105,6 +1120,11 @@ class Blip2Qformer(Blip2Base):
             # Late mode builds no adapters, so these are the raw (masked) frozen
             # features. The anchor below then takes exactly the fusion-OFF path.
             self._last_late_aux = (aux_streams, aux_mask, anchor_view_id, aux_view_ids)
+            aux_streams = {}
+        elif tokens_on:
+            # Tokens mode: the anchor takes the fusion-OFF path below; the raw
+            # (masked) aux features are projected later by _aux_token_inputs.
+            self._last_aux_tokens = (aux_streams, aux_mask, aux_view_ids)
             aux_streams = {}
 
         if self.use_biovil:
@@ -1214,6 +1234,43 @@ class Blip2Qformer(Blip2Base):
             # Read (and cleared) by forward() for late_aux_head_loss.
             self._last_late_aux_logits = (aux_logits, aux_mask)
         return pooled
+
+    def _aux_token_inputs(self):
+        """Tokens mode: MHCAC keyword arguments for the aux view, or ``{}``.
+
+        Reads (and clears) what the last ``_encode_image_streams`` call stashed. The
+        real aux slots go through ``ln_vision`` (BioViL) and the SAME shared
+        projector as the anchor, with gradient -- one joint loss -- and are scattered
+        back to ``B * N`` slots (padded slots stay zero; MHCAC masks their keys).
+        """
+        if not getattr(self, "aux_tokens_on", False):
+            return {}
+        stash = self._last_aux_tokens
+        self._last_aux_tokens = None
+        if stash is None:
+            return {}
+        aux_streams, aux_mask, aux_view_ids = stash
+        names = self.shared_visual_projector.stream_names
+        if aux_mask is None or not aux_streams or any(n not in aux_streams for n in names):
+            return {}
+        aux_mask = aux_mask.to(dtype=torch.bool)
+        batch, views = aux_mask.shape[:2]
+        device = aux_streams[names[0]].device
+        keep = real_aux_rows(aux_mask, batch * views, device)
+        if keep is not None and not bool(keep.any()):
+            return {}
+        raw = {}
+        for name in names:
+            flat = aux_streams[name].flatten(0, 1)
+            flat = flat if keep is None else flat[keep]
+            raw[name] = self.ln_vision(flat) if name == "biovil" else flat
+        shared = self._apply_encoder_ablation(self.shared_visual_projector(raw))
+        tokens = scatter_aux_rows(shared.tokens, keep, batch, views).flatten(0, 1)
+        return {
+            "aux_visual_tokens": SharedVisualTokens(tokens=tokens, spans=shared.spans),
+            "aux_slot_mask": aux_mask.to(device),
+            "aux_view_ids": aux_view_ids,
+        }
 
     @torch.no_grad()
     def sync_aux_head_from_anchor(self):
@@ -1839,6 +1896,8 @@ class Blip2Qformer(Blip2Base):
     def forward(self, samples):
         text = samples["text_output"]
         shared_visual = self.encode_samples(samples)
+        # Tokens mode: taken now, from the call that produced shared_visual.
+        aux_token_inputs = self._aux_token_inputs()
         image_embeds = shared_visual.tokens
         device = image_embeds.device
         batch_size = image_embeds.shape[0]
@@ -2030,6 +2089,7 @@ class Blip2Qformer(Blip2Base):
                     sample_mask=classification_mask,
                     # Only studies with usable FINDINGS have a report to read.
                     text_row_mask=generation_mask if text_guided else None,
+                    **aux_token_inputs,
                 )
             finally:
                 if capture_explanation:
@@ -2360,6 +2420,7 @@ class Blip2Qformer(Blip2Base):
             anchor_view_id=anchor_view_id, aux_view_ids=aux_view_ids,
             **own_inputs,
         )
+        aux_token_inputs = self._aux_token_inputs()
 
         concat_image_embeds = self._qformer_tokens(shared_visual)
 
@@ -2373,6 +2434,7 @@ class Blip2Qformer(Blip2Base):
             shared_visual,
             text_embeddings=None,
             labels=None,
+            **aux_token_inputs,
         )
         # Late multi-view fusion: the study's logits pool its real views.
         classification_logits = self._late_view_logits(classification_logits)
@@ -2639,7 +2701,8 @@ class Blip2Qformer(Blip2Base):
             "dropout": float(view_fusion_cfg_raw.get("dropout", 0.1)),
             "p_view_drop": float(view_fusion_cfg_raw.get("p_view_drop", 0.2)),
             "detach_aux": cfg_bool(view_fusion_cfg_raw.get("detach_aux", False)),
-            # Absent = "early" (every recorded run); "late" = mhcac/late_view_pool.py.
+            # Absent = "early" (every recorded run); "late" = mhcac/late_view_pool.py;
+            # "tokens" = aux-view tokens on MHCAC's key axis (mhcac_12.py).
             "mode": view_fusion_cfg_raw.get("mode"),
             "late_anchor_weight": float(view_fusion_cfg_raw.get("late_anchor_weight", 0.5)),
             "late_detach_aux": cfg_bool(view_fusion_cfg_raw.get("late_detach_aux", False)),

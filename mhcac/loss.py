@@ -355,7 +355,7 @@ class AbnormalitySpecificLoss(nn.Module):
         orth_loss = torch.mean((similarity_matrix * off_diagonal_mask) ** 2)
         return orth_loss
     
-    def compute_weighted_sparsity_loss(self, attention_weights_list):
+    def compute_weighted_sparsity_loss(self, attention_weights_list, attention_key_mask=None):
         """
         Compute sparsity loss across layers with layer-specific weighting.
         
@@ -365,6 +365,11 @@ class AbnormalitySpecificLoss(nn.Module):
         
         Returns:
             sparsity_loss: Weighted sparsity loss across layers.
+
+        ``attention_key_mask`` [B, K] (True = masked key, ``view_fusion.mode:
+        tokens``) makes each layer's entropy a mean over the REAL cells
+        ``[B, E, K]``, so padded aux keys do not shrink the term; ``None`` keeps
+        the historical ``numel`` denominator.
         """
         total_sparsity_loss = 0.0
         num_layers = len(attention_weights_list)
@@ -382,9 +387,16 @@ class AbnormalitySpecificLoss(nn.Module):
 
         for i, layer_attention_weights in enumerate(attention_weights_list):
             # Compute sparsity loss for this layer
+            if attention_key_mask is None:
+                denominator = layer_attention_weights.numel()
+            else:
+                denominator = (
+                    layer_attention_weights.shape[-2]
+                    * (~attention_key_mask).sum().float()
+                )
             sparsity_loss_layer = -torch.sum(
                 layer_attention_weights * torch.log(layer_attention_weights + 1e-6)
-            ) / layer_attention_weights.numel()
+            ) / denominator
             
             # Apply layer-specific weight
             total_sparsity_loss += layer_weights[i] * sparsity_loss_layer
@@ -401,6 +413,7 @@ class AbnormalitySpecificLoss(nn.Module):
         attention_weights_list,
         labels=None,
         sample_mask=None,
+        attention_key_mask=None,
     ):
         """
         Args:
@@ -412,7 +425,9 @@ class AbnormalitySpecificLoss(nn.Module):
         """
         pooled_representations_ = self.attention_pooling(common_representations)
         orth_loss = self.orthogonality_loss(common_representations)
-        sparsity_loss = self.compute_weighted_sparsity_loss(attention_weights_list)
+        sparsity_loss = self.compute_weighted_sparsity_loss(
+            attention_weights_list, attention_key_mask=attention_key_mask
+        )
         
         zero = common_representations.sum() * 0.0
         if labels is None:

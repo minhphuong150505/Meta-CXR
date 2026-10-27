@@ -184,7 +184,10 @@ The novelty only counts if it survives review. So:
 ## Candidate directions — NONE approved; each needs Rule 1
 
 1. Per-finding gated fusion (each finding learns how much to use the aux view).
-2. Aux tokens fed straight into MHCAC's token axis with a view-type embedding.
+2. Aux tokens fed straight into MHCAC's token axis with a view-type embedding. **Approved 2026-10-27 and
+   implemented opt-in as `model.view_fusion.mode: tokens` ("TK"); val pilot pending.** Plan and rule:
+   `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`. Agreed with the user: if TK stops, write the
+   negative result honestly (no further multi-view variant without a new decision).
 3. Late fusion: per-view MHCAC logits pooled by attention over views. Implemented opt-in
    (`model.view_fusion.mode: late`, `mhcac/late_view_pool.py`). **Val pilot 2026-10-26 at 2 seeds
    with the NB rule: STOP, it does not beat OFF** (see "Current evidence"). Do not retry it unchanged.
