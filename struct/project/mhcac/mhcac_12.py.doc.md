@@ -11,8 +11,8 @@ chỉ-ảnh trong layer text. Mặc định (khóa vắng) = hành vi cũ, ghim 
 
 # `mhcac/mhcac_12.py`
 
-> 🧪 **2026-10-27 — `aux_view_tokens` (chỉ ở `model.view_fusion.mode: tokens`, opt-in, chưa chạy
-> GPU).** `__init__(..., aux_view_tokens=False, num_view_types=4)`: bật thì dựng ở CUỐI `__init__`
+> 🧪 **2026-10-27 — `aux_view_tokens` (chỉ ở `model.view_fusion.mode: tokens`, opt-in; pilot val 2026-10-27:
+> qua quy tắc đọc, phần lợi nằm ở study một view; chạy lặp seed 7 + 23 KHÔNG QUA, không áp dụng, xem `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`).** `__init__(..., aux_view_tokens=False, num_view_types=4)`: bật thì dựng ở CUỐI `__init__`
 > `aux_pos_enc` (ModuleDict, một `TrainablePositionalEncoding` mỗi stream, std 0.02) và
 > `aux_view_emb = nn.Embedding(num_view_types, embed_dim)` (std 0.02); tắt thì không có tham số mới,
 > không tiêu RNG, state dict không đổi. Cần `stream_layouts`. `forward(...,

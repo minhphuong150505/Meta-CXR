@@ -1224,9 +1224,28 @@ study (not image) → anchor + ≤1 auxiliary view
   aux view runs the old path bit for bit. The sparsity term is a mean over real attention cells. Builds no
   early/late module; same requirements and refusals as `late`; `late_detach_aux` / `late_aux_head` refused.
   `evaluate_explanation.py` / `diagnose_stream_scale.py` refuse it. Not in the YAML: set
-  `run.phases.phase1b.model.view_fusion.mode=tokens`. Pinned by `tests/test_aux_token_fusion.py`. **Not yet
-  run on GPU.** Plan, gates, reading rule (same as LF/LD/AH; fourth variant against the same OFF arms):
+  `run.phases.phase1b.model.view_fusion.mode=tokens`. Pinned by `tests/test_aux_token_fusion.py`. Plan, gates,
+  reading rule (same as LF/LD/AH; fourth variant against the same OFF arms):
   `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`.
+  ⚠ **Val pilot (2 seeds, same rule) 2026-10-27: ADVANCE by the pre-declared rule -- but NOT evidence that the
+  second view helps.** Step G passed (early/late bit-identical; single-view studies unchanged by the aux view to
+  2.4e-7). TK - OFF two-seed mean, all val: F1-5 +0.0036 [+0.0006, +0.0067] (> NB/sqrt2 0.0022; s42 +0.0066*,
+  s17 +0.0006), wF1 +0.0014 [-0.0001, +0.0030], AUROC +0.0002; rules 1 (F1-5), 2, 3 pass. Caveats: the gain sits
+  on SINGLE-view studies (views_1 F1-5 +0.0062*), whose probabilities equal TKnoaux's -- it is a differently
+  trained MHCAC (TKnoaux - OFF views_1 F1-5 +0.0029, crosses 0) plus all-val cutpoints (TK - TKnoaux views_1
+  +0.0033*, identical probabilities); two-view studies TK - OFF wF1 +0.0010, F1-5 +0.0003 (flat). Seed 17 alone is
+  ~0, and TK's own seed delta on F1-5 (-0.0042*) exceeds the gain. Fourth try at the same bar. Expert tokens split
+  into aux-leaning (~0.62) and anchor-leaning (~0.33) groups; findings pool from the latter (aux share 0.31-0.38),
+  none leans on the lateral. 48 min per arm, ~5.1 GB. TK - P15 F1-5 +0.0051*, TK - AH wF1 +0.0031*.
+  ❌ **Seed replicate (TK and OFF at seeds 7 and 23, rule fixed beforehand incl. a REQUIRED two-view gain) 2026-10-27:
+  FAIL -- the pilot pass does not replicate. Direction 3 (write the negative result), as agreed.** TK - OFF four-seed
+  mean, all val: wF1 +0.0010 [-0.0002, +0.0024], F1-5 +0.0016 [-0.0007, +0.0042] (per seed +0.0066* / +0.0006 /
+  **-0.0051*** / +0.0045*), AUROC +0.0005; two-view studies wF1 +0.0010, F1-5 +0.0002 (flat); rules 1 and 2 fail, 3 and
+  4 pass. NB re-estimated from four seeds (all val wF1 0.0036, F1-5 0.0081) is larger than the two-seed pilot NB, so
+  the pilot's +0.0036 was within seed noise. Same model, aux view on vs off, two-view studies: weighted recall
+  +0.0030*, macro recall -0.0051*, AUROC +0.0103*, all within NB/sqrt2. Attention as before at every seed (findings
+  aux share 0.31-0.38). Fourth variant, none passes; no full run, no test reading, no further multi-view variant
+  without a new user decision. Record: the plan's "Seed replicate -- execution report".
   ❌ **Val evidence package (2026-10-27, inference only): "the lateral view helps Pleural
   Effusion" NOT CONFIRMED** (pre-declared; formed from step 0's test numbers). On 797 val
   frontal+lateral studies, A `both − frontal` Pleural Effusion AUROC Pos +0.0056

@@ -1,6 +1,6 @@
 # PLAN 2026-10-27 — aux-view tokens fed straight into MHCAC (candidate 2, "TK")
 
-Status: **APPROVED 2026-10-27** ("ok": code change, step G + step P, reading rule). User chose this direction ("hướng 1 đi") as the last
+Status: **APPROVED 2026-10-27** ("ok": code change, step G + step P, reading rule). **RAN 2026-10-27: ADVANCE by the rule, with caveats -- see Execution report.** User chose this direction ("hướng 1 đi") as the last
 multi-view try before writing the negative result (direction 3). Code implemented the same day;
 CPU tests `tests/test_aux_token_fusion.py` (9) pass, and removing the key padding mask makes two of them
 fail (checked). CPU suite: the same 21 baseline failures. Not yet run on GPU.
@@ -229,3 +229,201 @@ also fed the aux view into one shared MHCAC and came out at about OFF. A pass is
 ## Data handling
 
 The `.npz` files, checkpoints and logs stay on the host. Only aggregates come back here.
+
+## Execution report
+
+2026-10-27, host checkout `87351f9`, `~/auxtok.sh` → `~/auxtokens_20261027/`, launched three times. Launch 1
+aborted before any GPU work: `/home` had 21 GB free against a 30 GB guard; the script now trims this run's own
+checkpoints and the guard is 15 GB, and no user data was touched. Launch 2 aborted at the step-G eval: the attention
+wrapper read `query_vectors` off `AbnormalitySpecificLoss` instead of its `attention_pooling`. The wrapper was fixed,
+this run's output dir was removed, and nothing else changed. Launch 3 ran 15:13:50 → `AUXTOK_DONE` 17:17:47. The probe
+`~/auxtok_probe.py` → `probe.{json,log}` reproduced every OFF / P15 / LF / LD / AH value of the earlier probes
+exactly (max |Δ| 0.0).
+
+**Step G — PASS.**
+- G1 early: 809/809 tensors bit-identical to the earlier early smoke, val probabilities equal.
+- G1 late: 724/724 tensors bit-identical to AH's G1_late.
+- G2 (TK smoke): `mhcac` 80.78M trainable (80.55M + 230,400); `aux_pos_enc` 3 tensors (196 / 50 / 50 × 768),
+  `aux_view_emb` (4, 768); max mem 5,088 MiB.
+- G3: single-view studies (n=237) max |Δprob| 2.4e-7, 0 argmax changes; all 163 two-view studies moved;
+  evaluate-only reproduces the training-time npz.
+
+**Step P — two seeds.** Training 48m46s (s42) / 48m19s (s17), `mhcac` 80.78M trainable, peak about 5.1 GB.
+The driver's `max mem` field came out glued to a timestamp ("50912026"); `nvidia-smi` read 5.6 GB in use during
+s17. G3 was re-checked on both pilot models: views_1 n=988, max |Δprob| 2.4e-7, 0 argmax changes. On views_2
+(n=820) every study moved, and 2.85% / 2.57% of argmax cells changed.
+
+**Verdict by the pre-declared rule: ADVANCE** (rule 1 passes on F1-5, rule 2 passes, rule 3 passes).
+Cutpoints are cross-fitted, the bootstrap is paired with 1,000 draws at seed 16, and `*` = CI excludes 0.
+
+| TK − OFF, all val (n=1,808) | s42 | s17 | two-seed mean [CI] | NB/√2 |
+|---|---|---|---|---|
+| weighted F1 | +0.0022* | +0.0005 | +0.0014 [−0.0001, +0.0030] | 0.0019 |
+| F1-5 | +0.0066* | +0.0006 | **+0.0036 [+0.0006, +0.0067]** | 0.0022 |
+| macro recall | +0.0053* | +0.0003 | +0.0028 [−0.0002, +0.0065] | 0.0077 |
+| AUROC mean | −0.0074* | +0.0077 | +0.0002 [−0.0049, +0.0056] | 0.0195 |
+
+- Rule 1 on F1-5: Δ42 +0.0066 > 0, Δ17 +0.0006 > 0, CI lower bound +0.0006 > 0, mean 0.0036 > 0.0022. The wF1
+  form fails (the CI crosses 0 and the mean is below NB/√2).
+- Rule 3: views_1 TK − OFF wF1 +0.0012, F1-5 +0.0062*, both above −NB/√2.
+
+⚠⚠ **Read the pass with four caveats. None of them changes the verdict, and all of them limit what it shows.**
+1. **The gain is not on the two-view studies.** On views_2 (n=820), TK − OFF mean: wF1 +0.0010, F1-5 +0.0003,
+   macro recall −0.0014, AUROC +0.0063, all crossing 0. It sits on views_1 (n=988): F1-5 +0.0062*, macro recall
+   +0.0046*. There the aux keys are masked, and TK's probabilities equal TKnoaux's to 2.4e-7 (AUROC Δ exactly 0).
+   So the views_1 gain combines two things:
+   - a differently trained MHCAC: TKnoaux − OFF views_1 F1-5 +0.0029, CI crosses 0;
+   - cutpoints fitted on all val: TK − TKnoaux views_1 F1-5 +0.0033*, and the probabilities are identical.
+
+   The plan's "honest odds" said the gain must come from the two-view studies; it does not. This is the same
+   pattern as the 2026-10-24 package ablation (gain equal on single-view studies, so not attributable to the
+   second view).
+2. **Seed 17 is nearly zero.** All the margin is seed 42's (F1-5 +0.0066* vs +0.0006). TK's own seed delta
+   (17 − 42) on F1-5 is −0.0042*, larger than the two-seed gain.
+3. **Fourth variant against the same two OFF arms** (LF, LD, AH, TK). Four tries at one bar make a lucky pass
+   more likely, and NB rests on two draws per arm.
+4. AUROC is flat (+0.0002), so this is an operating-point gain, not a ranking gain.
+
+Descriptive only (cannot change the verdict):
+
+| two-seed mean, Δ (all val) | wF1 | F1-5 | macro recall | AUROC |
+|---|---|---|---|---|
+| TK − P15 (early) | +0.0024* | +0.0051* | +0.0026 | +0.0016 |
+| TK − LF | +0.0014 | +0.0040* | +0.0017 | +0.0002 |
+| TK − LD | +0.0013 | +0.0029 | +0.0027 | −0.0045 |
+| TK − AH | +0.0031* | +0.0032 | +0.0033 | −0.0018 |
+| TK − TKnoaux | +0.0012 | +0.0018 | +0.0034* | +0.0032 |
+| TKnoaux − OFF | +0.0002 | +0.0018 | −0.0006 | −0.0030 |
+
+- On views_2, TK − TKnoaux (same model, aux view removed): wF1 +0.0021 (CI touches 0), weighted recall +0.0028*,
+  F1-5 −0.0008, AUROC +0.0072. The aux tokens move two-view predictions a little; no deciding metric clears NB/√2.
+- Attention on the aux tokens, last layer, the 820 two-view val studies. The aux keys are 296 of 592, so 0.5 is
+  uniform.
+  - The 8 expert tokens split into two groups at both seeds: some lean on the aux view (s42 four at 0.61–0.64;
+    s17 three at 0.64–0.66), and the rest sit at 0.30–0.38.
+  - Each finding's pooled aux share is 0.32–0.35 (s42) and 0.31–0.38 (s17). The findings pool mostly from the
+    anchor-leaning tokens, and no finding leans on the lateral view.
+
+Reading: TK is the first multi-view variant to pass the pre-declared pilot rule, but the pass rests on one seed and
+on the single-view studies, where the aux view is not seen. The rule was met, and the evidence that the second view
+causes the gain was not. A full run would need its own decision (plan "If it passes"), and seed replicates come
+first. Pilot budget, two seeds, val only; test not scored.
+
+## Seed replicate — approved 2026-10-27 ("a"), rule fixed before any new arm runs
+
+Why: the pilot passed on one seed and on single-view studies. This step asks whether the pass survives two more
+seeds and whether the two-view studies, the ones the aux view can actually change, gain beyond seed noise.
+
+Arms: TK and OFF at `run.seed` 7 and 23 (seeds chosen now, before running). The recipe is the same as the pilot:
+phase 1b only, 60,000 studies, 2 epochs, warmup 150, from `run_20261005_paper/checkpoint_phase1a.pth`; TK as in
+step P, OFF as in `~/seednoise.sh` (`multi_view=false`, `lambda_mpc 0`, `lambda_view_consistency 0`). Code
+`87351f9`. Run order: TK_s7, OFF_s7, TK_s23, OFF_s23, serial, on one card. Test is not scored. The existing
+seed-42/17 arms are reused, which gives four seeds per arm.
+
+**Gate G-OFF:** the new OFF arms run on `87351f9`, while OFF_s17 ran on `eaf942a` and OFF_s42 on `a43a88d`. Before
+any arm, an OFF smoke (2,000 studies, 1 epoch, seed 42) is run at `eaf942a` (a temporary git worktree) and at
+`87351f9`. All checkpoint tensors and val probabilities must be bit-identical, or the run aborts.
+
+**Reading rule.** Cutpoints are cross-fitted as before, with the same fold. Δ_s = TK_s − OFF_s for s in
+{42, 17, 7, 23}, and Δ̄ is their mean. The CI of Δ̄ is a paired bootstrap with 1,000 draws at seed 16, with the
+same resampled studies for every arm. The bars stay at the pilot's NB/√2. That is stricter than the NB/2 a
+four-seed mean would justify, and it is kept so the bar does not drop after a pass.
+
+| NB/√2 | wF1 | F1-5 | macro recall |
+|---|---|---|---|
+| all val | 0.0019 | 0.0022 | 0.0078 |
+| views_1 | 0.0032 | 0.0048 | 0.0081 |
+| views_2 | 0.0021 | 0.0033 | 0.0050 |
+
+TK passes only if there is a metric m in {wF1, F1-5} for which both of the first two rules hold:
+1. **All val, as before:** all four Δ_s > 0, the CI lower bound of Δ̄ > 0, and Δ̄ > NB/√2 (all val).
+2. **Two-view studies (new, required):** on views_2 (n=820), the CI lower bound of Δ̄ > 0 and Δ̄ > NB/√2 (views_2).
+
+The other two rules must also hold:
+
+3. **No loss:** on all val, none of wF1, F1-5 or macro recall has Δ̄ < −NB/√2.
+4. **Single-view protected:** on views_1, neither the wF1 Δ̄ nor the F1-5 Δ̄ is below −NB/√2.
+
+**PASS** leads to a full-run proposal, which is its own decision. **FAIL** means direction 3: write the negative
+result. No further multi-view variant without a new decision.
+
+Descriptive only:
+- per-seed Δ;
+- NB re-estimated from the four seeds of TK and of OFF;
+- TK − TKnoaux and TKnoaux − OFF over four seeds;
+- the attention aux share at seeds 7 and 23;
+- G3 on the new TK models.
+
+Cost: about 3 min of smokes, 4 × ~49 min of training, ~5 min of evals and ~25 min for the probe, about 4 h in
+total. Disk: ~1 GB per arm on `/home` (19 GB free). The `.npz` files, checkpoints and logs stay on the host.
+
+### Seed replicate — execution report
+
+2026-10-27, host checkout `87351f9`, `~/auxtok4.sh` → `~/auxtok4_20261027/`, one launch, 17:31:03 → `AUXTOK4_DONE`
+20:37:31. The probe `auxtok4_probe.py` → `probe.{json,log}` reproduced every TK / OFF / TKnoaux value at seeds 42
+and 17 exactly (max |Δ| 0.0).
+
+- **Gate G-OFF — PASS.** The OFF smoke at `eaf942a` and at `87351f9`: 722/722 checkpoint tensors bit-identical,
+  val probabilities equal.
+- **Training:** TK_s7 48m06s, OFF_s7 32m33s, TK_s23 47m55s, OFF_s23 34m56s. Peak about 5.1 GB (TK) and 4.8 GB (OFF);
+  the driver's `max mem` field is still glued to a timestamp digit.
+- **G3 on the new TK models — PASS.** views_1 max |Δprob| 2.4e-7, 0 argmax changes. On views_2 every study moved,
+  and 2.55% (s7) / 2.83% (s23) of argmax cells changed. Evaluate-only reproduces the training-time npz.
+
+**Verdict by the pre-declared rule: FAIL (direction 3).** Rule 1 fails on both metrics, rule 2 fails on both,
+rule 3 passes, rule 4 passes.
+
+| TK − OFF, all val (n=1,808) | s42 | s17 | s7 | s23 | four-seed mean [CI] | NB/√2 |
+|---|---|---|---|---|---|---|
+| weighted F1 | +0.0022* | +0.0005 | −0.0010 | +0.0021 | +0.0010 [−0.0002, +0.0024] | 0.0019 |
+| F1-5 | +0.0066* | +0.0006 | **−0.0051*** | +0.0045* | +0.0016 [−0.0007, +0.0042] | 0.0022 |
+| macro recall | +0.0053* | +0.0003 | −0.0046* | +0.0078* | +0.0022 [−0.0003, +0.0051] | 0.0077 |
+| AUROC mean | −0.0074* | +0.0077 | +0.0017 | −0.0000 | +0.0005 [−0.0036, +0.0052] | 0.0195 |
+
+| four-seed mean [CI] | views_1 (n=988) | views_2 (n=820) | NB/√2 views_2 |
+|---|---|---|---|
+| TK − OFF wF1 | +0.0004 [−0.0013, +0.0021] | +0.0010 [−0.0008, +0.0030] | 0.0021 |
+| TK − OFF F1-5 | +0.0026 [−0.0007, +0.0064] | +0.0002 [−0.0031, +0.0038] | 0.0033 |
+| TK − OFF macro recall | +0.0038* | −0.0038 [−0.0099, +0.0017] | 0.0050 |
+| TK − OFF AUROC | −0.0046 | +0.0055 [−0.0033, +0.0158] | 0.0254 |
+| TK − TKnoaux wF1 | −0.0004 | +0.0018 [+0.0000, +0.0037] | 0.0021 |
+| TK − TKnoaux F1-5 | +0.0018 | −0.0002 [−0.0035, +0.0037] | 0.0033 |
+| TK − TKnoaux macro recall | +0.0032* | −0.0051* | 0.0050 |
+| TK − TKnoaux AUROC | 0 (identical probabilities) | +0.0103* | 0.0254 |
+
+- **Rule 1:** seed 7 is negative on both wF1 and F1-5 (F1-5 −0.0051*), both CIs cross 0, and both means are below
+  NB/√2.
+- **Rule 2:** on two-view studies, TK − OFF is flat: wF1 +0.0010, F1-5 +0.0002, both crossing 0 and both below
+  NB/√2.
+- **Rules 3 and 4:** no all-val or single-view mean falls below −NB/√2.
+- The pilot's F1-5 pass (+0.0036) does not replicate: with four seeds the mean halves to +0.0016 and its CI
+  crosses 0. One of the two new seeds goes significantly the other way.
+
+**Descriptive.**
+- **NB re-estimated from four seeds** (pooled TK and OFF, same 2√2·σ̂ scale as the pilot NB):
+  - all val: wF1 0.0036, F1-5 0.0081, macro recall 0.0101, AUROC 0.0138;
+  - views_2: wF1 0.0043, F1-5 0.0066.
+
+  The two-seed pilot NB (wF1 0.0027, F1-5 0.0031) underestimated seed noise. Against the four-seed NB/√2 (F1-5
+  0.0057), the pilot's +0.0036 would not have passed.
+- **What the aux view itself does on two-view studies (TK − TKnoaux, same model):**
+  - weighted recall +0.0030* and wF1 +0.0018 (CI lower bound at 0);
+  - macro recall −0.0051*;
+  - F1-5 −0.0002;
+  - AUROC +0.0103*.
+
+  That is a small operating-point move toward the frequent classes plus a ranking gain, all within NB/√2 (AUROC
+  0.0254).
+- **TKnoaux − OFF on all val:** everything ~0 except AUROC −0.0038*. Training with aux tokens leaves MHCAC on
+  single views at OFF's level.
+- **Attention:**
+  - Each finding's aux share is 0.31–0.36 at s7 and 0.32–0.34 at s23 (0.31–0.38 at s42/s17).
+  - At every seed the expert tokens split into aux-leaning (~0.55–0.65) and anchor-leaning (~0.31–0.37) groups,
+    and the findings pool from the anchor-leaning ones.
+  - No finding leans on the lateral at any seed.
+
+**Conclusion.** Feeding the aux view's tokens into MHCAC does not beat OFF at the pilot budget. The two-seed pass
+was seed noise plus cutpoints on single-view studies. On two-view studies the aux view changes the operating point
+and ranking slightly, within noise. This is the fourth variant (early P15/P30/P50/Swin-only, LF, LD, AH, TK)
+against the same OFF arms, and none passes. As agreed beforehand: **direction 3**, write the negative result. No
+further multi-view variant without a new user decision. No full run, no test reading.

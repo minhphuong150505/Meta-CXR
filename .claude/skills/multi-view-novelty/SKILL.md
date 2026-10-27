@@ -185,7 +185,15 @@ The novelty only counts if it survives review. So:
 
 1. Per-finding gated fusion (each finding learns how much to use the aux view).
 2. Aux tokens fed straight into MHCAC's token axis with a view-type embedding. **Approved 2026-10-27 and
-   implemented opt-in as `model.view_fusion.mode: tokens` ("TK"); val pilot pending.** Plan and rule:
+   implemented opt-in as `model.view_fusion.mode: tokens` ("TK"). Val pilot 2026-10-27 (2 seeds): ADVANCE by
+   the rule (all-val F1-5 +0.0036 [+0.0006, +0.0067] > NB/sqrt2), BUT the gain sits on single-view studies
+   (where TK = TKnoaux probabilities; cutpoints + a differently trained MHCAC), two-view studies are flat
+   (F1-5 +0.0003), seed 17 alone is ~0, and it is the 4th try at the same bar. Not evidence the second view
+   helps.** ❌ **Seed replicate (seeds 7 + 23, pre-declared rule with a REQUIRED two-view gain), 2026-10-27:
+   FAIL.** Four-seed TK - OFF all val wF1 +0.0010, F1-5 +0.0016 (seed 7 -0.0051*), both CIs cross 0; two-view
+   wF1 +0.0010, F1-5 +0.0002. Four-seed NB (all val wF1 0.0036, F1-5 0.0081) is larger than the two-seed one,
+   so the pilot pass was noise. -> direction 3: negative-result summary written,
+   `docs/KET_QUA_MULTI_VIEW.md`. Plan and rule:
    `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`. Agreed with the user: if TK stops, write the
    negative result honestly (no further multi-view variant without a new decision).
 3. Late fusion: per-view MHCAC logits pooled by attention over views. Implemented opt-in

@@ -440,8 +440,18 @@ encoding riêng cho ảnh phụ và một embedding theo loại view. Như vậy
 của MHCAC có thể đọc ảnh frontal, ảnh lateral hay cả hai, và mỗi finding gộp các token đó theo trọng số
 riêng. Study không có ảnh phụ bị che các key đó (trọng số 0), nên đi đúng đường tính
 của OFF. Không sửa YAML; đặt `run.phases.phase1b.model.view_fusion.mode=tokens`. Test CPU:
-`tests/test_aux_token_fusion.py`. **Chưa chạy trên GPU.** Pilot 2 seed với cùng quy tắc đọc như LF / LD /
-AH: `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`.
+`tests/test_aux_token_fusion.py`. **Pilot val 2026-10-27 (2 seed, cùng quy tắc đọc như LF / LD / AH): QUA
+quy tắc (ADVANCE), nhưng không chứng minh được ảnh phụ có ích.** TK - OFF trung bình hai seed trên toàn val:
+F1-5 +0,0036 [+0,0006; +0,0067] (vượt NB/√2 = 0,0022; seed 42 +0,0066, seed 17 chỉ +0,0006), weighted F1
++0,0014 [-0,0001; +0,0030], AUROC +0,0002. Phần lợi nằm ở study MỘT view, nơi xác suất của TK trùng với khi bỏ
+ảnh phụ: nó đến từ MHCAC được huấn luyện khác và từ cutpoint fit trên toàn val. Ở study hai view TK - OFF gần 0
+(F1-5 +0,0003). Đây là lần thử thứ tư trên cùng ngưỡng. **Chạy lặp thêm seed 7 và 23 (2026-10-27, quy tắc
+khai báo trước, bắt buộc có phần lợi trên study hai view): KHÔNG QUA.** TK - OFF trung bình bốn seed trên toàn
+val: weighted F1 +0,0010 [-0,0002; +0,0024], F1-5 +0,0016 [-0,0007; +0,0042] (seed 7: -0,0051, có ý nghĩa); ở study
+hai view weighted F1 +0,0010, F1-5 +0,0002. Ngưỡng nhiễu ước lại từ bốn seed (F1-5 0,0081) lớn hơn ước lượng từ
+hai seed, nên lần qua ở pilot chỉ là nhiễu seed. Không chạy full, không đọc test; theo thỏa thuận chuyển sang
+viết kết quả âm. Chi tiết: `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`. Tổng hợp mọi thí nghiệm
+multi-view (kết quả âm): `docs/KET_QUA_MULTI_VIEW.md`.
 
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
