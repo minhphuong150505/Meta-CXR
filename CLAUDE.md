@@ -1219,8 +1219,8 @@ study (not image) → anchor + ≤1 auxiliary view
   view's tokens (frozen encode as in `late`, then `ln_vision` + the SAME shared projector, with gradient)
   are appended to MHCAC's image key axis, with their own per-stream `aux_pos_enc` and an `aux_view_emb`
   by view type (`mhcac_12.py`, `aux_view_tokens`; 230,400 params at the shipped layout, under the `mhcac`
-  prefix so the trainable / fade-in lists need no override). Each finding's expert token can attend to
-  either view; keys of studies without a real aux view are masked (zero weight), and a batch with no real
+  prefix so the trainable / fade-in lists need no override). Each of MHCAC's 8 shared expert tokens can
+  attend to either view, and each finding pools them with its own weights; keys of studies without a real aux view are masked (zero weight), and a batch with no real
   aux view runs the old path bit for bit. The sparsity term is a mean over real attention cells. Builds no
   early/late module; same requirements and refusals as `late`; `late_detach_aux` / `late_aux_head` refused.
   `evaluate_explanation.py` / `diagnose_stream_scale.py` refuse it. Not in the YAML: set

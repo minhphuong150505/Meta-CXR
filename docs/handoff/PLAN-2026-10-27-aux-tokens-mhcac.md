@@ -16,12 +16,16 @@ costs about as much somewhere else.
 - The late variants (LF, LD, AH) let MHCAC see one view at a time and average the logits afterwards.
   The pool stayed at about 0.5 per finding in all three, so no finding learned to prefer one view.
 
-Neither design lets each finding decide, inside MHCAC, which view's tokens to read. That is what TK
-does. MHCAC already has one expert token per finding, and each expert token cross-attends over the
-image tokens. In TK the key/value sequence becomes the anchor tokens **plus** the aux view's tokens,
-with a view-type embedding added to the aux tokens. Each finding's expert token can then put its
-attention mass on the frontal, the lateral, or both. The anchor tokens are not modified. The Q-Former
-still reads the anchor only.
+Neither design lets MHCAC itself decide, per token and per finding, which view to read. That is what
+TK does. Since D-026, MHCAC has 8 shared expert tokens. Each one cross-attends over the image tokens,
+and each finding then pools the 8 tokens with its own learned weights (`attention_pooling`). In TK the
+image key/value sequence becomes the anchor tokens **plus** the aux view's tokens, with a view-type
+embedding added to the aux tokens. An expert token can then put its attention mass on the frontal, the
+lateral, or both, and a finding can lean on the tokens that read the view it needs. The anchor tokens
+are not modified. The Q-Former still reads the anchor only.
+
+(Corrected 2026-10-27 before any run: the first draft said "one expert token per finding". That
+described the reference code's 14 tokens, not the D-026 configuration this run uses.)
 
 ## Design
 
@@ -73,7 +77,7 @@ What it does not guarantee:
   LF lost single-view wF1 (−0.0024*) for a related reason, and early fusion lost single-view quality on
   test. Rule 3 below is what catches this.
 - That the expert tokens learn to use the lateral at all in about 30,000 two-view studies over 2
-  epochs. The probe reports the attention mass each finding puts on aux tokens, as a description.
+  epochs. The probe reports the attention mass on aux tokens, as a description.
 
 ## Code change (opt-in, absent key = bit-identical)
 
@@ -118,7 +122,11 @@ Smoke size as in LF / LD / AH: 2,000 train and 400 val studies, 1 epoch, seed 42
 - **G2:** a `tokens` smoke. It must meet all of the following:
   - rc=0, no NaN;
   - the log shows `"mode": "tokens"`;
-  - after training, `aux_pos_enc` and `aux_view_emb` differ from their init;
+  - the logged phase-1b trainable count for `mhcac` is 80.78M (80.55M + 230,400), so the new
+    parameters are in the optimizer and fade in with `mhcac`. (Changed before any run from "differ from
+    their init": their init is drawn at model build and is in no checkpoint on disk, so it cannot be
+    compared. That they receive gradient is pinned by the CPU test, and G3 shows the aux tokens are
+    read.)
   - the checkpoint holds `mhcac.aux_*`;
   - evaluate-only reproduces the training-time val npz.
   It also records the parameter count, max mem and s/it.
@@ -189,8 +197,9 @@ Descriptive only, never deciding:
 - AUROC;
 - TK − P15, TK − LF and TK − AH;
 - TK scored without the aux view;
-- the mean last-layer attention mass each finding's expert token puts on aux tokens, on two-view val
-  studies (does any finding learn to read the lateral, e.g. Pleural Effusion?).
+- the mean last-layer attention mass on aux tokens on two-view val studies: per expert token (8), and per
+  finding as the finding's pooling weights times the tokens' aux mass (does any finding lean on the
+  lateral, e.g. Pleural Effusion?).
 
 ⚠ This is the **fourth** variant read against the same two OFF arms (LF, LD, AH, TK). Four tries at one
 bar raise the chance of a lucky pass, and that must be stated beside any pass. NB rests on two draws per
@@ -200,8 +209,8 @@ arm.
 
 The gain must come from the 820 two-view val studies. To clear all-val wF1 Δ̄ > 0.0019 with single-view
 studies at OFF's level, two-view studies need about +0.0042 wF1. The best two-view gain on record at
-this budget is LF's +0.0021, and its CI crossed 0. TK is the first design in which each finding can
-choose its view inside MHCAC, and it adds no second head (so no ensemble objection). But early fusion
+this budget is LF's +0.0021, and its CI crossed 0. TK is the first design in which MHCAC's tokens can
+choose between the views, and it adds no second head (so no ensemble objection). But early fusion
 also fed the aux view into one shared MHCAC and came out at about OFF. A pass is possible, not likely.
 
 **If TK stops, the plan is direction 3:** write the negative result honestly, as agreed with the user.

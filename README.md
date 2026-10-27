@@ -436,8 +436,9 @@ phụ vẫn không đem lại lợi ích ở các chỉ số quyết định. Kh
 
 Hướng thứ tư (user đã duyệt 2026-10-27, "TK"): `model.view_fusion.mode: tokens` (vắng = `early`). Token
 của ảnh phụ, qua cùng projector với ảnh chính, được nối vào trục key ảnh của MHCAC, kèm positional
-encoding riêng cho ảnh phụ và một embedding theo loại view. Như vậy mỗi finding tự chọn đọc ảnh frontal,
-ảnh lateral hay cả hai. Study không có ảnh phụ bị che các key đó (trọng số 0), nên đi đúng đường tính
+encoding riêng cho ảnh phụ và một embedding theo loại view. Như vậy mỗi expert token trong 8 token chung
+của MHCAC có thể đọc ảnh frontal, ảnh lateral hay cả hai, và mỗi finding gộp các token đó theo trọng số
+riêng. Study không có ảnh phụ bị che các key đó (trọng số 0), nên đi đúng đường tính
 của OFF. Không sửa YAML; đặt `run.phases.phase1b.model.view_fusion.mode=tokens`. Test CPU:
 `tests/test_aux_token_fusion.py`. **Chưa chạy trên GPU.** Pilot 2 seed với cùng quy tắc đọc như LF / LD /
 AH: `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`.
