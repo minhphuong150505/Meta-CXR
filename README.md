@@ -427,7 +427,12 @@ Biến thể thứ ba (user đã duyệt 2026-10-27): `model.view_fusion.late_au
 phụ một MHCAC riêng (`mhcac_aux`, khởi đầu là bản sao MHCAC chính) với loss riêng theo view, kiểu AuxLoss,
 và cắt mọi đường gradient từ ảnh phụ sang nhánh ảnh chính, để MHCAC chính học đúng mục tiêu của OFF.
 Không sửa YAML; đặt key và thêm `mhcac_aux` vào danh sách `trainable` / `fade_in` của phase 1b qua dòng
-lệnh. **Chưa chạy trên GPU.** Chi tiết: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
+lệnh. **Pilot val 2026-10-27 (2 seed, cùng quy tắc đọc): DỪNG, không thắng OFF.** AH - OFF trung bình
+hai seed trên toàn val: weighted F1 -0,0017 [-0,0036; +0,0002], F1-5 +0,0004 [-0,0027; +0,0034]. Ở study
+hai view, AUROC +0,0229 (vẫn trong ngưỡng nhiễu seed) nhưng macro recall -0,0248 và weighted F1 -0,0043,
+cả hai vượt ngưỡng nhiễu. Nhánh ảnh chính giữ đúng mức của OFF (phép cắt gradient hoạt động), nhưng ảnh
+phụ vẫn không đem lại lợi ích ở các chỉ số quyết định. Không chạy full. Chi tiết:
+`docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
 
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở

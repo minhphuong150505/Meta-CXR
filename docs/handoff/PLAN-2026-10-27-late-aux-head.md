@@ -1,7 +1,8 @@
 # PLAN 2026-10-27 — late fusion with a separate MHCAC for the aux view (AuxLoss-style)
 
-Status: **APPROVED 2026-10-27** ("ok duyệt cả 3, làm đi"): the code change, step G + step P, and the
-reading rule. Code and CPU tests done (see "Implementation note"); GPU not yet run.
+Status: **DONE 2026-10-27 — STOP, AH does not beat OFF** (rule 1 and rule 3 fail; see "Execution
+report"). Approved 2026-10-27 ("ok duyệt cả 3, làm đi"): the code change, step G + step P, and the
+reading rule. No full run.
 
 Implementation note: the aux pass of LF / LD / AH now lives in one torch-only helper,
 `mhcac.late_view_pool.late_aux_view_logits`, so the gradient split is tested on CPU with real autograd:
@@ -233,3 +234,61 @@ explanation at this budget.
 ## Data handling
 
 The `.npz` files, checkpoints and logs stay on the host. Only aggregates come back here.
+
+## Execution report
+
+2026-10-27, host checkout `1d24eb5`, `~/ahead.sh` → `~/lateauxhead_20261027/`, launched once at 10:46
+(a first launch aborted at G2 on a false alarm in the script's own grep, which looked for
+`'mhcac_aux'` while the log prints `mhcac_aux 80.55M`; the grep was fixed, the output directory removed,
+and nothing else changed). `AHEAD_DONE` 12:51. Probe `~/ahead_probe.py` → `probe.{json,log}`; its sanity
+check reproduced every OFF / P15 / LF / LD value of the earlier probes exactly (max |Δ| 0.0).
+
+**Step G — PASS.**
+- G1 (LF) and G1b (LD) against the `a0e1eb0` arms: 724/724 tensors bit-identical, val probabilities equal.
+- G2 (AH smoke): `mhcac_aux` 191 tensors mirroring `mhcac`, 80,550,186 parameters each, all 191 differ from
+  `mhcac`, 190 moved from init; pool moved (|max| 2.9e-3); max mem 6,418 MiB.
+- G3: single-view studies max |Δprob| 0.0 with and without the aux view; every two-view study moved;
+  evaluate-only reproduces the training-time npz.
+
+**Step P — two seeds.** Training 46m42s (s42) / 48m55s (s17), max mem 6,481 MiB, `mhcac_aux` 80.55M
+trainable. G3 re-checked on both pilot models (views_1 n=988 max |Δprob| 0.0; views_2 n=820 all moved;
+argmax cells changed 4.4% / 6.8%). Pool: mean aux weight per finding 0.46–0.50 at both seeds, i.e. a
+plain average again.
+
+**Verdict: STOP.** Rule 1 FAILS, rule 2 passes, rule 3 FAILS (by 0.0001). Cross-fitted cutpoints,
+paired bootstrap 1,000, seed 16; `*` = CI excludes 0.
+
+| AH − OFF, all val (n=1,808) | s42 | s17 | two-seed mean [CI] | NB/√2 |
+|---|---|---|---|---|
+| weighted F1 | −0.0009 | −0.0026* | −0.0017 [−0.0036, +0.0002] | 0.0019 |
+| F1-5 | +0.0007 | +0.0001 | +0.0004 [−0.0027, +0.0034] | 0.0022 |
+| macro recall | +0.0003 | −0.0014 | −0.0005 [−0.0046, +0.0032] | 0.0077 |
+| AUROC mean | +0.0064 | −0.0026 | +0.0019 [−0.0040, +0.0082] | 0.0195 |
+
+- Rule 3: views_1 (n=988) AH − OFF weighted F1 −0.0033* against −NB/√2 = −0.0032; F1-5 −0.0026.
+  ⚠ The single-view probabilities of AH are `mhcac`'s alone, trained on OFF's objective (AH − AHnoaux
+  views_1 AUROC exactly 0); AHnoaux − OFF views_1 wF1 is −0.0018 (CI crosses 0). The rest of the views_1
+  shortfall comes from AH's cutpoints, which are fitted on all val and so move with its two-view
+  predictions. The rule is read as written; rule 1 fails regardless.
+
+Descriptive only (cannot change the verdict):
+- views_2 (n=820), AH − OFF mean: AUROC +0.0229 [+0.0118, +0.0343] (NB/√2 0.0254, so within seed noise),
+  weighted precision +0.0062*, weighted recall +0.0039*, but weighted F1 −0.0043* and macro recall
+  −0.0248 [−0.0345, −0.0173] — both beyond NB/√2 (0.0021 / 0.0050), at both seeds. F1-5 +0.0006.
+  The aux head raises ranking on two-view studies and moves the operating point against the minority
+  classes; the cutpoints do not recover it.
+- AH − LF (all val): wF1 −0.0017*, F1-5 +0.0009. AH − LD: wF1 −0.0018*, F1-5 −0.0003. AH − P15: wF1
+  −0.0007, F1-5 +0.0019. None beyond NB/√2 in AH's favour.
+- AH − AHnoaux (same model, aux view removed), all val: wF1 −0.0007, F1-5 +0.0019, AUROC +0.0036; on
+  views_2: AUROC +0.0183*, macro recall −0.0269*.
+- AHauxonly − AH (the aux head's logits alone on two-view studies): views_2 F1-5 −0.0161*, AUROC
+  −0.0210*. The aux head alone is clearly weaker than the pool; pooling helps.
+- AHnoaux − OFF (does the anchor path stay OFF-equivalent?): all val every metric within NB/√2 (wF1
+  −0.0010, F1-5 −0.0015, AUROC −0.0017). Consistent with the gradient cut working.
+- AH seed delta (17 − 42), all val: AUROC −0.0202* — the same size as the OFF / P15 seed swings.
+
+Reading: a separate aux head removes the anchor-path cost that LF had (the anchor is OFF-equivalent),
+but the second view still adds no deciding-metric gain. On two-view studies it raises AUROC by about
+the seed-noise bar and costs macro recall well beyond it. This is the third late variant read against the
+same OFF arms (LF, LD, AH); none passes. Do not retry AH unchanged. One pilot budget, two seeds, val only;
+test not scored.

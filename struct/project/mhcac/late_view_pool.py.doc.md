@@ -75,4 +75,6 @@ view; trọng số gộp vẫn ~0,5. Plan: `docs/handoff/PLAN-2026-10-26-late-fu
 Biến thể thứ ba, `model.view_fusion.late_aux_head: true` (2026-10-27, user đã duyệt): ảnh phụ có MHCAC
 riêng (`mhcac_aux`) và loss riêng theo view (kiểu AuxLoss), mọi đường gradient từ phía ảnh phụ vào
 nhánh anchor bị cắt (`late_aux_view_logits`, `late_aux_head_loss`), nên MHCAC anchor học đúng mục tiêu
-của OFF. Test CPU kiểm cả ba chỗ cắt bằng gradient thật. **Chưa chạy trên GPU.** Plan: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
+của OFF. Test CPU kiểm cả ba chỗ cắt bằng gradient thật. **Pilot val 2026-10-27 (2 seed): DỪNG** --
+AH - OFF toàn val wF1 -0,0017, F1-5 +0,0004; nhánh anchor giữ mức OFF, ảnh phụ không thêm lợi ích. Plan
+và biên bản: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.

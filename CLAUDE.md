@@ -1205,7 +1205,16 @@ study (not image) → anchor + ≤1 auxiliary view
   Refused outside `late` and together with `late_detach_aux`. Not in the YAML: set
   `run.phases.phase1b.model.view_fusion.late_aux_head=true` AND add `mhcac_aux` to
   `run.phases.phase1b.trainable` and `transition.fade_in` on the command line (`mhcac` does not match it as
-  a prefix). **Not yet run on GPU.** Plan, gates, pilot rule: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
+  a prefix). Plan, gates, pilot rule: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
+  ❌ **Val pilot (2 seeds, same rule as LF/LD) 2026-10-27: STOP -- AH does not beat OFF.** Step G passed
+  (LF/LD still bit-identical, `mhcac_aux` trains, single-view studies unchanged by the aux view). AH - OFF
+  two-seed mean, all val: wF1 -0.0017 [-0.0036, +0.0002], F1-5 +0.0004 [-0.0027, +0.0034], so rule 1
+  fails; rule 2 passes; rule 3 fails by 0.0001 (views_1 wF1 -0.0033 vs -NB/sqrt2 -0.0032, though AH's
+  single-view probabilities are `mhcac`'s alone and AHnoaux - OFF there is -0.0018, so most of it is
+  cutpoints fitted on all val). Two-view studies: AUROC +0.0229* (within NB/sqrt2 0.0254) but macro recall
+  -0.0248* and wF1 -0.0043*, both beyond NB/sqrt2 at both seeds. The aux head alone is weaker than the pool
+  (views_2 F1-5 -0.0161*); AHnoaux - OFF within NB on every metric, so the gradient cut holds. Pool ~0.5
+  again. 47-49 min per arm, 6,481 MiB. Third late variant against the same OFF arms; none passes. No full run.
   ❌ **Val evidence package (2026-10-27, inference only): "the lateral view helps Pleural
   Effusion" NOT CONFIRMED** (pre-declared; formed from step 0's test numbers). On 797 val
   frontal+lateral studies, A `both − frontal` Pleural Effusion AUROC Pos +0.0056

@@ -154,6 +154,14 @@ The novelty only counts if it survives review. So:
   A direction that gives the aux view its own capacity (view-specific head / adapter, candidate 2)
   is what this points at -- untested. Pool stayed ~0.5 again.
   `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
+- **Late fusion with a separate aux head (AH, `late_aux_head`), val pilot 2026-10-27, same rule: STOP.**
+  AH - OFF two-seed mean, all val: wF1 -0.0017 [-0.0036, +0.0002], F1-5 +0.0004 [-0.0027, +0.0034];
+  rule 1 fails, rule 2 passes, rule 3 fails by 0.0001 (views_1 wF1 -0.0033, mostly shared cutpoints:
+  AH's single-view probabilities are `mhcac`'s, and AHnoaux - OFF is within NB everywhere). The aux head
+  removes LF's anchor cost, but on two-view studies it gives AUROC +0.0229* (within NB/sqrt2 0.0254)
+  and costs macro recall -0.0248* / wF1 -0.0043* beyond NB, at both seeds. The aux head alone is weaker
+  than the pool. Pool ~0.5 again. Three late variants (LF, LD, AH), none passes; giving the aux view its
+  own capacity did not unlock a gain. `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
 - **Evidence package on val (2026-10-27, inference only, literature-guided: Hashir 2020,
   van Tulder 2021): the pre-declared "lateral helps Pleural Effusion" (H1) is NOT CONFIRMED.**
   On 797 val studies with a frontal anchor + lateral aux, A `both − frontal` Pleural Effusion
@@ -184,7 +192,8 @@ The novelty only counts if it survives review. So:
    2026-10-27: STOP** (see "Current evidence"). Do not retry it unchanged.
    `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
    **Variant `model.view_fusion.late_aux_head: true` (separate `mhcac_aux` + per-view loss, AuxLoss-style,
-   no aux gradient into the anchor path) -- approved and implemented 2026-10-27, pilot pending.**
+   no aux gradient into the anchor path) -- val pilot 2026-10-27: STOP** (see "Current evidence").
+   Do not retry it unchanged.
    `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
 4. Train-side: separate LR for `view_fusion`, change the aux-view drop (`p_view_drop`, shipped 0.15).
 5. Seed replicates of ON and OFF to measure the noise bar properly.
