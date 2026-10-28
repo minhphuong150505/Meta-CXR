@@ -392,6 +392,12 @@ paper_context` (thêm INDICATION/HISTORY và FINDINGS lần chụp trước vào
 và CE thật bằng CheXbert `scripts/score_ce_chexbert.py` (venv riêng `~/.venvs/chexbert`).
 Pilot chọn công thức Stage 2: `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
 
+**`generate_stage2_reports.py --eval-cues oracle` (2026-10-28, user duyệt; mặc định `predicted` = giống
+hệt trước):** phép thử chỉ suy luận, thay cue P/N/U của mọi study bằng lớp thật CheXpert (cùng ánh xạ
+với `--train-cues oracle_mix`), để đo adapter có đọc cue không. Lớp thật lấy từ chính báo cáo tham chiếu
+nên đây là mức trần có rò nhãn, không bao giờ là số báo cáo. Không dùng cùng `--soft-token-ablation`.
+Plan: `docs/handoff/PLAN-2026-10-28-stage2-final-channel-probes.md`.
+
 **`run_medgemma_qlora.py --seed` (2026-10-26, mặc định 16 = giống hệt trước):** đổi phần ngẫu
 nhiên của việc train Stage 2 (khởi tạo LoRA/projector, dropout, augmentation của record train,
 thứ tự batch, phần 20% cue MHCAC của `oracle_mix`); tập study train/val không đổi theo seed.

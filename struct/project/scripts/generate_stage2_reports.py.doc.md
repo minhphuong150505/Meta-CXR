@@ -91,6 +91,24 @@ danh sách record — thu hẹp ở tầng dưới sẽ trượt cache.
   đo adapter có đọc kênh ảnh không. Áp lên mọi record trước `--limit`, nên cùng `--limit` chọn
   cùng study với lần sinh thường. Chỉ cho mode soft token; ngoài phân phối, không phải arm đối chứng.
 
+## `--eval-cues {predicted,oracle}` (2026-10-28)
+
+- Mặc định `predicted`: cue P/N/U của MHCAC theo `--cue-rule`, không đổi gì so với trước.
+- `oracle`: phép thử chỉ suy luận. `apply_oracle_cues` thay `pred_groups` của mọi record bằng lớp
+  thật CheXpert.
+  - Dùng lại `training/dataio/oracle_cues.true_label_codes` và `mix_oracle_cues` với
+    `model_share=0`, cùng ánh xạ D-018 mà `--train-cues oracle_mix` dùng lúc train.
+  - Bỏ qua `No Finding`. Study không có thông tin CheXpert giữ cue của MHCAC.
+  - Chạy sau cache Stage 1 nên không đổi danh tính cache. Áp lên mọi record trước `--limit`.
+- Số đếm tổng hợp (`cells`, `changed`, `unknown_truth`, ...) được in ra và ghi vào
+  `generation_summary.json` (`eval_cues`, `eval_cue_counts`).
+- Bị từ chối khi: mode không có cue MHCAC trong prompt (`uses_mhcac_prompt` false), `--cue-rule none`,
+  hoặc dùng cùng `--soft-token-ablation` (mỗi arm chỉ một can thiệp).
+- ⚠ Lớp thật lấy từ chính báo cáo tham chiếu, nên đây là mức trần có rò nhãn: nó trả lời "adapter có
+  đọc cue không", không bao giờ là kết quả được báo cáo.
+- Plan: `docs/handoff/PLAN-2026-10-28-stage2-final-channel-probes.md`. Test:
+  `tests/test_generate_stage2_reports.py`.
+
 ## Chống lặp — `--no-repeat-ngram-size`, `--repetition-penalty`
 
 > **Beam (2026-10-11):** `--num-beams` (mặc định 1 = greedy) và `--length-penalty` (0 = không

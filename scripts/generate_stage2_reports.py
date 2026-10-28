@@ -176,6 +176,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "tokens (a derangement), keeping its own cues and context, to "
                              "measure how much the adapter reads the image channel. ⚠ Out "
                              "of distribution: a mechanism probe, not a control arm.")
+    stage1.add_argument("--eval-cues", default="predicted", choices=("predicted", "oracle"),
+                        help="predicted (default): the prompt's P/N/U cues are MHCAC's, by "
+                             "--cue-rule. oracle: inference-only probe, every reportable "
+                             "finding's cue is replaced by its TRUE CheXpert class (the "
+                             "D-018 mapping that --train-cues oracle_mix trains on). ⚠ The "
+                             "true class comes from the reference report, so this is a "
+                             "label-leaking upper bound that asks whether the adapter reads "
+                             "its cues, never a reportable result.")
     stage1.add_argument("--stage1-cache-dir", type=Path, default=None,
                         help="Where .sensitive_stage1_cache lives. Point it at the "
                              "TRAINING output dir to reuse that run's encode pass; "
@@ -290,6 +298,16 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
         raise SystemExit("--finding-feature-ablation needs --finding-tokens")
     if args.soft_token_ablation and mode.image_mode not in SOFT_TOKEN_IMAGE_MODES:
         raise SystemExit("--soft-token-ablation needs a soft-token pipeline mode")
+    if getattr(args, "eval_cues", "predicted") == "oracle":
+        if not mode.uses_mhcac_prompt:
+            raise SystemExit("--eval-cues oracle needs a pipeline mode with MHCAC cues in the prompt")
+        if args.cue_rule == "none":
+            raise SystemExit("--eval-cues oracle replaces the cues; --cue-rule none has none to replace")
+        if args.soft_token_ablation:
+            raise SystemExit(
+                "--eval-cues oracle and --soft-token-ablation are two interventions; "
+                "run them as separate arms against one control"
+            )
     if not mode.requires_stage1:
         if args.manifest is None or args.image_root is None:
             raise SystemExit(f"{mode.name} needs --manifest and --image-root")
@@ -414,6 +432,14 @@ def stage1_records(args: argparse.Namespace) -> list[dict]:
         records = permute_finding_features_across_studies(records, args.seed)
     if args.soft_token_ablation == "permute_across":
         records = permute_soft_tokens_across_studies(records, args.seed)
+    if getattr(args, "eval_cues", "predicted") == "oracle":
+        from local_config import CHEXPERT_CSV
+
+        args.eval_cue_counts = apply_oracle_cues(
+            records, split_csv=fig9._split_csv_for(args.split), chexpert_csv=CHEXPERT_CSV,
+            findings=fig9.ABNORMALITIES_14, seed=args.seed,
+        )
+        print(f"[cues] {args.split} oracle: {args.eval_cue_counts}", flush=True)
     if args.prompt_style == fig9.PROMPT_STYLE_PAPER_CONTEXT:
         try:
             from training.dataio.study_context import attach_study_context
@@ -468,6 +494,26 @@ def permute_soft_tokens_across_studies(records: list[dict], seed: int) -> list[d
         copied["qformer_embs"] = records[(i + shift) % n]["qformer_embs"]
         out.append(copied)
     return out
+
+
+def apply_oracle_cues(
+    records: list[dict], *, split_csv, chexpert_csv, findings: Sequence[str], seed: int
+) -> dict[str, int]:
+    """Replace every record's cues by the true CheXpert classes; return counts only.
+
+    The training helper with ``model_share=0``: every finding with CheXpert
+    information takes its true class, a study with none keeps MHCAC's, and
+    No Finding is skipped, exactly as ``--train-cues oracle_mix`` builds its
+    training cues. Runs after the Stage-1 cache, so the cache identity is unchanged.
+    """
+    try:
+        from training.dataio.oracle_cues import mix_oracle_cues, true_label_codes
+    except ImportError:  # script layout
+        from dataio.oracle_cues import mix_oracle_cues, true_label_codes
+
+    codes = true_label_codes(records, split_csv=split_csv, chexpert_csv=chexpert_csv,
+                             findings=findings)
+    return mix_oracle_cues(records, codes, findings, model_share=0.0, seed=seed)
 
 
 def subsample(records: list[dict], limit: int, seed: int) -> list[dict]:
@@ -642,6 +688,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "finding_tokens": args.finding_tokens,
         "finding_feature_ablation": args.finding_feature_ablation,
         "soft_token_ablation": args.soft_token_ablation,
+        "eval_cues": args.eval_cues if mode.requires_stage1 else None,
+        "eval_cue_counts": getattr(args, "eval_cue_counts", None),
         "stage1_options": list(args.stage1_options or []) or None,
         "cue_rule": args.cue_rule if mode.requires_stage1 else None,
         "model_id": llm.model_id,

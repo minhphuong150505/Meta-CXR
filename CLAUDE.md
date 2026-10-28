@@ -1957,6 +1957,17 @@ caches still hit. Default unchanged. Piloted 2026-10-12 against P2: no gain (nor
 from LoRA r16); only LR 3e-4 passed
 (`docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`).
 
+🧪 **`generate_stage2_reports.py --eval-cues oracle` (2026-10-28, user-approved; default `predicted` =
+bit-identical).** Inference-only probe: every record's P/N/U cues become the TRUE CheXpert classes via
+`oracle_cues.true_label_codes` + `mix_oracle_cues(model_share=0)` (the D-018 mapping `--train-cues oracle_mix`
+trains on; No Finding skipped; a study with no CheXpert information keeps MHCAC's cues), applied after the
+Stage-1 cache. Refused for modes without MHCAC cues, with `--cue-rule none`, and together with
+`--soft-token-ablation` (one intervention per arm). Summary records `eval_cues` / `eval_cue_counts`. ⚠ The
+true class comes from the reference report: a label-leaking upper bound that asks whether the adapter reads
+its cues, never a reportable number. Pinned in `tests/test_generate_stage2_reports.py`. Plan (cue probe +
+soft-token permutation on the reported adapter, val 1,360, beam 4):
+`docs/handoff/PLAN-2026-10-28-stage2-final-channel-probes.md`.
+
 **`run_medgemma_qlora.py --seed` (2026-10-26, default `fig9.SEED` = 16, bit-identical).**
 Before it the Stage-2 training seed was hardwired, and rerunning a recipe reproduced its
 reports word for word (1,360/1,360 val, 2026-10-26), so Stage-2 seed noise could not be

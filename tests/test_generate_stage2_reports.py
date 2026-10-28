@@ -273,3 +273,56 @@ def test_soft_token_ablation_needs_a_soft_token_mode(tmp_path):
                            "--image-root", str(tmp_path), "--soft-token-ablation", "permute_across"])
     with pytest.raises(SystemExit, match="soft-token pipeline mode"):
         gen.validate_invocation(args, resolve_pipeline_modes("medgemma_direct")[0])
+
+
+# --------------------------------------------------------------------------
+# 2026-10-28 channel probes: --eval-cues oracle
+# --------------------------------------------------------------------------
+
+
+def test_eval_cues_default_to_predicted(tmp_path):
+    assert gen.parse_args(["--output-dir", str(tmp_path)]).eval_cues == "predicted"
+
+
+def test_oracle_cues_need_a_mode_with_mhcac_cues(tmp_path):
+    from training.pipeline_modes import resolve_pipeline_modes
+
+    args = gen.parse_args(["--output-dir", str(tmp_path), "--manifest", str(tmp_path),
+                           "--image-root", str(tmp_path), "--eval-cues", "oracle"])
+    with pytest.raises(SystemExit, match="MHCAC cues in the prompt"):
+        gen.validate_invocation(args, resolve_pipeline_modes("medgemma_direct")[0])
+
+
+def test_oracle_cues_refuse_a_second_intervention(tmp_path):
+    from training.pipeline_modes import resolve_pipeline_modes
+
+    name = "meta_cxr_qformer_with_mhcac_prompt"
+    args = gen.parse_args(["--output-dir", str(tmp_path), "--checkpoint-root", str(tmp_path),
+                           "--pipeline-mode", name, "--eval-cues", "oracle",
+                           "--soft-token-ablation", "permute_across"])
+    with pytest.raises(SystemExit, match="two interventions"):
+        gen.validate_invocation(args, resolve_pipeline_modes(name)[0])
+
+
+def test_oracle_cues_take_the_true_class_and_skip_no_finding(tmp_path):
+    import numpy as np
+    import pandas as pd
+
+    findings = ("No Finding", "Edema", "Cardiomegaly", "Fracture")
+    # Synthetic identifiers only.
+    pd.DataFrame({"subject_id": [1, 2], "study_id": [10, 20], "dicom_id": ["a", "b"]}).to_csv(
+        tmp_path / "split.csv", index=False)
+    pd.DataFrame({"subject_id": [1], "study_id": [10], "No Finding": [np.nan], "Edema": [1.0],
+                  "Cardiomegaly": [np.nan], "Fracture": [-1.0]}).to_csv(
+        tmp_path / "chexpert.csv", index=False)
+    mhcac = {"positive": ["Cardiomegaly"], "negative": ["Edema", "Fracture"], "uncertain": []}
+    records = [{"sample_key": "k0", "image_path": "/x/a.jpg", "pred_groups": dict(mhcac)},
+               {"sample_key": "k1", "image_path": "/x/b.jpg", "pred_groups": dict(mhcac)}]
+    counts = gen.apply_oracle_cues(records, split_csv=tmp_path / "split.csv",
+                                   chexpert_csv=tmp_path / "chexpert.csv",
+                                   findings=findings, seed=16)
+    assert records[0]["pred_groups"] == {"positive": ["Edema"], "negative": ["Cardiomegaly"],
+                                         "uncertain": ["Fracture"]}
+    # a study with no CheXpert information keeps MHCAC's cues
+    assert records[1]["pred_groups"] == mhcac
+    assert counts["from_truth"] == 3 and counts["unknown_truth"] == 3 and counts["changed"] == 3
