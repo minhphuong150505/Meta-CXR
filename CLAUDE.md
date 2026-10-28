@@ -100,7 +100,8 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   (StreamAdapter norms 19.6 -> 1,713 PubMedCLIP, 12 -> 413 Swin; no LayerNorm after
   them) and 1c (1 epoch, batch 8) drops ITC R@5 0.65 -> 0.17 without improving test
   AUROC (1b best vs 1c: +0.0037 [-0.0012, +0.0095]). Stage 2 v3 IGNORES its cues:
-  oracle cues from the true labels (1,000 test studies) change no metric. Copying
+  oracle cues from the true labels (1,000 test studies) change no metric (the REPORTED
+  P2 adapter does read them -- 2026-10-28 probe, see `--eval-cues oracle` below). Copying
   the patient's previous FINDINGS alone matches the paper's BLEU-1/BLEU-4 and beats
   the model by 0.12 lexicon CE. Novelty index vs the paper:
   `docs/CHI_MUC_TINH_MOI.md`; pilot awaiting approval:
@@ -1923,9 +1924,9 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
   [+0.092, +0.116]. (The run's own first scoring was on 300 studies; superseded.) ⚠ **Not the paper's conditions**: this
   model also reads the indication and the previous study's FINDINGS; beating the paper's
   0.390 / 0.102 / 0.173 / 0.280 / 0.291 / 0.426 says nothing about the image channel
-  (soft tokens still collapsed; a 10,000-study adapter of this recipe does read them -- swapping them
-  across studies costs BERTScore -0.040, 2026-10-16 refit pilot -- but that does not separate the
-  image's share of the gain). One run, one seed; the three changes are not separated
+  (soft tokens still collapsed; this adapter still reads them -- swapping them across studies costs
+  CheXbert micro F1-14 -0.135 / BERTScore -0.059 on val, 2026-10-28 probe -- but that does not
+  separate the image's share of the gain). One run, one seed; the three changes are not separated
   at full budget. Traps: (1) `generate_stage2_reports.py --limit` defaults to **300** --
   the run script omitted it, so pass `--limit 0` for the whole split (done separately,
   `~/stage2_genfull.sh` -> `gen_test_{beam,greedy}_full`, scores in `score/n2800_*.json`); (2) generation re-keys rows with
@@ -1967,6 +1968,15 @@ true class comes from the reference report: a label-leaking upper bound that ask
 its cues, never a reportable number. Pinned in `tests/test_generate_stage2_reports.py`. Plan (cue probe +
 soft-token permutation on the reported adapter, val 1,360, beam 4):
 `docs/handoff/PLAN-2026-10-28-stage2-final-channel-probes.md`.
+✅ **RAN 2026-10-28 -- the reported P2 adapter reads BOTH channels** (val n=1,360, beam 4 / lp 2, paired
+bootstrap vs predicted cues C; same model, so NB does not apply). Oracle cues (11.1% of cue cells change):
+CheXbert micro F1-14 **+0.0908 [+0.0752, +0.1063]**, BERTScore +0.0122 [+0.0064, +0.0180], every metric up --
+the reverse of v3. Soft tokens permuted across studies: CheXbert micro F1-14 **-0.1350 [-0.1550, -0.1142]**,
+BERTScore -0.0592 [-0.0672, -0.0513], every metric down, reports longer (median 36 -> 42 words). Oracle = a
+label-leaking upper bound; permutation = out of distribution (shows the channel is read, not its share).
+⚠ G0 (20 recorded test beams regenerated) matched only **8/20**, cause unexplained (records, settings and
+environment identical; generation deterministic, 20/20 between two reruns), so arm C's absolutes may differ
+slightly from the reported model's; paired deltas unaffected. Every number: the plan's execution report.
 
 **`run_medgemma_qlora.py --seed` (2026-10-26, default `fig9.SEED` = 16, bit-identical).**
 Before it the Stage-2 training seed was hardwired, and rerunning a recipe reproduced its

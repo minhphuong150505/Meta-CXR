@@ -397,6 +397,12 @@ hệt trước):** phép thử chỉ suy luận, thay cue P/N/U của mọi stud
 với `--train-cues oracle_mix`), để đo adapter có đọc cue không. Lớp thật lấy từ chính báo cáo tham chiếu
 nên đây là mức trần có rò nhãn, không bao giờ là số báo cáo. Không dùng cùng `--soft-token-ablation`.
 Plan: `docs/handoff/PLAN-2026-10-28-stage2-final-channel-probes.md`.
+**Đã chạy 2026-10-28 trên adapter Stage 2 được báo cáo (val 1.360, beam 4): mô hình đọc cả cue lẫn soft
+token.** Cue thật (đổi 11,1% ô cue): CheXbert micro F1-14 +0,091 [+0,075, +0,106], BERTScore +0,012, mọi
+chỉ số tăng (ngược với v3). Tráo soft token giữa các study: CheXbert micro F1-14 −0,135 [−0,155, −0,114],
+BERTScore −0,059, mọi chỉ số giảm. Cue thật là mức trần có rò nhãn; tráo soft token là đầu vào lệch phân
+phối, chỉ cho biết kênh được đọc chứ không đo phần đóng góp. Bước G0 (sinh lại 20 báo cáo test đã ghi) chỉ
+khớp 8/20, chưa rõ nguyên nhân; so sánh ghép cặp không bị ảnh hưởng.
 
 **`run_medgemma_qlora.py --seed` (2026-10-26, mặc định 16 = giống hệt trước):** đổi phần ngẫu
 nhiên của việc train Stage 2 (khởi tạo LoRA/projector, dropout, augmentation của record train,

@@ -152,3 +152,77 @@ mang nhiều nội dung lâm sàng hơn với mô hình cuối. Không có quy t
 
 File JSONL sinh ra, cache record và log ở lại trên máy train. Chỉ số tổng hợp và CI mới được mang về
 plan này. Không đưa văn bản báo cáo, `sample_key` hay ID nào vào git.
+
+## Execution report
+
+**G0, 2026-10-28 16:13 (`~/s2probe.sh`, checkout `~/Meta-CXR-v3` at `4c06f55`): FAILED, 8/20 identical.**
+The script stopped there as planned. Diagnosis (CPU and log only, no report text):
+- **Stage-1 records are identical.** The rebuilt test cache matches the cache of the reported run on
+  every field except the cache-internal `sample_key`, which depends on the YAML mtime. Soft tokens
+  are bit-identical, and `pred_groups`, `class_logits`, `image_path` and `ref` match on 2,800/2,800.
+  The reported run also logged `missing=758`.
+- **Same decoding settings:** stop ids `[1, 106]`, beam 4, length penalty 2, 256 new tokens,
+  `paper_context` + `cutpoints`.
+- **No default-path generation change** between `6dd5688` (the MBR gate, 20/20 on 2026-10-14) and
+  `4c06f55`.
+- **Unchanged environment:** the MedGemma snapshot dates from 2026-08-30, the adapter from 2026-10-13,
+  the venv from August, and no driver or CUDA package changed after 2026-10-14.
+- **Generation is deterministic.** A second G0 run (`g0b`) is identical to the first, 20/20. Both match
+  the reported output on 8/20.
+
+The cause of the 8/20 mismatch is **unexplained**. The two candidates, both untested, are a code
+difference that was missed and a post-reboot numeric change such as a different cuBLAS kernel choice.
+
+**User decision, 2026-10-28:** run arms C, O and P as planned without a C2 control, because
+generation is deterministic. G0 is replaced by "deterministic between two runs". The absolute numbers
+of C may differ slightly from the reported model; the paired O − C and P − C comparisons stay valid
+because all arms run under the same conditions. Part 2 (`~/s2probe2.sh` → `~/s2probe2.log`) was
+launched at 16:51:45.
+
+**Part 2, 2026-10-28 16:51:45 → 20:49:51 (`~/s2probe2.sh`): DONE, no abort.** Generation took
+C 76 min, O 77 min, P 80 min, and scoring 4 min. Outputs are in `~/s2probe_20261028/{C,O,P}`; only
+the aggregates below left the host.
+
+- **Cohort check passed:** 1,360/1,360 studies in each arm, with the same `sample_key` order and the
+  same references, and `n_failed` 0.
+- **Oracle cue counts:** 17,680 cells (1,360 × 13). 17,407 came from the true label; 273 kept MHCAC's
+  cue because 21 studies have no CheXpert information. **1,966 cells changed (11.1%)**, so the
+  cutpoint cues already agree with the true class on about 89% of cells.
+- **Reports identical to C:** O 459/1,360 (33.8%), P 150/1,360 (11.0%).
+
+Absolute values on val, n=1,360, beam 4, lp 2 (paper protocol; CheXbert in rrg mode):
+
+| arm | BLEU-4 | ROUGE-L | METEOR | CIDEr | BERTScore | lexicon CE | CheXbert micro F1-14 | micro F1-5 | macro F1-14 | median words |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| C (predicted cues) | 0.2199 | 0.3928 | 0.2014 | 0.7066 | 0.5070 | 0.3403 | 0.5447 | 0.5699 | 0.4109 | 36 |
+| O (true-label cues) | 0.2293 | 0.4034 | 0.2089 | 0.7616 | 0.5192 | 0.4359 | 0.6356 | 0.6789 | 0.5447 | 37 |
+| P (soft tokens permuted) | 0.1796 | 0.3388 | 0.1787 | 0.4063 | 0.4478 | 0.2896 | 0.4097 | 0.4353 | 0.3218 | 42 |
+
+Paired per-study bootstrap (2,000 resamples, seed 16), with the deciding metric in bold:
+
+| | **CheXbert micro F1-14** | micro F1-5 | BERTScore | macro F1-14 | macro F1-5 | ROUGE-L | BLEU-4 | CIDEr | lexicon CE |
+|---|---|---|---|---|---|---|---|---|---|
+| O − C | **+0.0908 [+0.0752, +0.1063]** | +0.1089 [+0.0853, +0.1330] | +0.0122 [+0.0064, +0.0180] | +0.1338 [+0.1094, +0.1573] | +0.1268 [+0.0974, +0.1561] | +0.0106 [+0.0057, +0.0157] | +0.0087 [+0.0034, +0.0141] | +0.0551 [+0.0106, +0.1027] | +0.0956 [+0.0733, +0.1178] |
+| P − C | **−0.1350 [−0.1550, −0.1142]** | −0.1346 [−0.1629, −0.1058] | −0.0592 [−0.0672, −0.0513] | −0.0892 [−0.1119, −0.0643] | −0.1259 [−0.1571, −0.0943] | −0.0540 [−0.0624, −0.0466] | −0.0541 [−0.0637, −0.0457] | −0.3002 [−0.3793, −0.2296] | −0.0507 [−0.0739, −0.0265] |
+
+**Reading, by the pre-declared rule:**
+- **O: "the model reads its cues, and better cues give better reports".** The lower bound of
+  CheXbert micro F1-14 is +0.075 > 0, and every metric moves up. Changing 11% of the cue cells
+  raises CheXbert micro F1-14 by 0.091. This reverses the v3 result (v3 ignored oracle cues). The
+  likely cause is that this adapter was trained with `oracle_mix`, but that is not separated here.
+  ⚠ O is a **label-leaking upper bound**: its cues come from the labels of the reference report that
+  CheXbert also reads. It is never a reportable result. It says how much Stage 2 could gain from
+  Stage-1 cues if Stage 1 classified perfectly.
+- **P: "the model reads the soft-token channel".** Both CheXbert micro F1-14 (upper bound −0.114) and
+  BERTScore (upper bound −0.051) are below 0. The model reads the collapsed soft tokens, and reports
+  get longer without them (median 36 → 42 words). The drop is larger than for the 10,000-study adapter
+  (BERTScore −0.040, CheXbert −0.083; greedy, 500 val, so not directly comparable).
+  ⚠ The input is out of distribution: this shows the channel is read, not how much it contributes.
+- **Together (descriptive):** |P − C| = 0.135 > |O − C| = 0.091 on CheXbert micro F1-14. Both
+  channels carry clinical content for the final model. The two numbers measure different
+  interventions (one destroys a channel, the other improves one), so they do not rank the channels.
+
+Not established by this probe: what share of the full-run gain over v3 comes from the image channel
+versus the indication and prior-findings context. One model, one decoding, val only. The 8/20 G0
+mismatch stays unexplained. C's absolute values may differ slightly from the reported model's
+generation of the same studies; the paired comparisons are unaffected.
