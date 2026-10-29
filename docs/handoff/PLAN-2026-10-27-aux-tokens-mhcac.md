@@ -117,7 +117,7 @@ plus `CLAUDE.md`, the Vietnamese `README` and the multi-view-novelty skill.
 Smoke size as in LF / LD / AH: 2,000 train and 400 val studies, 1 epoch, seed 42.
 - **G1:** an `early` smoke (P15) and a `late` smoke on the new code. All checkpoint tensors and the
   val probabilities must equal the smoke arms already on disk: `~/latefusion_pilot_20261026/G1_old`
-  (early, code `a43a88d`) and `~/lateauxhead_20261027/G1_late` (late). OFF (`multi_view: false`)
+  (early, code `761f30b`) and `~/lateauxhead_20261027/G1_late` (late). OFF (`multi_view: false`)
   never reaches the new branches; the CPU bit-identity test covers it.
 - **G2:** a `tokens` smoke. It must meet all of the following:
   - rc=0, no NaN;
@@ -232,7 +232,7 @@ The `.npz` files, checkpoints and logs stay on the host. Only aggregates come ba
 
 ## Execution report
 
-2026-10-27, host checkout `87351f9`, `~/auxtok.sh` → `~/auxtokens_20261027/`, launched three times. Launch 1
+2026-10-27, host checkout `3a3ba50`, `~/auxtok.sh` → `~/auxtokens_20261027/`, launched three times. Launch 1
 aborted before any GPU work: `/home` had 21 GB free against a 30 GB guard; the script now trims this run's own
 checkpoints and the guard is 15 GB, and no user data was touched. Launch 2 aborted at the step-G eval: the attention
 wrapper read `query_vectors` off `AbnormalitySpecificLoss` instead of its `attention_pooling`. The wrapper was fixed,
@@ -317,12 +317,12 @@ seeds and whether the two-view studies, the ones the aux view can actually chang
 Arms: TK and OFF at `run.seed` 7 and 23 (seeds chosen now, before running). The recipe is the same as the pilot:
 phase 1b only, 60,000 studies, 2 epochs, warmup 150, from `run_20261005_paper/checkpoint_phase1a.pth`; TK as in
 step P, OFF as in `~/seednoise.sh` (`multi_view=false`, `lambda_mpc 0`, `lambda_view_consistency 0`). Code
-`87351f9`. Run order: TK_s7, OFF_s7, TK_s23, OFF_s23, serial, on one card. Test is not scored. The existing
+`3a3ba50`. Run order: TK_s7, OFF_s7, TK_s23, OFF_s23, serial, on one card. Test is not scored. The existing
 seed-42/17 arms are reused, which gives four seeds per arm.
 
-**Gate G-OFF:** the new OFF arms run on `87351f9`, while OFF_s17 ran on `eaf942a` and OFF_s42 on `a43a88d`. Before
-any arm, an OFF smoke (2,000 studies, 1 epoch, seed 42) is run at `eaf942a` (a temporary git worktree) and at
-`87351f9`. All checkpoint tensors and val probabilities must be bit-identical, or the run aborts.
+**Gate G-OFF:** the new OFF arms run on `3a3ba50`, while OFF_s17 ran on `f4674ea` and OFF_s42 on `761f30b`. Before
+any arm, an OFF smoke (2,000 studies, 1 epoch, seed 42) is run at `f4674ea` (a temporary git worktree) and at
+`3a3ba50`. All checkpoint tensors and val probabilities must be bit-identical, or the run aborts.
 
 **Reading rule.** Cutpoints are cross-fitted as before, with the same fold. Δ_s = TK_s − OFF_s for s in
 {42, 17, 7, 23}, and Δ̄ is their mean. The CI of Δ̄ is a paired bootstrap with 1,000 draws at seed 16, with the
@@ -359,11 +359,11 @@ total. Disk: ~1 GB per arm on `/home` (19 GB free). The `.npz` files, checkpoint
 
 ### Seed replicate — execution report
 
-2026-10-27, host checkout `87351f9`, `~/auxtok4.sh` → `~/auxtok4_20261027/`, one launch, 17:31:03 → `AUXTOK4_DONE`
+2026-10-27, host checkout `3a3ba50`, `~/auxtok4.sh` → `~/auxtok4_20261027/`, one launch, 17:31:03 → `AUXTOK4_DONE`
 20:37:31. The probe `auxtok4_probe.py` → `probe.{json,log}` reproduced every TK / OFF / TKnoaux value at seeds 42
 and 17 exactly (max |Δ| 0.0).
 
-- **Gate G-OFF — PASS.** The OFF smoke at `eaf942a` and at `87351f9`: 722/722 checkpoint tensors bit-identical,
+- **Gate G-OFF — PASS.** The OFF smoke at `f4674ea` and at `3a3ba50`: 722/722 checkpoint tensors bit-identical,
   val probabilities equal.
 - **Training:** TK_s7 48m06s, OFF_s7 32m33s, TK_s23 47m55s, OFF_s23 34m56s. Peak about 5.1 GB (TK) and 4.8 GB (OFF);
   the driver's `max mem` field is still glued to a timestamp digit.

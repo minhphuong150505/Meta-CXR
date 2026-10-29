@@ -22,9 +22,9 @@ train set is the first 10,000 studies whatever the seed. A non-default seed adds
 cache fingerprint of augmented train records. Pinned by `tests/test_stage2_seed.py`; full host suite
 rc=0 (2 skipped) with the change.
 
-The host runs it from a NEW checkout, `~/Meta-CXR-s2seed`, so `~/Meta-CXR-v3` stays at `3b69007`.
+The host runs it from a NEW checkout, `~/Meta-CXR-s2seed`, so `~/Meta-CXR-v3` stays at `d9e2155`.
 `configs/env_config.yaml` is copied from `~/Meta-CXR-v3` (identical non-comment lines, manifest v3).
-`git diff 3b69007` on `training/ stage2/ model/ mhcac/ vision_encoders/ pretraining/` and the
+`git diff d9e2155` on `training/ stage2/ model/ mhcac/ vision_encoders/ pretraining/` and the
 generation/scoring scripts: the seed flag, plus `model/lavis/data/external_eval.py` wiring in
 `ReportDataset.py` that is a no-op when `external_eval` is absent (it is).
 
@@ -99,9 +99,9 @@ Consequences, recorded:
 User go-ahead 2026-10-26 ("ok") for the fix, no code change: aborted dir moved to
 `~/s2seed_20261026_abort1`; `touch -r` copied the old checkout's mtime to the new one (content already
 identical); the chain gained a guard that the config's size and `st_mtime_ns` match across checkouts.
-A code fix (draw independent of file mtime) would change every default result; by user decision it lives on branch `fix/oracle-mix-stable-key` (`ed0af0a`), not merged. This run does not use it.
+A code fix (draw independent of file mtime) would change every default result; by user decision it lives on branch `fix/oracle-mix-stable-key` (`84f8ee4`), not merged. This run does not use it.
 
-### Attempt 2 — launched once 08:21 (host code `948964e`)
+### Attempt 2 — launched once 08:21 (host code `5e8fefc`)
 
 Ran 08:21 -> 13:37:48, `S2SEED_DONE`, no abort. Host not rebooted (up since 2026-10-24 17:18), `ntfs3`.
 

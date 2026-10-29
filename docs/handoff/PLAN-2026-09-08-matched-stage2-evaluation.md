@@ -28,7 +28,7 @@ directory, busy GPU, or evaluator failure. Do not overwrite or retry blindly.
 
 ## Execution report — 2026-09-08, minhphuong
 
-- Revision: `fd41cd4`; host pull returned already up to date.
+- Revision: `80ffe57`; host pull returned already up to date.
 - Launched the command above once. Both sequential evaluator commands exited 0;
   orchestration printed `COMPLETE`. All requested NLG metrics available.
 - Cohort: 2,772 per arm, unique keys, identical order and references (0 mismatches).

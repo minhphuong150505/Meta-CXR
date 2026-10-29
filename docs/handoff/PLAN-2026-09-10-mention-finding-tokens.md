@@ -209,7 +209,7 @@ decoding at 160 new tokens with the model's own stop IDs `[1, 106]`.
     byte-identical between `encode_train_example` and the generate path.
 
 Plus the existing suite must not move from its baseline (host: 1,013 passed,
-2 skipped as of `bdbf1af`).
+2 skipped as of `61def3f`).
 
 **Stage 1 — GPU smoke.** 200 train studies, 10 val, 10 test, one epoch, arm D
 only. Proves the record pass stores `class_logits`, the 13 placeholders survive
@@ -292,7 +292,7 @@ separately, with the numbers.
 
 ## Preconditions
 
-- Branch off `main` at `c4d4357`; work on `feat/stage2-finding-tokens`.
+- Branch off `main` at `23f2123`; work on `feat/stage2-finding-tokens`.
 - Host `phuong@100.116.167.90`, `~/.venvs/meta-cxr-stage1-311/bin/python`.
 - `findmnt -no FSTYPE /mnt/drive1tb` must print `ntfs3`.
 - GPU must be idle: `nvidia-smi`, `pgrep -af run_medgemma_qlora`, and the output
@@ -382,7 +382,7 @@ Ablation on arm D only, three separate output directories:
 
 ## Execution report — 2026-09-10, host `minhphuong` (100.116.167.90)
 
-- **commit run:** `76797ac` (branch `feat/stage2-finding-tokens`), in a detached
+- **commit run:** `6bbc5ac` (branch `feat/stage2-finding-tokens`), in a detached
   review worktree `/home/phuong/ft_review_20260910`. Host `main` untouched.
 - **host state before launch:** uptime since 2026-09-03 11:32:55,
   `findmnt` → `ntfs3`, GPU **170 MiB of 16,311, 0% util, zero compute apps**,
@@ -390,7 +390,7 @@ Ablation on arm D only, three separate output directories:
 
 ### Stage 0 — CPU suite: PASS, no regression
 
-| | branch `76797ac` | baseline `c4d4357` |
+| | branch `6bbc5ac` | baseline `23f2123` |
 |---|---:|---:|
 | passed | **1,066** | 1,028 |
 | skipped | 2 | 2 |
@@ -408,9 +408,9 @@ box.** `tests/test_generation_stop_tokens.py` builds a `VariantLLM` with
 `AttributeError`, fixed by giving all four attributes **class-level defaults**,
 and (b) that file stubs `_prompt_template_hash` with `lambda *args`, so the new
 keyword argument raised `TypeError`, fixed by passing it positionally with the
-digest length named (`TEMPLATE_HASH_LENGTH`). Both tests pass at `c4d4357` and
+digest length named (`TEMPLATE_HASH_LENGTH`). Both tests pass at `23f2123` and
 failed on the first push — the local box skips them for want of `transformers`,
-so **the host run is what found them**. Commits `138d455` and `76797ac`.
+so **the host run is what found them**. Commits `8f664f6` and `6bbc5ac`.
 
 ### Stage 1 — GPU smoke, arm D: PASS
 

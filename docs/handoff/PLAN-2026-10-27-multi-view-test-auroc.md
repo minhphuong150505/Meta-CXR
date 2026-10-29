@@ -50,7 +50,7 @@ PL = test studies whose anchor is PA/AP and whose aux view (`max_aux_views=1`,
 
 ## Execution report
 
-2026-10-27, host checkout `8cfd03b`, `~/mv_test_auroc.py` (ad hoc, aggregates only),
+2026-10-27, host checkout `fa58119`, `~/mv_test_auroc.py` (ad hoc, aggregates only),
 run once, CPU, output `~/mv_evidence_20261027/test_auroc.{json,log}`. The first two
 launches never reached the host (Tailscale approval links expired); nothing was
 computed on them. Inputs: `A_rescore.npz` (Oct 24), `A_noaux.npz` (Oct 25),

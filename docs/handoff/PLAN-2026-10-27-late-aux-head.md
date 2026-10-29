@@ -237,14 +237,14 @@ The `.npz` files, checkpoints and logs stay on the host. Only aggregates come ba
 
 ## Execution report
 
-2026-10-27, host checkout `1d24eb5`, `~/ahead.sh` → `~/lateauxhead_20261027/`, launched once at 10:46
+2026-10-27, host checkout `c5162d8`, `~/ahead.sh` → `~/lateauxhead_20261027/`, launched once at 10:46
 (a first launch aborted at G2 on a false alarm in the script's own grep, which looked for
 `'mhcac_aux'` while the log prints `mhcac_aux 80.55M`; the grep was fixed, the output directory removed,
 and nothing else changed). `AHEAD_DONE` 12:51. Probe `~/ahead_probe.py` → `probe.{json,log}`; its sanity
 check reproduced every OFF / P15 / LF / LD value of the earlier probes exactly (max |Δ| 0.0).
 
 **Step G — PASS.**
-- G1 (LF) and G1b (LD) against the `a0e1eb0` arms: 724/724 tensors bit-identical, val probabilities equal.
+- G1 (LF) and G1b (LD) against the `fdb9bfa` arms: 724/724 tensors bit-identical, val probabilities equal.
 - G2 (AH smoke): `mhcac_aux` 191 tensors mirroring `mhcac`, 80,550,186 parameters each, all 191 differ from
   `mhcac`, 190 moved from init; pool moved (|max| 2.9e-3); max mem 6,418 MiB.
 - G3: single-view studies max |Δprob| 0.0 with and without the aux view; every two-view study moved;

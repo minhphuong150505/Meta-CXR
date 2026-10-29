@@ -4,7 +4,7 @@
 The document exists to record *why*, with measured evidence, so the next round
 does not re-derive it.
 
-Round: 5 (`refactor/medgemma-real-runtime-validation`, branched from `05728bc`)
+Round: 5 (`refactor/medgemma-real-runtime-validation`, branched from `81f1f0f`)
 Date: 2026-07-21
 Measured on: the local development machine, not a training host.
 

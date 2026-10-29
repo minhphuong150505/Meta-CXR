@@ -29,7 +29,7 @@ configuration.
 
 | | |
 |---|---|
-| host repo | `7701fed`, branch `refactor/disease-specific-explanation`, clean |
+| host repo | `cd4323c`, branch `refactor/disease-specific-explanation`, clean |
 | `/mnt/drive1tb` | mounted `ntfs3 (ro)` — the configs' path, not the udisks one |
 | `/home` | 262 GB free, ext4 — `output_dir` must live here |
 | GPU | idle, 166 MiB, no `pretraining.train` or supervisor running |
@@ -130,7 +130,7 @@ _(appended after the run)_
 **The run did not survive. The cause is below the application: two kernel Oopses
 in the NVMe block driver.**
 
-- commit run: `dbd2dd5`
+- commit run: `61ff449`
 - launched 11:28:57, aborted by the supervisor 11:52:58 after three attempts
 
 | attempt | outcome |

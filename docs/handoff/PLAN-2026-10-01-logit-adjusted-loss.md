@@ -45,9 +45,9 @@ _(executor appends here)_
 
 ### 2026-10-01 — host tests, smoke, and a simulation that stops the full run
 
-- `8cc083c` + `4a1c968` on the host: full suite 1,131 tests, 0 failed, 2 skipped.
+- `0c17322` + `79bf058` on the host: full suite 1,131 tests, 0 failed, 2 skipped.
 - Smoke 1 failed at phase-1b init: `checkpoint_phase1a.pth` carried 14 CE
-  class-weight buffers the logit-adjusted model lacks. Fixed in `4a1c968`
+  class-weight buffers the logit-adjusted model lacks. Fixed in `79bf058`
   (loss configuration is no longer stored in or read from checkpoints).
 - Smoke 2 (`~/smoke_20261001_logitadj`, 2,000 train / 400 val, 1b only):
   mechanically clean — loads 765 tensors from 1a, no NaN/inf, 0.33 s/it,

@@ -121,7 +121,7 @@ RAD-DINO không hơn MedCLIP-Swin (không tích hợp); và luồng BioViL có h
 code gốc — token bị trộn (`reshape` không hoán vị trục) và projector 1408 chiều là ngẫu
 nhiên, đóng băng trong 1a/1b. "Mở khóa encoder nông" (mục 3) vì thế chưa đủ.
 
-**Pilot (user duyệt 2026-10-11), `~/s1pilot.sh` → `~/s1pilot_20261011/`, mã `9b79822`:**
+**Pilot (user duyệt 2026-10-11), `~/s1pilot.sh` → `~/s1pilot_20261011/`, mã `ef964ab`:**
 chỉ pha 1b, 60.000 study train đầu tiên, 2 epoch, warm-up 150 update, cùng checkpoint 1a
 của `run_20261005_paper`, không chấm test.
 

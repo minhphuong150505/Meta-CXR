@@ -11,7 +11,7 @@
     "val_studies": 1808,
     "kernel_faults": 0,
     "config": "pretraining/configs/mimic_cxr_full.yaml",
-    "source_commit_for_gate_export": "0f1003d",
+    "source_commit_for_gate_export": "1f2e7f0",
     "note": "q is bit-identical between the training run's checkpoint_best evaluation and the separate evaluate-only export that added the mention gate (max abs diff 0.0), so the two are directly comparable."
   },
   "arms": {

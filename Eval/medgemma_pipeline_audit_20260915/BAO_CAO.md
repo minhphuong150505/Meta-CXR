@@ -1,6 +1,6 @@
 # Vì sao MedGemma nhận ảnh trực tiếp có thể hơn pipeline đã fine-tune?
 
-Ngày điều tra: **15/09/2026**. Mã nguồn được đọc: `2013835db7358f058368d6e59b86af66fc68a35a`.
+Ngày điều tra: **15/09/2026**. Mã nguồn được đọc: `d90cba945b29159102df0c4fa41f9b3eed8fc71b`.
 
 **Kết luận chính:** mô hình đã fine-tune có học, nhưng hành vi sinh của nó đang nghiêng mạnh về câu trả lời ngắn và ít đa dạng. Nhánh kết hợp MHCAC + Q-Former gặp hiện tượng này nặng hơn nhánh ảnh trực tiếp. Zero-shot hơn ở nhiều metric đo độ phủ, nhưng **không hơn mọi metric**: trên bộ đánh giá mới, CIDEr của hai nhánh fine-tune cao hơn. Vì vậy, ưu tiên hiện tại là kiểm soát đầu vào/đối chứng và khắc phục hiện tượng sinh quá ngắn; chưa có căn cứ để coi việc thêm loss Stage-1 là đòn bẩy đầu tiên.
 

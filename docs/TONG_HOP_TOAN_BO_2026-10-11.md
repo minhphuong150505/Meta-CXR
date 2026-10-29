@@ -27,7 +27,7 @@ Guided Vision Language Model", IEEE Access, vol. 13, 2025 (META-CXR).
   sau khi log có `P2FULL_ALL_DONE` (mục 8.3).
 - **Chưa có:** số test của mô hình mới. Mọi số Stage 2 mới trong file này là số pilot
   trên 500 study val.
-- Mã: bản mới nhất `5e09a57`, nhánh `feat/stage2-finding-tokens`.
+- Mã: bản mới nhất `9b2963d`, nhánh `feat/stage2-finding-tokens`.
 
 ## 1. Tóm tắt
 
@@ -292,12 +292,12 @@ Probe tuyến tính ba lớp, 53.300 study fit / 2.780 study test, ảnh sạch.
 Hệ quả: phần lớn tín hiệu phân loại hiện đến từ MedCLIP-Swin; BioViL-T — encoder có độ
 phân giải không gian cao nhất — gần như chưa được dùng đúng.
 
-Đã thêm cờ tùy chọn `model.biovil.token_layout: patch` (mã `9b79822`); vắng cờ =
+Đã thêm cờ tùy chọn `model.biovil.token_layout: patch` (mã `ef964ab`); vắng cờ =
 `legacy_reshape`, giống hệt trước. YAML đang ship không bật.
 
 ### 5.7 Pilot sửa luồng BioViL — không có lợi
 
-Chỉ pha 1b, 60.000 study, 2 epoch, cùng checkpoint 1a, val 1.808 study, mã `9b79822`.
+Chỉ pha 1b, 60.000 study, 2 epoch, cùng checkpoint 1a, val 1.808 study, mã `ef964ab`.
 13:10 → 15:33, ba arm `rc=0`, mỗi arm ~48 phút, VRAM đỉnh 6,4 / 6,4 / 6,8 GB.
 
 | arm | khác gì | epoch 0 (AUROC / macro recall / F1-5) | epoch 1 | `loss_cls` train cuối |
@@ -490,7 +490,7 @@ P0 của pilot (BLEU-4 0,121 trên 500 study val) không so trực tiếp đư�
 
 User duyệt 2026-10-11: P2, 2 epoch. Stage 1 giữ `run_20261005_paper` (pha 1c tốt nhất).
 `~/stage2_p2_full.sh` → `~/stage2_p2_20261011/`, log `~/stage2_p2_20261011.log`, checkout
-`~/Meta-CXR-v3` (manifest `full_allviews_v3`), mã `ce18c45` (cùng mã với pilot).
+`~/Meta-CXR-v3` (manifest `full_allviews_v3`), mã `1e0e181` (cùng mã với pilot).
 
 ```
 run_medgemma_qlora.py --pipeline-mode meta_cxr_qformer_with_mhcac_prompt --section-mode findings_only
@@ -601,7 +601,7 @@ Phát sinh trong đợt này, chưa có ID trong chỉ mục: hai lỗi BioViL k
 **TM-01 — Quy tắc hai ngưỡng theo bệnh.** Bài báo báo số phân loại bằng argmax (Hình 10,
 Bảng 5/7), chỉ dùng ngưỡng Eq. 22 cho prompt, không nêu fit trên tập nào. Số: mục 5.1.
 So với argmax: F1 5 bệnh +0,0805 [+0,0743; +0,0866], macro recall −0,0149 (1.000 lần,
-seed 16). Nguồn: `handoff/PLAN-2026-10-10-cutpoint-headline.md`, commit `3607223`.
+seed 16). Nguồn: `handoff/PLAN-2026-10-10-cutpoint-headline.md`, commit `be1acc0`.
 
 **TM-02 — Beam 4, length penalty 2.** Bài báo không nêu cách giải mã. Test 2.800 study,
 cùng adapter v3: beam − greedy BERTScore +0,0083 [+0,0037; +0,0129], ROUGE-L +0,0150

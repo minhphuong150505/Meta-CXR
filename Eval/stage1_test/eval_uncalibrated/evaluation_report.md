@@ -1,6 +1,6 @@
 # Evaluation report
 
-Generated 2026-08-20T02:49:35.327302+00:00 from commit `11e35943e704`
+Generated 2026-08-20T02:49:35.327302+00:00 from commit `d623cb514a85`
 
 
 ---
@@ -18,7 +18,7 @@ Generated 2026-08-20T02:49:35.327302+00:00 from commit `11e35943e704`
 | Uncertain policy | `ignore_uncertain` |
 | Threshold source | `default 0.5 for every pathology` |
 | Device | cpu |
-| Git commit | `11e35943e704101786be13c9314e1cbb8a05c023` |
+| Git commit | `d623cb514a853bb41124c2b83f00af7b2d6334e8` |
 
 
 ---

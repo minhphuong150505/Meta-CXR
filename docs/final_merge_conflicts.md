@@ -4,8 +4,8 @@
 
 ## Summary: zero conflicts
 
-The integration was a **fast-forward** of `main` (`94e8842`) to
-`feature/optimize-stage2-prompts` (`c3b477d`). A fast-forward advances a branch pointer
+The integration was a **fast-forward** of `main` (`9847006`) to
+`feature/optimize-stage2-prompts` (`23718cf`). A fast-forward advances a branch pointer
 along existing linear history and **cannot produce a merge conflict** — there is no second
 parent, no three-way merge, and no file is resolved.
 

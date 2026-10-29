@@ -85,7 +85,7 @@ on test once.
 
 ## Execution report
 
-Launched once 22:17 (host code `3c8256a`), five val passes 22:17 -> 22:25 (~1.5 min
+Launched once 22:17 (host code `7e14fdb`), five val passes 22:17 -> 22:25 (~1.5 min
 each), probe done 22:31; GPU idle afterwards. The probe was first dry-run on CPU with
 existing files (every "arm" = A without aux view): sanity PASS, the four comparisons
 identical, as they must be.

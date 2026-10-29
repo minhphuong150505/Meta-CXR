@@ -56,7 +56,7 @@ _(executor appends here)_
 
 ### 2026-09-30 21:31 — launched
 
-- Host on `f419e0c`; full suite `tests/ training/`: **1,106 tests, 0 failed,
+- Host on `9a33d96`; full suite `tests/ training/`: **1,106 tests, 0 failed,
   2 skipped**, rc 0 (after replacing the retired `evaluation:` block of the
   host's private `env_config.yaml`; backup `~/env_config.yaml.bak_20260930`).
 - `/mnt/drive1tb` ntfs3, GPU idle (119 MiB) before launch.
@@ -85,7 +85,7 @@ weighted P/R/F1 **0.8387 / 0.7653 / 0.7658** (paper 0.87 / 0.78 / 0.73),
 
 At the user's request, `mimic_cxr_full.yaml` phases 1b/1c now select on
 `macro_recall` (three-class balanced recall, new aggregate). **This run is not
-affected**: it was launched on `f419e0c` and selected 1b epoch 3 on `loss`.
+affected**: it was launched on `9a33d96` and selected 1b epoch 3 on `loss`.
 `auroc_mean` would have chosen the same epoch; `weighted_f1` and
 `mean_weighted_f1_5` would have chosen epoch 2 (+0.002 / +0.017 on val).
 Do not `git pull` on the host until this run and its scorer have finished.
@@ -121,7 +121,7 @@ Negative class. Artifacts: `~/eval_20260930_3class/{test,val,test_v2}`,
 ### 2026-10-01 — supplementary: test scored with val Eq. 22 thresholds
 
 `evaluate_stage1.py --thresholds ~/eval_20260930_3class/thresholds_eq22_val.json`
-(code `30a101c`; host tests for the touched files pass, sklearn pins included).
+(code `4b0f3ef`; host tests for the touched files pass, sklearn pins included).
 NOT the paper's protocol. Test n=3,269, 95% bootstrap CI (1,000):
 
 | metric | argmax (paper) | Eq. 22 thresholds |
@@ -194,7 +194,7 @@ simulation that plain (unweighted) CE gives wF1 0.805 / F1_5 0.730 at argmax.
 
 ### 2026-10-01 — user chose B: no retrain; argmax headline, cutpoints supplementary
 
-Reproduced with the committed script (`8809995`,
+Reproduced with the committed script (`f4649b8`,
 `scripts/evaluate_stage1_cutpoints.py`, host tests pass): point estimates
 identical to the ad-hoc run above, CIs within 0.0004 (different bootstrap
 stream). Report: `~/eval_20260930_3class/cutpoints/cutpoints_report.json`.

@@ -86,7 +86,7 @@ class TestShippedConfig:
     #
     # Pinned as a SET, not a count. This assertion used to read
     # ``len(...) == 5`` -- the shallow unfreeze of run_20260820_ft -- and went
-    # stale in silence when 814b778 deepened the config to 8 patterns. A count
+    # stale in silence when 4b39614 deepened the config to 8 patterns. A count
     # tells you only that the number moved; the set names which slice moved,
     # which is the thing a reviewer actually has to agree to.
     DEEP_UNFREEZE_PATTERNS = frozenset(

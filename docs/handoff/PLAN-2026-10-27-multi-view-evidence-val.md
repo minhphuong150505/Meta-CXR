@@ -174,7 +174,7 @@ here. No `subject_id` / `study_id` / `dicom_id` / paths / report text.
 
 ## Execution report
 
-Approved by the user 2026-10-27 ("ok"). Host checkout `8cfd03b`, chain `~/mv_evidence.sh`
+Approved by the user 2026-10-27 ("ok"). Host checkout `fa58119`, chain `~/mv_evidence.sh`
 launched once 01:31. Four val passes 01:31 → 01:35, all guards passed: weights line × 1,
 `[val] 1808 studies ... 0 with a complementary view`, no test split built or scored, no
 fusion built in B. Artifacts stay on the host: `~/mv_evidence_20261027/`, plus the probe

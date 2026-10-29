@@ -53,7 +53,7 @@ The `trainable` lists still name `view_fusion`, `stream_adapters`, `mpc_heads`;
 
 ## Matching arm A's recipe
 
-`git diff 206fb0e HEAD -- pretraining/configs/mimic_cxr_full.yaml` (206fb0e is
+`git diff d2ee350 HEAD -- pretraining/configs/mimic_cxr_full.yaml` (d2ee350 is
 the YAML `run_20261005_paper` ran with) differs in only three things that
 touch 1b/1c: phase1b `epochs` 5 → 3, phase1b `test_splits` [] → [test]
 (both 2026-10-11), and two new keys (`mpc_temperature: 0.07`,
@@ -209,7 +209,7 @@ aggregate numbers only — no ids, paths to patient images, or report text.
 ## Execution report
 
 Executor: Claude, planning session over SSH; one chain script (`~/nomv_chain.sh`,
-launched once, `~/nomv_chain.log`), host checkout at `0cf2df0`.
+launched once, `~/nomv_chain.log`), host checkout at `e2715c0`.
 
 ### G0 -- passed, after one host hang
 

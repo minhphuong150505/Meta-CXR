@@ -2,7 +2,7 @@
 
 Audited: 2026-07-21
 Base branch: `feat/medgemma-direct-default`
-Base HEAD: `b174ca39cc60c583c8b5043e0bd8cf03ffbbbb6c` (2026-07-21 17:54:45 +0700)
+Base HEAD: `8fb8df1f19081c8919154f526cf52e80323e1f4d` (2026-07-21 17:54:45 +0700)
 Working branch: `refactor/clean-medgemma-xai-pipeline`
 Working tree at audit start: **clean** (nothing stashed, nothing discarded)
 Remote sync: 0 ahead / 0 behind `origin/feat/medgemma-direct-default`

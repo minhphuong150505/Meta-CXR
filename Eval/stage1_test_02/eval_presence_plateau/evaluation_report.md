@@ -1,6 +1,6 @@
 # Evaluation report
 
-Generated 2026-08-21T01:01:26.826189+00:00 from commit `fec606b8cc2e`
+Generated 2026-08-21T01:01:26.826189+00:00 from commit `b4757127b900`
 
 
 ---
@@ -13,12 +13,12 @@ Generated 2026-08-21T01:01:26.826189+00:00 from commit `fec606b8cc2e`
 | Studies | 3269 |
 | Pathologies | 14 |
 | Checkpoint | `run_20260820_ft/checkpoint_best.pth (epoch 9)` |
-| Config | `pretraining/configs/mimic_cxr_full.yaml @ fec606b` |
+| Config | `pretraining/configs/mimic_cxr_full.yaml @ b475712` |
 | Seed | 42 |
 | Uncertain policy | `ignore_uncertain` |
 | Threshold source | `Test/stage1_test_02/thresholds_presence_marginal_plateau.json` |
 | Device | cpu |
-| Git commit | `fec606b8cc2e8cd55a493fcc82bd87bcfca67d05` |
+| Git commit | `b4757127b90029e4812148ffad46d6f8b2d72c05` |
 
 
 ---

@@ -27,10 +27,10 @@ The arms below are written for S1-a; under S1-b the ON arm is not run.
 - **ON arm:** the recipe of arm A of the 2026-10-16 refit pilot. That arm used the `run_20261005_paper/phase1c`
   soft tokens, the first 10,000 train studies, P2 (`paper_context`, `oracle_mix`, share 0.2) +
   LoRA LR 3e-4, 1 epoch (476 updates), batch 2 x 8, cues `cutpoints` from the committed
-  `configs/stage1_cutpoints/run_20261005_paper.json`, checkout `~/Meta-CXR-v3` at `3b69007`, and
+  `configs/stage1_cutpoints/run_20261005_paper.json`, checkout `~/Meta-CXR-v3` at `d9e2155`, and
   manifest v3. Val: all 1,360 studies, beam 4 / lp 2, max 256 new tokens.
 - **OFF arm: new.** Identical commands, in the same checkout at the same commit (unchanged since
-  `3b69007`). Only two things differ:
+  `d9e2155`). Only two things differ:
   - `--stage1-checkpoint ~/run_20261024_nomv/phase1c/mimic_cxr_full_blip2/checkpoint_best.pth`
     with `--stage1-options model.multi_view=false model.loss.lambda_mpc=0.0
     model.loss.lambda_view_consistency=0.0`. Stage 2 builds the Stage-1 model from the base
@@ -38,7 +38,7 @@ The arms below are written for S1-a; under S1-b the ON arm is not run.
   - Cues from OFF's own val-fitted cutpoints, `~/nomv_probe_20261024/cutpoints_nomv.json`.
 
 Guards (abort on any):
-- GPU idle, `ntfs3`, the checkout is at `3b69007`, and the output dir is absent.
+- GPU idle, `ntfs3`, the checkout is at `d9e2155`, and the output dir is absent.
 - S1-a: ON' Stage-1 load prints the same `missing=758 unexpected=0` as A did.
 - OFF Stage-1 load prints `unexpected=0`.
 - The OFF val JSONL has the same `sample_key` list, in the same order and with the same references,
@@ -69,7 +69,7 @@ zero boundary". One seed per arm; Stage-2 seed noise is not measured.
 
 Full Stage 2 (2 epochs) on OFF with the reported recipe. Then test (n = 2,800) once, against the
 reported Stage 2 `stage2_p2_20261011` (built from `run_20261005_paper`). The code commit must match
-that run's (`ce18c45`) or be shown not to touch Stage 2.
+that run's (`1e0e181`) or be shown not to touch Stage 2.
 
 ## Data handling
 
@@ -87,7 +87,7 @@ triggered.
 - ON' trained 01:59 -> 03:10, beam 03:10 -> 04:30; OFF trained 04:30 -> 05:40, beam 05:40 -> 07:03. ~5.1 h.
 - Guards: ON' Stage-1 load `missing=758 unexpected=0` (same as A); OFF `missing=758 unexpected=0`; 1,360
   written / 0 failed in both arms; ON', OFF and A JSONLs aligned (same `sample_key` order and
-  references); checkout `3b69007`, clean. Bootstrap 2,000 resamples, seed 16, as declared.
+  references); checkout `d9e2155`, clean. Bootstrap 2,000 resamples, seed 16, as declared.
 - Val loss (teacher-forced, no CI): ON' 1.18770, OFF 1.18162.
 - **Rerun check: ON' is identical to the old arm A on 1,360 of 1,360 reports** (every delta exactly 0).
   Stage 2 is deterministic at its fixed seed (`fig9.SEED`; `run_medgemma_qlora.py` has no `--seed`

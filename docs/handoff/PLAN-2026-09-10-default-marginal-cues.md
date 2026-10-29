@@ -31,9 +31,9 @@ reauthentication before the host pull/status command could finish. The user
 was sent the authentication URL; test status is **not run**, not passed.
 
 Prepared source/test patch: `/tmp/meta-cxr-default-cues-20260910.patch`, against
-local origin/main `79139fc` including the prior evaluation-cache fix. After
+local origin/main `3b817c0` including the prior evaluation-cache fix. After
 host access is restored, pull host main and create a fresh detached review
-worktree `/home/phuong/meta-cxr-default-cues-20260910` at `79139fc`, apply the
+worktree `/home/phuong/meta-cxr-default-cues-20260910` at `3b817c0`, apply the
 patch, and link `configs/env_config.yaml` to the host's ignored config.
 Run with `/home/phuong/.venvs/meta-cxr-stage1-311/bin/python`:
 

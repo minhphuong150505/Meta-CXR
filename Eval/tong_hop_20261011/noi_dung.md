@@ -5,7 +5,7 @@ subtitle: Trạng thái tại 16 giờ 31 ngày 11 tháng 10 năm 2026, khi lầ
 chapter_new_page: true
 data: so_lieu.json
 ---
-<!-- Nguồn: docs/TONG_HOP_2026-10-11.md, docs/CHI_MUC_TINH_MOI.md và ba file docs/handoff/PLAN-2026-10-11-*.md, mã 5e09a57. -->
+<!-- Nguồn: docs/TONG_HOP_2026-10-11.md, docs/CHI_MUC_TINH_MOI.md và ba file docs/handoff/PLAN-2026-10-11-*.md, mã 9b2963d. -->
 
 ::heading Tóm tắt
 Tài liệu này gộp năm tài liệu của đợt điều tra ngày 10 và 11 tháng 10 năm 2026 thành một bản đọc liền mạch. Mọi con số được lấy từ năm tài liệu đó, vốn được ghi lại từ artifact trên máy huấn luyện; tài liệu không tính lại số nào và chỉ chứa số tổng hợp. Khoảng tin cậy là khoảng 95% từ bootstrap ghép cặp theo study.
@@ -34,7 +34,7 @@ Về Stage 2, prompt có bối cảnh, cue lấy từ nhãn thật lúc huấn l
 Bài báo gốc là công trình META-CXR của Edirisinghe và cộng sự, đăng trên IEEE Access năm 2025 [1]. Các chi tiết của bài báo được đối chiếu với văn bản PDF, gồm các mục III đến V, phương trình 22, các bảng 2 đến 7 và các hình 10, 11.
 
 ## Trạng thái tại thời điểm viết
-Stage 1 giữ checkpoint run_20261005_paper và không huấn luyện lại. Stage 2 đang huấn luyện toàn bộ với cấu hình P2 trong 2 epoch; lúc 16 giờ 31 tiến trình đang dựng record Stage 1 cho tập train, đạt 70.132 trên 222.758 study, chưa có lỗi và chưa có val loss. Lần chạy dự kiến kết thúc trong khoảng trưa đến chiều ngày 13 tháng 10. Một script chờ đã được đặt trên máy huấn luyện để tự chấm tập test sau khi lần chạy kết thúc. Mã nguồn mới nhất là commit 5e09a57 trên nhánh feat/stage2-finding-tokens.
+Stage 1 giữ checkpoint run_20261005_paper và không huấn luyện lại. Stage 2 đang huấn luyện toàn bộ với cấu hình P2 trong 2 epoch; lúc 16 giờ 31 tiến trình đang dựng record Stage 1 cho tập train, đạt 70.132 trên 222.758 study, chưa có lỗi và chưa có val loss. Lần chạy dự kiến kết thúc trong khoảng trưa đến chiều ngày 13 tháng 10. Một script chờ đã được đặt trên máy huấn luyện để tự chấm tập test sau khi lần chạy kết thúc. Mã nguồn mới nhất là commit 9b2963d trên nhánh feat/stage2-finding-tokens.
 
 ## Các phép đo
 ::table Các thí nghiệm của đợt điều tra, cỡ mẫu và công cụ

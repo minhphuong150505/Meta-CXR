@@ -8,19 +8,19 @@ Import paths, CLI flags and config keys that changed, and what to do about it.
 
 | Old | New | Deprecated from | How to migrate |
 |---|---|---|---|
-| `train_eval_figure9_llm_variants_200.SoftTokenEmbeddingWrapper` | `training.medgemma.soft_tokens.SoftTokenEmbeddingWrapper` | `709f9bb` | Import from the new path. The old name is still re-exported from the Figure-9 module, so existing code keeps working. New argument `num_img_tokens` is the 4th positional parameter; it defaults to 32, matching the old module-global `NUM_IMG_TOKENS`. |
-| `train_eval_figure9_llm_variants_200.build_cfg` | `training.stage1.lavis_loader.build_cfg` | `5d572d8` | The old name remains as a lazy delegate. Prefer the new path when you already know you are on the Stage-1 branch. |
-| `train_eval_figure9_llm_variants_200.build_stage1_model` | `training.stage1.lavis_loader.build_stage1_model` | `5d572d8` | Same. |
-| `train_eval_figure9_llm_variants_200.make_stage1_loader` | `training.stage1.lavis_loader.make_stage1_loader` | `5d572d8` | Same. |
-| `train_eval_figure9_llm_variants_200.load_torch_checkpoint` | `training.torch_io.load_torch_checkpoint` | `5d572d8` | Re-exported; no action required. |
-| `train_eval_figure9_llm_variants_200.filter_state_dict_for_model` | `training.stage1.lavis_loader.filter_state_dict_for_model` | `5d572d8` | **Not re-exported.** Only the Stage-1 loader used it. Update the import if you called it directly. |
-| `train_eval_figure9_llm_variants_200.load_state_dict_materializing_meta` | `training.stage1.lavis_loader.load_state_dict_materializing_meta` | `5d572d8` | **Not re-exported.** Same. |
+| `train_eval_figure9_llm_variants_200.SoftTokenEmbeddingWrapper` | `training.medgemma.soft_tokens.SoftTokenEmbeddingWrapper` | `e07502d` | Import from the new path. The old name is still re-exported from the Figure-9 module, so existing code keeps working. New argument `num_img_tokens` is the 4th positional parameter; it defaults to 32, matching the old module-global `NUM_IMG_TOKENS`. |
+| `train_eval_figure9_llm_variants_200.build_cfg` | `training.stage1.lavis_loader.build_cfg` | `7f01e45` | The old name remains as a lazy delegate. Prefer the new path when you already know you are on the Stage-1 branch. |
+| `train_eval_figure9_llm_variants_200.build_stage1_model` | `training.stage1.lavis_loader.build_stage1_model` | `7f01e45` | Same. |
+| `train_eval_figure9_llm_variants_200.make_stage1_loader` | `training.stage1.lavis_loader.make_stage1_loader` | `7f01e45` | Same. |
+| `train_eval_figure9_llm_variants_200.load_torch_checkpoint` | `training.torch_io.load_torch_checkpoint` | `7f01e45` | Re-exported; no action required. |
+| `train_eval_figure9_llm_variants_200.filter_state_dict_for_model` | `training.stage1.lavis_loader.filter_state_dict_for_model` | `7f01e45` | **Not re-exported.** Only the Stage-1 loader used it. Update the import if you called it directly. |
+| `train_eval_figure9_llm_variants_200.load_state_dict_materializing_meta` | `training.stage1.lavis_loader.load_state_dict_materializing_meta` | `7f01e45` | **Not re-exported.** Same. |
 
 ### Removed arguments
 
 | Old | Removed in | Why | What to do |
 |---|---|---|---|
-| `build_stage1_records(..., include_stage1_features=False)` | `5d572d8` | The `False` branch still built a LAVIS `Config` and a `MIMIC_CXR_Dataset` loader, so a caller "opting out of Stage-1" stayed fully coupled to it. Every caller in the repo passed `True`. | For native MedGemma records use `run_medgemma_qlora.build_native_records`, which reads the split CSVs through `training/dataio/manifest.py`. Passing `include_stage1_features=True` is now the only behaviour; drop the keyword. |
+| `build_stage1_records(..., include_stage1_features=False)` | `7f01e45` | The `False` branch still built a LAVIS `Config` and a `MIMIC_CXR_Dataset` loader, so a caller "opting out of Stage-1" stayed fully coupled to it. Every caller in the repo passed `True`. | For native MedGemma records use `run_medgemma_qlora.build_native_records`, which reads the split CSVs through `training/dataio/manifest.py`. Passing `include_stage1_features=True` is now the only behaviour; drop the keyword. |
 
 `build_stage1_records` is now Stage-1-only by contract, and its docstring says
 so. It raises the ordinary `TypeError` on the removed keyword rather than a

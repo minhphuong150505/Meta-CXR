@@ -51,10 +51,10 @@ output directory. GPU busy means skip GPU testing; do not queue or retry.
 
 ## Execution report
 
-- Initial host pull: exit 0, revision `3f9b30c` already current.
+- Initial host pull: exit 0, revision `0f244e4` already current.
 - GPU busy: 11,814 MiB / 65%, active zero-shot report generation. No additional
   GPU run launched. CPU regression checks proceed in isolation.
-- Source changes tested: base `3f9b30c` plus the cue-contract review diff in
+- Source changes tested: base `0f244e4` plus the cue-contract review diff in
   `/home/phuong/meta-cxr-cue-contract-20260908`.
 - Initial targeted collection failed because the isolated checkout lacked
   git-ignored `configs/env_config.yaml`. Linked the host's existing config,
@@ -64,7 +64,7 @@ output directory. GPU busy means skip GPU testing; do not queue or retry.
 - Full suite command above, adding `-o addopts=` for visible counts: exit 0,
   **992 passed, 2 skipped**, 9.26 seconds. Raw log:
   `/home/phuong/cue_contract_full_20260908.log`.
-- Same command on unchanged `3f9b30c`, isolated baseline checkout: exit 0,
+- Same command on unchanged `0f244e4`, isolated baseline checkout: exit 0,
   **974 passed, 2 skipped**, 9.11 seconds. Delta: **18 added passing tests,
   zero new failures**. The historical five environmental failures are absent
   on this host in both revisions; no baseline tests were changed to achieve it.

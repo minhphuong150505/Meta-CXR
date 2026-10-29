@@ -89,8 +89,8 @@ khác 0, hoặc `mbr_select_stage2.py` báo cohort/tham chiếu không khớp.
 
 ### Val — 2026-10-15, chấm và quyết định TRƯỚC khi chấm bất kỳ thứ gì trên test
 
-`~/mbr_pipeline.sh` chạy một lần từ 2026-10-14 21:35:50, checkout `~/Meta-CXR-v3` ở `6dd5688`
-(`EXPECT_REV=6dd5688`), log `~/stage2_mbr_20261014.log`, output `~/stage2_mbr_20261014/`.
+`~/mbr_pipeline.sh` chạy một lần từ 2026-10-14 21:35:50, checkout `~/Meta-CXR-v3` ở `bff43bf`
+(`EXPECT_REV=bff43bf`), log `~/stage2_mbr_20261014.log`, output `~/stage2_mbr_20261014/`.
 
 - Kiểm tra tương đương: **20/20** beam test sinh lại trùng từng chữ với bản đã báo cáo.
 - `gen_val_beam` 1.360 study, 0 lỗi, 4.460 s; `gen_val_greedy` 1.360, 0 lỗi, 2.782 s;
@@ -126,8 +126,8 @@ Ghép cặp với B (bootstrap 2.000 lần, seed 16), Δ [khoảng tin cậy 95%
 **Áp quy tắc:** G không đủ điều kiện (cận dưới BERTScore −0,0017 ≤ 0). M đủ điều kiện (cận
 dưới BERTScore +0,0132 > 0 và cận trên CheXbert micro F1-14 +0,0274 > 0). **Chọn M.** Bước test:
 M chạy một lần trên 2.800 study test, giả thuyết = beam và greedy test đã báo cáo
-(`~/stage2_p2_20261011/gen_test_{beam,greedy}_full`, sinh ở `ce18c45`; kiểm tra tương đương ở
-trên cho thấy code `6dd5688` tái tạo đúng beam đó) cộng 8 mẫu test, ghép cặp với B = beam test
+(`~/stage2_p2_20261011/gen_test_{beam,greedy}_full`, sinh ở `1e0e181`; kiểm tra tương đương ở
+trên cho thấy code `bff43bf` tái tạo đúng beam đó) cộng 8 mẫu test, ghép cặp với B = beam test
 đã báo cáo. Đã kiểm tra trước: hai file test có cùng 2.800 khoá, tham chiếu trùng 2.800/2.800;
 31 dòng mẫu test đầu tiên khớp khoá và tham chiếu, mỗi dòng 8 ứng viên.
 
@@ -144,14 +144,14 @@ Lưu ý khi đọc:
   val với test.
 - Không phải giao thức của bài báo: prompt có indication và FINDINGS lần trước, cộng giải mã MBR.
 
-Quyết định này được ghi và commit (`abb7c15`, push 01:47:53) trước khi chấm test. Lúc đó mẫu
+Quyết định này được ghi và commit (`4a0aeb9`, push 01:47:53) trước khi chấm test. Lúc đó mẫu
 test (`gen_test_samples`, bắt đầu 2026-10-15 01:41:53) đang sinh và chưa được chấm.
 
 ### Test — 2026-10-15, chạy một lần theo quy tắc đã chốt
 
 `gen_test_samples` xong 06:18:49: 2.800 study × 8 mẫu, 0 lỗi, 16.594 s (~0,17 study/s).
 `~/mbr_test_wait.sh` thấy `MBR_PIPELINE_DONE` và chạy `ARM=M bash ~/mbr_test_phase.sh` một lần
-(checkout `6dd5688`, GPU rảnh); `TEST_SCORED arm=M` lúc 06:22:29. Log
+(checkout `bff43bf`, GPU rảnh); `TEST_SCORED arm=M` lúc 06:22:29. Log
 `~/stage2_mbr_20261014_test.log`, output `~/stage2_mbr_20261014/{mbr_test,score}/`.
 
 - `mbr_test`: 123.200 cặp, 39,8 s trên GPU. Ứng viên được chọn: beam 625, greedy 1.327, mẫu 848.

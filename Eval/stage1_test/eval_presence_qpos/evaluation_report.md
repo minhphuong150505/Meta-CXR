@@ -1,6 +1,6 @@
 # Evaluation report
 
-Generated 2026-08-20T03:30:54.067744+00:00 from commit `11e35943e704` (**working tree dirty**)
+Generated 2026-08-20T03:30:54.067744+00:00 from commit `d623cb514a85` (**working tree dirty**)
 
 
 ---
@@ -18,7 +18,7 @@ Generated 2026-08-20T03:30:54.067744+00:00 from commit `11e35943e704` (**working
 | Uncertain policy | `ignore_uncertain` |
 | Threshold source | `Test/stage1_test/thresholds_presence_f1.json` |
 | Device | cpu |
-| Git commit | `11e35943e704101786be13c9314e1cbb8a05c023` |
+| Git commit | `d623cb514a853bb41124c2b83f00af7b2d6334e8` |
 
 
 ---

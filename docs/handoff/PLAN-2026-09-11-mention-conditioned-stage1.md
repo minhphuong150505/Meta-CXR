@@ -75,13 +75,13 @@ bootstrap is possible:
    0.000000 for a whole smoke. Both corrected. There is no
    `conditional_classification_logits` key either.
 
-Commit `b49ac68`.
+Commit `caaa393`.
 
 ## Preconditions (all verified 2026-09-11 before launch)
 
 - Host `minhphuong` (100.116.167.90), `findmnt -no FSTYPE /mnt/drive1tb` -> `ntfs3`.
 - GPU idle: 0 compute apps, 170 MiB, 0% util. `/home` 179 GB free.
-- Revision `b49ac68` in the detached worktree `~/ft_review_20260910`.
+- Revision `caaa393` in the detached worktree `~/ft_review_20260910`.
 - Output directory `~/run_20260911_mentioncond` did not exist.
 - `mhcac.mention_conditioned_pos_weights` already ships in the YAML (alpha =
   n_not_mentioned / n_mentioned, capped at 10). Without them the term charges
@@ -184,7 +184,7 @@ result.)
 
 ## Execution report — 2026-09-12, host `minhphuong`
 
-- **revision:** `b49ac68`, detached worktree `~/ft_review_20260910`.
+- **revision:** `caaa393`, detached worktree `~/ft_review_20260910`.
 - **run:** `~/run_20260911_mentioncond`, launched 2026-09-11 10:59:50,
   `Training time 13:31:06`, supervisor `exited rc=0 / TRAINING COMPLETED`
   at 2026-09-12 00:33:18. **10/10 epochs, 0 restarts, 0 OOM, 0 fallbacks.**
@@ -199,7 +199,7 @@ result.)
 
 Every training line showed `loss_cls: -0.0000` and `loss_gate: -0.0000`, as the
 design requires, with `loss_mention_conditioned` **1.4560 (epoch 0) -> 1.3685
-(epoch 1)** beside them. Without the `BlipOutput` field added in `b49ac68` this
+(epoch 1)** beside them. Without the `BlipOutput` field added in `caaa393` this
 log would have been indistinguishable from a 13.5-hour run training **no
 classification objective at all**.
 

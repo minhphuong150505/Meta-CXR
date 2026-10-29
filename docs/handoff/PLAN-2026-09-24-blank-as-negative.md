@@ -256,7 +256,7 @@ The host came back up (uptime 11 min at 19:32, `/mnt/drive1tb` = `ntfs3`, GPU
 0 % / 18 MiB, no training process). Because the change was still uncommitted,
 the working tree was copied as a snapshot to `~/blankneg_20260924_src` (tracked
 files + the new files, host's own `configs/env_config.yaml`); `~/Meta-CXR`
-(on `main`, `79139fc`) was not touched. The snapshot has no `.git`.
+(on `main`, `3b817c0`) was not touched. The snapshot has no `.git`.
 
 ### Step 1 — counts and class weights → exit 0
 

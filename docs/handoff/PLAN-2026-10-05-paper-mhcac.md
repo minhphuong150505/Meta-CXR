@@ -3,7 +3,7 @@
 ## What changes
 
 One run, compared against `run_20260930_3class`. Two settings differ, both
-set to the paper's values (code `206fb0e`):
+set to the paper's values (code `d2ee350`):
 
 | | `run_20260930_3class` | this run | paper |
 |---|---|---|---|
@@ -20,7 +20,7 @@ separated.
 ## Commands (host)
 
 ```bash
-cd ~/Meta-CXR && git pull                     # 206fb0e
+cd ~/Meta-CXR && git pull                     # d2ee350
 findmnt -no FSTYPE /mnt/drive1tb              # ntfs3
 ROOT=$HOME/run_20261005_paper
 mkdir -p $ROOT

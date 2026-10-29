@@ -118,10 +118,10 @@ Không thử phương án dự phòng (che token CLS/pooled khỏi K/V, query ki
 
 ### Smoke tích hợp (2 update, `~/qrefit_micro.sh`, không phải kết quả) — 2026-10-15
 
-- Lần 1 (12:47, `4b430ff`): dừng sau 15 s khi nạp checkpoint 1c — 18 tensor `mpc_heads.*` mà model
+- Lần 1 (12:47, `90f007a`): dừng sau 15 s khi nạp checkpoint 1c — 18 tensor `mpc_heads.*` mà model
   `phase1q` (`lambda_mpc 0`) không dựng. Sửa bằng `init_from.ignore: [mpc_heads]` (báo lỗi nếu model
   có module đó); file gộp giữ đầu MPC của 1c.
-- Lần 2 (13:00, `6c72f97`): mọi bước tích hợp chạy được — nạp checkpoint bỏ qua 364 tensor (346 phía
+- Lần 2 (13:00, `0b1659b`): mọi bước tích hợp chạy được — nạp checkpoint bỏ qua 364 tensor (346 phía
   Q-Former + 18 đầu MPC); trainable chỉ phía Q-Former (Qformer 186,28M, norm 0,01M, query, chiếu ITC);
   GradCache tự chọn "dùng lại token ảnh"; val loss gồm `loss_query_div`; cổng ITC chạy; gộp: 346
   tensor thay, 6 tensor norm thêm, 445 tensor chung trùng từng bit với 1c, 82 tensor chỉ có ở 1c
@@ -130,9 +130,9 @@ Không thử phương án dự phòng (che token CLS/pooled khỏi K/V, query ki
   phải kết quả và không được dùng. Script smoke tự hỏng ở một dòng in tóm tắt của chính nó (không
   thuộc pipeline).
 
-### Pipeline — khởi chạy 2026-10-15 13:05:50, `6c72f97`, một lần
+### Pipeline — khởi chạy 2026-10-15 13:05:50, `0b1659b`, một lần
 
-`EXPECT_REV=6c72f97 setsid nohup bash ~/qrefit_pipeline.sh > ~/qrefit_20261015.log` → `~/qrefit_20261015/`.
+`EXPECT_REV=0b1659b setsid nohup bash ~/qrefit_pipeline.sh > ~/qrefit_20261015.log` → `~/qrefit_20261015/`.
 Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể dừng pipeline (chỉ để đối chiếu).
 
 - **Lần 1 dừng 13:07:39 (`ABORT: train smoke_M rc=137`)**: OOM killer của kernel 1 phút sau khi train bắt
@@ -144,7 +144,7 @@ Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể d�
 - Hai chẩn đoán mốc của lần 1 đã xong (200 study val, chỉ số tổng hợp): checkpoint 1c — `final_within_cos`
   0,9997, `final_pr_batch_centred` 1,0010, `xattn_mean_query_map_cos` 0,7974, `query_diversity_loss` 0,9997;
   khởi tạo BLIP-2 — 0,4542 / 4,6002 / 0,2807 / 0,5634. Cổng (PR ≥ 4, bản đồ ≤ 0,6) nằm giữa hai mốc này.
-- **Lần 2 (13:14:15, `2a3bdac`): smoke chạy hết, cổng smoke KHÔNG đạt → `SMOKE_GATE_FAILED` 14:32:44, pipeline
+- **Lần 2 (13:14:15, `1d3381b`): smoke chạy hết, cổng smoke KHÔNG đạt → `SMOKE_GATE_FAILED` 14:32:44, pipeline
   dừng như đã chốt.** RAM ổn định ~8/30 GB trống với 4 worker. Smoke M 300 update 25:01 (5,0 s/update), smoke
   C 45:38 (9,1 s/update, có ITM). Gộp cả hai: 346 tensor thay, 445 tensor chung trùng từng bit với 1c.
 
@@ -168,7 +168,7 @@ Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể d�
   không đạt thì dừng trước probe và pilot. Chạy tiếp bằng `START_AT=refit` trong cùng `~/qrefit_20261015/`,
   log `~/qrefit_20261015_refit.log`.
 
-### Refit 2 epoch — 14:53:25 → 19:48:49, `cebd51b`: `REFIT_GATE_FAILED`, pipeline dừng đúng quy tắc
+### Refit 2 epoch — 14:53:25 → 19:48:49, `96f4a55`: `REFIT_GATE_FAILED`, pipeline dừng đúng quy tắc
 
 - Train 2 epoch: `Training time 4:53:39`, ~4,99 s/update, không OOM; `journalctl -k` từ 14:50 không có
   OOM/Xid/lỗi NTFS. Epoch được chọn: 1 (epoch cuối). Gộp: 346 tensor thay, 6 tensor norm thêm, 445 tensor
@@ -256,10 +256,10 @@ Thứ tự smoke đổi so với bảng: M trước, C sau và C không thể d�
 **Giới hạn biết trước thêm:** không còn nhiễu ngẫu nhiên để lách, nhưng PR vẫn không phân biệt biến
 thiên phụ thuộc ảnh có ích với vô ích; điều đó chỉ cổng thông tin và pilot đo được.
 
-### Báo cáo thực thi lần 2 — khởi chạy 2026-10-16 07:55:40, `3b69007`, một lần
+### Báo cáo thực thi lần 2 — khởi chạy 2026-10-16 07:55:40, `d9e2155`, một lần
 
 - User duyệt chạy sáng 16/10 ("ok chạy đi"). Trước khi chạy (07:42): GPU rảnh, RAM trống 28/30 GB,
-  `/home` còn 197 GB, ổ dữ liệu `ntfs3`, checkout sạch ở `3b69007`, 5 script trên máy khớp sha256, kernel
+  `/home` còn 197 GB, ổ dữ liệu `ntfs3`, checkout sạch ở `d9e2155`, 5 script trên máy khớp sha256, kernel
   không có lỗi mới từ 14/10 (chỉ các dòng `ntfs3` của lần dọn ổ và lần hết RAM 13:07 ngày 15/10 của lần 1
   với 8 worker).
 - Dừng `~/stage2_p2_score.sh` (chạy từ 11/10): vòng chờ dấu `P2FULL_ALL_DONE` trong một log đã ngừng ghi

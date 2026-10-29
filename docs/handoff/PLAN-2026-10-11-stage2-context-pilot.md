@@ -114,7 +114,7 @@ không dùng bối cảnh).
 
 Stage 1 giữ nguyên (`run_20261005_paper`, pilot sửa BioViL không có lợi — xem
 `PLAN-2026-10-11-stage1-improvement.md`). Khởi chạy 2026-10-11 15:50, `~/stage2_p2_full.sh`
-→ `~/stage2_p2_20261011/`, mã `ce18c45` (cùng mã với pilot), log `~/stage2_p2_20261011.log`:
+→ `~/stage2_p2_20261011/`, mã `1e0e181` (cùng mã với pilot), log `~/stage2_p2_20261011.log`:
 
 ```
 run_medgemma_qlora.py --pipeline-mode meta_cxr_qformer_with_mhcac_prompt --section-mode findings_only
@@ -145,7 +145,7 @@ các file `.pth` của pilot Stage 1 (`~/s1pilot_20261011`, 21 GB); dự đoán 
 User muốn thử ba điểm "chưa tối ưu" trước khi train 2 ngày. Run toàn bộ (lúc đó mới dựng
 cache, chưa train) được dừng ngay sau khi ghi xong cache train; cache giữ lại ở
 `~/stage2_p2_20261011/full/.sensitive_stage1_cache/`. Script `~/p2var.sh` →
-`~/p2var_20261011/`, mã `3371efd`, cùng 10.000 study train và 500 study val như pilot sáng.
+`~/p2var_20261011/`, mã `783b92d`, cùng 10.000 study train và 500 study val như pilot sáng.
 
 | arm | khác P2 ở |
 |---|---|
@@ -153,7 +153,7 @@ cache, chưa train) được dừng ngay sau khi ghi xong cache train; cache gi�
 | LR3 | `--lora-lr 3e-4` |
 | CLEAN | `--clean-train-records` (record train tính từ ảnh không augmentation) |
 
-Mốc so sánh: P2 của pilot sáng (`~/pilot_20261011/gen_P2_{beam,greedy}`, mã `ce18c45`; hai
+Mốc so sánh: P2 của pilot sáng (`~/pilot_20261011/gen_P2_{beam,greedy}`, mã `1e0e181`; hai
 commit chỉ khác ở các cờ mặc định tắt). **Quy tắc chốt trước:** nhận một biến thể nếu so với
 P2 (beam, ghép cặp, n = 500) ROUGE-L **và** BERTScore có cận dưới > 0, hoặc CheXbert micro
 F1-14 có cận dưới > 0 mà không chỉ số NLG nào giảm có ý nghĩa. Không biến thể nào đạt: train
@@ -196,7 +196,7 @@ nhỏ hơn. Chưa có phép đo nào cho chế độ dài.
 ## Train toàn bộ — khởi chạy lại 2026-10-12 00:07 (user duyệt: P2 + LR 3e-4, 2 epoch)
 
 `~/stage2_p2lr3_full.sh`, log `~/stage2_p2lr3.log`, log train `~/stage2_p2_20261011/full_lr3.log`,
-output `~/stage2_p2_20261011/full`, mã `ce18c45` (checkout `~/Meta-CXR-v3`, cùng nơi dựng cache).
+output `~/stage2_p2_20261011/full`, mã `1e0e181` (checkout `~/Meta-CXR-v3`, cùng nơi dựng cache).
 Lệnh như lần trước cộng `--lora-lr 3e-4`. Xác nhận lúc khởi động: cache train được dùng lại
 (`reusing ..._train_qformer_all_09aa2fb4a3955654.pt`); 170.370 record train, 109.140 có lần
 chụp trước, 161.362 có indication, 0 record không khớp; cue train 1.747.488 ô từ nhãn thật /
@@ -223,7 +223,7 @@ train/val/test được dùng lại, ~1,0 it/s. Dự kiến `P2LR3_ALL_DONE` r�
 
 Lệnh: `~/stage2_p2lr3_full.sh`, exit 0; `P2LR3_ALL_DONE` lúc 2026-10-14 00:34:23. Train
 2026-10-12 00:18:47 → 2026-10-14 00:04:03 (47h45m), 85.185 vòng mỗi epoch, ~1,0 it/s, 0 OOM,
-0 traceback, máy không reboot, VRAM 12,4–15,8 GB. Mã `ce18c45`.
+0 traceback, máy không reboot, VRAM 12,4–15,8 GB. Mã `1e0e181`.
 
 | epoch | train loss | val loss |
 |---|---:|---:|

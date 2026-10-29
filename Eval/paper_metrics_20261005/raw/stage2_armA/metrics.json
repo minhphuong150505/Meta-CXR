@@ -238,7 +238,7 @@
     "config": "unknown",
     "created_utc": "2026-10-05T03:05:43.514615+00:00",
     "device": "cuda:0 (NVIDIA GeForce RTX 5060 Ti)",
-    "git_commit": "8809995d4fbc281027283ccab7d21555e53fb8a1",
+    "git_commit": "f4649b86875f2902e3c3a3251f6a5f56e516d5aa",
     "git_dirty": false,
     "num_pathologies": 0,
     "num_samples": 2772,

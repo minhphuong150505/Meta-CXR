@@ -10,8 +10,8 @@ where the two disagree, because commits landed after that audit was written.
 |---|---|
 | Repo | `META-CXR/` (inner) — `git@github.com:minhphuong150505/Meta-CXR-Kaggle.git` |
 | Branch | `refactor/clean-medgemma-xai-pipeline` |
-| Base SHA (round 1 final) | `ee3ba2f8be02d7f87b3df126c2998b74e0b5ac44` |
-| SHA at audit time | `ee3ba2f` (identical — no work lost) |
+| Base SHA (round 1 final) | `2fd67c00bc7eb426e5984597256ba28f430c8e67` |
+| SHA at audit time | `2fd67c0` (identical — no work lost) |
 | Working tree | clean (`git status --porcelain` empty) |
 | Pushed to remote? | **No.** `git log --decorate` shows no `origin/refactor/clean-medgemma-xai-pipeline`. The branch exists only locally. |
 | Tracked files | 198 |
@@ -19,16 +19,16 @@ where the two disagree, because commits landed after that audit was written.
 ### Commits inherited from round 1
 
 ```
-ee3ba2f feat: add claim-level safety and XAI pipeline
-fc9807d docs: record which audit findings round 1 closed
-6ec8d99 chore: add pyproject with ruff/pytest config; move stray test
-76677ba refactor: replace mutable global configuration with Stage1Context
-cd9fb77 feat: score FINDINGS and IMPRESSION separately
-f23f4b7 refactor: one shared_visual_tokens for MHCAC and META-Former
-daea922 docs: add evidence-based audit of latest source
+2fd67c0 feat: add claim-level safety and XAI pipeline
+a050869 docs: record which audit findings round 1 closed
+891d144 chore: add pyproject with ruff/pytest config; move stray test
+bde0aba refactor: replace mutable global configuration with Stage1Context
+0cfe5e3 feat: score FINDINGS and IMPRESSION separately
+8c165df refactor: one shared_visual_tokens for MHCAC and META-Former
+8e30ab3 docs: add evidence-based audit of latest source
 ```
 
-Branch point: `b174ca3` (`feat/medgemma-direct-default`).
+Branch point: `8fb8df1` (`feat/medgemma-direct-default`).
 
 ## 2. Baseline, measured before any edit
 
@@ -128,7 +128,7 @@ the code does not actually provide. **High** = blocks a stated round-2 goal.
   `precompute_features.py`, where LAVIS registry population genuinely requires
   it. Already excepted in `pyproject.toml`.
 - **Mutable global config** — removed in round 1 by `Stage1Context`
-  (`76677ba`). The remaining `global` statements are all in `inference.py`'s
+  (`bde0aba`). The remaining `global` statements are all in `inference.py`'s
   Gradio callbacks, which is out of scope.
 - **`device_map` in fig9:721** — resolves `torch.cuda.current_device()`, not a
   literal 0, and is guarded by a comment explaining the single-GPU intent.
@@ -154,12 +154,12 @@ Each step lands as its own commit with its own test run.
 
 | ID | Sev | Status | Evidence |
 |---|---|---|---|
-| S1 | Critical | **Closed** | `5d572d8`. LAVIS imports confined to `training/stage1/lavis_loader.py`, imported lazily. `tests/test_native_independence.py` (6 tests) fails the build if reintroduced. |
-| S4 | High | **Closed** | `5d572d8`. `include_stage1_features=False` removed; the parameter's absence is asserted. |
+| S1 | Critical | **Closed** | `7f01e45`. LAVIS imports confined to `training/stage1/lavis_loader.py`, imported lazily. `tests/test_native_independence.py` (6 tests) fails the build if reintroduced. |
+| S4 | High | **Closed** | `7f01e45`. `include_stage1_features=False` removed; the parameter's absence is asserted. |
 | S2 | Critical | **Partial** | 1685 → 1615 lines. Stage-1 imports and the soft-token injector are out. The trainer, collators, prompts and NLG blocks remain. See `docs/refactor_hotspots.md` for the sequenced plan and what each move is blocked on. |
 | S3 | High | **Partial** | `VariantLLM` still holds ~10 responsibilities. `training/trainer/` and `training/medgemma/` now exist to receive them. |
-| S5 | High | **Closed for the state layer, open for the loop** | `103fb95`. `TrainingState`, `RngSnapshot` and `CheckpointManager` are implemented and tested, including a bit-exact resume-equivalence test. Not yet wired into `train_fine`, which cannot be executed here. |
-| S6 | High | **Closed** | `e3e3564`. Counterfactual evaluator (31 tests) and clinical adapters (17 tests). |
+| S5 | High | **Closed for the state layer, open for the loop** | `504736b`. `TrainingState`, `RngSnapshot` and `CheckpointManager` are implemented and tested, including a bit-exact resume-equivalence test. Not yet wired into `train_fine`, which cannot be executed here. |
+| S6 | High | **Closed** | `1581374`. Counterfactual evaluator (31 tests) and clinical adapters (17 tests). |
 | S7 | Medium | Open | `field_value` still catches bare `Exception`. |
 | S8 | **Critical** (re-graded) | **Closed in round 3** | Fallback removed. `medgemma_direct` raises `MultimodalModelLoadError` carrying model id, revision, transformers version and the chained original exception. `MultimodalCapabilityValidator` checks the processor, model config, submodules and forward signature — not the class name, which a wrapper can satisfy with no vision tower. Text-only is now reachable only via the explicitly-selected `text_only_language_prior_ablation` mode, which is not the default and is excluded from `both_for_ablation`. 21 tests in `tests/test_multimodal_capability.py`, including an AST check that fails the build if any `except` block reconstructs `AutoModelForCausalLM`. |
 | S9 | Medium | Open | Nested bare excepts in `compute_nlg`. |

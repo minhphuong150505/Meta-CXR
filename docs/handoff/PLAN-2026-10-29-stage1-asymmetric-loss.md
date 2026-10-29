@@ -6,7 +6,7 @@
 - **Bước 2 (sửa code và chạy test CPU): đã duyệt và XONG 2026-10-29.**
   - Test trên máy dev: `tests/test_asymmetric_loss.py`, `tests/test_logit_adjustment.py` và
     `tests/test_stage1_objectives.py` đều xanh.
-  - Bộ test CPU đầy đủ trên host, chạy trong worktree tạm từ `a442075` có áp thay đổi: không lỗi nào,
+  - Bộ test CPU đầy đủ trên host, chạy trong worktree tạm từ `20a6ee1` có áp thay đổi: không lỗi nào,
     2 skip.
   - OmegaConf: khóa đặt qua phase1b đọc ra (4,0, 0,05); YAML shipped đọc ra (0, 0).
 - Bước 3 (GPU): chờ user duyệt. Chưa chạy.
@@ -96,7 +96,7 @@ P15 là recipe đang ship (multi-view ON) ở budget pilot, tức đúng mô hì
 
 - **G0.** GPU rảnh, ổ là `ntfs3`, không có job khác, `/home` còn ít nhất 12 GB. Checkout sạch đúng commit
   đã định.
-- **G1.** Smoke P15 (2.000 study, 1 epoch, seed 42) chạy ở commit `eaf942a` (code của P15_s17) và ở
+- **G1.** Smoke P15 (2.000 study, 1 epoch, seed 42) chạy ở commit `f4674ea` (code của P15_s17) và ở
   commit mới với ASL tắt. Checkpoint và npz val phải giống hệt (`~/latefusion_ckpt_cmp.py`), để bảo đảm
   control cũ còn dùng được.
 - **G2.** Smoke ASL (2.000 study, 1 epoch): rc=0, log có cấu hình ASL đúng giá trị, loss hữu hạn, không

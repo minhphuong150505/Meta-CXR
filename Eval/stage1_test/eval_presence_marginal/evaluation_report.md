@@ -1,6 +1,6 @@
 # Evaluation report
 
-Generated 2026-08-20T03:55:15.078577+00:00 from commit `0f1003d59b93`
+Generated 2026-08-20T03:55:15.078577+00:00 from commit `1f2e7f0c4e5b`
 
 
 ---
@@ -18,7 +18,7 @@ Generated 2026-08-20T03:55:15.078577+00:00 from commit `0f1003d59b93`
 | Uncertain policy | `ignore_uncertain` |
 | Threshold source | `Test/stage1_test/thresholds_presence_marginal_f1.json` |
 | Device | cpu |
-| Git commit | `0f1003d59b931323b73ab9d9f30ab6e5cce3523f` |
+| Git commit | `1f2e7f0c4e5b605ed38a8a04a52aef1d4edce638` |
 
 
 ---

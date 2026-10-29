@@ -551,10 +551,10 @@
   },
   "metadata": {
     "checkpoint": "run_20260820_ft/checkpoint_best.pth (epoch 9)",
-    "config": "pretraining/configs/mimic_cxr_full.yaml @ fec606b",
+    "config": "pretraining/configs/mimic_cxr_full.yaml @ b475712",
     "created_utc": "2026-08-21T01:01:26.155524+00:00",
     "device": "cpu",
-    "git_commit": "fec606b8cc2e8cd55a493fcc82bd87bcfca67d05",
+    "git_commit": "b4757127b90029e4812148ffad46d6f8b2d72c05",
     "git_dirty": false,
     "num_pathologies": 14,
     "num_samples": 3269,

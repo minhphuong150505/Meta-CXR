@@ -1,6 +1,6 @@
 # Stage 1 — Đánh giá trên tập TEST
 
-Run `run_20260819_xmpoff` · `checkpoint_best.pth` (epoch **6**) · config `pretraining/configs/mimic_cxr_full.yaml` · commit `11e35943e704`
+Run `run_20260819_xmpoff` · `checkpoint_best.pth` (epoch **6**) · config `pretraining/configs/mimic_cxr_full.yaml` · commit `d623cb514a85`
 
 Tổng hợp ngày 2026-08-20. Mọi con số dưới đây tính lại **offline** từ file `.npz` do
 `run.save_predictions: true` ghi ra, không cần GPU.
@@ -108,7 +108,7 @@ còn độc lập.
 đúng là `P(có) = sigmoid(mention) × q_pos`, và run này đã huấn luyện mention head
 (`lambda_gate: 0.5`) — nó chỉ chưa từng được trả ra khỏi model.
 
-Sau khi expose gate (commit `c4f6021`) và chấm lại:
+Sau khi expose gate (commit `4956578`) và chấm lại:
 
 | | `q_pos` trần | `m × q_pos` | Δ |
 |---|---:|---:|---:|
@@ -369,7 +369,7 @@ CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled python -m pretraining.train \
       run.resume_ckpt_path=<run>/mimic_cxr_full_blip2/checkpoint_best.pth
 ```
 
-⚠⚠ **`run.resume_ckpt_path` là bắt buộc.** Trước bản vá `0f1003d`, bỏ nó đi thì run
+⚠⚠ **`run.resume_ckpt_path` là bắt buộc.** Trước bản vá `1f2e7f0`, bỏ nó đi thì run
 vẫn chạy xong, ghi đủ file, không báo lỗi — và chấm điểm **model random init**. Kiểm
 chứng bằng `grep "Loading evaluation weights from" <log>`; không có dòng nào nghĩa là
 kết quả vô giá trị. Giờ nó raise thay vì im lặng.

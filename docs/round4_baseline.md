@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Branch | `refactor/stage2-real-medgemma-runtime` |
-| Base SHA | `8411647` |
+| Base SHA | `8400dd1` |
 | Backup tag | `stage2-runtime-before-real-env-8411647` (pushed) |
 | Prior branches pushed | `refactor/clean-medgemma-xai-pipeline`, `refactor/stage2-runtime-integration` |
 | Working tree at baseline | clean |

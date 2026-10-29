@@ -155,7 +155,7 @@ plan này. Không đưa văn bản báo cáo, `sample_key` hay ID nào vào git.
 
 ## Execution report
 
-**G0, 2026-10-28 16:13 (`~/s2probe.sh`, checkout `~/Meta-CXR-v3` at `4c06f55`): FAILED, 8/20 identical.**
+**G0, 2026-10-28 16:13 (`~/s2probe.sh`, checkout `~/Meta-CXR-v3` at `18ad40f`): FAILED, 8/20 identical.**
 The script stopped there as planned. Diagnosis (CPU and log only, no report text):
 - **Stage-1 records are identical.** The rebuilt test cache matches the cache of the reported run on
   every field except the cache-internal `sample_key`, which depends on the YAML mtime. Soft tokens
@@ -163,8 +163,8 @@ The script stopped there as planned. Diagnosis (CPU and log only, no report text
   The reported run also logged `missing=758`.
 - **Same decoding settings:** stop ids `[1, 106]`, beam 4, length penalty 2, 256 new tokens,
   `paper_context` + `cutpoints`.
-- **No default-path generation change** between `6dd5688` (the MBR gate, 20/20 on 2026-10-14) and
-  `4c06f55`.
+- **No default-path generation change** between `bff43bf` (the MBR gate, 20/20 on 2026-10-14) and
+  `18ad40f`.
 - **Unchanged environment:** the MedGemma snapshot dates from 2026-08-30, the adapter from 2026-10-13,
   the venv from August, and no driver or CUDA package changed after 2026-10-14.
 - **Generation is deterministic.** A second G0 run (`g0b`) is identical to the first, 20/20. Both match

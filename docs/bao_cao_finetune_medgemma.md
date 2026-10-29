@@ -296,7 +296,7 @@ Stage-1 tụt xuống 1,0–1,4 s/it kèm stall 10–14 phút).
 | | |
 |---|---|
 | nhánh | `feat/stage2-explainability` |
-| commit liên quan | `db43c44` (bộ sinh), `e3c6e0a` (sửa guard tháp ảnh), `cfef8c6` (checkpoint cứu hộ), `6251958` (hai arm), `5def8ce` (sàn zero-shot), `4b05aea` `988b7dd` `7d269dd` (healthcheck) |
+| commit liên quan | `7a397d4` (bộ sinh), `978b62a` (sửa guard tháp ảnh), `f777819` (checkpoint cứu hộ), `4149526` (hai arm), `644c370` (sàn zero-shot), `ffaf365` `29c7e8e` `9adef32` (healthcheck) |
 | artifact | `~/ft_only_full` (arm A), `~/ft_guided_full` (arm B), `~/gen_test` + `~/eval_final/stage2_test` (sàn zero-shot) |
 
 ⚠ Mọi artifact chứa dữ liệu dẫn xuất từ MIMIC-CXR và **ở nguyên trên máy train**.

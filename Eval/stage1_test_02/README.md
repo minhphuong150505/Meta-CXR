@@ -1,6 +1,6 @@
 # Stage 1 — Đánh giá trên tập TEST · **phiên bản 02**
 
-Run `run_20260820_ft` · `checkpoint_best.pth` (**epoch 9**) · config `mimic_cxr_full.yaml` @ `fec606b`
+Run `run_20260820_ft` · `checkpoint_best.pth` (**epoch 9**) · config `mimic_cxr_full.yaml` @ `b475712`
 
 Tổng hợp 2026-08-21. So sánh trực tiếp với phiên bản 01 (`Test/stage1_test/`) trên
 **cùng 3,269 study test** — nhãn khớp từng ô, nên mọi so sánh dưới đây là **ghép cặp**.

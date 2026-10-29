@@ -169,7 +169,7 @@ runner, no cache, no GPU. The choice of a different Swin is the user's.
 ### State left behind
 
 - No source change. This file is the only new file.
-- Commit `08592d3` (gate off) is still **not** on `origin`: after a fetch,
+- Commit `5be1d6f` (gate off) is still **not** on `origin`: after a fetch,
   `feat/stage2-finding-tokens` is ahead of `origin/feat/stage2-finding-tokens`
   by one commit.
 
@@ -490,7 +490,7 @@ because of it. Classification deltas 1c vs end of 1b on 400 val studies are
 
 ## Execution report — 2026-09-24 (continued session), planning checkout + host
 
-Pushed `08592d3` and `9350440` to `origin/feat/stage2-finding-tokens` first.
+Pushed `5be1d6f` and `afebedd` to `origin/feat/stage2-finding-tokens` first.
 
 ### What was built
 
@@ -643,7 +643,7 @@ rebuilds only PubMedCLIP's with `precompute_features.py --encoders pubmedclip`.
 
 ## Full run with D-022 — `~/run_20260925b_3phase` — COMPLETED 2026-09-26
 
-Pipeline `~/pipeline_d022.sh` (snapshot `~/metaformer3b_src` = commit `81cc9a9`):
+Pipeline `~/pipeline_d022.sh` (snapshot `~/metaformer3b_src` = commit `5f6f59c`):
 PubMedCLIP cache rebuilt 15:56 → 17:15 (BioViL/Swin caches reused by hard
 link, ids identical across the three encoders); three-phase smoke peak
 9,622 MiB, no NaN/inf; full run 2026-09-25 17:26 → 2026-09-26 21:40, `rc=0`,

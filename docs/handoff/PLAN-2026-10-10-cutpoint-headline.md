@@ -64,10 +64,10 @@ NLG numbers are unaffected by this change.
 
 ## Follow-up 2026-10-10/11 — `--cue-rule cutpoints` on the v3 Stage-2 test set
 
-User asked for a cutpoint cue rule and a test regeneration (commit `eb89324`).
+User asked for a cutpoint cue rule and a test regeneration (commit `318caa6`).
 Same v3 adapter (trained with `paper_thresholds` cues), same 2,800 test
 studies, NF4, 256 tokens; only the P/N/U cues change. Host probe
-`~/cutcue_test.py` + `~/cutcue_run.sh` (from `~/Meta-CXR-v3` at `eb89324`),
+`~/cutcue_test.py` + `~/cutcue_run.sh` (from `~/Meta-CXR-v3` at `318caa6`),
 output `~/stage2_v3_test_cutcue_20261010/`, `CUTCUE_ALL_DONE`, 0 failures.
 
 Checks before scoring: soft tokens bit-identical 2,800/2,800; control arm (old

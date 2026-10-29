@@ -1,7 +1,7 @@
 {
   "run": {
     "run_dir": "run_20260820_ft",
-    "source_commit": "fec606b",
+    "source_commit": "b475712",
     "checkpoint": "checkpoint_best.pth",
     "best_epoch": 9,
     "note": "best epoch is the LAST epoch and val loss was still falling there, unlike run 01 which peaked at epoch 6 on a flat curve",

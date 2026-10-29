@@ -9,7 +9,7 @@ as text, the instruction is the reference `inference.py` one byte for byte.
 | | value |
 |---|---|
 | pipeline mode | `meta_cxr_qformer_with_mhcac_prompt` |
-| prompt | `--prompt-style paper` (code `daaa8e8`) |
+| prompt | `--prompt-style paper` (code `19b420d`) |
 | cues | `--cue-rule paper_thresholds`, Eq. 22 thresholds fitted on val by `eval_after_paper.sh` |
 | LoRA | r=8, alpha=16 (paper; the default under `paper`) |
 | Stage 1 | `~/run_20261005_paper/phase1c/mimic_cxr_full_blip2/checkpoint_best.pth` (D-026) |
@@ -24,7 +24,7 @@ scratchpad; the host file is the deployed one):
 1. waits until `~/eval_20261005_paper/STATUS` is `DONE` (aborts on `FAILED`);
 2. requires the checkpoint and `thresholds_eq22_val.json`, an empty GPU and
    `ntfs3` on `/mnt/drive1tb`;
-3. `git pull --ff-only` and requires `daaa8e8` in `HEAD`;
+3. `git pull --ff-only` and requires `19b420d` in `HEAD`;
 4. **smoke** into `~/stage2_paper_20261006/smoke` (200 train / 20 val / 10
    test) and checks the adapter: `status complete`, `prompt_style paper`,
    `r 8`, `lora_alpha 16`, `prompt_version paper_build_instruction`;
@@ -60,7 +60,7 @@ runner, and a 3-phase (D-020/D-026) Stage-1 checkpoint feeding
 
 - 2026-10-06 02:27 Stage 1 phase 1c finished (`Training time 4:39:49`; 1b was
   7:08:00). `eval_after_paper.sh` DONE 02:44:44, thresholds written.
-- 02:45:38 chain started the smoke at `755e9a6`; **02:45:57 ABORT, rc=1**, on
+- 02:45:38 chain started the smoke at `9403a8a`; **02:45:57 ABORT, rc=1**, on
   the first train study of the Stage-1 record pass:
   `ValueError: model.pubmedclip.preprocess 'native' needs the dataset's
   pubmedclip_aux_image`. Stage-1 checkpoint loaded fine (`missing=758

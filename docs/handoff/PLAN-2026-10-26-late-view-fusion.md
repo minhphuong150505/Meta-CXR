@@ -80,7 +80,7 @@ README (Vietnamese), the skill.
 
 ## Step G — equivalence and smoke (~15 min GPU), abort on failure
 
-- **G1:** `smoke_P15` at `a43a88d` (the comparators' code; no Stage-1 file has changed since) and the
+- **G1:** `smoke_P15` at `761f30b` (the comparators' code; no Stage-1 file has changed since) and the
   same smoke at the new commit (early mode, absent key). 2,000 studies, 1 epoch, seed 42. Every
   tensor of the 1b checkpoint must be EQUAL. The comparators below then stay valid.
 - **G2:** late smoke, same size. rc=0, no NaN. The log must show no fusion block, no adapter, and
@@ -159,15 +159,15 @@ NB rests on two draws per arm (true SD ~0.5x-6x the estimate). Say so beside eve
 
 ## Execution report
 
-Launched once 16:52 (host code `9d39156`, `~/latefusion.sh` -> `~/latefusion_pilot_20261026/`, log
+Launched once 16:52 (host code `b914a92`, `~/latefusion.sh` -> `~/latefusion_pilot_20261026/`, log
 `~/latefusion.log`; old code for G1 in a fresh clone `~/Meta-CXR-a43a88d`). The probe
 (`~/latefusion_probe.py`) was dry-run first on CPU with LF := P15 and LFn := OFF: the sanity check
 reproduced the seed-noise probe exactly (max diff 0.0), "LF" - OFF came out at the seed-noise run's
 ON - OFF means (wF1 -0.0011, F1-5 -0.0015), and the verdict was STOP, as it must be.
 
 **Step G passed 16:57 (all smokes: 2,000 train / 400 val studies, 1 epoch, seed 42).**
-- G1: old code (`a43a88d`) vs new code in early mode: 809 of 809 checkpoint tensors equal (max abs diff
-  0), val probabilities equal. So the comparators trained at `a43a88d` stay valid. Both 50-57 s,
+- G1: old code (`761f30b`) vs new code in early mode: 809 of 809 checkpoint tensors equal (max abs diff
+  0), val probabilities equal. So the comparators trained at `761f30b` stay valid. Both 50-57 s,
   max mem 6,388 MiB.
 - G2: late smoke rc=0, late module built, no early fusion block, `"mode": "late"` logged; max mem
   5,219 MiB.

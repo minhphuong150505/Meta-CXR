@@ -30,13 +30,13 @@ train it), batch order, dropout, augmentation, and the aux-drop draws.
 | OFF_s17 | `run.seed=17` + the OFF overrides of the aux-drop pilot |
 
 The 42-seed runs are the existing `~/auxdrop_pilot_20261025/{P15,OFF}`.
-`git diff a43a88d HEAD` touches no `.py`, `.yaml` or `.sh`; the chain checks this
+`git diff 761f30b HEAD` touches no `.py`, `.yaml` or `.sh`; the chain checks this
 again.
 
 ## Guards (abort on any)
 
 - GPU idle, `ntfs3`, no other job, `~/seednoise_20261026` absent, no code diff since
-  `a43a88d`.
+  `761f30b`.
 - Smoke first: P15 with seed 17, 2,000 studies, 1 epoch. It must have rc=0 and
   exactly one `"seed": 17` in the logged config.
 - Each full arm: rc=0, no Traceback / OOM / NaN, `"seed": 17` logged.
@@ -80,7 +80,7 @@ decision rule. It is proposed to the user after this result and is not adopted h
 
 ## Execution report
 
-Launched once 00:24 (host code `eaf942a`); the probe was dry-run first on CPU (seed 42 fed in as "seed
+Launched once 00:24 (host code `f4674ea`); the probe was dry-run first on CPU (seed 42 fed in as "seed
 17": NB 0, sanity diff 0.0).
 
 - Smoke passed 00:25 (`"seed": 17` logged).

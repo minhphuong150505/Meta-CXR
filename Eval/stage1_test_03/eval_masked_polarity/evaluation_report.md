@@ -1,6 +1,6 @@
 # Evaluation report
 
-Generated 2026-08-21T09:06:25.019250+00:00 from commit `4c0bfa7ddc58`
+Generated 2026-08-21T09:06:25.019250+00:00 from commit `943a1c41ae64`
 
 
 ---
@@ -18,7 +18,7 @@ Generated 2026-08-21T09:06:25.019250+00:00 from commit `4c0bfa7ddc58`
 | Uncertain policy | `ignore_uncertain` |
 | Threshold source | `Test/stage1_test_03/thresholds_masked_f1.json` |
 | Device | cpu |
-| Git commit | `4c0bfa7ddc5854e09168b52edee61bd322a23b16` |
+| Git commit | `943a1c41ae647207e9a12e9cd5cb5f9420ad6b2f` |
 
 
 ---

@@ -189,7 +189,7 @@ its report is kept below because it is accurate about itself. Both sessions were
 given the same `-o` output path, so the file that survived was B's — which is why
 the first thing this run looked like was a total abort. It was not.
 
-- **commit run:** `a4897ddd9f992f68f6ce6c5dad4ded554b121246`
+- **commit run:** `7a1173c04ba9bd98d6c36d52331c8c86f19da5fd`
 - **host:** minhphuong (RTX 5060 Ti 16 GB), `/mnt/drive1tb` mounted ntfs3 read-only
 
 ### Step 1 — baseline, untrained, temperature pinned at 0.07
@@ -266,7 +266,7 @@ to 0.0.
 
 ### Session B's report, kept verbatim (duplicate launch, aborted)
 
-- commit run: `a4897ddd9f992f68f6ce6c5dad4ded554b121246`
+- commit run: `7a1173c04ba9bd98d6c36d52331c8c86f19da5fd`
 - command / status: Step-1 gate → exit 1
 - result: ABORT in Step 1 on `torch.OutOfMemoryError` while moving PubMedCLIP to
   CUDA. The failed allocation was 2.00 MiB with 13.50 MiB free of 15.48 GiB.
@@ -302,7 +302,7 @@ vectors sitting inside every other row's softmax. That is what put `loss_itc` at
 
 Training was never affected: `_image_text_contrastive` has always taken
 `generation_mask`, dropping invalid rows from the loss and `-inf`-masking them
-out of the candidate set. The bug was in the gate only. Fixed in `44cbdc3`; gate
+out of the candidate set. The bug was in the gate only. Fixed in `619814d`; gate
 JSONs now carry `studies_scanned` and `valid_fraction`, and one without those two
 keys should be distrusted.
 

@@ -4,7 +4,7 @@
 **Date:** 2026-07-22 · **Repo:** inner `META-CXR/` (`origin` → `Meta-CXR-Kaggle`, branch `main`)
 
 The audit proved the repo is a single linear chain and `feature/optimize-stage2-prompts`
-(`c3b477d`) is the universal superset. The plan below therefore integrates **one** branch by
+(`23718cf`) is the universal superset. The plan below therefore integrates **one** branch by
 fast-forward and adds the VM-readiness deliverables on top. No blind mass-merge, no
 force-push, no branch deletion.
 
@@ -14,7 +14,7 @@ force-push, no branch deletion.
 
 | Branch | Action | Reason |
 |---|---|---|
-| `feature/optimize-stage2-prompts` (`c3b477d`) | **merged (fast-forward)** | Strict superset of every other branch; contains all 36 commits. |
+| `feature/optimize-stage2-prompts` (`23718cf`) | **merged (fast-forward)** | Strict superset of every other branch; contains all 36 commits. |
 
 ## 2. Branches skipped because already contained
 

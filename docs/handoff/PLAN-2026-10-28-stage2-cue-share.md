@@ -30,13 +30,13 @@ Arm đối chứng đã có sẵn. Không chạy lại arm nào cũ.
 
 | arm | share | seed | checkout | output |
 |---|---|---|---|---|
-| ON16 (có sẵn) | 0,2 | 16 (mặc định) | `~/Meta-CXR-v3` @ `3b69007` | `~/s2fusion_20261026/gen_ON_beam` |
-| ON17 (có sẵn) | 0,2 | 17 | `~/Meta-CXR-s2seed` @ `948964e` | `~/s2seed_20261026/gen_ON17_beam` |
-| **M16 (mới)** | **0,5** | 16 | `~/Meta-CXR-s2seed` @ `948964e` | `~/s2share_20261028/gen_M16_beam` |
-| **M17 (mới)** | **0,5** | 17 | `~/Meta-CXR-s2seed` @ `948964e` | `~/s2share_20261028/gen_M17_beam` |
+| ON16 (có sẵn) | 0,2 | 16 (mặc định) | `~/Meta-CXR-v3` @ `d9e2155` | `~/s2fusion_20261026/gen_ON_beam` |
+| ON17 (có sẵn) | 0,2 | 17 | `~/Meta-CXR-s2seed` @ `5e8fefc` | `~/s2seed_20261026/gen_ON17_beam` |
+| **M16 (mới)** | **0,5** | 16 | `~/Meta-CXR-s2seed` @ `5e8fefc` | `~/s2share_20261028/gen_M16_beam` |
+| **M17 (mới)** | **0,5** | 17 | `~/Meta-CXR-s2seed` @ `5e8fefc` | `~/s2share_20261028/gen_M17_beam` |
 
-Bước G của seed replicate 2026-10-26 đã chứng minh checkout `948964e` với `--seed 16` cho ra adapter
-bit-identical với `3b69007`. Vì vậy M16 so với ON16 chỉ khác đúng share.
+Bước G của seed replicate 2026-10-26 đã chứng minh checkout `5e8fefc` với `--seed 16` cho ra adapter
+bit-identical với `d9e2155`. Vì vậy M16 so với ON16 chỉ khác đúng share.
 
 **Công thức** (giống hệt arm ON, chỉ đổi share):
 - `--pipeline-mode meta_cxr_qformer_with_mhcac_prompt --section-mode findings_only`;
@@ -54,7 +54,7 @@ cue MHCAC ở share 0,2 là tập con của các ô ở share 0,5.
 
 - GPU trống, không có tiến trình train hay sinh nào khác, ổ dữ liệu là `ntfs3`.
 - `~/s2share_20261028` chưa tồn tại.
-- `~/Meta-CXR-s2seed` ở `948964e` và sạch. Kích thước và mtime của YAML Stage-1 vẫn như lúc chạy ON17
+- `~/Meta-CXR-s2seed` ở `5e8fefc` và sạch. Kích thước và mtime của YAML Stage-1 vẫn như lúc chạy ON17
   (67.376 byte, mtime 1792078065). Mtime đổi thì `sample_key` đổi, kéo theo draw của `oracle_mix`.
 - Log train in `[cues] train oracle_mix share=0.5` với `records 7604` và `cells 98852` (giống ON17).
   `from_model / cells` phải nằm trong [0,45; 0,55].

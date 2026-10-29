@@ -804,7 +804,7 @@ CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
 # whether a change broke something on the host.
 # ⚠ It was SIX for a while: test_encoder_finetune.py::TestShippedConfig::
 #   test_encoder_finetune_is_on_with_patterns asserted `len(patterns) == 5`,
-#   the SHALLOW unfreeze of run_20260820_ft, and 814b778 deepened the config to
+#   the SHALLOW unfreeze of run_20260820_ft, and 4b39614 deepened the config to
 #   8 without updating it. The config was right and the test was stale. Fixed
 #   2026-08-30 by pinning the pattern SET instead of its count -- a count tells
 #   you only that the number moved, and is what let this rot unnoticed.
@@ -1951,7 +1951,7 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
   `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`. Pilot ran 2026-10-11/12.
 - ✅ **FULL RUN DONE 2026-10-14: P2 (`paper_context` + `oracle_mix`) + `--lora-lr 3e-4`,
   2 epochs, batch 2 x 8.** 47h45m, 0 OOM; adapter `~/stage2_p2_20261011/full/adapters/...`
-  on the host (checkout `~/Meta-CXR-v3` at `ce18c45`). Val loss 0.99053 -> **0.95619**
+  on the host (checkout `~/Meta-CXR-v3` at `1e0e181`). Val loss 0.99053 -> **0.95619**
   (epoch 2 kept); train loss 1.024 -> 0.855. Test, **n=2,800**, paper protocol, beam 4 lp 2:
   BLEU-1 0.434 / BLEU-4 0.190 / METEOR 0.190 / ROUGE-L 0.355 / CIDEr 0.416 / BERTScore 0.466,
   CheXbert micro F1-14 0.564 (greedy: 0.376 / 0.168 / 0.177 / 0.354 / 0.375 / 0.474, 0.563).
@@ -2070,7 +2070,7 @@ creation), so the seen/unseen split cannot be reconstructed. `--train-epochs 2`
 would not continue the 14% either — it runs a whole second epoch (~70 h) and
 reshapes the LR schedule, the trap already recorded above for Stage 1.
 
-The run also predated commit `200caa9`: it used `--save-every-updates 250`
+The run also predated commit `4d213c3`: it used `--save-every-updates 250`
 (~97 min per checkpoint at 2.9 s/it), which cost 46 minutes of work to the
 shutdown and tripped the watchdog's 45-min healthcheck every cycle for days.
 New runs use 32 (~12 min).
@@ -2869,7 +2869,7 @@ defaults), and that file stubs `_prompt_template_hash` with `lambda *args`, so
 the new keyword argument raised `TypeError` (fixed by passing it positionally).
 **Run the suite on the host before believing a Stage-2 change is clean** -- the
 dev box's 16 "baseline" failures hide real ones. Host: **1,066 passed /
-2 skipped, exit 0**, against baseline `c4d4357`'s 1,028 -- exactly the 38 new
+2 skipped, exit 0**, against baseline `23f2123`'s 1,028 -- exactly the 38 new
 tests, no regression.
 
 Plan, arms, budget, adoption criteria, abort conditions and the full execution
@@ -3925,7 +3925,7 @@ training no classification objective at all. (2) The comment above the loss call
 and its copy in the YAML both claimed `classification_logits` becomes the log
 marginal in this mode. **It does not and must not** — that aliases blank onto
 Negative, makes Positive unwinnable under the validation argmax, and once pinned
-val F1 at exactly 0.000000. Both corrected in `b49ac68`. Full record:
+val F1 at exactly 0.000000. Both corrected in `caaa393`. Full record:
 `docs/handoff/PLAN-2026-09-11-mention-conditioned-stage1.md`.
 
 ⚠⚠ **REVERSED 2026-09-24: `mimic_cxr_full.yaml` now trains a blank as NEGATIVE

@@ -118,7 +118,7 @@ back into this file.
 
 ## Execution report
 
-### Step P — user go-ahead 2026-10-25, launched once 15:52 (code `a43a88d`)
+### Step P — user go-ahead 2026-10-25, launched once 15:52 (code `761f30b`)
 
 `~/auxdrop_pilot.sh` → `~/auxdrop_pilot_20261025/`, log `~/auxdrop_pilot.log`;
 reading by `~/auxdrop_probe.py` (cross-fitted val cutpoints, rule above). The probe was

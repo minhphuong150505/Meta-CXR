@@ -35,13 +35,13 @@ in training and in val alike.
 - MPC and view consistency stay on, as in P15.
 
 **Controls are reused, not rerun**: P15 and OFF from `~/auxdrop_pilot_20261025/`.
-Same recipe, and the code is identical: `git diff a43a88d HEAD` touches no `.py`,
+Same recipe, and the code is identical: `git diff 761f30b HEAD` touches no `.py`,
 `.yaml` or `.sh`. The chain checks this again before it launches.
 
 ## Guards (abort on any)
 
 - GPU idle, `ntfs3`, no other job, `~/swinonly_pilot_20261025` absent, no code diff
-  since `a43a88d`.
+  since `761f30b`.
 - Smoke first (2,000 studies, 1 epoch, val 400). It must have rc=0, a
   `checkpoint_phase1b.pth`, and `FUSION_SKIP_FIRST` for biovil and pubmedclip. In its
   checkpoint, `w_o` and `ffn.3` of the biovil and pubmedclip fusion blocks must be
@@ -75,7 +75,7 @@ small from noise; the rule only screens out what clearly does not help.
 
 ## Execution report
 
-Launched once 22:43 (host code `dd850c7`). The CPU dry runs came first: the
+Launched once 22:43 (host code `c8417b6`). The CPU dry runs came first: the
 checkpoint check FAILs on A's checkpoint, as it must since A's BioViL fusion was
 trained, and the probe with SW = P15 gives "no candidate".
 

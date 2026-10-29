@@ -1,6 +1,6 @@
 # Toàn bộ độ đo theo giao thức bài báo META-CXR
 
-Ngày tính: 2026-10-05, trên máy train, code `8809995` (không sửa đổi cách tính). Khoảng tin cậy 95% = bootstrap percentile 1.000 lần theo nghiên cứu (seed 42).
+Ngày tính: 2026-10-05, trên máy train, code `f4649b8` (không sửa đổi cách tính). Khoảng tin cậy 95% = bootstrap percentile 1.000 lần theo nghiên cứu (seed 42).
 
 ## Giai đoạn 1 — phân loại 14 bất thường, ba lớp (Âm / Dương / Không chắc chắn)
 

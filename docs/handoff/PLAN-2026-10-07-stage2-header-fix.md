@@ -26,7 +26,7 @@ an exam header and 3.4% are nothing else**, almost all via the
 `NARRATIVE_BODY` fallback (reports with no FINDINGS tag). Some also carried the
 `REASON FOR EXAM` line.
 
-## Fix (commit 83bf724)
+## Fix (commit 7c5a366)
 
 `mimic_report_parser.is_exam_header` / `_strip_exam_header` drop chest
 exam-description lines (no lowercase, names CHEST, every other word is
@@ -54,7 +54,7 @@ reports with text directly under that line (p10-p11), 171 are a wrapped reason
 1. waits for `multiaux_chain.sh` (run B) and `multiaux_env_off.sh` to exit;
 2. guards: no GPU job, 0 compute apps, `ntfs3`, checkpoint + thresholds present,
    `$OUT` absent, >= 25 GB free on `/home`; v3 CSVs exist, header-start rate in
-   valid targets <= 0.2% on every split; checkout contains `83bf724`;
+   valid targets <= 0.2% on every split; checkout contains `7c5a366`;
 3. points the watchdog at the run (`export EXPECT_RUNNING=1`);
 4. smoke (200/20/10) then full run into `~/stage2_paper_20261007_v3/`, adapter
    check (`complete`, `paper`, r 8, alpha 16);

@@ -82,7 +82,7 @@ T = Thesis()
 T.title("Kết quả thực nghiệm và đánh giá hệ thống META-CXR trên bộ dữ liệu MIMIC-CXR-JPG")
 T.para(
     "Tài liệu này trình bày toàn bộ kết quả đánh giá của hệ thống sinh báo cáo X-quang ngực hai giai đoạn "
-    "được xây dựng trong đề tài, dựa trên nhánh mã nguồn chính (main, revision 79139fc). Giai đoạn 1 phân loại "
+    "được xây dựng trong đề tài, dựa trên nhánh mã nguồn chính (main, revision 3b817c0). Giai đoạn 1 phân loại "
     "14 nhãn bất thường; Giai đoạn 2 sinh phần FINDINGS của báo cáo. Mọi số liệu Giai đoạn 1 được tính lại từ "
     "tệp dự đoán đã lưu và tái lập chính xác đến bốn chữ số thập phân; mọi số liệu Giai đoạn 2 trên tập kiểm "
     "tra được sinh lại sau khi sửa lỗi điều kiện dừng sinh và được chấm lại theo giao thức chuẩn của lĩnh vực "

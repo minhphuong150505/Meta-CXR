@@ -560,7 +560,7 @@
     "config": "pretraining/configs/mimic_cxr_full.yaml",
     "created_utc": "2026-08-20T03:55:14.383981+00:00",
     "device": "cpu",
-    "git_commit": "0f1003d59b931323b73ab9d9f30ab6e5cce3523f",
+    "git_commit": "1f2e7f0c4e5b605ed38a8a04a52aef1d4edce638",
     "git_dirty": false,
     "num_pathologies": 14,
     "num_samples": 3269,

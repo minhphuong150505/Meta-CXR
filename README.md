@@ -1963,7 +1963,7 @@ không phải bằng 0.
 vào mặc định nào, và không thử lại đúng thiết kế này ở mức ngân sách này.**
 
 Trước đó: CPU test trên host **1.066 passed / 2 skipped, exit 0** (baseline
-`c4d4357`: 1.028 — đúng bằng 38 test mới); smoke GPU arm D `status: complete`,
+`23f2123`: 1.028 — đúng bằng 38 test mới); smoke GPU arm D `status: complete`,
 3,29 s/it so với 3,37 của arm C full; C/D chậm hơn A/B **+3,7%** và thêm 0,56%
 tham số.
 

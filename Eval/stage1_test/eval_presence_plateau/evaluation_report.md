@@ -1,6 +1,6 @@
 # Evaluation report
 
-Generated 2026-08-20T04:38:51.057564+00:00 from commit `8c0770ccd0a0` (**working tree dirty**)
+Generated 2026-08-20T04:38:51.057564+00:00 from commit `769a56ceb13a` (**working tree dirty**)
 
 
 ---
@@ -18,7 +18,7 @@ Generated 2026-08-20T04:38:51.057564+00:00 from commit `8c0770ccd0a0` (**working
 | Uncertain policy | `ignore_uncertain` |
 | Threshold source | `Test/stage1_test/thresholds_presence_marginal_plateau.json` |
 | Device | cpu |
-| Git commit | `8c0770ccd0a003ad32931331cdbeaa513a1e70ab` |
+| Git commit | `769a56ceb13ac0fe35cb74c6d457198312118ef9` |
 
 
 ---

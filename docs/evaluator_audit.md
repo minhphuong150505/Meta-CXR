@@ -1,6 +1,6 @@
 # Evaluator audit
 
-Ngày: 2026-07-22 · Branch: `feature/complete-evaluator` · Base commit: `9b8e27f`
+Ngày: 2026-07-22 · Branch: `feature/complete-evaluator` · Base commit: `10b4b0d`
 
 Tài liệu này ghi lại **hiện trạng đã đọc từ source**, không phải từ tài liệu cũ. Mọi shape và
 mapping bên dưới đều được xác nhận trong code, kèm `file:line`.

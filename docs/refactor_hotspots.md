@@ -1,7 +1,7 @@
 # Refactor hotspots
 
 Size and responsibility inventory of the Stage-2 and safety code, measured at
-commit `103fb95`. Line counts are `wc -l`; class and function counts are
+commit `504736b`. Line counts are `wc -l`; class and function counts are
 top-level `class`/`def` plus one level of method.
 
 ## Inventory

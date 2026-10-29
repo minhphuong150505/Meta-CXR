@@ -6,8 +6,8 @@ free-running generation failure. Fix demonstrated implementation defects; do
 not change training loss or launch a new full run on an untested hypothesis.
 
 ## Preconditions
-Host main pulled on 2026-09-08, revision `3f9b30c`. Review checkout
-`/home/phuong/meta-cxr-cue-contract-20260908` contains the tested `88e3bb5`
+Host main pulled on 2026-09-08, revision `0f244e4`. Review checkout
+`/home/phuong/meta-cxr-cue-contract-20260908` contains the tested `693cdaa`
 cue-contract source changes. GPU busy with zero-shot generation: 11,814 MiB,
 90% utilization. No new GPU run, no waiting queue.
 
@@ -142,7 +142,7 @@ and `selective_summary.json`; raw log
 
 The established implementation problem is forced, overconfident cue emission
 from a conditional polarity head, compounded by the empty-group normal statement
-fixed in `88e3bb5`. Selective marginal emission reduces input noise with the
+fixed in `693cdaa`. Selective marginal emission reduces input noise with the
 existing Stage-1 checkpoint. It is an opt-in mitigation, not a verified cure for
 Stage-2 generation. Existing Arm C was trained with the old cues and its adapter
 has not been retrained by this work.
@@ -193,7 +193,7 @@ the same old-stop outputs on the identical cohort, keeping cues/decoding limits
 fixed. No loss, optimizer, training target or checkpoint change is required.
 
 Stop-fix review checkout: `/home/phuong/meta-cxr-stage2-stop-20260909`, detached
-from host main `3f9b30c` after another successful pull, with the current source
+from host main `0f244e4` after another successful pull, with the current source
 patch applied. CPU synthetic stopping tests: **3 passed, exit 0**. Full suite
 using the same exclusions/command above: **1,012 passed, 2 skipped, exit 0**;
 raw logs `/home/phuong/stage2_stop_targeted_20260909.log` and
@@ -231,7 +231,7 @@ none: BERTScore +0.004295 (CI95 [-0.003208, +0.012384]), CIDEr +0.000209
 ([-0.000412, +0.000947]); no established benefit. Repeated 5-gram >=3 times:
 50/100 versus 51/100. Aggregate comparison remains in the probe directory.
 
-The shared repository had advanced to `79139fc`, including completed 25-case
+The shared repository had advanced to `3b817c0`, including completed 25-case
 stop-token and 100-case corrected-stop cue probes (recorded in CLAUDE.md).
 These completed probes supersede the pending-launch wording above. Their
 summary/comparison files and per-arm evaluation logs remain on the host.

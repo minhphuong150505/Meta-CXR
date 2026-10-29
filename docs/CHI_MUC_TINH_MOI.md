@@ -71,7 +71,7 @@ P/R/F1 0,827/0,834/0,820 (argmax 0,839/0,781/0,780; bài báo 0,87/0,78/0,73), F
 5 bệnh 0,749 [0,741; 0,757] (argmax 0,669; bài báo 0,701); so với argmax, F1 5
 bệnh +0,0805 [+0,0743; +0,0866], macro recall −0,0149 (bootstrap ghép cặp 1.000
 lần, seed 16). Phải ghi "không phải giao thức argmax của bài báo" cạnh số chính.
-Nguồn: `docs/handoff/PLAN-2026-10-10-cutpoint-headline.md`, commit `3607223`.
+Nguồn: `docs/handoff/PLAN-2026-10-10-cutpoint-headline.md`, commit `be1acc0`.
 
 **TM-02 — Giải mã beam 4, length penalty 2.** Bài báo không nêu cách giải mã. Test
 2.800 study, cùng adapter: beam − greedy BERTScore +0,0083 [+0,0037; +0,0129],

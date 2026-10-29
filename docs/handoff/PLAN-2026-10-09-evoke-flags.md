@@ -1,6 +1,6 @@
 # PLAN 2026-10-09 — EVOKE-alignment flags: GPU smoke
 
-Commit `8187363` added two opt-in flags after comparing the multi-view path
+Commit `f1a9a0e` added two opt-in flags after comparing the multi-view path
 against EVOKE (arXiv 2411.10224) and its released code:
 
 - `model.view_fusion.detach_aux` (default `false`): detach auxiliary-view K/V in
@@ -14,7 +14,7 @@ combinations run end to end. It says nothing about quality.
 ## Executor steps (host) — run directly over SSH by the planning session
 
 ```bash
-cd ~/Meta-CXR && git pull --ff-only          # 8187363
+cd ~/Meta-CXR && git pull --ff-only          # f1a9a0e
 CUDA_VISIBLE_DEVICES="" ~/.venvs/meta-cxr-stage1-311/bin/python -m pytest tests/ training/ -q
 setsid nohup bash ~/evoke_flags_smoke.sh > ~/evoke_flags_smoke.log 2>&1 < /dev/null &
 ```
@@ -36,7 +36,7 @@ flag absent from the logged config.
 
 ## Execution report
 
-### 2026-10-09 14:25–15:01, commit 8187363
+### 2026-10-09 14:25–15:01, commit f1a9a0e
 
 - Host pytest (`tests/` + `training/`): exit 0, no failures (~1,174 tests).
 - First launch attempt refused itself: its `grep -E` guard matched its own
@@ -83,8 +83,8 @@ drop that is as large on `views_1` (input unchanged) is training noise.
 ### Smoke scoring and noise floor, 2026-10-09 16:00
 
 Test, 400 studies, `compare_stage1_predictions.py` (1,000 resamples, seed 16).
-`A_rep` = A re-run at seed 42; `A_s43` = A at seed 43; both commit cb62ce5
-(code identical to 8187363).
+`A_rep` = A re-run at seed 42; `A_s43` = A at seed 43; both commit 5a77aa8
+(code identical to f1a9a0e).
 
 - **`A_rep` vs A: 0 changed argmax cells, every delta exactly 0.** Training is
   bit-deterministic at a fixed seed, so a flag's effect is not GPU noise.
@@ -105,7 +105,7 @@ Read: no config moves AUROC beyond the seed noise. B's F1 drop is ~4x the
 one-seed noise and is the only clear signal (detach at tau 0.07 looks
 harmful at this scale); C and D sit at ~1.5-2x on F1-5 only. One noise
 sample, ~125 updates per epoch: indicative, not a result. Full D launched
-15:55:26 (commit dd076f3).
+15:55:26 (commit 020f05b).
 
 ### Decision rule, fixed 2026-10-09 BEFORE the D result exists (user)
 

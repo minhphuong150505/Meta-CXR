@@ -1,7 +1,7 @@
-# Round 5 baseline — measured at `05728bc`
+# Round 5 baseline — measured at `81f1f0f`
 
 Branch: `refactor/medgemma-real-runtime-validation` (from
-`refactor/stage2-real-medgemma-runtime` @ `05728bc`)
+`refactor/stage2-real-medgemma-runtime` @ `81f1f0f`)
 Working tree clean, remote in sync, at time of measurement.
 Interpreter: `/home/phuong/venv/bin/python`, Python 3.12.3.
 
@@ -15,7 +15,7 @@ Interpreter: `/home/phuong/venv/bin/python`, Python 3.12.3.
 | `ruff format --check .` | 70 files would be reformatted, 26 already formatted |
 
 `ruff` counts match the round-4 record (426). Test count grew 250 → 276; the
-26 new tests came from `05728bc`, the notebook privacy guard.
+26 new tests came from `81f1f0f`, the notebook privacy guard.
 
 ## The brief's expectation was not met
 
@@ -44,7 +44,7 @@ The guard correctly flags its own test fixtures, so `--all-tracked` always
 exits non-zero and the test always fails.
 
 **This is not a data leak.** The fixtures are synthetic by design — commit
-`b03fbc9` replaced a MIMIC-shaped subject id in one of them precisely to keep
+`ae06d8c` replaced a MIMIC-shaped subject id in one of them precisely to keep
 them free of real identifiers. The defect is in target enumeration, not in
 detection.
 

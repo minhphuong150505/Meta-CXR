@@ -39,7 +39,7 @@ What this changes and what it does not:
 ## Code change (opt-in, absent key = bit-identical to LF)
 
 New key `model.view_fusion.late_detach_aux: true | false`. Absent = `false` = the LF code path as run
-at `9d39156`.
+at `b914a92`.
 - `Blip2Qformer.__init__`: read and store it. Refuse it outside `late` mode, because it would silently
   do nothing there. Early fusion has its own `detach_aux`, which is a different thing.
 - `Blip2Qformer._late_view_logits`: when true, run the aux part (ln_vision / shared projector /
@@ -63,7 +63,7 @@ README (Vietnamese), the skill.
 ## Step G — equivalence and smoke (~6 min GPU), abort on failure
 
 Same smoke size as the LF plan: 2,000 train / 400 val studies, 1 epoch, seed 42.
-- **G1:** a late smoke with the key absent at the new commit vs the LF code (`9d39156`). Every
+- **G1:** a late smoke with the key absent at the new commit vs the LF code (`b914a92`). Every
   checkpoint tensor must be equal and the val probabilities equal. This shows the LF arms stay valid
   comparators.
 - **G2:** a late smoke with `late_detach_aux=true`. rc=0, no NaN, the key logged, and the no-grad
@@ -143,11 +143,11 @@ The probe (`~/ldetach_probe.py`) was dry-run first on CPU with LD := LF and LDn 
 sanity check reproduced both earlier probes exactly (max diff 0.0). "LD" - OFF came out at LF - OFF to
 the last digit, CIs included, and LD - LF was 0.
 
-Launched once 22:39 (host code `a0e1eb0`, `~/ldetach.sh` -> `~/latefusion_detach_20261026/`, log
+Launched once 22:39 (host code `fdb9bfa`, `~/ldetach.sh` -> `~/latefusion_detach_20261026/`, log
 `~/ldetach.log`; LF code for G1 in a fresh clone `~/Meta-CXR-9d39156`).
 
 **Step G passed 22:44 (smokes: 2,000 train / 400 val studies, 1 epoch, seed 42).**
-- G1: late mode with the key absent, new code vs LF code `9d39156`: 724 of 724 checkpoint tensors
+- G1: late mode with the key absent, new code vs LF code `b914a92`: 724 of 724 checkpoint tensors
   equal (max abs diff 0), val probabilities equal. So LF_s42 / LF_s17 stay valid comparators.
   Both 51-54 s, max mem 5,219 MiB.
 - G2: `late_detach_aux=true` smoke rc=0, key logged, the no-grad assertion was never hit.
@@ -157,7 +157,7 @@ Launched once 22:39 (host code `a0e1eb0`, `~/ldetach.sh` -> `~/latefusion_detach
 - G3: the 237 single-view studies are bit-identical with and without the aux view; all 163 two-view
   studies move (no argmax cell changed at smoke size). Evaluate-only reproduces the training-time npz.
 
-**Step P ran 22:44 -> 00:36 (`LDETACH_DONE`), code `a0e1eb0`, one card, no other job.**
+**Step P ran 22:44 -> 00:36 (`LDETACH_DONE`), code `fdb9bfa`, one card, no other job.**
 - Guards: both arms rc=0, no Traceback / OOM / NaN, logged seeds 42 / 17, `"mode": "late"` and
   `"late_detach_aux": true` in the logged config, no test `.npz`. LD_s42 47m52s, best epoch 1;
   LD_s17 47m32s, best epoch 0 (LF: 53m / 50m, same best epochs). Max mem 4,940 / 4,935 MiB (the log

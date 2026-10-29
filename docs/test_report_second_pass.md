@@ -12,8 +12,8 @@ inferred.
 | Python | 3.12.3 |
 | Interpreter | `/home/phuong/venv/bin/python` |
 | Branch | `refactor/clean-medgemma-xai-pipeline` |
-| Base SHA | `ee3ba2f` |
-| Final SHA | see `git log`; last code commit `103fb95` |
+| Base SHA | `2fd67c0` |
+| Final SHA | see `git log`; last code commit `504736b` |
 | Working tree | clean at each commit boundary |
 
 ### Installed
@@ -43,7 +43,7 @@ torch, which `CLAUDE.md` forbids for this venv.
 
 ## Results
 
-| Command | Baseline (`ee3ba2f`) | Final |
+| Command | Baseline (`2fd67c0`) | Final |
 |---|---|---|
 | `compileall -q .` | exit 0 | **exit 0** |
 | `pytest` | 141 passed, 0 failed, 0 skipped, 2.6 s | **229 passed, 0 failed, 0 skipped, 3.3 s** |

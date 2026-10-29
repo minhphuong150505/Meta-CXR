@@ -83,7 +83,7 @@ correction): report them, do not select on them.
 
 ## Execution report
 
-Host checkout `8f4dc89`, `~/step0.sh` launched once, 11:04 -> 11:15. Guards
+Host checkout `4ebbcb7`, `~/step0.sh` launched once, 11:04 -> 11:15. Guards
 passed (ntfs3, GPU idle, no job). Eval: `Loading evaluation weights from` = 1;
 dataset `3269 studies ..., 0 with a complementary view (multi_view=True,
 max_aux_views=0)`; 2.5 min.
@@ -246,7 +246,7 @@ adopting per-view cutpoints is a separate user decision.
 
 ### Step 0c — execution report (2026-10-25 13:29 -> 13:39)
 
-Commit `2c6a194`. A's val re-score with its aux view reproduced the
+Commit `6600508`. A's val re-score with its aux view reproduced the
 training-time val npz exactly (max |dprob| 0.0, changed argmax 0); val groups
 988 one-view / 820 two-view, test 2,022 / 1,247. Artifacts (host, never
 committed): `~/nomv_probe_20261024/{A_val.npz,pv_probe.json,pv_probe.log}`.
