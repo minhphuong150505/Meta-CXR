@@ -167,6 +167,35 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   `lambda_query_diversity > 0` without both (`assert_noise_free_query_path`). Gates of attempt 2,
   incl. the smoke rule (600 updates; PR >= 4, map <= 0.6, ITC above chance, train/val gap of the
   term <= 0.05, else stop): the plan's "Lần 2" section.
+- 🔎 **Stage-1 recall / input audit, 2026-10-29 (CPU, read-only, `run_20261005_paper`):**
+  - **The inputs are not the main cause of missed findings.**
+    - View: AP vs PA miss rates, standardised for finding mix, are ~0.45 vs ~0.50.
+    - Number of views: one-view vs two-view studies miss at about the same rate.
+    - Crop: BioViL's 448 crop removes 2.5–3% of the lung area (CheXmask), mostly the sides and top;
+      the bases are kept (0.1%). Misses do not rise with the area lost.
+    - Labels: 25% of "misses" are labeler errors, i.e. the radiologist label is Negative (676 test
+      studies).
+  - **Two real causes.**
+    - The weighted-F1 cutpoints trade recall away. Present recall is 0.53 under cutpoints against
+      0.72 under argmax.
+    - Rare and small findings are not ranked. Enlarged Cardiomediastinum, Fracture and Pleural Other
+      reach about 0 recall even with argmax.
+  - **A per-finding logit shift changes NOTHING under cutpoints.** That covers PromptMRG-style
+    adaptive logit adjustment and Menon's: decisions are 100% identical, because the shift is monotone
+    in `s`. Only better ranking raises recall at equal precision.
+  - Record: `docs/handoff/PLAN-2026-10-29-stage1-recall-input-audit.md`.
+- 🧪 **`model.mhcac.asymmetric_loss: {gamma_neg, clip}` (opt-in 2026-10-29, user-approved; absent = off,
+  bit-identical).**
+  - Applies Ridnik et al. ICCV 2021 asymmetric focusing to Negative cells only: the cell costs
+    `-stopgrad((1-q)^gamma) log q`, with `q = min(p_neg + clip, 1)`.
+  - P/U cells keep `-log p_y`. The class weights and their normalisation are unchanged; the logits
+    are untouched.
+  - Exclusive with `logit_adjustment`, and requires `label_smoothing` 0.
+  - It is NOT in the YAML (an edit would move the mtime). Set it per phase:
+    `run.phases.phase1b.model.mhcac.asymmetric_loss.gamma_neg=4 ...clip=0.05`.
+  - Pinned by `tests/test_asymmetric_loss.py`.
+  - **Not yet run on GPU.** Pilot plan with a pre-declared rule (deciding metric: macro AP of "present"
+    on val, NB 0.0042, measured from 5 seed pairs): `docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

@@ -100,6 +100,7 @@ from vision_encoders.rad_dino.rad_dino_encoder import RadDinoEncoder  # :28
 from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector  # :29
 # from vision_encoders.medclip.medclip import Medclip         # :30  ← LEGACY, đã comment
 from mhcac.loss import (ClassificationLoss, MultiPositiveContrastiveLoss,
+                        asymmetric_loss_settings,  # 2026-10-29: model.mhcac.asymmetric_loss -> cls_loss_fn
                         soft_target_kl_loss, view_consistency_loss)  # :36
 from mhcac.view_fusion import ViewFusionModule                # :42
 from mhcac.late_view_pool import LateViewPooling, late_classification_loss, resolve_view_fusion_mode  # 2026-10-26

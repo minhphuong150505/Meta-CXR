@@ -59,6 +59,7 @@ VISUAL_DIM = 1408
 from mhcac.loss import (
     ClassificationLoss,
     MultiPositiveContrastiveLoss,
+    asymmetric_loss_settings,
     drop_loss_config_state,
     siglip_loss,
     smoothed_cross_entropy,
@@ -259,6 +260,8 @@ class Blip2Qformer(Blip2Base):
         cls_label_smoothing=0.05,
         logit_adjust_counts=None,
         logit_adjust_tau=1.0,
+        asymmetric_gamma_neg=0.0,
+        asymmetric_clip=0.0,
         itc_queue_size=1024,
         itc_temp=0.07,
         itc_temp_learnable=True,
@@ -773,7 +776,14 @@ class Blip2Qformer(Blip2Base):
             label_smoothing=cls_label_smoothing,
             logit_adjust_counts=logit_adjust_counts,
             logit_adjust_tau=logit_adjust_tau,
+            asymmetric_gamma_neg=asymmetric_gamma_neg,
+            asymmetric_clip=asymmetric_clip,
         )
+        if self.cls_loss_fn.asymmetric_enabled:
+            logging.info(
+                "[mhcac] asymmetric loss on Negative cells: gamma_neg=%s clip=%s",
+                asymmetric_gamma_neg, asymmetric_clip,
+            )
         # Frozen modules that must keep their inference behaviour while the model
         # trains (2026-10-15 refit: view_fusion's dropout and its 20% auxiliary-view
         # drop would otherwise show the Q-Former features it never meets when
@@ -2793,6 +2803,9 @@ class Blip2Qformer(Blip2Base):
                 list(row) for row in logit_adjustment_cfg.get("class_counts")
             ]
             logit_adjust_tau = float(logit_adjustment_cfg.get("tau", 1.0))
+        # Absent key = off (bit-identical). Present: {gamma_neg, clip}, Ridnik et al. 2021
+        # (docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md).
+        asymmetric_gamma_neg, asymmetric_clip = asymmetric_loss_settings(mhcac_cfg)
         # Absent keys reproduce the historical MHCAC exactly.
         mhcac_text_guidance = str(mhcac_cfg.get("text_guidance", "teacher_student"))
         mhcac_layer_order = str(mhcac_cfg.get("layer_order", "text_first"))
@@ -2849,6 +2862,8 @@ class Blip2Qformer(Blip2Base):
             cls_label_smoothing=cls_label_smoothing,
             logit_adjust_counts=logit_adjust_counts,
             logit_adjust_tau=logit_adjust_tau,
+            asymmetric_gamma_neg=asymmetric_gamma_neg,
+            asymmetric_clip=asymmetric_clip,
             itc_queue_size=itc_queue_size,
             itc_temp=itc_temp,
             itc_temp_learnable=itc_temp_learnable,

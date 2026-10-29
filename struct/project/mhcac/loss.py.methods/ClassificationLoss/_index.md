@@ -17,6 +17,8 @@ policy, và **`sample_mask`**.
 ## Constructor (`:43`)
 | Tham số | Prod | Vai trò |
 |---|---|---|
+| `asymmetric_gamma_neg`, `asymmetric_clip` | 0, 0 (tắt) | Từ 2026-10-29, đọc từ `model.mhcac.asymmetric_loss`. Ô Negative tính `-stopgrad((1-q)^γ)·log q` với `q = min(p_neg+clip, 1)` (ASL, Ridnik 2021). Ô P/U giữ nguyên CE. Không dùng chung với logit adjustment, cần label smoothing 0. Test: `tests/test_asymmetric_loss.py` |
+| `logit_adjust_counts`, `logit_adjust_tau` | không dùng | Menon 2021 (D-025), loại trừ với `class_weights` |
 | `class_weights` | 14×3 sqrt inverse-freq, cap 10 | `[]` → tắt (ablation) |
 | `num_abnormalities` | 14 | |
 | `label_smoothing` | **0.0** từ 2026-10-05 (D-026); 0.05 khi config thiếu key | |

@@ -6,6 +6,8 @@
 
 > ⚠ **D-025 (2026-10-01) — `model.mhcac.logit_adjustment` đã cài nhưng KHÔNG bật.** Production vẫn dùng `class_weights`. Khóa thay thế: `{tau, class_counts: 14×[neg, pos, unc]}` đếm trên train; hai khóa loại trừ nhau. Xem [D-025](../../_meta/DECISIONS.md#d-025--logit-adjusted-loss-thay-trọng-số-lớp-bị-chặn-2026-10-01).
 
+> 🧪 **`model.mhcac.asymmetric_loss: {gamma_neg, clip}` (2026-10-29): có cài, nhưng KHÔNG có trong YAML.** Bật bằng override ở phase, ví dụ `run.phases.phase1b.model.mhcac.asymmetric_loss.gamma_neg=4`. Sửa YAML sẽ đổi mtime, và Stage 2 dùng mtime đó cho cache và `oracle_mix`. Thiếu khóa thì loss giống hệt bản cũ, đến từng bit. Xem [`loss.py`](../../mhcac/loss.py.doc.md) và [`PLAN-2026-10-29-stage1-asymmetric-loss.md`](../../../docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md).
+
 > ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Đã XÓA khỏi YAML: `gate_class_weights`, `mention_conditioned_pos_weights`, `uncertain_policy` (model và run), `include_meta_labels`, `lambda_gate`, `lambda_mention_conditioned_cls`, `report_study_presence`. Viết lại chúng sẽ bị `pretraining/retired_keys.py` từ chối. Xem [D-023](../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
 
 

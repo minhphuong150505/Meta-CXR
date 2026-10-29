@@ -470,6 +470,39 @@ hai seed, nên lần qua ở pilot chỉ là nhiễu seed. Không chạy full, k
 viết kết quả âm. Chi tiết: `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`. Tổng hợp mọi thí nghiệm
 multi-view (kết quả âm): `docs/KET_QUA_MULTI_VIEW.md`.
 
+**Kiểm tra đầu vào và recall của Stage 1 (2026-10-29, chỉ CPU, chỉ đọc dự đoán của `run_20261005_paper`).**
+Kết luận chính: **đầu vào không phải nguyên nhân chính của việc bỏ sót.**
+
+- **View:** sau khi chuẩn hóa theo cơ cấu bệnh, tỷ lệ bỏ sót ở ảnh AP khoảng 0,45, ở ảnh PA khoảng 0,50.
+  AP không bị bỏ sót nhiều hơn PA.
+- **Số view:** study một view và hai view có tỷ lệ bỏ sót gần như nhau.
+- **Ảnh bị cắt:** theo mask phổi CheXmask, ảnh cắt 448 của BioViL làm mất 2,5–3% diện tích phổi, chủ yếu ở
+  hai bên và phía trên; đáy phổi gần như giữ nguyên. Tỷ lệ bỏ sót không tăng theo phần bị cắt.
+- **Nhãn:** đối chiếu 676 study test có nhãn bác sĩ, 25% số "bỏ sót" thực ra là nhãn tự động sai.
+
+Nguyên nhân thật có hai:
+
+- Cutpoint tối ưu weighted F1 đổi recall lấy precision: recall "có bệnh" 0,53 khi dùng cutpoint, so với
+  0,72 khi dùng argmax.
+- Mô hình không xếp hạng được các bệnh hiếm hoặc nhỏ: Enlarged Cardiomediastinum, Fracture và
+  Pleural Other có recall khoảng 0 kể cả khi dùng argmax.
+
+Logit adjustment (kiểu PromptMRG hay kiểu Menon) chỉ dời điểm số của mỗi finding một hằng số, nên với
+cutpoint thì quyết định giữ nguyên 100%. Muốn tăng recall ở cùng mức precision, mô hình phải xếp hạng tốt
+hơn. Chi tiết: `docs/handoff/PLAN-2026-10-29-stage1-recall-input-audit.md`.
+
+**`model.mhcac.asymmetric_loss: {gamma_neg, clip}` (tùy chọn, 2026-10-29; vắng khóa thì giống hệt bản cũ,
+đến từng bit).** Áp asymmetric loss của Ridnik et al. (ICCV 2021) lên các ô có nhãn Negative.
+
+- Ô Negative có loss `-stopgrad((1-q)^gamma)·log q`, với `q = min(p_neg + clip, 1)`. Ô âm tính dễ bị bỏ
+  qua, ô âm tính giống có bệnh được giữ trọng số.
+- Ô Positive và Uncertain giữ nguyên CE. Trọng số lớp của bài báo (Eq. 10) không đổi, vẫn ba lớp.
+- Không ghi vào YAML. Bật bằng `run.phases.phase1b.model.mhcac.asymmetric_loss.gamma_neg=4` và
+  `...clip=0.05`.
+- Test CPU: `tests/test_asymmetric_loss.py`.
+- **Chưa chạy GPU.** Plan pilot có quy tắc đọc khai báo trước (chỉ số quyết định là macro AP "có bệnh"
+  trên val, NB 0,0042): `docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md`.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**

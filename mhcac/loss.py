@@ -76,6 +76,21 @@ def logit_adjustment_offsets(class_counts, num_abnormalities=14, tau=1.0):
     return offsets.float()
 
 
+def asymmetric_loss_settings(mhcac_cfg):
+    """``(gamma_neg, clip)`` from ``model.mhcac.asymmetric_loss``; ``(0.0, 0.0)`` when absent.
+
+    Absent key = the historical weighted cross entropy, bit for bit. Values are
+    checked by :class:`ClassificationLoss`.
+    """
+    cfg = (mhcac_cfg or {}).get("asymmetric_loss", None)
+    if cfg is None:
+        return 0.0, 0.0
+    unknown = set(cfg) - {"gamma_neg", "clip"}
+    if unknown:
+        raise ValueError(f"model.mhcac.asymmetric_loss has unknown keys {sorted(unknown)}")
+    return float(cfg.get("gamma_neg", 4.0)), float(cfg.get("clip", 0.05))
+
+
 class ClassificationLoss(nn.Module):
     """Per-abnormality weighted cross entropy over the paper's THREE classes.
 
@@ -99,6 +114,17 @@ class ClassificationLoss(nn.Module):
     replaces ``class_weights`` (the two are mutually exclusive). A class with
     zero train count gets offset 0: it is never a target, so cross entropy
     already keeps its raw logit below the present classes'.
+
+    ``asymmetric_gamma_neg`` > 0 adds the asymmetric focusing of Ridnik et al.
+    (ICCV 2021, ``Alibaba-MIIL/ASL`` ``AsymmetricLoss``) on the cells whose label
+    is Negative: with ``q = min(p_neg + clip, 1)`` such a cell costs
+    ``-w * log(q)``, ``w = stopgrad((1 - q) ** gamma_neg)``, so an easy negative
+    (``p_neg >= 1 - clip``) costs nothing and a negative that looks present keeps
+    its weight. Positive and Uncertain cells keep ``-log p_y`` (gamma_pos = 0).
+    The class weights and their normalisation (``sum w_c[y]`` over valid cells,
+    as ``nn.CrossEntropyLoss(weight=...)``) are unchanged, and the model's logits
+    are not touched. With two classes this is exactly ASL, since
+    ``1 - max(p_present - clip, 0) = min(p_neg + clip, 1)``. 0 = off, bit-identical.
     """
 
     def __init__(
@@ -109,9 +135,22 @@ class ClassificationLoss(nn.Module):
         label_smoothing=0.0,
         logit_adjust_counts=None,
         logit_adjust_tau=1.0,
+        asymmetric_gamma_neg=0.0,
+        asymmetric_clip=0.0,
     ):
         super().__init__()
         self.penalty_weight = float(penalty_weight)
+        self.asymmetric_gamma_neg = float(asymmetric_gamma_neg)
+        self.asymmetric_clip = float(asymmetric_clip)
+        if self.asymmetric_gamma_neg < 0:
+            raise ValueError("asymmetric_loss.gamma_neg must be >= 0")
+        if not 0.0 <= self.asymmetric_clip < 1.0:
+            raise ValueError("asymmetric_loss.clip must be in [0, 1)")
+        if self.asymmetric_enabled:
+            if logit_adjust_counts is not None:
+                raise ValueError("asymmetric_loss and logit_adjustment are exclusive; configure one")
+            if label_smoothing > 0:
+                raise ValueError("asymmetric_loss needs label_smoothing 0")
         if logit_adjust_counts is not None:
             if class_weights is not None:
                 raise ValueError(
@@ -150,6 +189,24 @@ class ClassificationLoss(nn.Module):
             if w is not None:
                 loss_fn.register_buffer("weight", w, persistent=False)
 
+    @property
+    def asymmetric_enabled(self):
+        return self.asymmetric_gamma_neg > 0 or self.asymmetric_clip > 0
+
+    def _asymmetric_term(self, logits_i, labels_i, weight):
+        """Weighted mean over cells of the asymmetric loss (see class docstring)."""
+        log_p = torch.log_softmax(logits_i.float(), dim=-1)
+        log_p_y = log_p.gather(1, labels_i.unsqueeze(1)).squeeze(1)
+        negative = labels_i == 0
+        q = (log_p[:, 0].exp() + self.asymmetric_clip).clamp(max=1.0)
+        focus = (1.0 - q).clamp(min=0.0).pow(self.asymmetric_gamma_neg).detach()
+        log_q = torch.log(q.clamp(min=1e-8))
+        cell = torch.where(negative, -focus * log_q, -log_p_y)
+        if weight is None:
+            return cell.mean()
+        w_y = weight.to(cell.device, cell.dtype)[labels_i]
+        return (w_y * cell).sum() / w_y.sum()
+
     def forward(self, logits, true_labels, sample_mask=None):
         if logits.ndim != 3 or true_labels.ndim != 2:
             raise ValueError("expected logits [B,A,C] and labels [B,A]")
@@ -179,7 +236,11 @@ class ClassificationLoss(nn.Module):
                 logits_i = logits[valid, abnormality_idx]
                 if self.logit_offsets is not None:
                     logits_i = logits_i + self.logit_offsets[abnormality_idx].to(logits_i.dtype)
-                losses.append(loss_fn(logits_i, labels_i[valid]))
+                if self.asymmetric_enabled:
+                    losses.append(self._asymmetric_term(
+                        logits_i, labels_i[valid], getattr(loss_fn, "weight", None)))
+                else:
+                    losses.append(loss_fn(logits_i, labels_i[valid]))
 
         if not losses:
             # Keep the zero connected to the graph for backward/DDP.

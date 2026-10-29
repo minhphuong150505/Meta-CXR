@@ -83,6 +83,28 @@ hiện qua smoke: `checkpoint_phase1a` cũ mang 14 vector trọng số làm phas
 từ chối. Test:
 `tests/test_logit_adjustment.py`.
 
+**Asymmetric loss trên ô Negative (2026-10-29; tùy chọn, mặc định TẮT).**
+Tham số `asymmetric_gamma_neg` và `asymmetric_clip` của constructor lấy giá trị từ
+`model.mhcac.asymmetric_loss: {gamma_neg, clip}`, qua hàm `asymmetric_loss_settings`.
+Thiếu khóa này thì trả `(0, 0)` và loss giống hệt bản cũ, đến từng bit.
+
+Cách tính, theo Ridnik et al., ICCV 2021 (lớp `AsymmetricLoss` của repo `Alibaba-MIIL/ASL`):
+- **Ô nhãn Negative:** đặt `q = min(p_neg + clip, 1)`, loss của ô là `-w·log q` với
+  `w = stopgrad((1-q)^gamma_neg)`. Ô âm tính dễ (`p_neg ≥ 1 − clip`) có loss 0 và không có gradient.
+- **Ô nhãn Positive và Uncertain:** giữ `-log p_y`.
+
+Những thứ không đổi:
+- `class_weights` và cách chuẩn hóa: vẫn chia cho `Σ w_c[y]` trên các ô hợp lệ.
+- Logit của mô hình không bị chỉnh.
+
+Ràng buộc: không dùng chung với `logit_adjust_counts`, và cần `label_smoothing` bằng 0.
+
+Hàm phụ `_asymmetric_term` tính phần này trong `float32`.
+
+Kế hoạch và quy tắc đọc kết quả:
+[`PLAN-2026-10-29-stage1-asymmetric-loss.md`](../../../docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md).
+Test: `tests/test_asymmetric_loss.py`.
+
 **`sample_mask` là điểm mấu chốt:** dòng không có nhãn CheXpert đóng góp **0**.
 Không phải "một giá trị nhỏ", không phải "được điền mặc định".
 
