@@ -403,6 +403,11 @@ chỉ số tăng (ngược với v3). Tráo soft token giữa các study: CheXbe
 BERTScore −0,059, mọi chỉ số giảm. Cue thật là mức trần có rò nhãn; tráo soft token là đầu vào lệch phân
 phối, chỉ cho biết kênh được đọc chứ không đo phần đóng góp. Bước G0 (sinh lại 20 báo cáo test đã ghi) chỉ
 khớp 8/20, chưa rõ nguyên nhân; so sánh ghép cặp không bị ảnh hưởng.
+**Pilot train với `--train-cue-model-share 0.5` thay cho 0,2 (2026-10-29, 2 seed, val 1.360): không
+xác lập, nghiêng về phía xấu hơn.** Mức chênh trung bình hai seed: CheXbert micro F1-14 −0,0055
+[−0,0150, +0,0043], giảm ở cả hai seed; BERTScore +0,0010. Tỷ lệ báo cáo viết theo cue sai chỉ giảm từ
+0,713 xuống 0,691. Các finding bị cue bỏ sót vẫn bị bỏ sót theo ở khoảng 85% số ô. Không chạy full;
+recipe được báo cáo giữ share 0,2. Plan: `docs/handoff/PLAN-2026-10-28-stage2-cue-share.md`.
 
 **`run_medgemma_qlora.py --seed` (2026-10-26, mặc định 16 = giống hệt trước):** đổi phần ngẫu
 nhiên của việc train Stage 2 (khởi tạo LoRA/projector, dropout, augmentation của record train,

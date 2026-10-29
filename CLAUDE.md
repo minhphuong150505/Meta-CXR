@@ -1868,6 +1868,13 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
   records' cues come from the true CheXpert classes (D-018 mapping, re-implemented in
   `training/dataio/oracle_cues.py` without LAVIS), except a deterministic 20% that
   keep MHCAC's class; val/test keep MHCAC's cues. Because v3 ignores its cues.
+  ❌ **Share 0.5 instead of 0.2 -- val pilot 2026-10-29 (2 seeds, NB rule): NOT ESTABLISHED, leans worse.**
+  Hypothesis: more MHCAC cues in training teach the adapter to check cues against the image. M - ON
+  (pilot recipe, beam 4, 1,360 val), two-seed mean: CheXbert micro F1-14 -0.0055 [-0.0150, +0.0043]
+  (negative at both seeds), BERTScore +0.0010; all 7 descriptive metrics negative on the mean. Following a
+  wrong cue fell only 0.713 -> 0.691, all of it on false-positive cues; missed findings (cue says absent,
+  label present) are still copied 0.85 of the time. No full run; the reported recipe keeps 0.2. Record:
+  `docs/handoff/PLAN-2026-10-28-stage2-cue-share.md`.
 - Beam: `VariantLLM.generate(num_beams=, length_penalty=)` and
   `generate_stage2_reports.py --num-beams 4 --length-penalty 2.0`; soft/finding
   tokens are repeated per beam. Defaults stay greedy.
