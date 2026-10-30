@@ -229,6 +229,12 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
     more steps" is not supported. AP fell on 9/14 findings (Pleural Other -0.056; only Lung Lesion +0.030).
   - No stage B. No NB exists at full budget; single seed. Record:
     `docs/handoff/PLAN-2026-10-30-stage1-encoder-unfreeze-full.md`.
+- ❌ **Epoch ensemble of phase 1b (mean 3-class probabilities of epochs 2-4 vs the run's best npz, val
+  2026-10-30, CPU only, 2 runs): STOP.** Macro AP of "present" +0.0001 [-0.0050, +0.0048] on C42, -0.0007
+  [-0.0027, +0.0015] on L42, mean -0.0003 (rule needed > +0.0042 and > 0 in both). Guardrails pass; per-finding
+  AP moves in opposite directions between runs. The epochs of one 1b run rank almost identically, so weight
+  averaging (SWA) was not tried. C42 best + L42 best: -0.0035. Record:
+  `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensemble.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

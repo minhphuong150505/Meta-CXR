@@ -540,6 +540,11 @@ TỆ HƠN, không dùng.**
   chỉ val, chưa có ngưỡng nhiễu ở budget này. Chi tiết:
   `docs/handoff/PLAN-2026-10-30-stage1-encoder-unfreeze-full.md`.
 
+**Gộp epoch 2–4 của cùng một lần train pha 1b (snapshot ensemble, val 2026-10-30, CPU, 2 run): DỪNG.**
+Trung bình xác suất của epoch 2, 3, 4 so với checkpoint best: macro AP "có bệnh" +0,0001 (C42) và −0,0007
+(L42), trung bình −0,0003 [−0,0028; +0,0022]. Rào chắn đạt, nhưng xếp hạng không tốt lên, nên không thử trung
+bình trọng số. Chi tiết: `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensemble.md`.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**
