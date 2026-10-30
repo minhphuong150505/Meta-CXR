@@ -545,6 +545,17 @@ Trung bình xác suất của epoch 2, 3, 4 so với checkpoint best: macro AP "
 (L42), trung bình −0,0003 [−0,0028; +0,0022]. Rào chắn đạt, nhưng xếp hạng không tốt lên, nên không thử trung
 bình trọng số. Chi tiết: `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensemble.md`.
 
+**Test-time augmentation (TTA) cho Stage 1 (val 2026-10-31, chỉ suy luận, 2 mô hình): DỪNG.**
+
+- **Cách bật (opt-in, mặc định tắt):** `datasets.mimic_cxr.vis_processor.eval.tta.{degrees,scale}`
+  (`model/lavis/data/tta.py`). Một phép xoay/phóng cố định trên ảnh gốc, trước tiền xử lý của mọi encoder; chỉ
+  cho split đánh giá. Khi chạy cần thêm `model.explanation.mask_cache_dir=""`, vì YAML vẫn trỏ tới cache mask
+  và code từ chối TTA khi có mask.
+- **Kết quả:** trung bình 5 lượt (ảnh gốc, xoay ±5°, phóng 0,95 / 1,05) so với ảnh gốc: macro AP "có bệnh"
+  +0,0032 (C42, pha 1b) và +0,0038 (mô hình đang báo cáo, pha 1c), trung bình +0,0035 [+0,0004; +0,0064], dưới
+  ngưỡng +0,0042. AUROC không đổi. Dưới cutpoint, recall P/U còn GIẢM (−0,017 / −0,010).
+- Không chấm test. Chi tiết: `docs/handoff/PLAN-2026-10-30-stage1-tta.md`.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**

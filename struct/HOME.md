@@ -186,7 +186,8 @@ Meta-CXR-source/
 │   │   ├── data/
 │   │   │   ├── ReportDataset.py         ✅ ★ MIMIC_CXR_Dataset (1130)
 │   │   │   ├── mimic_cxr_utils.py       ✅ build_study_index
-│   │   │   └── external_eval.py         ⚠ CheXpert val → bảng MIMIC (Bảng 4, opt-in)
+│   │   │   ├── external_eval.py         ⚠ CheXpert val → bảng MIMIC (Bảng 4, opt-in)
+│   │   │   └── tta.py                   ⚠ affine cố định lúc suy luận (TTA, opt-in)
 │   │   ├── runners/runner_base.py       ✅ ★ train loop (1182)
 │   │   ├── tasks/image_text_pretrain.py ✅ eval hook
 │   │   ├── common/                      ✅ config, registry, optims, dist_utils…

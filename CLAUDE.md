@@ -235,6 +235,19 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   AP moves in opposite directions between runs. The epochs of one 1b run rank almost identically, so weight
   averaging (SWA) was not tried. C42 best + L42 best: -0.0035. Record:
   `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensemble.md`.
+- 🧪 **Test-time augmentation, opt-in since 2026-10-30 (user-approved): `datasets.mimic_cxr.vis_processor.eval.tta:
+  {degrees, scale}`** (`model/lavis/data/tta.py`, PIL only; absent = bit-identical). One fixed rotate/scale about the
+  centre on the raw radiograph, in `_row_visual`, BEFORE every stream's own preprocessing. Refused for `train`, with
+  `run.feature_cache_dir`, and when an explanation mask is passed -- and the shipped YAML still sets
+  `model.explanation.mask_cache_dir`, so an evaluate-only TTA pass needs `model.explanation.mask_cache_dir=""` (at
+  eval the mask path gives the same image; verified bit-identical). One pass = one transform; TTA = mean of the
+  passes' probabilities, outside the model. Pinned by `tests/test_tta_affine.py`.
+  ❌ **Val probe 2026-10-31 (pre-declared rule): STOP.** Five passes (id, rotate +-5 deg, scale 0.95 / 1.05) vs id,
+  val n=1,808: macro AP of "present" +0.0032 [+0.0001, +0.0063] (C42, 1b best), +0.0038 [+0.0003, +0.0069] (R1C,
+  the reported 1c model), mean +0.0035 -- below the 0.0042 bar. AUROC "present" -0.001. Under re-fitted cutpoints
+  P/U recall FALLS (-0.017 / -0.010; hypothesis, not measured: averaging softens the probabilities and the wF1
+  cutpoints move toward fewer positive calls). No single transformed pass beats id. G1: the id pass reproduced the stored val npz bit for bit.
+  Record: `docs/handoff/PLAN-2026-10-30-stage1-tta.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

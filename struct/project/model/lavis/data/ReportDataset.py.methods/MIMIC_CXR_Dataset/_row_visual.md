@@ -49,6 +49,10 @@ thay vì âm thầm thoát khỏi `vis_root`.
 chuẩn hóa + validate path
    ↓
 feature_cache is None
+   → image = load_image(path)
+   → tta_affine có (2026-10-30, chỉ split đánh giá): image = apply_tta_affine(image)
+       TRƯỚC mọi tiền xử lý riêng (swin_image, pubmedclip_image, image);
+       explanation_mask có cùng lúc → ValueError
    → explanation_mask is None:
        out["image"] = optical_trans(geometric_trans(image))  # đường cũ
    → explanation_mask có:
@@ -66,13 +70,15 @@ feature_cache có
 |---|---|
 | Path tuyệt đối | `ValueError("image_path must be relative to vis_root, got: …")` |
 | Path traversal | `ValueError("image_path escapes vis_root: …")` |
+| `tta_affine` cùng `explanation_mask` | `ValueError` (mask sẽ lệch ảnh) |
 | DICOM vắng trong cache | `KeyError` **nêu DICOM, split, và gợi ý `study_sampling=false`** |
 
 Thông điệp `KeyError` (`:654`) là ví dụ tốt: nó nói **cái gì thiếu, ở đâu, và cách sửa**.
 
 ## Config dependencies
 `paths.mimic_cxr_jpg_root` → `vis_root` · `run.feature_cache_dir` ·
-`model.explanation.mask_cache_dir`
+`model.explanation.mask_cache_dir` ·
+`datasets.mimic_cxr.vis_processor.eval.tta` ([tta.py](../../tta.py.doc.md))
 
 ## Modification risk
 ⚠ **Đừng nới lỏng validate path.** Nó là thứ ngăn một CSV bị sửa đọc file tùy ý

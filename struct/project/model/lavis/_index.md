@@ -54,6 +54,7 @@ Quyết định phạm vi: [D-007](../../_meta/DECISIONS.md#d-007--độ-sâu-do
 | `models/__init__.py` | 201 | Đăng ký model qua registry | ⚠ có |
 | `data/mimic_cxr_utils.py` | 80 | `view_id()`, `build_study_index()` | ⚠ mới |
 | `data/external_eval.py` | 197 | [📄](data/external_eval.py.doc.md) `datasets.mimic_cxr.external_eval`: CheXpert val → hai bảng MIMIC cho Bảng 4 | ⚠ mới 2026-10-16, opt-in; git-ignored dir → `git add -f` |
+| `data/tta.py` | 69 | [📄](data/tta.py.doc.md) `vis_processor.eval.tta`: một phép affine cố định lúc suy luận (TTA) | ⚠ mới 2026-10-30, opt-in; git-ignored dir → `git add -f` |
 | `data/chexpert_labels.py` | 170 | [📄](data/chexpert_labels.py.doc.md) `blank_label_policy`, ánh xạ nhãn CheXpert, join + cờ hợp lệ | ⚠ mới 2026-09-24; git-ignored dir → `git add -f` |
 | `datasets/builders/base_dataset_builder.py` | 234 | Dựng dataset từ config | upstream |
 | `datasets/datasets/base_dataset.py` | — | `BaseDataset`, `collater` mặc định | upstream |

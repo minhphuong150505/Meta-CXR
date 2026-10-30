@@ -201,6 +201,15 @@ bảng ảnh và bảng nhãn từ
 collate) giữ nguyên. Khoá vắng mặt → hành vi cũ từng byte. Từ chối khi đặt cùng
 `run.feature_cache_dir`. Danh sách 14 cột nay là hằng lớp `CHEXPERT_COLS`.
 
+## Test-time augmentation: `vis_processor.eval.tta` (2026-10-30)
+
+Opt-in, chỉ split đánh giá. `__init__` gọi
+[`tta.resolve_tta_affine`](tta.py.doc.md) trên `vis_processor.eval.tta`
+(`{degrees, scale}`); khoá vắng → `self.tta_affine = None`, hành vi cũ từng byte.
+Từ chối split `train` và `run.feature_cache_dir`. `_row_visual` áp một phép
+affine cố định lên ảnh gốc trước tiền xử lý của mọi encoder. Một lượt chấm = một
+phép biến đổi; trung bình xác suất giữa các lượt làm ngoài mô hình.
+
 ## Nhãn CheXpert: `blank_label_policy` (2026-09-24)
 
 ⚠ **Đảo ngược 2026-09-24 ([D-018](../../../_meta/DECISIONS.md#d-018--ô-chexpert-trống-là-âm-tính-đảo-ngược-quyết-định-2026-08-14)).**

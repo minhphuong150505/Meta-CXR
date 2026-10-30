@@ -59,6 +59,7 @@ from model.lavis.data.external_eval import (  # noqa: E402
     load_chexpert_val,
     resolve_external_eval,
 )
+from model.lavis.data.tta import apply_tta_affine, resolve_tta_affine  # noqa: E402
 from model.lavis.data.chexpert_labels import (  # noqa: E402
     IGNORE_LABEL,
     attach_chexpert_labels,
@@ -452,6 +453,15 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
                 "datasets.mimic_cxr.vis_processor.train.augmentation.enabled or "
                 "train without the cache."
             )
+        # Test-time augmentation (2026-10-30, opt-in, eval splits only): one
+        # fixed affine on the raw radiograph before every stream's own
+        # preprocessing. Absent key = no transform, bit-identical.
+        tta_raw = processor_cfg.get("tta", None)
+        if OmegaConf.is_config(tta_raw):
+            tta_raw = OmegaConf.to_container(tta_raw, resolve=True)
+        self.tta_affine = resolve_tta_affine(tta_raw, split)
+        if self.tta_affine is not None and cfg.run_cfg.get("feature_cache_dir", None):
+            raise ValueError("vis_processor tta transforms images; unset run.feature_cache_dir.")
         resize_op = Resize(resize_size)
         crop_op = CenterCrop(self.img_size)
         self.base_geometry_trans = transforms.Compose([resize_op, crop_op])
@@ -1042,6 +1052,10 @@ class MIMIC_CXR_Dataset(BaseDataset, __DisplMixin):
         out = {"image_path": str(image_path)}
         if self.feature_cache is None:
             image = self.load_image(Path(image_path))
+            if self.tta_affine is not None:
+                if explanation_mask is not None:
+                    raise ValueError("vis_processor tta would desynchronise the explanation mask")
+                image = apply_tta_affine(image, self.tta_affine)
             if self.emit_swin_image:
                 out["swin_image"] = medclip_preprocess(image)
             if self.emit_pubmedclip_image:
