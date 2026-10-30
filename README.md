@@ -408,6 +408,13 @@ xác lập, nghiêng về phía xấu hơn.** Mức chênh trung bình hai seed:
 [−0,0150, +0,0043], giảm ở cả hai seed; BERTScore +0,0010. Tỷ lệ báo cáo viết theo cue sai chỉ giảm từ
 0,713 xuống 0,691. Các finding bị cue bỏ sót vẫn bị bỏ sót theo ở khoảng 85% số ô. Không chạy full;
 recipe được báo cáo giữ share 0,2. Plan: `docs/handoff/PLAN-2026-10-28-stage2-cue-share.md`.
+**Pilot train Stage 2 với cue Eq. 22 (`--cue-rule paper_thresholds`, thiên về recall) thay cho cue
+cutpoint (2026-10-29/30, 2 seed, val 1.360): TỆ HƠN theo quy tắc đã chốt.** Mức chênh trung bình hai
+seed: BERTScore −0,0063 (vượt NB/√2 0,0038, giảm ở cả hai seed); CheXbert micro F1-14 −0,0022
+[−0,0148, +0,0101]. Báo cáo nhắc thêm khoảng 0,11 finding dương tính. Recall CheXbert chỉ tăng +0,007 /
++0,014, còn precision giảm −0,022 / −0,016. Ở Stage 1, Eq. 22 nâng recall P/U của cue từ 0,556 lên 0,801,
+nhưng gần như không phần nào đến được báo cáo. Không chạy full; recipe được báo cáo giữ cue cutpoint. Plan:
+`docs/handoff/PLAN-2026-10-29-stage2-eq22-cues.md`.
 
 **`run_medgemma_qlora.py --seed` (2026-10-26, mặc định 16 = giống hệt trước):** đổi phần ngẫu
 nhiên của việc train Stage 2 (khởi tạo LoRA/projector, dropout, augmentation của record train,
@@ -500,8 +507,25 @@ hơn. Chi tiết: `docs/handoff/PLAN-2026-10-29-stage1-recall-input-audit.md`.
 - Không ghi vào YAML. Bật bằng `run.phases.phase1b.model.mhcac.asymmetric_loss.gamma_neg=4` và
   `...clip=0.05`.
 - Test CPU: `tests/test_asymmetric_loss.py`.
-- **Chưa chạy GPU.** Plan pilot có quy tắc đọc khai báo trước (chỉ số quyết định là macro AP "có bệnh"
-  trên val, NB 0,0042): `docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md`.
+- **Pilot val 2026-10-29 (2 seed, quy tắc khai báo trước): ASL TỆ HƠN, không dùng.**
+  - Chỉ số quyết định là macro AP "có bệnh": giảm 0,0086 ở cả hai seed, khoảng tin cậy
+    [−0,0144; −0,0028], vượt ngưỡng nhiễu 0,0042.
+  - AP giảm ở 11/14 finding.
+  - Với cutpoint, chỉ số gần như không đổi. Với argmax, recall lên 0,98 nhưng precision rơi xuống 0,19,
+    tức chỉ là dời điểm vận hành.
+  - Không chạy full. Chi tiết: `docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md`.
+
+**Mở khóa encoder nông ngay từ pha 1b ("U5", pilot val 2026-10-29, 2 seed, cùng quy tắc với ASL): TỆ HƠN,
+không dùng.**
+
+- **Cách bật:** chỉ dùng tham số phase. Mở khóa đúng 5 pattern của `run_20260820_ft` và pha 1c; không
+  sửa code.
+- **Chỉ số quyết định (macro AP "có bệnh"):** −0,0005 ở seed 42, −0,0181 ở seed 17; trung bình −0,0093
+  [−0,0143; −0,0045]. AUROC "có bệnh" −0,0134.
+- **Theo từng finding:** AP giảm ở 11/14 finding, kể cả các finding hiếm mà hướng này nhắm tới
+  (Enlarged Cardiomediastinum −0,027, Consolidation −0,015, Lung Lesion −0,012).
+- **Kết luận:** ở budget pilot, mở khóa encoder không giúp xếp hạng. Chưa thử ở budget lớn (khoảng 10
+  epoch), mỗi lần chạy tốn hơn 6 giờ. Chi tiết: `docs/handoff/PLAN-2026-10-29-stage1-encoder-unfreeze-1b.md`.
 
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở

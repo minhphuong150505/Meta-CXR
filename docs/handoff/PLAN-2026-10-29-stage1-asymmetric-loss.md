@@ -9,7 +9,8 @@
   - Bộ test CPU đầy đủ trên host, chạy trong worktree tạm từ `20a6ee1` có áp thay đổi: không lỗi nào,
     2 skip.
   - OmegaConf: khóa đặt qua phase1b đọc ra (4,0, 0,05); YAML shipped đọc ra (0, 0).
-- Bước 3 (GPU): chờ user duyệt. Chưa chạy.
+- Bước 3 (GPU): user duyệt ("làm cả 2 đi"). **ĐÃ CHẠY 2026-10-29: ASL TỆ HƠN** theo quy tắc chốt
+  trước. Macro AP −0,0086 [−0,0144; −0,0028], giảm ở cả hai seed. Không chạy full. Xem Execution report.
 
 Thứ tự các bước, mỗi bước chờ user duyệt riêng:
 (1) duyệt plan này, (2) sửa code và chạy test CPU, (3) chạy GPU.
@@ -175,4 +176,55 @@ hỏi user chạy thêm seed 7 và 23, giữ nguyên quy tắc này cùng NB. Fu
 
 ## Execution report
 
-(chưa chạy)
+**Kết quả: ASL TỆ HƠN.** Kết luận theo quy tắc đã chốt từ trước khi chạy. Không chạy full, dừng hướng
+ASL.
+
+**Thông tin chạy:**
+
+- Chuỗi `~/asl.sh` chạy trên host từ 12:01 đến 13:56 ngày 2026-10-29, code `928f0cb`, khởi chạy đúng
+  một lần.
+- Log ở `~/asl.log`; các arm và `probe.log` ở `~/asl_pilot_20261029/`.
+
+**Các cổng kiểm tra:**
+
+- **G1 qua.** Smoke P15 chạy ở `f4674ea` và ở `928f0cb` (ASL tắt) cho kết quả giống hệt: 809/809 tensor,
+  không có tensor nào khác nhau, xác suất trên val bằng nhau. Như vậy control P15 cũ vẫn dùng được.
+- **G2 qua.** Log có dòng `asymmetric loss on Negative cells: gamma_neg=4.0 clip=0.05`.
+- **Hai arm thật:** mỗi arm train khoảng 54 phút, đỉnh khoảng 6,4 GB. Seed ghi trong log đúng, không có
+  NaN, không có file test nào được tạo.
+
+Kết quả trên val (1.808 study). Δ = ASL − P15.
+
+| | Δ seed 42 | Δ seed 17 | Trung bình | NB/√2 |
+|---|---:|---:|---:|---:|
+| **macro AP "có bệnh" (quyết định)** | **−0,0086** | **−0,0087** | **−0,0086 [−0,0144; −0,0028]** | 0,0030 |
+| AUROC "có bệnh" | −0,0174 | −0,0064 | −0,0119 | 0,0086 |
+| Recall ở precision mốc (12 finding) | +0,0103 | −0,0171 | −0,0034 | 0,0157 |
+| wF1, cutpoint cross-fit (rào chắn) | −0,0004 | −0,0003 | −0,0004 | 0,0019 |
+| F1-5, cutpoint cross-fit (rào chắn) | +0,0019 | −0,0001 | +0,0009 | 0,0042 |
+| Recall P/U dưới cutpoint | +0,0032 | +0,0015 | +0,0023 | 0,0272 |
+| Precision P/U dưới cutpoint | −0,0016 | +0,0019 | +0,0001 | — |
+| Recall P/U với argmax | +0,240 | +0,236 | +0,238 | — |
+| Precision P/U với argmax | −0,265 | −0,267 | −0,266 | — |
+| wF1 với argmax | −0,465 | −0,532 | −0,498 | — |
+
+**Cách đọc:**
+
+- **Macro AP giảm ở cả hai seed.** Mức giảm trung bình vượt NB/√2 và vượt cả NB (0,0042). Khoảng tin cậy
+  nằm hẳn dưới 0.
+- AP giảm ở 11/14 finding. Giảm mạnh nhất: Atelectasis −0,022, Pneumothorax −0,020, Pneumonia −0,019,
+  Pleural Effusion −0,016.
+- Trong các finding hiếm, chỉ Enlarged Cardiomediastinum tăng (+0,007). Lung Lesion, Consolidation và
+  Fracture đều giảm khoảng 0,01.
+- **Với cutpoint, mọi thứ gần như đứng yên** (wF1 −0,0004, recall +0,002). Cutpoint fit lại hấp thụ phần
+  dời điểm vận hành, giống điều đã thấy với logit adjustment.
+- **Với argmax**, recall lên 0,98 nhưng precision rơi xuống 0,19. Đây là đúng dấu hiệu của việc dời điểm
+  vận hành mà plan đã cảnh báo, không phải bằng chứng về xếp hạng.
+- **Giải thích có khả năng nhất (chưa đo):** encoder gần như đóng băng trong 1b và trọng số lớp đã đẩy
+  về phía dương tính (w_pos lên tới 10). Khi ASL bỏ bớt tín hiệu từ ô âm tính, MHCAC học ít thông tin hơn
+  về việc phân biệt, nên xếp hạng kém đi. Phần mAP tăng mà ASL báo cáo đến từ việc train end-to-end trên
+  ảnh tự nhiên, và không chuyển sang được bối cảnh này.
+
+**Giới hạn:** chỉ là pilot (1b, 60.000 study, 2 epoch), 2 seed, chỉ val, một bộ tham số.
+
+**Bước tiếp theo** cần user quyết định: mở khóa encoder nông ngay từ pha 1b (mục 4 của plan).

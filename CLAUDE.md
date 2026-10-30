@@ -194,8 +194,29 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   - It is NOT in the YAML (an edit would move the mtime). Set it per phase:
     `run.phases.phase1b.model.mhcac.asymmetric_loss.gamma_neg=4 ...clip=0.05`.
   - Pinned by `tests/test_asymmetric_loss.py`.
-  - **Not yet run on GPU.** Pilot plan with a pre-declared rule (deciding metric: macro AP of "present"
-    on val, NB 0.0042, measured from 5 seed pairs): `docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md`.
+  - ❌ **Val pilot 2026-10-29 (2 seeds, pre-declared rule): ASL WORSE.** Do not use it unchanged.
+    - Setup: pilot recipe (1b, 60,000 studies, 2 epochs), gamma_neg 4, clip 0.05, against the existing
+      P15 s42/s17 arms. Gate G1 confirmed the P15 path at `928f0cb` is bit-identical to `f4674ea`'s.
+    - Deciding metric, macro AP of "present" (P or U vs N, on `s`): -0.0086 at both seeds, mean
+      -0.0086 [-0.0144, -0.0028]. That is beyond NB 0.0042 (5 seed pairs).
+    - AUROC "present" -0.0119. AP fell on 11/14 findings.
+    - Under cutpoints nothing moves (wF1 -0.0004, present recall +0.002).
+    - Under argmax recall goes to 0.98 and precision to 0.19, i.e. an operating-point shift only.
+    - Record: `docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md`.
+- ❌ **Shallow encoder unfreeze from the start of phase 1b ("U5"), val pilot 2026-10-29 (2 seeds, same rule
+  as ASL): U5 WORSE.**
+  - Setup: config overrides only, the 5 patterns of `run_20260820_ft` / phase 1c; no code change.
+    `$P.unfreeze_encoder_blocks=true $P.model.encoder_finetune.{enabled,patterns,keep_batchnorm_eval}`.
+  - Deciding metric, macro AP of "present": -0.0005 at s42, -0.0181 at s17, mean -0.0093
+    [-0.0143, -0.0045]. AUROC "present" -0.0134. AP fell on 11/14 findings, including the rare ones it
+    was meant to help: Enlarged Cardiomediastinum -0.027, Consolidation -0.015, Lung Lesion -0.012,
+    Pneumothorax -0.011.
+  - Guardrails pass: wF1 -0.0006, F1-5 -0.0019.
+  - The 2026-10-11 arm C (patch layout + the same unfreeze) gives the same direction: C - B macro AP
+    -0.0142, re-scored 2026-10-29.
+  - At the pilot budget the encoder unfreeze does not help ranking. Whether it helps over ~10 epochs (as in
+    `run_20260820_ft`) is untested and costs ~6 h+ per run.
+  - Record: `docs/handoff/PLAN-2026-10-29-stage1-encoder-unfreeze-1b.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).
@@ -1904,6 +1925,15 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
   wrong cue fell only 0.713 -> 0.691, all of it on false-positive cues; missed findings (cue says absent,
   label present) are still copied 0.85 of the time. No full run; the reported recipe keeps 0.2. Record:
   `docs/handoff/PLAN-2026-10-28-stage2-cue-share.md`.
+  ❌ **Eq. 22 cues (`--cue-rule paper_thresholds`, recall-leaning) instead of cutpoints, retrained -- val
+  pilot 2026-10-29/30 (2 seeds, NB rule): E WORSE.** Same pilot recipe as ON16/ON17, only the cue rule and
+  `--threshold-path ~/eval_20261005_paper/thresholds_eq22_val.json` change. E - ON two-seed mean: BERTScore
+  -0.0063 (s16 -0.0077*, s17 -0.0049; beyond NB/sqrt2 0.0038), CheXbert micro F1-14 -0.0022
+  [-0.0148, +0.0101]. Reports name ~0.11 more positive findings; CheXbert micro recall rises only
+  +0.007 / +0.014 while precision falls -0.022 / -0.016. Eq. 22 raises cue P/U recall 0.556 -> 0.801 in Stage
+  1, but cue precision is 0.357, and almost none of the extra recall reaches the report. So trading false-
+  negative cues for false-positive cues gives no net gain at the pilot budget. No full run; the reported recipe
+  keeps cutpoint cues. Record: `docs/handoff/PLAN-2026-10-29-stage2-eq22-cues.md`.
 - Beam: `VariantLLM.generate(num_beams=, length_penalty=)` and
   `generate_stage2_reports.py --num-beams 4 --length-penalty 2.0`; soft/finding
   tokens are repeated per beam. Defaults stay greedy.
