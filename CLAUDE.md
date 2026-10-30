@@ -248,6 +248,18 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   P/U recall FALLS (-0.017 / -0.010; hypothesis, not measured: averaging softens the probabilities and the wF1
   cutpoints move toward fewer positive calls). No single transformed pass beats id. G1: the id pass reproduced the stored val npz bit for bit.
   Record: `docs/handoff/PLAN-2026-10-30-stage1-tta.md`.
+- ❌ **Frozen-encoder probe on the same data (val 2026-10-31, measurement only): NO CANDIDATE.**
+  `scripts/encoder_probe_features.py` (anchor image, clean, pretrained encoders; global vector + 7x7/8x8 token grid per
+  encoder; keys = the eval hook's salted `sample_keys`) and `scripts/encoder_probe_fit.py` (linear + attention probe,
+  same for every encoder, fit on 40,000 train studies). Macro AP of "present", val n=1,808, attention probe:
+  MedCLIP-Swin 0.4263 (= the reported R1C 0.4271, -0.0008 [-0.0087, +0.0068]); BioViL-T read properly (its own 512-d
+  output, not the random 1408-d projector) 0.4039; RAD-DINO 0.3972; MedSigLIP-448 0.3939; PubMedCLIP 0.3155. Added
+  to Swin: BioViL-T +0.0052 [+0.0010, +0.0098], MedSigLIP +0.0001, RAD-DINO -0.0031, PubMedCLIP -0.0023 (rule needed
+  >= +0.02). So the shipped Swin is the strongest frozen encoder here, and a small probe on it alone matches the
+  whole Stage-1 model. BioViL-T's backbone loads its pretrained weights correctly (362/364 tensors change; its 128-d
+  projector loads with `joint_feature_size=128`). Caveat: MedCLIP's pretraining used MIMIC-CXR with an unverifiable
+  split. Trap: the eval hook's npz writes "no label" as -1, this probe as -100. Import `biovil_t` from the repo root,
+  not `vision_encoders/biovil_t` (no `device.py`). Record: `docs/handoff/PLAN-2026-10-31-encoder-probe.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

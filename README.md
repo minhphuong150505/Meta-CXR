@@ -556,6 +556,18 @@ bình trọng số. Chi tiết: `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensem
   ngưỡng +0,0042. AUROC không đổi. Dưới cutpoint, recall P/U còn GIẢM (−0,017 / −0,010).
 - Không chấm test. Chi tiết: `docs/handoff/PLAN-2026-10-30-stage1-tta.md`.
 
+**Đo encoder đóng băng trên cùng dữ liệu (val 2026-10-31, chỉ đo, không train Stage 1): KHÔNG CÓ ỨNG VIÊN.**
+
+- **Cách đo:** `scripts/encoder_probe_features.py` trích vector toàn cục và lưới token của 5 encoder (MedCLIP-Swin,
+  PubMedCLIP, BioViL-T đọc đúng 512 chiều, RAD-DINO, MedSigLIP-448) trên 40.000 study train và 1.808 study val;
+  `scripts/encoder_probe_fit.py` fit probe tuyến tính và probe attention giống nhau cho mọi encoder.
+- **Kết quả (macro AP "có bệnh", val):** Swin 0,4263 (probe attention), ngang mô hình đang báo cáo 0,4271.
+  MedSigLIP 0,3939, RAD-DINO 0,3972, BioViL-T 0,4039, PubMedCLIP 0,3155. Ghép thêm vào Swin: tốt nhất BioViL-T
+  +0,0052, MedSigLIP +0,0001, đều dưới ngưỡng +0,02.
+- **Kết luận:** encoder mạnh nhất cho dữ liệu này là encoder đang dùng (MedCLIP-Swin); đổi encoder đóng băng không
+  vượt được trần đó. Lưu ý: MedCLIP pretrain có MIMIC-CXR với split không xác minh được. Chi tiết:
+  `docs/handoff/PLAN-2026-10-31-encoder-probe.md`.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**

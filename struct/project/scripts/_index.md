@@ -73,6 +73,8 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `score_ce_chexbert.py` | [📄](score_ce_chexbert.py.doc.md) | ✅ | CE bằng CheXbert (`f1chexbert`, venv riêng) + so sánh ghép cặp (2026-10-11) |
 | `mbr_select_stage2.py` | [📄](mbr_select_stage2.py.doc.md) | ✅ | Giải mã MBR (2026-10-14): chọn ứng viên có kỳ vọng BERTScore cao nhất so với các mẫu `--num-samples`; ghi `generated_<split>.jsonl` |
 | `analyze_radiologist_labels.py` | [📄](analyze_radiologist_labels.py.doc.md) | 🔬 | Nhiễu nhãn CheXpert so với nhãn bác sĩ (687 study test) và chấm Stage 1 theo nhãn bác sĩ |
+| `encoder_probe_features.py` | [📄](encoder_probe_features.py.doc.md) | 🔬 | Đặc trưng toàn cục + lưới token của 5 encoder (Swin, PubMedCLIP, BioViL-T 512, RAD-DINO, MedSigLIP) cho phép đo encoder (2026-10-31) |
+| `encoder_probe_fit.py` | [📄](encoder_probe_fit.py.doc.md) | 🔬 | Probe tuyến tính + attention, macro AP "có bệnh", quy tắc ứng viên encoder (2026-10-31) |
 | `embed_cxr_encoders.py` | [📄](embed_cxr_encoders.py.doc.md) | 🔬 | Đặc trưng từng encoder (BioViL, PubMedCLIP, Swin, RAD-DINO) cho probe so sánh |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |
