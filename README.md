@@ -527,6 +527,19 @@ không dùng.**
 - **Kết luận:** ở budget pilot, mở khóa encoder không giúp xếp hạng. Chưa thử ở budget lớn (khoảng 10
   epoch), mỗi lần chạy tốn hơn 6 giờ. Chi tiết: `docs/handoff/PLAN-2026-10-29-stage1-encoder-unfreeze-1b.md`.
 
+**Mở khóa encoder nông ở budget đầy đủ của pha 1b (L42, val 2026-10-30, 1 seed, quy tắc khai báo trước):
+TỆ HƠN, không dùng.**
+
+- **Cách chạy:** giống U5 nhưng 5 epoch trên toàn bộ tập train, so với pha 1b của `run_20261005_paper`
+  (C42, cùng seed 42, cùng code: kiểm tra G1 cho log giống hệt). 7h10m, khoảng 6,8 GB.
+- **Chỉ số quyết định (macro AP "có bệnh"):** 0,4329 → 0,4249, Δ −0,0079 [−0,0166; −0,0001]. AUROC
+  "có bệnh" −0,0052. wF1 và F1-5 dưới cutpoint gần như không đổi (−0,0002 / −0,0038).
+- **Theo epoch:** L42 thấp hơn ở cả 5 epoch, khoảng cách không thu hẹp. AP giảm ở 9/14 finding, mạnh nhất
+  Pleural Other −0,056; chỉ Lung Lesion tăng (+0,030).
+- **Kết luận:** mở khóa encoder không tăng recall/xếp hạng của Stage 1 kể cả ở budget đầy đủ. Một seed,
+  chỉ val, chưa có ngưỡng nhiễu ở budget này. Chi tiết:
+  `docs/handoff/PLAN-2026-10-30-stage1-encoder-unfreeze-full.md`.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**

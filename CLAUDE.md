@@ -217,6 +217,18 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   - At the pilot budget the encoder unfreeze does not help ranking. Whether it helps over ~10 epochs (as in
     `run_20260820_ft`) is untested and costs ~6 h+ per run.
   - Record: `docs/handoff/PLAN-2026-10-29-stage1-encoder-unfreeze-1b.md`.
+- ❌ **The same unfreeze at FULL phase-1b budget ("L42", val 2026-10-30, 1 seed, pre-declared rule): WORSE.**
+  - Setup: U5's overrides plus `$P.epochs=5`, all 220,216 studies, from `run_20261005_paper`'s
+    `checkpoint_phase1a.pth`, against that run's own phase 1b (C42, seed 42). Gate G1: current code reproduces
+    C42's logged lr and losses at iterations 0-650 exactly (after dropping the always-zero `loss_query_div`
+    column). 7h10m, ~6.8 GB.
+  - Deciding metric, macro AP of "present" on the `_best` val npz: 0.4329 -> 0.4249, -0.0079
+    [-0.0166, -0.0001], beyond the provisional NB 0.0042. AUROC "present" -0.0052. Guardrails pass (wF1 -0.0002,
+    F1-5 -0.0038).
+  - L42 is below C42 at every epoch (-0.0064 / -0.0024 / -0.0113 / -0.0071 / -0.0077), so "the encoder needs
+    more steps" is not supported. AP fell on 9/14 findings (Pleural Other -0.056; only Lung Lesion +0.030).
+  - No stage B. No NB exists at full budget; single seed. Record:
+    `docs/handoff/PLAN-2026-10-30-stage1-encoder-unfreeze-full.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).
