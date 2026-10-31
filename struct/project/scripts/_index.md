@@ -77,6 +77,8 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `encoder_probe_fit.py` | [📄](encoder_probe_fit.py.doc.md) | 🔬 | Probe tuyến tính + attention, macro AP "có bệnh", quy tắc ứng viên encoder (2026-10-31) |
 | `swin_finetune_cache.py` | [📄](swin_finetune_cache.py.doc.md) | 🔬 | Cache uint8 đầu vào 224 của MedCLIP-Swin cho phép đo tinh chỉnh Swin (2026-10-31) |
 | `swin_finetune_fit.py` | [📄](swin_finetune_fit.py.doc.md) | 🔬 | Swin đóng băng vs mở khóa toàn bộ (LR giảm theo tầng), cổng G0–G2, quy tắc đọc (2026-10-31) |
+| `biovil_prior_features.py` | [📄](biovil_prior_features.py.doc.md) | 🔬 | Đặc trưng Swin + BioViL-T có/không có ảnh lần chụp trước (2026-10-31) |
+| `biovil_prior_fit.py` | [📄](biovil_prior_fit.py.doc.md) | 🔬 | Probe attention, cổng G0/G1, quy tắc đọc của phép đo ảnh trước BioViL-T (2026-10-31) |
 | `embed_cxr_encoders.py` | [📄](embed_cxr_encoders.py.doc.md) | 🔬 | Đặc trưng từng encoder (BioViL, PubMedCLIP, Swin, RAD-DINO) cho probe so sánh |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |

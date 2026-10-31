@@ -274,6 +274,15 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   F bit-identical). `compare` gives T - F with the pre-declared verdict GO_ON (>= +0.02, lower bound > 0) / NOT_ENOUGH
   / STOP (<= 0). Val only, no Stage-1 change. Pinned by `tests/test_swin_finetune.py`. Plan:
   `docs/handoff/PLAN-2026-10-31-swin-finetune-probe.md`.
+- 🧪 **BioViL-T previous-image probe, code written 2026-10-31 (user: "cứ thử đi"), NOT YET RUN.** BioViL-T is a
+  two-image encoder (`MultiImageEncoder.forward(current_image, previous_image=None)`): its 512-d cell = 256 static channels
+  + 256 difference channels from a temporal transformer. The pipeline never passes a previous image, so the difference
+  half is the learned constant `missing_previous_emb` -- half of BioViL-T's output carries nothing.
+  `scripts/biovil_prior_features.py` adds the patient's latest strictly earlier frontal study (frontal anchors only, same
+  split, prior labels never read) and writes `swin_*`, `biovil_*` (no prior) and `biovilprior_*` features for the encoder
+  probe's 40,000 train / 1,808 val studies; `scripts/biovil_prior_fit.py` reuses `fit_attention`. Gates: G0 (R1C npz),
+  G1 (reproduce 0.4263 / 0.4039 / 0.4315 within 0.003). Rule: attn(swin+biovilprior) - attn(swin+biovil) >= +0.02 with
+  lower bound > 0 -> GO_ON, else NOT_ENOUGH / STOP. Plan: `docs/handoff/PLAN-2026-10-31-biovil-prior-probe.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).
