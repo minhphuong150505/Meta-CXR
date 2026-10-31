@@ -287,6 +287,14 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   probe's 40,000 train / 1,808 val studies; `scripts/biovil_prior_fit.py` reuses `fit_attention`. Gates: G0 (R1C npz),
   G1 (reproduce 0.4263 / 0.4039 / 0.4315 within 0.003). Rule: attn(swin+biovilprior) - attn(swin+biovil) >= +0.02 with
   lower bound > 0 -> GO_ON, else NOT_ENOUGH / STOP. Plan: `docs/handoff/PLAN-2026-10-31-biovil-prior-probe.md`.
+- 🧪 **Recall-leaning operating point, opt-in since 2026-11-01 (user-approved): `fit_severity_cutpoints(objective=
+  "present_fbeta", beta=B)` / `calibrate_thresholds.py --rule cutpoints --objective present_fbeta --beta B`.** t1 maximises
+  F-beta of "present" (P or U vs N), then t2 >= t1 maximises three-class weighted F1 -- still three classes, NOT the
+  headline (default `weighted_f1` unchanged, bit for bit). Not the retired binary `--objective f1` of D-023: the decision
+  stays N / U / P. `scripts/compare_stage1_operating_points.py crossfit|paired` compares headline, `f<beta>` and argmax
+  (val cross-fit 2 x 10; paired test bootstrap). Same model, so a recall gain is a precision trade. Stage 2 keeps the
+  headline cues (recall-leaning Eq. 22 cues were worse there, 2026-10-29). Plan, beta grid {1, 1.5, 2, 3, 4} chosen on val
+  before test: `docs/handoff/PLAN-2026-11-01-recall-operating-point.md`. Pinned by `tests/test_recall_operating_point.py`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

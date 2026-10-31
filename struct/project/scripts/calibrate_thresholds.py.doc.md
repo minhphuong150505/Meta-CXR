@@ -31,5 +31,9 @@ lớp của bệnh đó (`fit_severity_cutpoints`): N dưới t1, U trong [t1, t
 (`meta_cxr_severity_cutpoints_v1`). Chấm bằng
 [`evaluate_stage1.py --cutpoints`](evaluate_stage1.py.doc.md). Chỉ validation.
 
-Đã gỡ (D-023): `--objective f1`, `--selection plateau`, `--min-positive`,
+`--objective present_fbeta --beta B` (2026-11-01, opt-in, KHÔNG phải headline): t1 tối đa F-beta của "có bệnh"
+(P hoặc U so với N), rồi t2 ≥ t1 tối đa weighted F1 ba lớp — điểm vận hành thiên recall; vẫn ba lớp. Metadata ghi
+objective và β. Mặc định `weighted_f1` = headline, không đổi. Plan: `docs/handoff/PLAN-2026-11-01-recall-operating-point.md`.
+
+Đã gỡ (D-023): `--objective f1` (F1 nhị phân cũ, khác `present_fbeta`), `--selection plateau`, `--min-positive`,
 `--uncertain-policy`, `--label-framing`, `--score`.

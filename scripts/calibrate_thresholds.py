@@ -60,6 +60,10 @@ def main(argv: list[str] | None = None) -> int:
                         "(default); cutpoints: the project's headline rule")
     parser.add_argument("--one-cutpoint", action="store_true",
                         help="with --rule cutpoints: t1 == t2, never Uncertain")
+    parser.add_argument("--objective", choices=("weighted_f1", "present_fbeta"), default="weighted_f1",
+                        help="with --rule cutpoints: weighted_f1 = the headline (default); "
+                        "present_fbeta = recall-leaning t1 (F-beta of P or U vs N), NOT the headline")
+    parser.add_argument("--beta", type=float, default=2.0, help="with --objective present_fbeta")
     parser.add_argument("--checkpoint", default="unknown",
                         help="recorded in the file's metadata")
     args = parser.parse_args(argv)
@@ -72,16 +76,22 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.one_cutpoint and args.rule != "cutpoints":
         parser.error("--one-cutpoint needs --rule cutpoints")
+    if args.objective != "weighted_f1" and args.rule != "cutpoints":
+        parser.error("--objective needs --rule cutpoints")
     if args.rule == "cutpoints":
-        cut = fit_severity_cutpoints(predictions, objective="weighted_f1",
+        cut = fit_severity_cutpoints(predictions, objective=args.objective, beta=args.beta,
                                      allow_uncertain=not args.one_cutpoint)
+        objective = ("per-finding sklearn-weighted F1 (three classes)" if args.objective == "weighted_f1"
+                     else f"t1: per-finding F-beta of present (P or U vs N), beta={args.beta:g}; "
+                          "t2 >= t1: per-finding sklearn-weighted F1 (three classes). "
+                          "Recall-leaning operating point, NOT the headline")
         CutpointFile(
             cutpoints=cut,
             metadata={
                 "split": split,
                 "num_samples": predictions.num_samples,
                 "checkpoint": args.checkpoint,
-                "objective": "per-finding sklearn-weighted F1 (three classes)",
+                "objective": objective,
                 "rule": ("one cutpoint (t1 == t2, never Uncertain)" if args.one_cutpoint
                          else "two cutpoints: N < t1 <= U < t2 <= P"),
                 "score": "p_pos / (p_pos + p_neg)",

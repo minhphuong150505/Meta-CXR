@@ -193,7 +193,19 @@ def load_thresholds(path: str | Path) -> dict[str, dict[str, float]]:
 # rule (scripts/evaluate_stage1.py --cutpoints); argmax is still reported
 # beside them as the paper-protocol reference.
 
-CUTPOINT_OBJECTIVES = ("weighted_f1", "macro_recall")
+CUTPOINT_OBJECTIVES = ("weighted_f1", "macro_recall", "present_fbeta")
+
+
+def present_fbeta(present: np.ndarray, called: np.ndarray, beta: float) -> float:
+    """F-beta of "present" (P or U) vs Negative; 0 when nothing is present or called.
+
+    ``beta > 1`` weighs recall above precision (beta = 2: recall counts four times).
+    """
+    present, called = np.asarray(present, bool), np.asarray(called, bool)
+    tp = float(np.sum(present & called))
+    b2 = beta * beta
+    denom = (1.0 + b2) * tp + b2 * float(np.sum(present & ~called)) + float(np.sum(~present & called))
+    return (1.0 + b2) * tp / denom if denom > 0 else 0.0
 
 
 def severity_scores(probabilities: np.ndarray) -> np.ndarray:
@@ -218,6 +230,7 @@ def fit_severity_cutpoints(
     allow_uncertain: bool = True,
     grid_size: int = 121,
     min_uncertain: int = 5,
+    beta: float = 2.0,
 ) -> dict[str, tuple[float, float]]:
     """``{finding: (t1, t2)}`` maximising ``objective`` per finding.
 
@@ -225,6 +238,12 @@ def fit_severity_cutpoints(
     A finding with fewer than ``min_uncertain`` Uncertain cells, or
     ``allow_uncertain=False``, gets a single cutpoint (``t1 == t2``).
     Ties keep the first (lowest) candidate, so the result is deterministic.
+
+    ``present_fbeta`` (recall-leaning operating point, 2026-11-01, opt-in): ``t1``
+    maximises :func:`present_fbeta` of ``s >= t1`` (P or U called) at ``beta``; then
+    ``t2 >= t1`` maximises three-class weighted F1 with that ``t1``, which splits the
+    "present" calls into P / U without changing them. A finding with no present
+    cell falls back to the ``weighted_f1`` fit.
     """
     from training.evaluation.classification_metrics import macro_recall, weighted_prf
 
@@ -241,12 +260,22 @@ def fit_severity_cutpoints(
             continue
         grid = np.unique(np.quantile(s, np.linspace(0.0, 1.0, grid_size)))
         two = allow_uncertain and int((y == 2).sum()) >= min_uncertain
+        if objective == "present_fbeta" and np.any(y != 0):
+            scores = [present_fbeta(y != 0, s >= t, beta) for t in grid]
+            t1 = float(grid[int(np.argmax(scores))])  # argmax keeps the first (lowest) on ties
+            best, t2 = -np.inf, t1
+            for cand in (grid[grid >= t1] if two else (t1,)):
+                value = weighted_prf(y, decide_with_cutpoints(s, t1, cand))["f1"]
+                if value > best + 1e-12:
+                    best, t2 = value, float(cand)
+            out[name] = (t1, t2)
+            continue
         best, arg = -np.inf, (float(grid[0]), float(grid[0]))
         for i, t1 in enumerate(grid):
             for t2 in (grid[i:] if two else (t1,)):
                 d = decide_with_cutpoints(s, t1, t2)
-                value = (weighted_prf(y, d)["f1"] if objective == "weighted_f1"
-                         else macro_recall(y, d))
+                value = (macro_recall(y, d) if objective == "macro_recall"
+                         else weighted_prf(y, d)["f1"])
                 if value > best + 1e-12:
                     best, arg = value, (float(t1), float(t2))
         out[name] = arg

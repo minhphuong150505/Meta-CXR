@@ -588,6 +588,12 @@ trước bằng probe attention. ĐI TIẾP khi chênh ≥ +0,02 và cận dư�
   CI > 0; KHÔNG ĐỦ khi 0 < Δ < 0,02 hoặc CI chạm 0; DỪNG khi Δ ≤ 0. Chỉ val, không đụng Stage 1 hay test.
 - Plan: `docs/handoff/PLAN-2026-10-31-swin-finetune-probe.md`.
 
+**Điểm vận hành thiên recall cho Stage 1 (opt-in từ 2026-11-01, chưa chạy).** Cutpoint headline tối đa weighted F1 nên
+chọn điểm ít báo bệnh (recall "có bệnh" 0,53 trên test). `calibrate_thresholds.py --rule cutpoints --objective
+present_fbeta --beta B` chọn t1 theo F-beta của "có bệnh" (vẫn ba lớp), và `scripts/compare_stage1_operating_points.py`
+so với headline và argmax. Cùng một mô hình: tăng recall là đổi lấy precision, không phải giao thức bài báo. Stage 2 vẫn
+dùng cue headline. Plan: `docs/handoff/PLAN-2026-11-01-recall-operating-point.md`.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**
