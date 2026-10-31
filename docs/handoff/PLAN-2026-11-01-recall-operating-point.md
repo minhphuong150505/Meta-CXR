@@ -1,8 +1,8 @@
 # PLAN 2026-11-01: điểm vận hành thiên recall cho Stage 1 (cutpoint F2)
 
-**Trạng thái:** XONG 2026-11-01. User chọn β = 2 sau B0; vai trò: dòng bổ sung, headline giữ nguyên (mặc định của
-plan, user chưa yêu cầu thay). Test chấm một lần. File: `configs/stage1_cutpoints/run_20261005_paper_recall_f2.json`.
-Chỉ CPU, không train, không sửa YAML.
+**Trạng thái:** XONG 2026-11-01. Dòng bổ sung hiện tại: **β = 1** (`configs/stage1_cutpoints/run_20261005_paper_recall_f1.json`);
+headline giữ nguyên. β = 2 được chọn trước và đã chấm test; sau khi thấy precision 0,349, user đổi sang β = 1 (xem
+"Đổi sang β = 1"). Chỉ CPU, không train, không sửa YAML.
 
 **Diễn giải yêu cầu về β:** không cố định β = 2. B0 chạy lưới β ∈ {1; 1,5; 2; 3; 4} trên val (cross-fit); user chọn β có
 đánh đổi recall–precision ưng ý nhất dựa trên B0, TRƯỚC khi chấm test. Test chỉ chấm một lần, với β đã chọn.
@@ -128,3 +128,27 @@ Chỉ CPU, vài phút. Không GPU, không ổ đĩa đáng kể.
 - **Đọc kết quả:** đúng như đã chốt — cùng mô hình, chỉ dời ngưỡng: bỏ sót giảm từ 47% xuống 12% số ô có bệnh, đổi lại
   khoảng 2 trên 3 lần gọi "có bệnh" là báo nhầm (theo nhãn labeler). Không phải giao thức bài báo; báo cạnh headline và
   argmax, không thay headline. Stage 2 giữ cue headline.
+
+## Đổi sang β = 1 (2026-11-01, sau khi đã thấy test của β = 2)
+
+- **Minh bạch:** user chọn β = 2 trên B0; sau khi thấy precision test 0,349, user chọn lại β = 1 (phương án mình đề xuất).
+  Quyết định này đến SAU khi đọc test của β = 2, nên là một lựa chọn hậu kiểm. Rủi ro chọn lệch thấp vì val dự đoán test
+  gần như đúng (β = 2: 0,873 / 0,354 trên val → 0,884 / 0,349 trên test; β = 1: 0,698 / 0,477 → 0,692 / 0,483), nhưng
+  phải nói ra khi báo cáo. β = 2 được giữ trong hồ sơ, không xóa.
+- Fit β = 1 trên toàn bộ val → `configs/stage1_cutpoints/run_20261005_paper_recall_f1.json`; test chấm một lần, cùng lượt
+  với headline, β = 2 và argmax. Kết quả: `~/opsrecall_20261101/b1_paired_beta1.{json,log}`.
+
+| quy tắc (test) | recall "có bệnh" | precision | wF1 | F1-5 | macro recall | finding "có bệnh" / study |
+|---|---:|---:|---:|---:|---:|---:|
+| headline (wF1) | 0,531 | 0,608 | 0,820 | 0,749 | 0,446 | 2,23 |
+| **β = 1** | **0,692** | **0,483** | 0,792 | 0,718 | 0,473 | 3,66 |
+| β = 2 | 0,884 | 0,349 | 0,671 | 0,595 | 0,486 | 6,42 |
+| argmax | 0,719 | 0,484 | 0,780 | 0,669 | 0,461 | 3,84 |
+
+- β = 1 − headline: recall +0,161 [+0,153; +0,169], precision −0,125 [−0,133; −0,118], wF1 −0,028 [−0,030; −0,026], F1-5
+  −0,031 [−0,035; −0,027], macro recall +0,027 [+0,022; +0,033].
+- **So với argmax (đọc thẳng):** cùng precision (0,483 / 0,484), argmax có recall micro hơi cao hơn (0,719 so với 0,692).
+  β = 1 hơn argmax ở wF1 (0,792 / 0,780), F1-5 (0,718 / 0,669), macro recall (0,473 / 0,461) và các finding hiếm
+  (Enlarged Cardiomediastinum 0,30 / 0,00, Lung Lesion 0,34 / 0,11, Fracture 0,11 / 0,00, Pleural Other 0,10 / 0,04);
+  kém argmax ở Pneumothorax (0,28 / 0,52), Cardiomegaly (0,79 / 0,94), Consolidation (0,33 / 0,48), Edema (0,68 / 0,80).
+  Không có CI cho so sánh β = 1 − argmax (chỉ so với headline được chốt trước).

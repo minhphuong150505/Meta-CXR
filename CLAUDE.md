@@ -287,7 +287,11 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   probe's 40,000 train / 1,808 val studies; `scripts/biovil_prior_fit.py` reuses `fit_attention`. Gates: G0 (R1C npz),
   G1 (reproduce 0.4263 / 0.4039 / 0.4315 within 0.003). Rule: attn(swin+biovilprior) - attn(swin+biovil) >= +0.02 with
   lower bound > 0 -> GO_ON, else NOT_ENOUGH / STOP. Plan: `docs/handoff/PLAN-2026-10-31-biovil-prior-probe.md`.
-- 🧪 **Recall-leaning operating point (2026-11-01, user chose beta = 2 on val, supplementary row; headline unchanged).**
+- 🧪 **Recall-leaning operating point (2026-11-01). Supplementary row is now beta = 1
+  (`configs/stage1_cutpoints/run_20261005_paper_recall_f1.json`; headline unchanged): test present recall 0.692 / precision
+  0.483 (headline 0.531 / 0.608; argmax 0.719 / 0.484), wF1 0.792, F1-5 0.718. Chosen AFTER beta = 2's test reading (post
+  hoc; val predicted both points to ~0.01) -- say so. vs argmax: same precision, slightly lower micro recall, better wF1 /
+  F1-5 / rare findings, worse Pneumothorax / Cardiomegaly. Earlier, beta = 2 (user's first choice on val), kept on record:**
   Test n=3,269, scored once, paired vs headline: present recall 0.531 -> **0.884** (+0.353 [+0.343, +0.363]), precision
   0.608 -> 0.349, wF1 0.820 -> 0.671, F1-5 0.749 -> 0.595, macro recall +0.040, findings called present per study 2.2 ->
   6.4; val cross-fit predicted 0.873 / 0.354. Biggest recall gains on rare findings (Enlarged Cardiomediastinum 0.00 ->
