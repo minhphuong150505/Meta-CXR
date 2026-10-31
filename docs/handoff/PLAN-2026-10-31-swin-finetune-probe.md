@@ -1,7 +1,8 @@
 # PLAN 2026-10-31: tinh chỉnh toàn bộ MedCLIP-Swin — có phá được trần của encoder đóng băng không?
 
-**Trạng thái:** user duyệt plan 2026-10-31; code đã viết và push (mục 5). **CHƯA chạy trên GPU** — cần user
-duyệt riêng lần chạy. Chỉ đo trên val; không train Stage 1, không sửa YAML, không chấm test.
+**Trạng thái:** ĐÃ CHẠY 2026-10-31 08:25 → 08:57 (`44a3234`). **Kết luận theo quy tắc chốt trước: DỪNG** (Δ = T − F
+−0,0046 [−0,0119; +0,0029]). Xem "Execution report" cuối file. Chỉ đo trên val; không train Stage 1, không sửa YAML,
+không chấm test.
 
 ## 1. Câu hỏi và bằng chứng sẵn có
 
@@ -119,3 +120,34 @@ phút; tổng khoảng 1 giờ GPU. VRAM ước tính dưới 10 GB. Ổ đĩa k
 - Đầu probe khác MHCAC: phép đo cho biết trần của encoder có dời không, chưa cho biết Stage 1 tăng bao nhiêu.
 - MedCLIP được pretrain có MIMIC-CXR, split không xác minh được: lợi thế (nếu có) cũng có ở nhánh F.
 - Một bộ siêu tham số chốt trước cho T; không dò LR. Nếu kết quả là KHÔNG ĐỦ, chưa loại trừ một công thức khác.
+
+## Execution report (2026-10-31)
+
+- **Chạy:** `~/swinft_chain.sh` một lần, bản clone `~/Meta-CXR-swinft` ở `44a3234`; bộ test của bản clone qua hết
+  trên máy train (exit 0). Cache val 19 s, cache train 12 phút (40.000 study, 39.615 có nhãn), F 5,5 phút, T 14 phút,
+  `max mem` T 5.205 MiB. Kết quả ở `~/swinft_20261031/` (2,0 GB, chỉ trên máy train).
+- **G0 qua:** key và nhãn của cache giống hệt `~/encprobe_20261031/{train,val}`; Swin đóng băng trên cache cho đặc
+  trưng khớp đặc trưng đã lưu, cosine thấp nhất 0,99991 trên 64 study val (cả hai nhánh).
+- **G1 qua sát ngưỡng:** F val macro AP 0,4204 ≥ 0,4203 (epoch 3). Probe cũ 0,4263 là trung bình 3 seed, không
+  augmentation.
+- **G2 qua:** F giữ mọi tensor Swin giống từng bit. T đổi trọng số, thay đổi tương đối theo tầng: patch embedding
+  0,0011, stage 1 0,0048, stage 2 0,0117, stage 3 0,0206, stage 4 0,0416.
+
+| | holdout (epoch chọn) | val macro AP | val AUROC "có bệnh" |
+|---|---:|---:|---:|
+| F (Swin đóng băng) | 0,4291 (3) | 0,4204 | 0,7856 |
+| T (mở khóa toàn bộ) | 0,4344 (2) | 0,4158 | 0,7887 |
+| R1C (mô hình đang báo cáo, tham chiếu) | — | 0,4271 | 0,8017 |
+
+- **Quy tắc:** T − F macro AP **−0,0046 [−0,0119; +0,0029] → DỪNG** (Δ ≤ 0). Mô tả: T − R1C −0,0113
+  [−0,0205; −0,0017]. AUROC T cao hơn F +0,003 (không có CI).
+- **Đường cong holdout của T:** 0,4290 / 0,4339 / **0,4344** / 0,4328 / 0,4243 / 0,4219 / 0,4196 / 0,4196, trong khi
+  train loss giảm liên tục 0,398 → 0,274 (F: 0,399 → 0,319). Swin mở khóa học thuộc tập fit từ epoch 3. Ở epoch đã
+  chọn, T hơn F +0,005 trên holdout (3.961 study train) nhưng thua −0,005 trên val, nên lợi thế trên holdout không
+  chuyển sang val.
+- **AP từng finding (F / T):** T hơn ở Lung Lesion 0,106 → 0,124, Consolidation 0,236 → 0,243, Pleural Other 0,022 →
+  0,027; thua ở Edema 0,645 → 0,603, Cardiomegaly 0,508 → 0,494, Pneumothorax 0,351 → 0,333. Chỉ mô tả, n nhỏ ở
+  finding hiếm.
+- **Đọc kết quả:** với 40.000 study và công thức chốt trước, mở khóa Swin không dời trần của Swin đóng băng. Cùng
+  hướng với U5/L42 (mở khóa BioViL/PubMedCLIP). Một seed mỗi nhánh; không dò LR; chưa thử toàn bộ 220.216 study
+  (theo quy tắc, chỉ làm khi user muốn). Không có bước tiếp theo tự động.

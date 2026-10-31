@@ -260,7 +260,10 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   projector loads with `joint_feature_size=128`). Caveat: MedCLIP's pretraining used MIMIC-CXR with an unverifiable
   split. Trap: the eval hook's npz writes "no label" as -1, this probe as -100. Import `biovil_t` from the repo root,
   not `vision_encoders/biovil_t` (no `device.py`). Record: `docs/handoff/PLAN-2026-10-31-encoder-probe.md`.
-- 🧪 **Swin fine-tune probe, code written 2026-10-31 (user-approved), NOT YET RUN on GPU.** Swin was never unfrozen in
+- ❌ **Swin fine-tune probe (val 2026-10-31, measurement only, pre-declared rule): STOP.** F (frozen) val macro AP
+  0.4204 (G1 floor 0.4203), T (unfrozen) 0.4158, T - F -0.0046 [-0.0119, +0.0029]; T - R1C -0.0113 (descriptive). T's
+  holdout peaks at epoch 2 (0.4344, +0.005 over F) then falls to 0.4196 as train loss keeps dropping, so it overfits the
+  40,000-study fit set and its holdout lead does not reach val. G0 cosine 0.99991, G2 passed. One seed per arm, 32 min. Swin was never unfrozen in
   any recorded run (`encoder_finetune.patterns` list only BioViL and PubMedCLIP), so U5/L42 say nothing about it.
   `scripts/swin_finetune_cache.py` stores Swin's 224 input as uint8 (pad + resize, before /255 and MedCLIP mean/std,
   recovered exactly from the dataset's `swin_image`) for the encoder probe's same 40,000 train / 1,808 val studies;

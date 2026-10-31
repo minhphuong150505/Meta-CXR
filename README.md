@@ -568,7 +568,8 @@ bình trọng số. Chi tiết: `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensem
   vượt được trần đó. Lưu ý: MedCLIP pretrain có MIMIC-CXR với split không xác minh được. Chi tiết:
   `docs/handoff/PLAN-2026-10-31-encoder-probe.md`.
 
-**Tinh chỉnh toàn bộ MedCLIP-Swin (code viết 2026-10-31, CHƯA chạy trên GPU).** Swin chưa từng được mở khóa trong
+**Tinh chỉnh toàn bộ MedCLIP-Swin (val 2026-10-31, chỉ đo): DỪNG.** Swin đóng băng 0,4204, mở khóa 0,4158, chênh
+−0,0046 [−0,0119; +0,0029]. Swin mở khóa học thuộc tập train từ epoch 3 (holdout giảm khi train loss vẫn giảm). Swin chưa từng được mở khóa trong
 lần chạy nào, nên câu hỏi là: cùng dữ liệu, cùng đầu probe, mở khóa Swin có vượt trần của Swin đóng băng không.
 
 - `scripts/swin_finetune_cache.py`: lưu ảnh 224 uint8 (trước chuẩn hóa) của đúng 40.000 study train và 1.808 study
