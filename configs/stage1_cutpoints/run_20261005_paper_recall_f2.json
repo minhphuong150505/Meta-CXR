@@ -1,0 +1,69 @@
+{
+  "cutpoints": {
+    "Atelectasis": [
+      0.2292289275902042,
+      0.7111965985900719
+    ],
+    "Cardiomegaly": [
+      0.4318159903629175,
+      0.803030503433976
+    ],
+    "Consolidation": [
+      0.2739618315484521,
+      0.634266709735172
+    ],
+    "Edema": [
+      0.31343839622304576,
+      0.7887392852462932
+    ],
+    "Enlarged Cardiomediastinum": [
+      0.0852899123363971,
+      0.2645401210504485
+    ],
+    "Fracture": [
+      0.3050864858194865,
+      0.3050864858194865
+    ],
+    "Lung Lesion": [
+      0.13146231324426988,
+      0.36074505189864625
+    ],
+    "Lung Opacity": [
+      0.24966580392251678,
+      0.6422675273944597
+    ],
+    "No Finding": [
+      0.09729563360660544,
+      0.09729563360660544
+    ],
+    "Pleural Effusion": [
+      0.28633671377334885,
+      0.6495779533659791
+    ],
+    "Pleural Other": [
+      0.24466366423117167,
+      0.351682134030979
+    ],
+    "Pneumonia": [
+      0.261998227742224,
+      0.7540042691659296
+    ],
+    "Pneumothorax": [
+      0.28734789916659015,
+      0.83957311679503
+    ],
+    "Support Devices": [
+      0.3945175527056503,
+      0.3945175527056503
+    ]
+  },
+  "format": "meta_cxr_severity_cutpoints_v1",
+  "metadata": {
+    "checkpoint": "run_20261005_paper/phase1c/checkpoint_best",
+    "num_samples": 1808,
+    "objective": "t1: per-finding F-beta of present (P or U vs N), beta=2; t2 >= t1: per-finding sklearn-weighted F1 (three classes). Recall-leaning operating point, NOT the headline",
+    "rule": "two cutpoints: N < t1 <= U < t2 <= P",
+    "score": "p_pos / (p_pos + p_neg)",
+    "split": "val"
+  }
+}

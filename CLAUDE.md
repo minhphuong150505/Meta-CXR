@@ -287,7 +287,13 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   probe's 40,000 train / 1,808 val studies; `scripts/biovil_prior_fit.py` reuses `fit_attention`. Gates: G0 (R1C npz),
   G1 (reproduce 0.4263 / 0.4039 / 0.4315 within 0.003). Rule: attn(swin+biovilprior) - attn(swin+biovil) >= +0.02 with
   lower bound > 0 -> GO_ON, else NOT_ENOUGH / STOP. Plan: `docs/handoff/PLAN-2026-10-31-biovil-prior-probe.md`.
-- 🧪 **Recall-leaning operating point, opt-in since 2026-11-01 (user-approved): `fit_severity_cutpoints(objective=
+- 🧪 **Recall-leaning operating point (2026-11-01, user chose beta = 2 on val, supplementary row; headline unchanged).**
+  Test n=3,269, scored once, paired vs headline: present recall 0.531 -> **0.884** (+0.353 [+0.343, +0.363]), precision
+  0.608 -> 0.349, wF1 0.820 -> 0.671, F1-5 0.749 -> 0.595, macro recall +0.040, findings called present per study 2.2 ->
+  6.4; val cross-fit predicted 0.873 / 0.354. Biggest recall gains on rare findings (Enlarged Cardiomediastinum 0.00 ->
+  0.87, Consolidation 0.09 -> 0.78). File: `configs/stage1_cutpoints/run_20261005_paper_recall_f2.json` (wide Uncertain
+  bands, so most added calls are Uncertain). Say "not the paper's protocol, recall-leaning operating point" beside it.
+  Mechanism, opt-in since 2026-11-01: `fit_severity_cutpoints(objective=
   "present_fbeta", beta=B)` / `calibrate_thresholds.py --rule cutpoints --objective present_fbeta --beta B`.** t1 maximises
   F-beta of "present" (P or U vs N), then t2 >= t1 maximises three-class weighted F1 -- still three classes, NOT the
   headline (default `weighted_f1` unchanged, bit for bit). Not the retired binary `--objective f1` of D-023: the decision

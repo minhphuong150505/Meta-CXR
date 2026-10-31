@@ -588,7 +588,10 @@ trước bằng probe attention. ĐI TIẾP khi chênh ≥ +0,02 và cận dư�
   CI > 0; KHÔNG ĐỦ khi 0 < Δ < 0,02 hoặc CI chạm 0; DỪNG khi Δ ≤ 0. Chỉ val, không đụng Stage 1 hay test.
 - Plan: `docs/handoff/PLAN-2026-10-31-swin-finetune-probe.md`.
 
-**Điểm vận hành thiên recall cho Stage 1 (opt-in từ 2026-11-01, chưa chạy).** Cutpoint headline tối đa weighted F1 nên
+**Điểm vận hành thiên recall cho Stage 1 (2026-11-01, β = 2, dòng bổ sung — headline giữ nguyên).** Test n = 3.269,
+chấm một lần: recall "có bệnh" 0,531 → **0,884** (+0,353 [+0,343; +0,363]), precision 0,608 → 0,349, wF1 0,820 → 0,671,
+F1-5 0,749 → 0,595, số finding gọi "có bệnh" mỗi study 2,2 → 6,4. File
+`configs/stage1_cutpoints/run_20261005_paper_recall_f2.json`. Cách làm: Cutpoint headline tối đa weighted F1 nên
 chọn điểm ít báo bệnh (recall "có bệnh" 0,53 trên test). `calibrate_thresholds.py --rule cutpoints --objective
 present_fbeta --beta B` chọn t1 theo F-beta của "có bệnh" (vẫn ba lớp), và `scripts/compare_stage1_operating_points.py`
 so với headline và argmax. Cùng một mô hình: tăng recall là đổi lấy precision, không phải giao thức bài báo. Stage 2 vẫn
