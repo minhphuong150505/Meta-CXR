@@ -572,7 +572,8 @@ bình trọng số. Chi tiết: `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensem
 −0,0046 [−0,0119; +0,0029]. Swin mở khóa học thuộc tập train từ epoch 3 (holdout giảm khi train loss vẫn giảm). Swin chưa từng được mở khóa trong
 lần chạy nào, nên câu hỏi là: cùng dữ liệu, cùng đầu probe, mở khóa Swin có vượt trần của Swin đóng băng không.
 
-**BioViL-T với ảnh lần chụp trước (code viết 2026-10-31, CHƯA chạy).** BioViL-T nhận hai ảnh (hiện tại + lần chụp
+**BioViL-T với ảnh lần chụp trước (val 2026-10-31, chỉ đo): KHÔNG ĐỦ.** Swin + BioViL-T có ảnh trước 0,4352 so với
+không có 0,4315, chênh +0,0037 [+0,0001; +0,0081], dưới ngưỡng +0,02. BioViL-T nhận hai ảnh (hiện tại + lần chụp
 trước); pipeline chỉ đưa một ảnh nên một nửa đầu ra là hằng số. `scripts/biovil_prior_features.py` thêm ảnh thẳng của lần
 chụp trước gần nhất (cùng bệnh nhân, sớm hơn hẳn) và `scripts/biovil_prior_fit.py` so Swin + BioViL-T có/không có ảnh
 trước bằng probe attention. ĐI TIẾP khi chênh ≥ +0,02 và cận dưới CI > 0. Plan:

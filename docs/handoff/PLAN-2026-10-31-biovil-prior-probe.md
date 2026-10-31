@@ -1,7 +1,8 @@
 # PLAN 2026-10-31: cho BioViL-T thấy ảnh lần chụp trước — có tăng được phân loại không?
 
-**Trạng thái:** user đồng ý thử ("bạn cứ thử đi", 2026-10-31). Quy tắc đọc dưới đây được commit TRƯỚC khi chạy.
-Chỉ đo trên val; không train Stage 1, không sửa YAML, không chấm test.
+**Trạng thái:** ĐÃ CHẠY 2026-10-31 09:50 → 10:08 (`aadb250`). **Kết luận theo quy tắc chốt trước: KHÔNG ĐỦ**
+(Δ = B − A +0,0037 [+0,0001; +0,0081]). Xem "Execution report" cuối file. Chỉ đo trên val; không train Stage 1, không
+sửa YAML, không chấm test.
 
 ## 1. Vì sao
 
@@ -84,3 +85,34 @@ G1).
 - Theo bài báo BioViL-T (chưa kiểm tra lại trong phiên này), lợi ích của ảnh trước chủ yếu ở bài toán tiến triển; với
   phân loại tĩnh có thể nhỏ.
 - Bài META-CXR không dùng ảnh trước (chưa kiểm tra): nếu đi tiếp thì đó là thay đổi đầu vào so với bài báo.
+
+## Execution report (2026-10-31)
+
+- **Chạy:** `~/biovilprior_chain.sh` một lần, bản clone `~/Meta-CXR-biovilprior` ở `aadb250`; bộ test của bản clone qua
+  hết trên máy train. Đặc trưng val 26 s, train 13 phút, probe 4 phút. Đầu ra `~/biovilprior_20261031/` (7,0 GB, chỉ trên
+  máy train).
+- **Ảnh trước:** val 1.246 / 1.808 study (68,9%), train 27.046 / 40.000 (67,6%). Khoảng cách trung vị 2 ngày (val), 3 ngày
+  (train): phần lớn lần chụp trước nằm trong cùng đợt nằm viện.
+- **Kiểm tra (a) qua** (val và train). **(b) qua:** nửa tĩnh cosine thấp nhất 0,99997; nửa khác biệt đổi trung bình
+  0,775 (giá trị tuyệt đối mỗi phần tử).
+- **G0 qua:** R1C 0,4271. **G1 qua:** `attn_swin` 0,42629, `attn_biovil` 0,40390, `attn_swin+biovil` 0,43151 (ghi trước
+  0,4263 / 0,4039 / 0,4315).
+
+| probe | val macro AP | AUROC "có bệnh" | macro AP, nhóm có ảnh trước (n = 1.246) |
+|---|---:|---:|---:|
+| Swin | 0,4263 | 0,7945 | 0,4255 |
+| BioViL-T, không ảnh trước | 0,4039 | 0,7823 | 0,4037 |
+| BioViL-T, có ảnh trước | 0,4103 | 0,7871 | 0,4124 |
+| A: Swin + BioViL-T, không ảnh trước | 0,4315 | 0,8004 | 0,4299 |
+| **B: Swin + BioViL-T, có ảnh trước** | **0,4352** | **0,8043** | 0,4339 |
+| R1C (mô hình đang báo cáo) | 0,4271 | 0,8017 | — |
+
+- **Quy tắc:** B − A **+0,0037 [+0,0001; +0,0081] → KHÔNG ĐỦ** (dưới +0,02; cũng dưới NB 0,0042 của các pilot).
+- **Mô tả:** cùng Δ trên nhóm có ảnh trước +0,0040 [+0,0002; +0,0082] — không lớn hơn toàn val, nên mức tăng nhỏ không
+  phải do bị pha loãng bởi study không có ảnh trước. BioViL-T có ảnh trước − không: +0,0064 [+0,0004; +0,0121].
+  B − Swin +0,0089 [+0,0044; +0,0149].
+- **AP từng finding (A → B):** tăng ở Pneumonia 0,427 → 0,447, Pneumothorax 0,374 → 0,397, Fracture 0,021 → 0,032, Lung
+  Opacity 0,477 → 0,485; giảm ở Consolidation 0,253 → 0,245, Pleural Effusion 0,778 → 0,773. Chỉ mô tả.
+- **Đọc kết quả:** ảnh trước có mang thêm một chút thông tin (dương ở mọi so sánh, cận dưới vừa trên 0), nhưng quá nhỏ để
+  đáng sửa dataset và train lại 1a + 1b. Cả bộ BioViL-T đúng + ảnh trước thêm vào Swin chỉ được +0,0089 trong probe.
+  Không có bước tiếp theo tự động.

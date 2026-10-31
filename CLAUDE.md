@@ -274,7 +274,11 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   F bit-identical). `compare` gives T - F with the pre-declared verdict GO_ON (>= +0.02, lower bound > 0) / NOT_ENOUGH
   / STOP (<= 0). Val only, no Stage-1 change. Pinned by `tests/test_swin_finetune.py`. Plan:
   `docs/handoff/PLAN-2026-10-31-swin-finetune-probe.md`.
-- 🧪 **BioViL-T previous-image probe, code written 2026-10-31 (user: "cứ thử đi"), NOT YET RUN.** BioViL-T is a
+- ⚠ **BioViL-T previous-image probe (val 2026-10-31, measurement only, pre-declared rule): NOT_ENOUGH.**
+  attn(swin+biovilprior) 0.4352 vs attn(swin+biovil) 0.4315, +0.0037 [+0.0001, +0.0081] (needed >= +0.02; also below NB
+  0.0042); same on the 1,246 val studies that have a prior (+0.0040), so it is not dilution. BioViL-T alone 0.4039 ->
+  0.4103. Priors exist for ~68% of studies, median gap 2-3 days. G1 reproduced 0.4263 / 0.4039 / 0.4315 to 4 digits.
+  Details of the setup follow. BioViL-T is a
   two-image encoder (`MultiImageEncoder.forward(current_image, previous_image=None)`): its 512-d cell = 256 static channels
   + 256 difference channels from a temporal transformer. The pipeline never passes a previous image, so the difference
   half is the learned constant `missing_previous_emb` -- half of BioViL-T's output carries nothing.
