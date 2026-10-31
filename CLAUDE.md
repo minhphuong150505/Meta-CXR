@@ -260,6 +260,17 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   projector loads with `joint_feature_size=128`). Caveat: MedCLIP's pretraining used MIMIC-CXR with an unverifiable
   split. Trap: the eval hook's npz writes "no label" as -1, this probe as -100. Import `biovil_t` from the repo root,
   not `vision_encoders/biovil_t` (no `device.py`). Record: `docs/handoff/PLAN-2026-10-31-encoder-probe.md`.
+- 🧪 **Swin fine-tune probe, code written 2026-10-31 (user-approved), NOT YET RUN on GPU.** Swin was never unfrozen in
+  any recorded run (`encoder_finetune.patterns` list only BioViL and PubMedCLIP), so U5/L42 say nothing about it.
+  `scripts/swin_finetune_cache.py` stores Swin's 224 input as uint8 (pad + resize, before /255 and MedCLIP mean/std,
+  recovered exactly from the dataset's `swin_image`) for the encoder probe's same 40,000 train / 1,808 val studies;
+  `scripts/swin_finetune_fit.py fit --arm frozen|finetune` trains the encoder probe's attention head on Swin frozen (F)
+  or fully unfrozen with layer-wise LR decay 0.7 (T: stage 4 5e-5 ... patch embedding 1.2e-5), 8 epochs, batch 64, bf16,
+  train-only affine + brightness/contrast (no flip), epoch chosen on the probe's holdout; gates G0 (cache keys/labels =
+  `~/encprobe_20261031`, frozen features cosine >= 0.999), G1 (F val macro AP >= 0.4203), G2 (T moves stages 1 and 4,
+  F bit-identical). `compare` gives T - F with the pre-declared verdict GO_ON (>= +0.02, lower bound > 0) / NOT_ENOUGH
+  / STOP (<= 0). Val only, no Stage-1 change. Pinned by `tests/test_swin_finetune.py`. Plan:
+  `docs/handoff/PLAN-2026-10-31-swin-finetune-probe.md`.
 - **The only binary computations left are the two the paper itself uses**, in
   `training/evaluation/paper_protocol.py`: Table 4 CheXpert cross-domain
   (`p1/(p0+p1)`, Eq. 21) and Table 3 Clinical Efficacy (labeler positives).

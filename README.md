@@ -568,6 +568,18 @@ bình trọng số. Chi tiết: `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensem
   vượt được trần đó. Lưu ý: MedCLIP pretrain có MIMIC-CXR với split không xác minh được. Chi tiết:
   `docs/handoff/PLAN-2026-10-31-encoder-probe.md`.
 
+**Tinh chỉnh toàn bộ MedCLIP-Swin (code viết 2026-10-31, CHƯA chạy trên GPU).** Swin chưa từng được mở khóa trong
+lần chạy nào, nên câu hỏi là: cùng dữ liệu, cùng đầu probe, mở khóa Swin có vượt trần của Swin đóng băng không.
+
+- `scripts/swin_finetune_cache.py`: lưu ảnh 224 uint8 (trước chuẩn hóa) của đúng 40.000 study train và 1.808 study
+  val của phép đo encoder.
+- `scripts/swin_finetune_fit.py fit --arm frozen|finetune`: nhánh F (Swin đóng băng) và T (mở khóa toàn bộ, LR giảm
+  dần theo tầng), 8 epoch, chọn epoch theo holdout. Cổng G0 (dữ liệu khớp phép đo cũ), G1 (F ≥ 0,4203), G2 (T thật
+  sự đổi trọng số Swin).
+- `scripts/swin_finetune_fit.py compare`: Δ = T − F macro AP "có bệnh" trên val. ĐI TIẾP khi Δ ≥ +0,02 và cận dưới
+  CI > 0; KHÔNG ĐỦ khi 0 < Δ < 0,02 hoặc CI chạm 0; DỪNG khi Δ ≤ 0. Chỉ val, không đụng Stage 1 hay test.
+- Plan: `docs/handoff/PLAN-2026-10-31-swin-finetune-probe.md`.
+
 **Stage 2 train toàn bộ xong 2026-10-14** (`paper_context` + `--train-cues oracle_mix` +
 `--lora-lr 3e-4`, 2 epoch, batch 2 × 8, 47h45m, không lỗi; adapter ở
 `~/stage2_p2_20261011/full/` trên máy train). Val loss 0,99053 → 0,95619. Test **2.800 study**

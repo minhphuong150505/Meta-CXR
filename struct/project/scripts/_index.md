@@ -75,6 +75,8 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `analyze_radiologist_labels.py` | [📄](analyze_radiologist_labels.py.doc.md) | 🔬 | Nhiễu nhãn CheXpert so với nhãn bác sĩ (687 study test) và chấm Stage 1 theo nhãn bác sĩ |
 | `encoder_probe_features.py` | [📄](encoder_probe_features.py.doc.md) | 🔬 | Đặc trưng toàn cục + lưới token của 5 encoder (Swin, PubMedCLIP, BioViL-T 512, RAD-DINO, MedSigLIP) cho phép đo encoder (2026-10-31) |
 | `encoder_probe_fit.py` | [📄](encoder_probe_fit.py.doc.md) | 🔬 | Probe tuyến tính + attention, macro AP "có bệnh", quy tắc ứng viên encoder (2026-10-31) |
+| `swin_finetune_cache.py` | [📄](swin_finetune_cache.py.doc.md) | 🔬 | Cache uint8 đầu vào 224 của MedCLIP-Swin cho phép đo tinh chỉnh Swin (2026-10-31) |
+| `swin_finetune_fit.py` | [📄](swin_finetune_fit.py.doc.md) | 🔬 | Swin đóng băng vs mở khóa toàn bộ (LR giảm theo tầng), cổng G0–G2, quy tắc đọc (2026-10-31) |
 | `embed_cxr_encoders.py` | [📄](embed_cxr_encoders.py.doc.md) | 🔬 | Đặc trưng từng encoder (BioViL, PubMedCLIP, Swin, RAD-DINO) cho probe so sánh |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |
