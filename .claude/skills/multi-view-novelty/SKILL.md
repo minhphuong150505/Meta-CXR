@@ -178,6 +178,14 @@ The novelty only counts if it survives review. So:
   this number was already known from step 0). Val shows the aggregate gain, test the PE gain:
   neither effect replicates across splits, so no inference-only multi-view claim stands.
   `docs/handoff/PLAN-2026-10-27-multi-view-test-auroc.md`.
+- **Residual lateral expert on frozen OFF (2026-11-04, user-approved, val only, pre-declared rule):** OFF
+  (`run_20261024_nomv`) frozen; a lateral expert L (frozen encoder + attention head, 3 seeds) adds log-probs at the
+  output for frontal+lateral (PL) studies only, R1 cross-fitted on val; C = same head on the frontal image. Val PL
+  n=797, mean AP Positive over F1-5, OFF 0.4573. Swin: D1 +0.0168 [+0.0022, +0.0340] PASS, D2 +0.0129
+  [-0.0002, +0.0279] fail -> **"PARTIAL: gain mostly from adding a second model"**; RAD-DINO / MedSigLIP fail D1.
+  Pleural Effusion not helped. L alone trails C by 0.022-0.068 -> gate G0 "needs step 1" (LoRA on Swin, approved,
+  not built yet). Pooled all-val AUROC Pos drops ~0.011 in every residual arm. Not a multi-view claim.
+  `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 

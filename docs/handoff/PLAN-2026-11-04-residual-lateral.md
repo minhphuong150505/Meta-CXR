@@ -403,3 +403,63 @@ done
 
 Dừng nếu: số nhóm khác 797 / 930 / 81; bất kỳ key nào không khớp; cổng G0 nhãn hỏng; tên file npz của OFF
 khác (kiểm bằng `ls`); `ls ~/encprobe_20261031/{train,val}` thiếu `raddino_*` / `medsiglip_*`.
+
+## Execution report — Bước 0.2, 2026-11-04 (DỪNG trước GPU)
+
+- User duyệt commit/push và lượt GPU 0.2. Đã push `a5a3c0e`; host `~/Meta-CXR` `git pull --ff-only` -> `a5a3c0e`.
+  Test trên host (CPU): `tests/test_residual_lateral.py` + `tests/test_encoder_probe.py` 24 passed.
+- Guard lúc 10:09: `/mnt/drive1tb` ntfs3, GPU 79 MiB / 0 %, không có job python nào, `/home` còn 75 GB.
+- **Điều kiện dừng đã ghi sẵn bị kích hoạt:** `~/encprobe_20261031/` (đặc trưng frontal của 10-31) và
+  `~/Meta-CXR-encprobe` không còn trên host, chỉ còn log `~/encprobe_*.{sh,out,log}`. Chưa chạy lệnh GPU nào.
+  RAD-DINO cục bộ: `~/models/rad-dino` (đúng thư mục `encprobe_chain.sh` đã dùng).
+- Đề xuất (chờ user): trích lại đặc trưng frontal bằng chế độ mặc định không đổi của
+  `encoder_probe_features.py` (val toàn bộ, train `--limit 40000 --seed 16` = cùng 40.000 study của 10-31),
+  ra `$OUT/val_front`, `$OUT/train_front`; kiểm lại bằng số study có nhãn 1786/1808 và 39615/40000 như log 10-31.
+  Thêm khoảng 35 phút GPU.
+- **User duyệt 2026-11-04: trích lại frontal rồi chạy tiếp.** Chuỗi `~/reslat_chain.sh` (bản sao trong log) khởi chạy
+  MỘT lần lúc 10:12:35 từ `~/Meta-CXR` @ `a5a3c0e`, xong 11:19:37 (`RESLAT_DONE`), không bước nào abort.
+  Log: `~/reslat_20261104.log`; đầu ra `~/reslat_20261104/` (chỉ trên host).
+
+## Execution report — Bước 0.2 (GPU) + chấm R1 trên val PL, 2026-11-04
+
+Kiểm tra (đều qua): smoke val 256 -> nhóm 797 / 930 / 81, 113 PL; frontal val 1786/1808 và train 39615/40000 có nhãn
+(= log 10-31); val lateral 797 PL (779 có nhãn); train 40.000 study -> 18.553 PL (18.252 có nhãn; cả train có
+103.062 PL); G0 nhãn lateral = nhãn frontal ở cả 6 lượt fit; mọi key của OFF tìm thấy; `views_1` = OFF từng bit.
+Thời gian: frontal train 33 phút, lateral train 15 phút, 18 lượt fit chuyên gia ~3 phút, R1 ~4 phút / encoder.
+
+Chuyên gia, val PL n=797, macro AP present (mô tả; trung bình 3 seed): Swin L 0.3754 / C 0.4123;
+RAD-DINO L 0.3295 / C 0.3771; MedSigLIP L 0.3191 / C 0.3779.
+
+Chỉ số chính AP_pos trung bình trên T (F1-5), val PL, cross-fit, trung bình 3 seed. OFF = 0.4573.
+
+| encoder | OFF+C | OFF+L | OFF+C+L | OFF+Lperm | L_alone | C_alone |
+|---|---:|---:|---:|---:|---:|---:|
+| Swin | 0.4607 | 0.4741 | 0.4736 | 0.4465 | 0.4406 | 0.4630 |
+| RAD-DINO | 0.4718 | 0.4706 | 0.4718 | 0.4504 | 0.4126 | 0.4525 |
+| MedSigLIP | 0.4638 | 0.4661 | 0.4666 | 0.4474 | 0.3715 | 0.4399 |
+
+| encoder | D1 = (OFF+L)−OFF | D2 = (OFF+C+L)−(OFF+C) | D3 = (OFF+C)−OFF | L−C alone | rào chắn nonT (D1) | verdict |
+|---|---|---|---|---|---|---|
+| Swin | **+0.0168 [+0.0022, +0.0340]** | +0.0129 [−0.0002, +0.0279] | +0.0034 [−0.0039, +0.0122] | −0.0224 | +0.0059 | **PARTIAL** |
+| RAD-DINO | +0.0133 [−0.0016, +0.0300] | +0.0000 [−0.0102, +0.0108] | +0.0145 [+0.0034, +0.0264] | −0.0399 | +0.0110 | KHÔNG QUA |
+| MedSigLIP | +0.0088 [−0.0083, +0.0252] | +0.0028 [−0.0100, +0.0142] | +0.0065 [−0.0040, +0.0176] | −0.0684 | +0.0055 | KHÔNG QUA |
+
+NB/√3 (D1): Swin 0.0003, RAD-DINO 0.0014, MedSigLIP 0.0028 -- chỉ là nhiễu seed của head chuyên gia (encoder đóng
+băng, σ_OFF = 0), nên rất nhỏ; CI bootstrap mới là điều kiện ràng buộc. Dperm âm ở cả ba (−0.0108 / −0.0069 / −0.0099),
+như kỳ vọng.
+
+Đọc theo quy tắc mục 7 (chốt trước):
+- **Swin: "PARTIAL: lợi ích chủ yếu đến từ việc ghép thêm một mô hình".** D1 qua (CI dưới > 0, > NB/√3, rào chắn qua);
+  D2 không qua -- cận dưới −0.0002 nằm sát 0, nên "đặc thù lateral" là CHƯA XÁC LẬP, không phải bác bỏ.
+- RAD-DINO, MedSigLIP: không qua.
+- Từng finding (Swin, D1, Holm trên T): không finding nào qua; Cardiomegaly +0.051, Edema +0.034, Consolidation +0.010
+  (Holm p 0.09), Atelectasis −0.001, **Pleural Effusion −0.009** -- lateral qua probe đóng băng không giúp PE.
+- Phụ, mô tả: trên PL AUROC Pos của Swin D1 +0.0074; cutpoint wF1 / F1-5 trên PL phẳng (−0.0004 / +0.0014).
+  ⚠ Trên TOÀN val, auroc_pos_mean của MỌI arm residual thấp hơn OFF ~0.011 (0.803 -> 0.792), kể cả OFF+C: R1 chỉ đổi
+  xác suất của study PL, nên thang điểm PL và non-PL lệch nhau khi xếp hạng gộp (giả thuyết, chưa đo riêng). wF1 / F1-5
+  toàn val phẳng (Swin OFF+L 0.8578 / 0.8073 vs OFF 0.8579 / 0.8064).
+
+Cổng G0: không encoder nào qua cả D1 và D2 -> không phải GO-thẳng; L kém C hơn 0.02 ở cả ba encoder
+(−0.022 / −0.040 / −0.068) -> **CẦN-BƯỚC-1** (đọc "D1 và D2 không qua" là "không qua cả hai", vì Swin qua D1); không
+phải NO-GO (L không ≈ C). Encoder cho Bước 1 theo quy tắc: D2 lớn nhất = **Swin**. Bước 1 CHƯA chạy, chờ user duyệt.
+Test chưa đọc.

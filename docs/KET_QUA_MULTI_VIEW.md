@@ -1,6 +1,6 @@
 # Kết quả multi-view (View Fusion): tổng hợp, kết quả âm
 
-Cập nhật 2026-10-27. Tài liệu này gom mọi thí nghiệm nhằm trả lời một câu hỏi:
+Cập nhật 2026-11-04 (thêm mục 7). Tài liệu này gom mọi thí nghiệm nhằm trả lời một câu hỏi:
 **dùng thêm ảnh thứ hai của study (thường là ảnh lateral) có giúp Stage 1 phân
 loại tốt hơn so với chỉ dùng ảnh chính hay không?** Câu hỏi đặt ra từ 2026-10-25,
 khi user muốn View Fusion là tính mới của luận văn.
@@ -159,6 +159,26 @@ Stage 2 train lại trên từng Stage 1 (10.000 study, cùng recipe pilot), bea
   chiều nào.
 
 Nguồn: `PLAN-2026-10-26-stage2-fusion-on-off.md`, `PLAN-2026-10-26-stage2-seed-noise.md`.
+
+## 7. Chuyên gia lateral cộng vào đầu ra của OFF đóng băng (2026-11-04, chỉ val)
+
+Hướng mới, user duyệt: giữ nguyên OFF (`run_20261024_nomv`), train riêng một "chuyên gia" đọc ảnh lateral (encoder
+đóng băng + head attention, 3 seed), rồi cộng log-xác suất của nó vào của OFF, chỉ cho 797 study val có ảnh frontal
+và lateral (PL). Trọng số cộng fit cross-fit trên val. Study không có lateral giữ nguyên OFF đến từng bit. Đối chứng
+C là cùng head nhưng đọc ảnh frontal, để tách "ghép thêm một mô hình" khỏi "thông tin của lateral". Chỉ số chính
+(chốt trước): AP lớp Positive trung bình trên 5 finding của F1-5; OFF 0,4573.
+
+| encoder | D1 = OFF+L − OFF | D2 = OFF+C+L − OFF+C | kết luận |
+|---|---|---|---|
+| Swin | +0,0168 [+0,0022; +0,0340] | +0,0129 [−0,0002; +0,0279] | PARTIAL |
+| RAD-DINO | +0,0133 [−0,0016; +0,0300] | +0,0000 [−0,0102; +0,0108] | không qua |
+| MedSigLIP | +0,0088 [−0,0083; +0,0252] | +0,0028 [−0,0100; +0,0142] | không qua |
+
+Theo quy tắc: Swin qua D1 nhưng không qua D2, nên kết luận là "lợi ích chủ yếu đến từ việc ghép thêm một mô hình";
+phần đặc thù lateral chưa xác lập (cận dưới sát 0). Tràn dịch màng phổi không được lợi. Chuyên gia lateral đứng một
+mình kém chuyên gia frontal 0,022 / 0,040 / 0,068, nên bước tiếp là thích nghi encoder cho ảnh lateral bằng LoRA
+(Bước 1, đã duyệt, chưa chạy). Trên toàn val, AUROC Pos gộp của mọi arm residual giảm khoảng 0,011; wF1 và F1-5 phẳng.
+Test chưa đọc. Nguồn: `PLAN-2026-11-04-residual-lateral.md`.
 
 ## Vì sao có thể không giúp (giả thuyết, chưa chứng minh)
 

@@ -476,6 +476,11 @@ hai view weighted F1 +0,0010, F1-5 +0,0002. Ngưỡng nhiễu ước lại từ 
 hai seed, nên lần qua ở pilot chỉ là nhiễu seed. Không chạy full, không đọc test; theo thỏa thuận chuyển sang
 viết kết quả âm. Chi tiết: `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`. Tổng hợp mọi thí nghiệm
 multi-view (kết quả âm): `docs/KET_QUA_MULTI_VIEW.md`.
+**Chuyên gia lateral cộng vào đầu ra OFF đóng băng (2026-11-04, chỉ val, quy tắc khai báo trước).** Trên 797 study
+val có ảnh lateral, chuyên gia Swin đóng băng cộng vào OFF tăng AP lớp Positive trung bình F1-5 +0,0168
+[+0,0022; +0,0340], nhưng phần đặc thù lateral (so với một chuyên gia frontal đối chứng) +0,0129 [−0,0002; +0,0279]
+chưa xác lập, nên kết luận là PARTIAL: lợi ích chủ yếu đến từ việc ghép thêm một mô hình. RAD-DINO và MedSigLIP không
+qua. Bước tiếp (đã duyệt): LoRA cho Swin trên ảnh lateral. Chi tiết: `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
 
 **Kiểm tra đầu vào và recall của Stage 1 (2026-10-29, chỉ CPU, chỉ đọc dự đoán của `run_20261005_paper`).**
 Kết luận chính: **đầu vào không phải nguyên nhân chính của việc bỏ sót.**

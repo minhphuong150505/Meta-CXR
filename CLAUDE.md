@@ -1400,7 +1400,7 @@ study (not image) → anchor + ≤1 auxiliary view
   already shown ~0 on views_2. Test PE AUROC Pos +0.0159* is descriptive only (the PE claim
   was pre-declared on val and failed). The two effects swap between splits; neither
   replicates. Record: `docs/handoff/PLAN-2026-10-27-multi-view-test-auroc.md`.
-  🧪 **Residual-lateral tooling, 2026-11-04 (user-approved, CPU only so far; NOT RUN on GPU):** OFF
+  🧪 **Residual-lateral tooling, 2026-11-04 (user-approved; step 0 RAN on GPU 2026-11-04, val only):** OFF
   (`run_20261024_nomv`) stays frozen; a separate lateral expert's log-probs are added to OFF's at the
   OUTPUT, for PL studies only (`scripts/residual_stack.py`, R1 cross-fitted on val; every non-PL study keeps
   OFF's probabilities bit for bit). Experts: `scripts/lateral_expert_fit.py` (L = lateral image, C = frontal
@@ -1409,6 +1409,15 @@ study (not image) → anchor + ≤1 auxiliary view
   `training/evaluation/view_keys.py`. Reading rule fixed before any number: T = the F1-5 findings, metric =
   mean AP of the Positive class on val PL, NB from 3 expert seeds. Trap: `fit_severity_cutpoints` treats
   `-1` as missing, probe features write `-100`. Plan: `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
+  ⚠ **Step 0 result (frozen encoders, val PL n=797, OFF AP_pos(T) 0.4573): Swin PARTIAL, RAD-DINO / MedSigLIP fail.**
+  Swin D1 = (OFF+L) - OFF +0.0168 [+0.0022, +0.0340] passes; D2 = (OFF+C+L) - (OFF+C) +0.0129 [-0.0002, +0.0279]
+  does not, so by the pre-declared rule the gain is "mostly from adding a second model", lateral-specific
+  NOT ESTABLISHED (lower bound at zero). Pleural Effusion is not helped (D1 -0.009). Lateral experts alone trail the
+  frontal control by 0.022 / 0.040 / 0.068, so gate G0 = "needs step 1" (LoRA on Swin, user-approved 2026-11-04,
+  not yet built). NB here is head-seed noise only (~0.0003), the CI is what binds. ⚠ On ALL val every residual arm
+  lowers pooled AUROC Pos ~0.011 (PL and non-PL scores no longer on one scale; hypothesis); wF1 / F1-5 flat.
+  The 10-31 encoder-probe features (`~/encprobe_20261031`) were deleted from the host; frontal features were
+  re-extracted into `~/reslat_20261104/{val,train}_front` and reproduce the 10-31 label counts. Test not read.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and
