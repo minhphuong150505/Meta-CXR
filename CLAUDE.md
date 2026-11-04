@@ -1418,6 +1418,11 @@ study (not image) → anchor + ≤1 auxiliary view
   lowers pooled AUROC Pos ~0.011 (PL and non-PL scores no longer on one scale; hypothesis); wF1 / F1-5 flat.
   The 10-31 encoder-probe features (`~/encprobe_20261031`) were deleted from the host; frontal features were
   re-extracted into `~/reslat_20261104/{val,train}_front` and reproduce the 10-31 label counts. Test not read.
+  🧪 **Step 1 code (CPU only, NOT RUN on GPU):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
+  bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
+  the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE
+  pass: anchor `swin_image` = frontal, `aux_swin_image` = lateral), `scripts/lateral_lora_fit.py` (arms L_frozen /
+  L_lora / C_lora, gates G0 / G2, `compare` = G1(a)). Hyperparameters fixed in the plan's "Bước 1" section.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and

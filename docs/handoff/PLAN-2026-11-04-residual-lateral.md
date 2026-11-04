@@ -463,3 +463,47 @@ Cổng G0: không encoder nào qua cả D1 và D2 -> không phải GO-thẳng; L
 (−0.022 / −0.040 / −0.068) -> **CẦN-BƯỚC-1** (đọc "D1 và D2 không qua" là "không qua cả hai", vì Swin qua D1); không
 phải NO-GO (L không ≈ C). Encoder cho Bước 1 theo quy tắc: D2 lớn nhất = **Swin**. Bước 1 CHƯA chạy, chờ user duyệt.
 Test chưa đọc.
+
+## Bước 1 — code CPU (2026-11-04, user duyệt "1 đồng ý làm Bước 1")
+
+File mới: `vision_encoders/lora.py`, `scripts/lateral_lora_cache.py`, `scripts/lateral_lora_fit.py`,
+`tests/test_lateral_lora.py` (14 test), struct docs. Không đổi file nào đang có.
+
+Quy ước cố định TRƯỚC mọi số của Bước 1 (theo mục 4, chỗ để ngỏ do planner chọn):
+- Chỉ Swin (MedCLIP, 224), như user chốt; không làm biến thể "adapter" (chỉ LayerNorm) ở mục 1.2.
+- LoRA: r=8, alpha=16, dropout 0,05, query + value của mọi block ở stage 3–4 (16 lớp). LR LoRA **2e-4**
+  (cận trên của khoảng 1e-4–2e-4 trong mục 1.4), LR head 3e-4, wd 0,05 cho cả hai, batch 64, bf16.
+- Tối đa 8 epoch, warmup-cosine (5%) trên 8 epoch; dừng sớm khi 2 epoch liền không vượt holdout tốt nhất;
+  chọn epoch theo macro AP "có bệnh" trên holdout 10% (như Bước 0, không theo chỉ số chính).
+- Dữ liệu: mọi study PL của train (trên host đếm được 103.062, kế hoạch ước 120.000), cả hai view từ CÙNG
+  một lượt dataset (anchor frontal + aux lateral). Augmentation chỉ khi train, không lật (của `swin_finetune_fit`).
+- Seed s ∈ {16, 17, 18}; arm `L_frozen` cũng chạy augmentation, nên khác `L` của Bước 0 ở dữ liệu
+  (103k so với 18,5k study) và augmentation — đó là lý do arm này tồn tại.
+- G1(a) = `L_lora − L_frozen`, AP_pos(T) val PL, bootstrap 2.000 seed 16, qua khi cận dưới > 0 VÀ > NB/√3.
+  G1(b) = `residual_stack.py` với `L = L_lora`, `C = C_lora`, quy tắc mục 7 không đổi (D2 cận dưới > 0).
+  Mô tả thêm (không quyết định): `residual_stack.py` với `L = L_frozen`, `C = C_lora`.
+- Đọc G1 đúng như mục "Cổng G1"; test vẫn không đọc.
+
+### Lệnh dự kiến (CHƯA DUYỆT GPU)
+
+```bash
+cd ~/Meta-CXR && git pull --ff-only    # sha ghi vào log
+PY=~/.venvs/meta-cxr-stage1-311/bin/python; R=~/reslat_20261104; OUT=~/reslat_lora_20261104
+test ! -e $OUT || exit 1               # + guard: ntfs3, GPU rảnh, không job train, /home >= 40 GB
+$PY scripts/lateral_lora_cache.py --split val   --out-dir $OUT/cache/val     # kỳ vọng 797 PL
+$PY scripts/lateral_lora_cache.py --split train --out-dir $OUT/cache/train   # kỳ vọng 103062 PL
+# smoke: 1 epoch, đo phút/epoch và max mem, G0 + G2 phải qua
+$PY scripts/lateral_lora_fit.py fit --arm L_lora --seed 16 --epochs 1 --cache-dir $OUT/cache --ref-dir $R --out-dir $OUT/smoke
+for A in L_frozen L_lora C_lora; do for S in 16 17 18; do
+  $PY scripts/lateral_lora_fit.py fit --arm $A --seed $S --cache-dir $OUT/cache --ref-dir $R --out-dir $OUT/experts
+done; done
+B=~/run_20261024_nomv/phase1c/mimic_cxr_full_blip2/result/val_predictions_epoch_best.npz
+e() { echo $OUT/experts/$1_s16.npz,$OUT/experts/$1_s17.npz,$OUT/experts/$1_s18.npz; }
+$PY scripts/lateral_lora_fit.py compare --base L_frozen=$(e L_frozen) --new L_lora=$(e L_lora) --names-from $B --out $OUT/G1a.json
+$PY scripts/residual_stack.py --off $B --view-map $R/val_lat/view_map.npz --off-cutpoints ~/nomv_probe_20261024/cutpoints_nomv.json \
+  --expert L=$(e L_lora) --expert C=$(e C_lora) --name lora --out $OUT/residual_lora.json
+$PY scripts/residual_stack.py ... --expert L=$(e L_frozen) --expert C=$(e C_lora) --name frozenL --out $OUT/residual_frozenL.json
+```
+
+Dừng nếu: số PL khác 797 (val); bất kỳ kiểm tra của cache; G0 hoặc G2 hỏng; smoke vượt 14 GB hoặc ước tổng
+quá 12 giờ GPU (báo user trước khi chạy tiếp).

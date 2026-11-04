@@ -78,6 +78,8 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `encoder_probe_fit.py` | [📄](encoder_probe_fit.py.doc.md) | 🔬 | Probe tuyến tính + attention, macro AP "có bệnh", quy tắc ứng viên encoder (2026-10-31) |
 | `lateral_expert_fit.py` | [📄](lateral_expert_fit.py.doc.md) | 🔬 | Chuyên gia lateral L / đối chứng frontal C trên study PL, xác suất val từng seed (2026-11-04) |
 | `residual_stack.py` | [📄](residual_stack.py.doc.md) | 🔬 | Residual R1 ở lớp đầu ra trên OFF đóng băng, cross-fit val, D1/D2/D3, NB, verdict (2026-11-04) |
+| `lateral_lora_cache.py` | [📄](lateral_lora_cache.py.doc.md) | 🔬 | Cache uint8 224 của Swin cho cả frontal và lateral của mọi study PL (Bước 1, 2026-11-04) |
+| `lateral_lora_fit.py` | [📄](lateral_lora_fit.py.doc.md) | 🔬 | LoRA trên Swin: arm L_frozen / L_lora / C_lora, cổng G0/G2, `compare` cho G1(a) (2026-11-04) |
 | `swin_finetune_cache.py` | [📄](swin_finetune_cache.py.doc.md) | 🔬 | Cache uint8 đầu vào 224 của MedCLIP-Swin cho phép đo tinh chỉnh Swin (2026-10-31) |
 | `swin_finetune_fit.py` | [📄](swin_finetune_fit.py.doc.md) | 🔬 | Swin đóng băng vs mở khóa toàn bộ (LR giảm theo tầng), cổng G0–G2, quy tắc đọc (2026-10-31) |
 | `biovil_prior_features.py` | [📄](biovil_prior_features.py.doc.md) | 🔬 | Đặc trưng Swin + BioViL-T có/không có ảnh lần chụp trước (2026-10-31) |
