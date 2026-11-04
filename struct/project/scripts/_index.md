@@ -74,8 +74,10 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `score_ce_chexbert.py` | [📄](score_ce_chexbert.py.doc.md) | ✅ | CE bằng CheXbert (`f1chexbert`, venv riêng) + so sánh ghép cặp (2026-10-11) |
 | `mbr_select_stage2.py` | [📄](mbr_select_stage2.py.doc.md) | ✅ | Giải mã MBR (2026-10-14): chọn ứng viên có kỳ vọng BERTScore cao nhất so với các mẫu `--num-samples`; ghi `generated_<split>.jsonl` |
 | `analyze_radiologist_labels.py` | [📄](analyze_radiologist_labels.py.doc.md) | 🔬 | Nhiễu nhãn CheXpert so với nhãn bác sĩ (687 study test) và chấm Stage 1 theo nhãn bác sĩ |
-| `encoder_probe_features.py` | [📄](encoder_probe_features.py.doc.md) | 🔬 | Đặc trưng toàn cục + lưới token của 5 encoder (Swin, PubMedCLIP, BioViL-T 512, RAD-DINO, MedSigLIP) cho phép đo encoder (2026-10-31) |
+| `encoder_probe_features.py` | [📄](encoder_probe_features.py.doc.md) | 🔬 | Đặc trưng toàn cục + lưới token của 5 encoder (Swin, PubMedCLIP, BioViL-T 512, RAD-DINO, MedSigLIP) cho phép đo encoder (2026-10-31); `--views lateral` (2026-11-04) cho ảnh lateral của study PL |
 | `encoder_probe_fit.py` | [📄](encoder_probe_fit.py.doc.md) | 🔬 | Probe tuyến tính + attention, macro AP "có bệnh", quy tắc ứng viên encoder (2026-10-31) |
+| `lateral_expert_fit.py` | [📄](lateral_expert_fit.py.doc.md) | 🔬 | Chuyên gia lateral L / đối chứng frontal C trên study PL, xác suất val từng seed (2026-11-04) |
+| `residual_stack.py` | [📄](residual_stack.py.doc.md) | 🔬 | Residual R1 ở lớp đầu ra trên OFF đóng băng, cross-fit val, D1/D2/D3, NB, verdict (2026-11-04) |
 | `swin_finetune_cache.py` | [📄](swin_finetune_cache.py.doc.md) | 🔬 | Cache uint8 đầu vào 224 của MedCLIP-Swin cho phép đo tinh chỉnh Swin (2026-10-31) |
 | `swin_finetune_fit.py` | [📄](swin_finetune_fit.py.doc.md) | 🔬 | Swin đóng băng vs mở khóa toàn bộ (LR giảm theo tầng), cổng G0–G2, quy tắc đọc (2026-10-31) |
 | `biovil_prior_features.py` | [📄](biovil_prior_features.py.doc.md) | 🔬 | Đặc trưng Swin + BioViL-T có/không có ảnh lần chụp trước (2026-10-31) |

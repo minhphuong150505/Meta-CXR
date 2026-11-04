@@ -20,6 +20,14 @@ pair with MHCAC's own val predictions.
 * ``medsiglip``  (``--medsiglip ID``) its own preprocessing (448x448, mean/std 0.5):
                  [pooler ; mean patch]; 32x32 averaged to ``--grid``.
 
+``--views lateral`` (opt-in, 2026-11-04, ``docs/handoff/PLAN-2026-11-04-residual-lateral.md``):
+the same features from the LATERAL image of every PL study (frontal PA/AP anchor + a
+lateral aux at ``max_aux_views=1``) among the selected studies, other studies dropped.
+The dataset is built with ``anchor_priority=[lateral, PA, AP]``; ``keys.npy`` then holds
+the FRONTAL-anchor key of each study (the join key of every frontal npz) and
+``image_keys.npy`` the lateral image's own key; ``view_map.npz`` maps the whole split
+(``training/evaluation/view_keys.py``). Without the flag the output is unchanged.
+
 Derived features of MIMIC-CXR: keep them on the training host. Prints counts only.
 """
 
@@ -101,6 +109,32 @@ class _WithNative:
         return sample
 
 
+def lateral_selection(dataset, order, out_dir: Path):
+    """PL studies of ``order`` in a lateral-anchor ``dataset``: (positions, frontal keys, lateral keys).
+
+    Writes ``view_map.npz`` for the whole split. Raises unless the lateral-anchor study
+    index lists the same studies, in the same order, as the default one.
+    """
+    from model.lavis.data.mimic_cxr_utils import build_study_index
+    from training.evaluation.view_keys import (
+        DEFAULT_PRIORITY,
+        build_view_map,
+        lateral_pass_positions,
+    )
+
+    cols = ["subject_id", "study_id"] + (["ViewPosition"] if "ViewPosition" in dataset.annotation else [])
+    rows = dataset.annotation[cols].to_dict("records")
+    default = build_study_index(rows, anchor_priority=DEFAULT_PRIORITY, max_aux_views=1)
+    if [s["study_key"] for s in default] != [s["study_key"] for s in dataset.studies]:
+        raise RuntimeError("lateral-anchor study order differs from the default study order")
+    view_map = build_view_map(rows)
+    view_map.save(out_dir / "view_map.npz")
+    keep = lateral_pass_positions(view_map, dataset.studies, order)
+    print(f"[encprobe] lateral views: groups {view_map.counts()}; "
+          f"{len(keep)} PL of {len(order)} selected studies", flush=True)
+    return keep, view_map.frontal_keys[keep], view_map.lateral_keys[keep]
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -114,6 +148,8 @@ def main(argv=None) -> int:
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--workers", type=int, default=10)
     ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--views", choices=("frontal", "lateral"), default="frontal",
+                    help="lateral: features of the PL studies' lateral image (see module docstring)")
     args = ap.parse_args(argv)
     if args.split == "test":
         raise SystemExit("the encoder probe reads train and val only (plan section 2)")
@@ -133,6 +169,10 @@ def main(argv=None) -> int:
     cfg.datasets_cfg.mimic_cxr.vis_processor.train.augmentation.enabled = False
     cfg.model_cfg.data.max_aux_views = 0
     cfg.model_cfg.explanation.mask_cache_dir = None
+    if args.views == "lateral":
+        from training.evaluation.view_keys import LATERAL_PRIORITY
+
+        cfg.model_cfg.data.anchor_priority = list(LATERAL_PRIORITY)
     model = L.tasks.setup_task(cfg).build_model(cfg)
     device = torch.device("cuda")
     model.to(device).eval()
@@ -161,6 +201,9 @@ def main(argv=None) -> int:
     order = np.arange(len(dataset))
     if args.limit and args.limit < len(order):
         order = np.sort(np.random.default_rng(args.seed).choice(order, args.limit, replace=False))
+    expected_keys = expected_image_keys = None
+    if args.views == "lateral":
+        order, expected_keys, expected_image_keys = lateral_selection(dataset, order, args.out_dir)
     n = len(order)
     print(f"[encprobe] {args.split}: {n} of {len(dataset)} studies", flush=True)
     loader = DataLoader(_WithNative(dataset, order.tolist(), raddino is not None, medsiglip is not None),
@@ -186,6 +229,8 @@ def main(argv=None) -> int:
             labels[pos:pos + bs] = lab
             ids = batch["image_id"]
             keys.extend(build_sample_keys([str(v) for v in (ids.tolist() if torch.is_tensor(ids) else ids)]))
+            if expected_image_keys is not None and list(keys[pos:pos + bs]) != list(expected_image_keys[pos:pos + bs]):
+                raise RuntimeError(f"batch {b}: anchor images are not the PL laterals")
 
             out = model.visual_encoder(batch["image"].to(device))
             patch = out.patch_embeddings  # [B, 512, 14, 14]
@@ -215,7 +260,11 @@ def main(argv=None) -> int:
                 print(f"[encprobe] {pos}/{n} {pos / (time.time() - started):.1f} study/s", flush=True)
     assert pos == n, (pos, n)
     np.save(args.out_dir / "labels.npy", labels)
-    np.save(args.out_dir / "keys.npy", np.array(keys))
+    if expected_keys is None:
+        np.save(args.out_dir / "keys.npy", np.array(keys))
+    else:  # lateral pass: join key = frontal-anchor key; the lateral image's own key beside it
+        np.save(args.out_dir / "keys.npy", np.asarray(expected_keys))
+        np.save(args.out_dir / "image_keys.npy", np.array(keys))
     for name, arr in store.items():
         arr.flush()
         print(f"[encprobe] wrote {name} {arr.shape}", flush=True)

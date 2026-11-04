@@ -44,6 +44,7 @@ Stage 1 checkpoint + split ───────────────► eval
 | `schemas.py` | 334 | [📄](schemas.py.doc.md) | `ClassificationPredictions`, `load_generation_records`, `CLASS_NAMES` |
 | `classification_metrics.py` | 347 | [📄](classification_metrics.py.doc.md) | ★ Giao thức bài báo: weighted P/R/F1 ba lớp, F1 5 bệnh, AUROC theo lớp |
 | `threshold_calibration.py` | 160 | [📄](threshold_calibration.py.doc.md) | Ngưỡng theo (bệnh, lớp), Eq. 22 — **chỉ validation** |
+| `view_keys.py` | 160 | [📄](view_keys.py.doc.md) | Key frontal/lateral theo study, nhóm PL/F1/other, ghép lượt lateral với npz frontal (2026-11-04) |
 | `paper_protocol.py` | 139 | [📄](paper_protocol.py.doc.md) | Bảng 4 (CheXpert, Eq. 21) và Bảng 3 (CE) — hai chỗ nhị phân của bài báo |
 | `baselines.py` | 127 | [📄](baselines.py.doc.md) | Baseline ba lớp |
 | `bootstrap.py` | 221 | [📄](bootstrap.py.doc.md) | Khoảng tin cậy |

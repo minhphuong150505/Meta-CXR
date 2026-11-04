@@ -23,6 +23,15 @@ dự đoán val của MHCAC.
 `--split test` bị từ chối. Ảnh RAD-DINO/MedSigLIP giải mã lại từ cùng ảnh anchor trong worker
 (`_WithNative`).
 
+## `--views lateral` (opt-in, 2026-11-04)
+Dataset dựng với `anchor_priority=[lateral, PA, AP]`; chỉ giữ study **PL** trong các study đã chọn
+(`lateral_selection` → [`view_keys`](../training/evaluation/view_keys.py.doc.md)). `keys.npy` khi đó là
+**key frontal-anchor** (key ghép với mọi npz frontal), `image_keys.npy` là key của chính ảnh lateral,
+`view_map.npz` là map của cả split. Kiểm tra: thứ tự study của index anchor-lateral trùng index mặc
+định; anchor lateral của từng study PL trùng lateral mà `max_aux_views=1` ghép; key ảnh của từng
+batch trùng key lateral kỳ vọng. Không có cờ thì đầu ra như cũ. Plan:
+`docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
+
 ## Hàm thuần (ghim bởi `tests/test_encoder_probe.py`)
 `raddino_preprocess`, `medsiglip_preprocess`, `grid_tokens` (patch theo hàng → gộp trung bình).
 

@@ -1400,6 +1400,15 @@ study (not image) → anchor + ≤1 auxiliary view
   already shown ~0 on views_2. Test PE AUROC Pos +0.0159* is descriptive only (the PE claim
   was pre-declared on val and failed). The two effects swap between splits; neither
   replicates. Record: `docs/handoff/PLAN-2026-10-27-multi-view-test-auroc.md`.
+  🧪 **Residual-lateral tooling, 2026-11-04 (user-approved, CPU only so far; NOT RUN on GPU):** OFF
+  (`run_20261024_nomv`) stays frozen; a separate lateral expert's log-probs are added to OFF's at the
+  OUTPUT, for PL studies only (`scripts/residual_stack.py`, R1 cross-fitted on val; every non-PL study keeps
+  OFF's probabilities bit for bit). Experts: `scripts/lateral_expert_fit.py` (L = lateral image, C = frontal
+  control, same PL studies, one frozen encoder, per seed). Lateral features: `encoder_probe_features.py
+  --views lateral` (opt-in; `keys.npy` = frontal-anchor key, `image_keys.npy` = lateral key). Re-key:
+  `training/evaluation/view_keys.py`. Reading rule fixed before any number: T = the F1-5 findings, metric =
+  mean AP of the Positive class on val PL, NB from 3 expert seeds. Trap: `fit_severity_cutpoints` treats
+  `-1` as missing, probe features write `-100`. Plan: `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
 - **Every encoder keeps its native scale; nothing is pooled or dropped on the way
   into MHCAC.** This is the point of running two of them, and until 2026-08-14
   the code did the opposite: `cnn_downsampler` squeezed BioViL 14x14 → 7x7, and
