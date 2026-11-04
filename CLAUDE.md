@@ -504,6 +504,17 @@ after the deletion.
   pilot is now numbers-in-git only — none can be re-scored, resumed or probed.
   Older sections of this file that cite checkpoints or `.npz` of those runs
   describe what *was* on disk.
+
+⚠ **STORAGE LAYOUT SINCE 2026-11-04 (user request): finished run dirs live on the data drive,
+`/mnt/drive1tb/meta-cxr-runs/<run>`, with a symlink `~/<run>` left in `/home`**, so every old path
+(`~/run_20261005_paper/...`, `~/run_20261024_nomv/...`, `~/stage2_p2_20261011/...`) still resolves.
+22 dirs moved (copy, sha256 of every file compared, then the `/home` copy deleted; 0 mismatches), incl.
+`run_20261005_paper`, `run_20261024_nomv`, `stage2_p2_20261011`, `stage2_paper_20261007_v3`, the pilots
+(`auxdrop_pilot_20261025`, `seednoise_20261026`, `latefusion_*`, `auxtok*`, `s2*`, `qrefit*`, ...).
+Kept on `/home`: `medclip_work` (the Swin weights the YAML points at), caches, `reslat_*`. Deleted: 12
+smoke / dryrun / abort dirs and 43 loose `*smoke*` / `*abort*` files in `~`. Free after: `/home` 213 GB,
+drive 169 GB. The drive is mounted `ntfs3` **rw** and was marked dirty on 2026-10-14 (no Windows on the
+host, so no `chkdsk`): reads are fine; a NEW run still writes `run.output_dir` on `/home` (ext4).
 - ⚠ **The deletion marked the NTFS volume dirty:** `journalctl -k` at 14:47:31 shows
   nine `ntfs3(...): Inode r=... is not in use!` and `Mark volume as dirty due to
   NTFS errors`. The dataset counts above are intact. Run `chkdsk /f` from Windows
@@ -1418,7 +1429,14 @@ study (not image) → anchor + ≤1 auxiliary view
   lowers pooled AUROC Pos ~0.011 (PL and non-PL scores no longer on one scale; hypothesis); wF1 / F1-5 flat.
   The 10-31 encoder-probe features (`~/encprobe_20261031`) were deleted from the host; frontal features were
   re-extracted into `~/reslat_20261104/{val,train}_front` and reproduce the 10-31 label counts. Test not read.
-  🧪 **Step 1 code (CPU only, NOT RUN on GPU):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
+  ❌ **Step 1 RAN on GPU 2026-11-04 (`~/reslat_lora_20261104/`, val PL n=797): gate G1 FAILS -> LoRA branch stopped
+  by the pre-declared rule.** G1(a) `L_lora - L_frozen` AP_pos(T) -0.0011 [-0.0193, +0.0154] (needed lower > 0 and
+  > NB/sqrt3 0.0041); LoRA does not make Swin read the lateral better on T (macro AP "present" over 14 rises ~0.01,
+  descriptive). G1(b) with L_lora + C_lora: D1 +0.0186 [+0.0028, +0.0363], D2 +0.0141 [+0.0002, +0.0289] (script says
+  pass; lower bound at the zero boundary), Dperm -0.0121. Descriptive, L_frozen (103k + aug) + C_lora: D2 +0.0122
+  [-0.0011, +0.0297] -> PARTIAL, as step 0. Lateral-specific gain still NOT ESTABLISHED; no step 2, test not read.
+  9 fits, 7-15 min each, 3,636 MiB; G0 / G2 passed. Record: the plan's "Execution report — Bước 1".
+  🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE
   pass: anchor `swin_image` = frontal, `aux_swin_image` = lateral), `scripts/lateral_lora_fit.py` (arms L_frozen /

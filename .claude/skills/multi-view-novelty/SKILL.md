@@ -186,6 +186,10 @@ The novelty only counts if it survives review. So:
   Pleural Effusion not helped. L alone trails C by 0.022-0.068 -> gate G0 "needs step 1" (LoRA on Swin, approved,
   not built yet). Pooled all-val AUROC Pos drops ~0.011 in every residual arm. Not a multi-view claim.
   `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
+- **Step 1, LoRA on Swin for the lateral (GPU 2026-11-04, val PL, 3 seeds): G1 FAILS -> LoRA branch stopped.**
+  G1(a) L_lora - L_frozen -0.0011 [-0.0193, +0.0154]; G1(b) D2 +0.0141 [+0.0002, +0.0289] sits at the zero boundary,
+  and with L_frozen D2 +0.0122 [-0.0011, +0.0297]. Lateral-specific gain NOT ESTABLISHED. No step 2, no test reading
+  without a new user decision.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 

@@ -480,7 +480,9 @@ multi-view (kết quả âm): `docs/KET_QUA_MULTI_VIEW.md`.
 val có ảnh lateral, chuyên gia Swin đóng băng cộng vào OFF tăng AP lớp Positive trung bình F1-5 +0,0168
 [+0,0022; +0,0340], nhưng phần đặc thù lateral (so với một chuyên gia frontal đối chứng) +0,0129 [−0,0002; +0,0279]
 chưa xác lập, nên kết luận là PARTIAL: lợi ích chủ yếu đến từ việc ghép thêm một mô hình. RAD-DINO và MedSigLIP không
-qua. Bước tiếp (đã duyệt): LoRA cho Swin trên ảnh lateral. Chi tiết: `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
+qua. **Bước 1 (LoRA cho Swin trên ảnh lateral, 2026-11-04): không qua cổng G1, dừng nhánh LoRA.** LoRA không làm
+chuyên gia lateral tốt hơn (−0,0011 [−0,0193; +0,0154]); phần đặc thù lateral vẫn chưa xác lập; test chưa đọc.
+Checkpoint các run đã chuyển sang `/mnt/drive1tb/meta-cxr-runs/` (symlink giữ ở `~`). Chi tiết: `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
 
 **Kiểm tra đầu vào và recall của Stage 1 (2026-10-29, chỉ CPU, chỉ đọc dự đoán của `run_20261005_paper`).**
 Kết luận chính: **đầu vào không phải nguyên nhân chính của việc bỏ sót.**

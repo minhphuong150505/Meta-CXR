@@ -1,6 +1,6 @@
 # Kết quả multi-view (View Fusion): tổng hợp, kết quả âm
 
-Cập nhật 2026-11-04 (thêm mục 7). Tài liệu này gom mọi thí nghiệm nhằm trả lời một câu hỏi:
+Cập nhật 2026-11-04 (thêm mục 7 và kết quả Bước 1). Tài liệu này gom mọi thí nghiệm nhằm trả lời một câu hỏi:
 **dùng thêm ảnh thứ hai của study (thường là ảnh lateral) có giúp Stage 1 phân
 loại tốt hơn so với chỉ dùng ảnh chính hay không?** Câu hỏi đặt ra từ 2026-10-25,
 khi user muốn View Fusion là tính mới của luận văn.
@@ -177,7 +177,19 @@ C là cùng head nhưng đọc ảnh frontal, để tách "ghép thêm một mô
 Theo quy tắc: Swin qua D1 nhưng không qua D2, nên kết luận là "lợi ích chủ yếu đến từ việc ghép thêm một mô hình";
 phần đặc thù lateral chưa xác lập (cận dưới sát 0). Tràn dịch màng phổi không được lợi. Chuyên gia lateral đứng một
 mình kém chuyên gia frontal 0,022 / 0,040 / 0,068, nên bước tiếp là thích nghi encoder cho ảnh lateral bằng LoRA
-(Bước 1, đã duyệt, chưa chạy). Trên toàn val, AUROC Pos gộp của mọi arm residual giảm khoảng 0,011; wF1 và F1-5 phẳng.
+(Bước 1). Trên toàn val, AUROC Pos gộp của mọi arm residual giảm khoảng 0,011; wF1 và F1-5 phẳng.
+
+**Bước 1 (LoRA cho Swin, train trên 103.062 study PL, 3 seed, chạy 2026-11-04): không qua cổng G1.**
+
+| so sánh | AP_pos(T) val PL |
+|---|---|
+| G1(a) L_lora − L_frozen | −0,0011 [−0,0193; +0,0154] (cần cận dưới > 0 và > 0,0041) |
+| D1 với L_lora | +0,0186 [+0,0028; +0,0363] |
+| D2 với L_lora, C_lora | +0,0141 [+0,0002; +0,0289] (cận dưới sát 0) |
+| D2 với L_frozen, C_lora (mô tả) | +0,0122 [−0,0011; +0,0297] |
+
+LoRA không làm encoder đọc ảnh lateral tốt hơn trên chỉ số chính, nên theo quy tắc chốt trước nhánh LoRA dừng.
+Phần đặc thù lateral vẫn chưa xác lập; lợi ích D1 vẫn chủ yếu đến từ việc ghép thêm một mô hình.
 Test chưa đọc. Nguồn: `PLAN-2026-11-04-residual-lateral.md`.
 
 ## Vì sao có thể không giúp (giả thuyết, chưa chứng minh)

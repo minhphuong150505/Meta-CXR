@@ -507,3 +507,37 @@ $PY scripts/residual_stack.py ... --expert L=$(e L_frozen) --expert C=$(e C_lora
 
 Dừng nếu: số PL khác 797 (val); bất kỳ kiểm tra của cache; G0 hoặc G2 hỏng; smoke vượt 14 GB hoặc ước tổng
 quá 12 giờ GPU (báo user trước khi chạy tiếp).
+
+## Execution report — Bước 1 (GPU, 2026-11-04, val PL n=797; test KHÔNG đọc)
+
+Chuỗi `~/reslat_lora_20261104/` trên host, chạy một lần từ commit `8b3ecd7`, kết thúc 15:11 (`RESLAT_LORA_DONE`,
+không ABORT). Cache: val 797 PL, train 103.062 PL; G0 qua; smoke qua. 9 fit (3 arm x 3 seed), mỗi fit
+7–15 phút, max mem 3.636 MiB; G2 qua ở cả 9 (backbone bit-identical; LoRA đổi 0,06–0,14 tương đối ở L_lora/C_lora,
+đúng 0 ở L_frozen).
+
+**G1(a) — KHÔNG QUA.** `L_lora − L_frozen`, AP_pos(T) val PL: **−0,0011 [−0,0193, +0,0154]**, NB/√3 0,0041.
+Theo seed: L_frozen 0,4621 / 0,4587 / 0,4590; L_lora 0,4621 / 0,4580 / 0,4564. LoRA không làm encoder đọc
+lateral tốt hơn trên T. (Mô tả, không quyết định: macro AP "có bệnh" trên cả 14 bệnh tăng 0,384–0,387 →
+0,395–0,400; chỉ số quyết định không tăng.)
+
+**G1(b) (đọc theo quy tắc, nhưng (a) đã không qua):** `residual_stack.py`, L = L_lora, C = C_lora:
+
+| hiệu | AP_pos(T) | NB/√k |
+|---|---|---|
+| D1 = (OFF+L) − OFF | +0,0186 [+0,0028, +0,0363] | 0,0019 |
+| Dperm (lateral hoán vị) | −0,0121 [−0,0315, +0,0084] | 0,0014 |
+| D2 = (OFF+C+L) − (OFF+C) | +0,0141 [**+0,0002**, +0,0289] | 0,0037 |
+| D3 = (OFF+C) − OFF | +0,0028 [−0,0048, +0,0117] | 0,0002 |
+| L_alone − C_alone | +0,0058 [−0,0363, +0,0535] | 0,0051 |
+
+Script in "QUA" cho (b). Cận dưới của D2 là +0,0002, nằm sát 0 (một bound cách 0 dưới 0,0005 có thể đổi dấu
+theo nhiễu Monte-Carlo của bootstrap).
+
+Mô tả (L = L_frozen 103k + augmentation, C = C_lora): D1 +0,0154 [+0,0017, +0,0350], D2 +0,0122
+[−0,0011, +0,0297] → PARTIAL, giống Bước 0 Swin (D2 +0,0129 [−0,0002, +0,0279]).
+
+**Kết luận theo cổng G1 đã chốt trước:** "Không qua (a): dừng nhánh LoRA." Phần D2 của (b) với LoRA
+(+0,0141, cận dưới +0,0002) không đổi kết luận đó: LoRA không cải thiện chuyên gia lateral (G1a ≈ 0), và
+D2 với L_frozen không qua, nên khác biệt nhỏ giữa hai lượt đọc D2 không đến từ lateral tốt hơn. Bằng chứng
+"đặc thù lateral" vẫn KHÔNG ĐƯỢC XÁC LẬP; lợi ích D1 (~+0,015–0,019) vẫn chủ yếu là ghép thêm một mô hình.
+Không chạy Bước 2 hay đọc test khi chưa có quyết định mới của user.
