@@ -1436,6 +1436,14 @@ study (not image) → anchor + ≤1 auxiliary view
   pass; lower bound at the zero boundary), Dperm -0.0121. Descriptive, L_frozen (103k + aug) + C_lora: D2 +0.0122
   [-0.0011, +0.0297] -> PARTIAL, as step 0. Lateral-specific gain still NOT ESTABLISHED; no step 2, test not read.
   9 fits, 7-15 min each, 3,636 MiB; G0 / G2 passed. Record: the plan's "Execution report — Bước 1".
+  ⚠ **USER DECISION 2026-11-04 (after step 1): "Residual + Swin LoRA (103k PL)" is the MAIN development
+  direction, option B (residual trained inside Stage 1 on the train split), overriding the pre-declared G1 stop.**
+  Claims stay as measured: LoRA adds nothing over frozen Swin on T, D2 is at the zero boundary ("PARTIAL"), pooled
+  all-val AUROC Pos ~-0.011. YAML unchanged, test not read. 103,062 = every train PL study, so L already uses all
+  lateral data. `lateral_lora_fit.py` saves NO weights (val probabilities only), so B must retrain L/C. Steps B0
+  (OFF in-sample CE/ECE on train, rule CE_train < 0.9 CE_val) -> B1 (cross-fit experts on train, save weights) -> B2
+  (R2 on cached features, read on val PL by section 7) -> B3 (`mode: residual` only if R2 beats R1); each needs
+  user approval. Plan: the handoff's "Quyết định của user sau Bước 1" section.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

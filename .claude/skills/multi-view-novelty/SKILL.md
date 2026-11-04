@@ -190,6 +190,9 @@ The novelty only counts if it survives review. So:
   G1(a) L_lora - L_frozen -0.0011 [-0.0193, +0.0154]; G1(b) D2 +0.0141 [+0.0002, +0.0289] sits at the zero boundary,
   and with L_frozen D2 +0.0122 [-0.0011, +0.0297]. Lateral-specific gain NOT ESTABLISHED. No step 2, no test reading
   without a new user decision.
+- **User decision 2026-11-04: Residual + Swin LoRA is the MAIN direction, option B (train the residual inside
+  Stage 1 on train), overriding the G1 stop.** Claims unchanged (LoRA = frozen on T, D2 at zero boundary -> PARTIAL).
+  Steps B0-B3, each needing approval, in `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 

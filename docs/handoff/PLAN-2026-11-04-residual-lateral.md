@@ -541,3 +541,35 @@ Mô tả (L = L_frozen 103k + augmentation, C = C_lora): D1 +0,0154 [+0,0017, +0
 D2 với L_frozen không qua, nên khác biệt nhỏ giữa hai lượt đọc D2 không đến từ lateral tốt hơn. Bằng chứng
 "đặc thù lateral" vẫn KHÔNG ĐƯỢC XÁC LẬP; lợi ích D1 (~+0,015–0,019) vẫn chủ yếu là ghép thêm một mô hình.
 Không chạy Bước 2 hay đọc test khi chưa có quyết định mới của user.
+
+## Quyết định của user sau Bước 1 (2026-11-04) và kế hoạch B (CHƯA chạy)
+
+**Quyết định (user, 2026-11-04):** chọn "Residual + Swin LoRA (103k study PL)" làm **hướng phát triển chính**, và
+chọn phương án **B**: đưa residual vào Stage 1 và train trên tập train. Đây là quyết định của user, **đi ngược cổng G1
+đã chốt trước** ("Không qua (a): dừng nhánh LoRA"). Các số ở trên không đổi và phải nêu cạnh mọi claim:
+- G1(a) LoRA so với frozen: −0,0011 [−0,0193, +0,0154], tức LoRA không cải thiện chuyên gia lateral trên T;
+- D1 có thật (+0,0186 [+0,0028, +0,0363]), nhưng Swin đóng băng cho mức gần bằng (+0,0154 / +0,0168);
+- D2 có cận dưới +0,0002, sát 0, nên "đặc thù lateral" CHƯA được xác lập; claim hiện tại chỉ là "PARTIAL: lợi ích
+  chủ yếu đến từ việc ghép thêm một mô hình";
+- ở Bước 0, AUROC Pos gộp trên toàn val giảm khoảng 0,011 (giả thuyết: thang điểm PL và non-PL lệch nhau).
+YAML không đổi. Test vẫn chưa đọc. 103.062 = toàn bộ study PL của train, nên L_lora đã dùng hết dữ liệu lateral có
+được; phần "toàn bộ dữ liệu" ở B là train cái residual (Δ) trên tập train thay vì fit R1 trên 797 study val.
+
+**Trở ngại đã biết:** `lateral_lora_fit.py` chỉ lưu xác suất trên val, KHÔNG lưu trọng số LoRA và head. Muốn có đầu
+vào trên tập train thì phải train lại L (và C), lần này có lưu trọng số. Logit của OFF và của L trên chính dữ liệu đã
+train chúng là in-sample (quá tự tin), nên Δ học trên đó dễ tin OFF/L quá mức.
+
+**Các bước (mỗi bước cần user duyệt riêng; chưa bước nào được duyệt chạy):**
+- **B0 — đo OFF in-sample (GPU ~1–1,5 h, không sửa code).** Chạy evaluate-only của OFF
+  (`run_20261024_nomv` phase1c `checkpoint_best`) trên split train, ghi npz vào thư mục mới trên `/home`. So CE và ECE
+  của OFF trên train PL với val PL. Quy tắc (mục 2b, chốt trước): nếu `CE_train < 0,9 × CE_val` thì OFF quá tự tin;
+  khi đó hỏi user chọn (i) giữ R1, (ii) cross-fit OFF 2 fold (~10 h), hoặc (iii) hiệu chỉnh nhiệt độ.
+- **B1 — chuyên gia cross-fit trên train (sửa code nhỏ + GPU ~3 h).** Thêm vào `lateral_lora_fit.py`: lưu trọng số
+  LoRA và head, và tuỳ chọn cross-fit 2 fold trên train PL (mỗi fold train trên nửa kia), để có xác suất/token
+  out-of-fold cho cả 103.062 study PL train. Arm L_lora và C_lora, 3 seed.
+- **B2 — residual R2 trên đặc trưng đã cache (code mới + GPU vài giờ).** `z = z_OFF.detach() + Δ`, Δ là head nhỏ
+  (14 query, 1–2 lớp cross-attention, d=256) đọc token lateral của L và logit OFF, Linear cuối khởi tạo 0, chỉ áp cho
+  study PL. Train trên train PL, chọn epoch theo holdout của train, đọc trên val PL theo đúng mục 7 (AP_pos(T),
+  D1 = R2(OFF+L) − OFF, D2 = R2(OFF+C+L) − R2(OFF+C), NB từ 3 seed), và so R2 với R1 trên val.
+- **B3 — tích hợp `model.view_fusion.mode: residual` / phase `phase1r`** chỉ khi R2 thắng R1 trên val, kèm các test CPU
+  ở mục 2b. Test đọc một lần ở Bước 3, sau khi user duyệt ứng viên cuối.
