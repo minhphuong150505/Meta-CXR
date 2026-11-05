@@ -669,3 +669,25 @@ Không cờ = Bước 0/1 y như cũ. Test: `tests/test_residual_lateral.py` (+3
 - **Cổng sang B2b (chốt trước):** B2b (R2 cấp token) chỉ đáng làm nếu `b2a_train` có D1 không kém `b2a_valcv` (hiệu D1 ≥ 0,
   mô tả) — tức dữ liệu train không làm R1 tệ đi. Nếu kém, báo user trước khi viết code B2b.
 - Báo cả AUROC Pos gộp trên toàn val (Bước 0 thấy giảm ~0,011), wF1/F1-5 theo cutpoint, per-finding. Test không đọc.
+
+## Execution report — B2a (CPU 2026-11-05, `~/reslat_b2a_20261105/`; test KHÔNG đọc)
+
+Host ở `eda18df`. Lượt `b2a_train` đầu dừng ở kiểm tra trùng key (sai, xem trên), chưa ra số; chạy lại một lần thành
+`b2a_train2`. Val PL n = 797 (nhóm PL 797 / F1 930 / other 81 khớp), L = L_lora, C = C_lora, 3 seed, chuyên gia val =
+trung bình 2 mô hình fold. AP_pos(T), CI bootstrap 2.000:
+
+| hiệu | `b2a_train2` (R1 fit trên 103.062 train PL) | `b2a_valcv` (R1 cross-fit val, đối chứng) |
+|---|---|---|
+| D1 = (OFF+L) − OFF | +0,0158 [+0,0016, +0,0326], NB/√3 0,0011 | +0,0164 [+0,0010, +0,0332], NB/√3 0,0019 |
+| D2 = (OFF+C+L) − (OFF+C) | +0,0092 [−0,0033, +0,0234] | +0,0122 [−0,0011, +0,0260] |
+| D3 = (OFF+C) − OFF | +0,0058 [−0,0006, +0,0130] | +0,0028 [−0,0049, +0,0117] |
+| Dperm | −0,0153 [−0,0348, +0,0072] | −0,0119 [−0,0314, +0,0097] |
+| rào chắn non-T (D1) | +0,0097 | +0,0089 |
+| phán quyết (mục 7) | **PARTIAL** | PARTIAL |
+
+Mô tả: cutpoint trên PL, D1 của `b2a_train2` wF1 +0,0026, F1-5 +0,0059, macro recall +0,0041. Toàn val: AUROC Pos trung bình
+OFF 0,8029 → OFF+L 0,7943 (−0,0086; Bước 0 thấy −0,011), wF1 0,8579 → 0,8591, F1-5 0,8064 → 0,8093.
+
+**Cổng sang B2b (chốt trước): KHÔNG QUA.** D1(`b2a_train2`) − D1(`b2a_valcv`) = −0,0006 < 0 (rất nhỏ, trong nhiễu, nhưng quy
+tắc là ≥ 0). Fit R1 trên 129 lần nhiều study hơn không làm D1 tăng; D2 vẫn không qua (lần thứ tư: Bước 0, Bước 1 frozen,
+`b2a_valcv`, `b2a_train2`). Theo kế hoạch: báo user trước khi viết code B2b; B2b chưa bắt đầu.
