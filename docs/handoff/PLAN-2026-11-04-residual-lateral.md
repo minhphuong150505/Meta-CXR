@@ -573,3 +573,26 @@ train chúng là in-sample (quá tự tin), nên Δ học trên đó dễ tin OF
   D1 = R2(OFF+L) − OFF, D2 = R2(OFF+C+L) − R2(OFF+C), NB từ 3 seed), và so R2 với R1 trên val.
 - **B3 — tích hợp `model.view_fusion.mode: residual` / phase `phase1r`** chỉ khi R2 thắng R1 trên val, kèm các test CPU
   ở mục 2b. Test đọc một lần ở Bước 3, sau khi user duyệt ứng viên cuối.
+
+## Execution report — B0 (GPU, 2026-11-04 22:00 → 2026-11-05 00:31; test KHÔNG đọc)
+
+Chạy một lần (`~/reslat_b0_20261104/`, host ở `39b87be`, script ad hoc `~/b0_chain.sh` + `~/b0_calib.py`, chỉ in
+số tổng hợp). OFF = `run_20261024_nomv` phase1c `checkpoint_best` (bản chép sang `/home`, `cmp` khớp), evaluate-only
+với các override NOMV, `run.train_splits=[]` (train không xáo, không bỏ batch), augmentation train tắt. rc=0,
+"Loading evaluation weights" có; `multi_view=False` ở cả hai split.
+
+- **G1:** lượt val mới trùng npz val đã lưu của OFF từng bit (khoá giống nhau, max |Δp| = 0,0).
+- **CE / ECE (ô có nhãn, ECE 15 bin trên top-label):**
+
+| tập | study | CE | ECE | acc | conf TB |
+|---|---|---|---|---|---|
+| train PL | 103.062 | 0,3668 | 0,0392 | 0,877 | 0,838 |
+| val PL | 797 | 0,3652 | 0,0396 | 0,880 | 0,841 |
+| train toàn bộ | 222.758 | 0,4712 | 0,0221 | 0,826 | 0,808 |
+| val toàn bộ | 1.808 | 0,4858 | 0,0186 | 0,819 | 0,808 |
+
+- **Quy tắc (chốt trước):** `CE_train < 0,9 × CE_val`? Trên PL tỉ số **1,004**, trên toàn bộ 0,970 → **KHÔNG quá tự
+  tin**. Logit của OFF trên train dùng được làm đầu vào cho Δ; không cần cross-fit OFF. Bước tiếp theo theo kế hoạch: B1
+  (chờ user duyệt).
+- Thời gian: val 73 s, train 2 h 29 m (~25 study/s). Sau lượt chạy, `nvidia-smi` trên host báo
+  "Driver/library version mismatch" (driver được cập nhật trong lúc máy chạy); cần khởi động lại trước lượt GPU sau.
