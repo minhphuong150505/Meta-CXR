@@ -654,7 +654,9 @@ thứ tự seed với `--expert`). R1 (`r1_trainfit`, cùng hàm fit từng find
 trên train (B0) và dự đoán out-of-fold của chuyên gia (B1), rồi áp lên MỌI study val PL; không còn cross-fit trên val.
 Chuyên gia trên val = trung bình 2 mô hình fold (`--expert L=<s_f0>+<s_f1>`, `load_expert_parts(..., "mean")`).
 Dperm: L xáo trong train khi fit và trong từng nửa val khi chấm. Cutpoint, bootstrap, NB, phán quyết giữ nguyên.
-Từ chối: thiếu một trong hai cờ, tên chuyên gia khác nhau, nhãn chuyên gia khác nhãn OFF, train và val trùng study.
+Từ chối: thiếu một trong hai cờ, tên chuyên gia khác nhau, nhãn chuyên gia khác nhãn OFF. (Kiểm tra "train và val
+trùng key" ban đầu đã bị BỎ 2026-11-05: key là digest của chỉ số dòng trong từng split, nên train và val trùng 217/797 key
+dù hai split tách theo bệnh nhân; lượt đầu `b2a_train` dừng vì kiểm tra sai này, chưa ra số.)
 Không cờ = Bước 0/1 y như cũ. Test: `tests/test_residual_lateral.py` (+3).
 
 **Hai lượt (CPU, host):**

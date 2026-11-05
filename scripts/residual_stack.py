@@ -491,8 +491,9 @@ def main(argv=None) -> int:
         if set(train["experts"]) != set(experts):
             raise SystemExit("--train-expert names differ from --expert names")
         train.update(p_off=np.asarray(toff.probabilities, dtype=np.float64)[o_tr], labels=y_tr, keys=tr_keys)
-        if set(tr_keys.tolist()) & set(pl_keys.tolist()):
-            raise SystemExit("train and val PL studies overlap")
+        # No cross-split key check: sample keys digest the split-local annotation row index
+        # (batch["image_id"]), so train and val keys can coincide (217 of 797 on 2026-11-05) although
+        # the splits are patient- and study-disjoint by construction.
         print(f"[residual] B2a: R1 fitted on {len(tr_keys)} train PL studies", flush=True)
 
     result = run(p_all[pl], y_all[pl], names, pl_keys, experts, lam=args.lam, boot_n=args.boot, train=train)

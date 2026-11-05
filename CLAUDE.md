@@ -1457,6 +1457,8 @@ study (not image) → anchor + ≤1 auxiliary view
   🧪 **B2a code (CPU 2026-11-05):** `residual_stack.py --train-off <OFF train npz> --train-expert L=<f0_oof>+<f1_oof>,...`
   fits R1 on all 103,062 train PL (OOF experts) and scores val PL (experts = mean of the fold models, `--expert L=a+b`);
   no flag = steps 0/1 unchanged. Reading rule and the gate to B2b: the handoff's "B2a" section.
+  ⚠ Trap: prediction `sample_keys` are split-LOCAL (digest of the annotation row index), so a train key can equal a
+  val key (217 of 797 val PL studies); never test train/val overlap by key.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE
