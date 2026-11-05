@@ -29,4 +29,12 @@ bootstrap ghép cặp 2.000 lần seed 16, NB từ seed; qua khi cận dưới >
 lấy thứ tự finding từ npz của OFF. G1(b) chạy bằng [`residual_stack.py`](residual_stack.py.doc.md) với
 `L=L_lora`, `C=C_lora`.
 
-Hàm thuần `should_stop`, `shared_rows`, `compare`, `load_set` ghim bởi `tests/test_lateral_lora.py`.
+## B1 (2026-11-05, opt-in): cross-fit và lưu trọng số
+`--n-folds N --fold K` (đi cùng nhau): fold theo hash blake2b của key study (`fold_of`, `fold_rows`), độc lập seed
+và thứ tự; mô hình train trên các fold khác, holdout 10% lấy trong phần đó (`fit_holdout_rows`; `pool=None` =
+`holdout_split` như Bước 1), dự đoán fold K bằng trọng số epoch được chọn → `<stem>_oof.npz`. `--save-weights` ghi
+`<stem>_weights.pt` (head + LoRA của epoch được chọn). Cổng **G3**: nạp lại trọng số đó và dự đoán lại 256 study val
+phải trùng xác suất đã lưu (≤ 1e-4). Tên file: `out_stem` (`<arm>_s<seed>` hoặc `<arm>_s<seed>_f<K>of<N>`).
+
+Hàm thuần `should_stop`, `shared_rows`, `compare`, `load_set`, `fold_of`, `fold_rows`, `fit_holdout_rows`,
+`out_stem` ghim bởi `tests/test_lateral_lora.py`.

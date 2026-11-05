@@ -596,3 +596,33 @@ với các override NOMV, `run.train_splits=[]` (train không xáo, không bỏ 
   (chờ user duyệt).
 - Thời gian: val 73 s, train 2 h 29 m (~25 study/s). Sau lượt chạy, `nvidia-smi` trên host báo
   "Driver/library version mismatch" (driver được cập nhật trong lúc máy chạy); cần khởi động lại trước lượt GPU sau.
+
+## B1 — chuyên gia cross-fit trên train PL (code CPU 2026-11-05, user duyệt "cả 2"; GPU CHƯA chạy)
+
+**Code (opt-in, mặc định = Bước 1 không đổi):** `lateral_lora_fit.py fit` thêm `--n-folds N --fold K` (đi cùng nhau)
+và `--save-weights`. Fold gán theo hash blake2b của key study (`fold_of`), không phụ thuộc seed hay thứ tự dòng, nên
+mọi arm và seed dùng cùng một cách chia (dòng out-of-fold của L và C khớp nhau). Mô hình fold K train trên các study
+không thuộc fold K; holdout 10% (`holdout_split`) lấy bên trong phần đó; dự đoán các study fold K bằng trọng số của
+epoch được chọn. Không có `--n-folds` thì `fit_holdout_rows(y, None)` = `holdout_split(y)` y như cũ.
+`vision_encoders/lora.py` thêm `load_lora_state_dict` (nghịch đảo `lora_state_dict`, từ chối khoá thiếu/thừa/sai shape).
+Ra thêm: `<arm>_s<seed>_f<K>of<N>.npz` (val PL, định dạng cũ), `..._oof.npz` (train PL fold K), `..._weights.pt`
+(head + LoRA của epoch được chọn), `report_<stem>.json`. Cổng mới **G3**: nạp lại trọng số đã chọn rồi dự đoán 256 study
+val phải trùng xác suất đã lưu (max |Δp| ≤ 1e-4), không thì dừng. Test CPU: `tests/test_lateral_lora.py` (+5).
+
+**Chạy (một lần, sau khi host khởi động lại; guard như mọi lần: `ntfs3`, `nvidia-smi` chạy được và GPU rảnh, không
+job khác, thư mục ra chưa có):**
+```bash
+OUT=~/reslat_b1_20261105; C=~/reslat_lora_20261104/cache; R=~/reslat_20261104
+# R0 (tái lập Bước 1): L_lora s16 không fold, có --save-weights
+$PY scripts/lateral_lora_fit.py fit --arm L_lora --seed 16 --cache-dir $C --ref-dir $R --save-weights --out-dir $OUT/repro
+# 12 fit: {L_lora, C_lora} x {16,17,18} x fold {0,1}
+for A in L_lora C_lora; do for S in 16 17 18; do for K in 0 1; do
+  $PY scripts/lateral_lora_fit.py fit --arm $A --seed $S --cache-dir $C --ref-dir $R --n-folds 2 --fold $K \
+      --save-weights --out-dir $OUT/folds; done; done; done
+```
+**Quy tắc đọc (chốt trước, chỉ là cổng kỹ thuật, không phải claim):**
+- R0: cùng epoch được chọn với `~/reslat_lora_20261104/experts/report_L_lora_s16.json` và |Δ AP_pos(T) val PL| ≤ 0,002
+  so với `L_lora_s16.npz` của Bước 1 (GPU bf16 không bảo đảm bit-identical; ghi max |Δp|). Không qua → dừng, báo user.
+- Mỗi fit: G0, G2, G3 qua; hai fold của cùng arm/seed phủ đúng 103.062 study train PL, không trùng.
+- Báo cáo (mô tả): macro AP "có bệnh" out-of-fold trên train so với trên val, theo arm/seed.
+- Không đọc test. B2 (residual R2) cần user duyệt riêng.

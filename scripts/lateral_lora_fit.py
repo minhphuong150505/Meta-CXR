@@ -81,6 +81,37 @@ def should_stop(history: list[float], patience: int = PATIENCE) -> bool:
     return max(history[-patience:]) <= max(history[:-patience])
 
 
+def fold_of(keys, n_folds: int) -> np.ndarray:
+    """Fold id of each study from a hash of its key: deterministic, independent of row order and of
+    the seed, so every arm and seed sees the same split (L and C out-of-fold rows line up)."""
+    import hashlib
+
+    if n_folds < 2:
+        raise ValueError("n_folds must be >= 2")
+    return np.asarray([int.from_bytes(hashlib.blake2b(str(k).encode(), digest_size=8).digest(), "big") % n_folds
+                       for k in np.asarray(keys).tolist()], dtype=np.int64)
+
+
+def fold_rows(keys, n_folds: int, fold: int) -> tuple[np.ndarray, np.ndarray]:
+    """(rows the fold model trains on, rows it predicts out of fold)."""
+    if not 0 <= fold < n_folds:
+        raise ValueError(f"fold {fold} not in [0, {n_folds})")
+    f = fold_of(keys, n_folds)
+    return np.flatnonzero(f != fold), np.flatnonzero(f == fold)
+
+
+def fit_holdout_rows(labels: np.ndarray, pool: np.ndarray | None) -> tuple[np.ndarray, np.ndarray]:
+    """``holdout_split`` on the rows a model may train on. ``pool=None`` is Step 1's split, unchanged."""
+    if pool is None:
+        return holdout_split(labels)
+    fit, hold = holdout_split(labels[pool])
+    return pool[fit], pool[hold]
+
+
+def out_stem(arm: str, seed: int, n_folds: int, fold: int | None) -> str:
+    return f"{arm}_s{seed}" if not n_folds else f"{arm}_s{seed}_f{fold}of{n_folds}"
+
+
 def shared_rows(cache_keys: np.ndarray, ref_keys: np.ndarray, ref_is_pl_only: bool):
     """(cache rows, ref rows) of the studies both hold. A Step-0 lateral dir holds PL studies only,
     so every one of its keys must be in the cache (it is a subset of the same split's PL studies)."""
@@ -138,14 +169,20 @@ def cmd_fit(args) -> int:
         SWIN_STAGE34_QV,
         apply_lora,
         base_state_dict,
+        load_lora_state_dict,
         lora_modules,
         lora_parameters,
+        lora_state_dict,
         set_lora_train,
     )
     from vision_encoders.swin.swin_encoder import SwinEncoder
 
     view, use_lora = ARMS[args.arm]
-    out_npz = args.out_dir / f"{args.arm}_s{args.seed}.npz"
+    if bool(args.n_folds) != (args.fold is not None):
+        raise SystemExit("--n-folds and --fold go together")
+    stem = out_stem(args.arm, args.seed, args.n_folds, args.fold)
+    keep_best = bool(args.save_weights or args.n_folds)
+    out_npz = args.out_dir / f"{stem}.npz"
     if out_npz.exists():
         raise SystemExit(f"refusing to overwrite {out_npz}")
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -154,6 +191,7 @@ def cmd_fit(args) -> int:
     swin = SwinEncoder(model_name=model_name, backend="medclip", normalize=False, weights_path=weights,
                        frozen=True).to(device)
     report: dict = {"arm": args.arm, "view": view, "seed": args.seed, "lora": use_lora,
+                    "n_folds": args.n_folds, "fold": args.fold,
                     "hyper": {"r": LORA_R, "alpha": LORA_ALPHA, "dropout": LORA_DROPOUT, "head_lr": HEAD_LR,
                               "lora_lr": LORA_LR, "weight_decay": WEIGHT_DECAY, "epochs": args.epochs,
                               "patience": PATIENCE, "batch": BATCH},
@@ -163,11 +201,12 @@ def cmd_fit(args) -> int:
         report["lora_targets"] = apply_lora(swin.model, SWIN_STAGE34_QV, LORA_R, LORA_ALPHA, LORA_DROPOUT)
     initial = base_state_dict(swin)
 
-    tr_img, y_tr, _ = _load(args.cache_dir / "train", view)
+    tr_img, y_tr, tr_keys = _load(args.cache_dir / "train", view)
     va_img, y_val, va_keys = _load(args.cache_dir / "val", view)
-    fit, hold = holdout_split(y_tr)
-    print(f"[lora] {args.arm} s{args.seed}: fit {len(fit)}, holdout {len(hold)}, val {len(y_val)}, "
-          f"LoRA layers {len(report.get('lora_targets', []))}", flush=True)
+    pool, oof = fold_rows(tr_keys, args.n_folds, args.fold) if args.n_folds else (None, None)
+    fit, hold = fit_holdout_rows(y_tr, pool)
+    print(f"[lora] {stem}: fit {len(fit)}, holdout {len(hold)}, out-of-fold {0 if oof is None else len(oof)}, "
+          f"val {len(y_val)}, LoRA layers {len(report.get('lora_targets', []))}", flush=True)
 
     torch.manual_seed(args.seed)
     head = build_attention_probe([(49, swin.embed_dim)], [swin.embed_dim]).to(device)
@@ -200,7 +239,7 @@ def cmd_fit(args) -> int:
                 res.append(torch.softmax(head(*tokens(images[np.sort(i)], False)).float(), -1).cpu().numpy())
         return np.concatenate(res)
 
-    history, best, started = [], (-1.0, -1, None), time.time()
+    history, best, started, snapshot = [], (-1.0, -1, None), time.time(), None
     for epoch in range(epochs):
         swin.train(), head.train()
         set_lora_train(swin, use_lora)
@@ -229,6 +268,9 @@ def cmd_fit(args) -> int:
               f"{hold_ap:.4f} ({(time.time() - started) / 60:.1f} min)", flush=True)
         if hold_ap > best[0]:
             best = (hold_ap, epoch, predict(va_img, np.arange(len(y_val))))
+            if keep_best:
+                snapshot = ({k: v.detach().cpu().clone() for k, v in head.state_dict().items()},
+                            lora_state_dict(swin))
         if should_stop(history):
             break
 
@@ -243,8 +285,27 @@ def cmd_fit(args) -> int:
                   n_val=int(len(y_val)),
                   gate2={"backbone_bit_identical": identical, "lora_relative_change_min": min(rel.values(), default=0.0),
                          "lora_relative_change_max": max(rel.values(), default=0.0), "passed": g2})
+    if keep_best:
+        # Back to the selected epoch's weights. G3: they reproduce the saved val probabilities.
+        head.load_state_dict(snapshot[0])
+        load_lora_state_dict(swin, snapshot[1])
+        check = np.arange(min(256, len(y_val)))
+        g3 = float(np.abs(predict(va_img, check) - best[2][check]).max())
+        report["gate3_max_abs_dprob"] = g3
+        if g3 > 1e-4:
+            raise SystemExit(f"G3 FAILED: restored weights move val probabilities by {g3:.2e}")
+        if oof is not None:
+            p_oof = predict(tr_img, oof)
+            np.savez(args.out_dir / f"{stem}_oof.npz", keys=tr_keys[oof], probabilities=p_oof.astype(np.float32),
+                     labels=y_tr[oof])
+            report.update(n_oof=int(len(oof)), oof_macro_ap_present=macro_ap(p_oof, y_tr[oof]))
+        if args.save_weights:
+            import torch as _t
+            _t.save({"arm": args.arm, "seed": args.seed, "n_folds": args.n_folds, "fold": args.fold,
+                     "chosen_epoch": best[1], "hyper": report["hyper"], "lora_targets": report.get("lora_targets", []),
+                     "head": snapshot[0], "lora": snapshot[1]}, args.out_dir / f"{stem}_weights.pt")
     np.savez(out_npz, keys=va_keys, probabilities=best[2].astype(np.float32), labels=y_val)
-    (args.out_dir / f"report_{args.arm}_s{args.seed}.json").write_text(json.dumps(report, indent=2) + "\n")
+    (args.out_dir / f"report_{stem}.json").write_text(json.dumps(report, indent=2) + "\n")
     print(f"[lora] {args.arm} s{args.seed}: chosen epoch {best[1]}, holdout {best[0]:.4f}, val macro AP present "
           f"{report['val_macro_ap_present']:.4f}, max mem {report['max_mem_mib']:.0f} MiB; G2 "
           f"{'passed' if g2 else 'FAILED'} (bit-identical {identical}, LoRA change "
@@ -322,6 +383,9 @@ def main(argv=None) -> int:
     f.add_argument("--config", type=Path, default=_REPO_ROOT / "pretraining/configs/mimic_cxr_full.yaml")
     f.add_argument("--epochs", type=int, default=EPOCHS, help="smoke only; the reading rule uses 8")
     f.add_argument("--out-dir", type=Path, required=True)
+    f.add_argument("--n-folds", type=int, default=0, help="B1: cross-fit over train PL (0 = Step 1, no folds)")
+    f.add_argument("--fold", type=int, default=None, help="B1: which fold to predict out of fold")
+    f.add_argument("--save-weights", action="store_true", help="B1: save the selected epoch's head + LoRA")
     c = sub.add_parser("compare")
     c.add_argument("--base", required=True)
     c.add_argument("--new", required=True)

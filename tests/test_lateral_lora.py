@@ -249,3 +249,64 @@ def test_load_set_refuses_mismatched_seeds(tmp_path):
     assert name == "X" and len(probs) == 1 and np.array_equal(lab, y)
     with pytest.raises(SystemExit):
         fitmod.load_set(f"X={tmp_path / 'a.npz'},{tmp_path / 'b.npz'}")
+
+
+# ----------------------------------------------------------------------------- B1: folds, weight reload
+def test_load_lora_state_dict_roundtrip_and_refusals():
+    from vision_encoders.lora import load_lora_state_dict, lora_state_dict
+
+    a, b = _swin_like(), _swin_like()
+    apply_lora(a, SWIN_STAGE34_QV, r=2, alpha=4)
+    apply_lora(b, SWIN_STAGE34_QV, r=2, alpha=4)
+    with torch.no_grad():
+        for p in lora_parameters(a):
+            p.add_(torch.randn_like(p))
+    x = torch.randn(3, 8)
+    a.eval(), b.eval()
+    assert load_lora_state_dict(b, lora_state_dict(a)) == 16
+    assert torch.equal(a.forward(x), b.forward(x))
+    sd = lora_state_dict(a)
+    with pytest.raises(KeyError):
+        load_lora_state_dict(b, {k: v for k, v in list(sd.items())[1:]})
+    k0 = next(iter(sd))
+    with pytest.raises(ValueError):
+        load_lora_state_dict(b, {**sd, k0: torch.zeros(1, 1)})
+
+
+def test_fold_rows_partition_is_deterministic_and_order_free():
+    keys = np.array([f"k{i:05d}" for i in range(2000)])
+    tr0, oof0 = fitmod.fold_rows(keys, 2, 0)
+    tr1, oof1 = fitmod.fold_rows(keys, 2, 1)
+    assert set(oof0).isdisjoint(oof1) and len(oof0) + len(oof1) == len(keys)
+    assert np.array_equal(np.sort(tr0), np.sort(oof1)) and np.array_equal(np.sort(tr1), np.sort(oof0))
+    assert 0.45 < len(oof0) / len(keys) < 0.55
+    perm = np.random.default_rng(0).permutation(len(keys))
+    f = fitmod.fold_of(keys, 2)
+    assert np.array_equal(fitmod.fold_of(keys[perm], 2), f[perm])
+    with pytest.raises(ValueError):
+        fitmod.fold_rows(keys, 2, 2)
+    with pytest.raises(ValueError):
+        fitmod.fold_of(keys, 1)
+
+
+def test_fit_holdout_rows_stays_inside_the_pool_and_default_is_unchanged():
+    from swin_finetune_fit import holdout_split
+
+    y = _fake(500)
+    a, b = fitmod.fit_holdout_rows(y, None)
+    ra, rb = holdout_split(y)
+    assert np.array_equal(a, ra) and np.array_equal(b, rb)
+    pool = np.arange(0, 500, 2)
+    fit, hold = fitmod.fit_holdout_rows(y, pool)
+    assert set(fit) | set(hold) <= set(pool) and set(fit).isdisjoint(hold)
+
+
+def test_out_stem():
+    assert fitmod.out_stem("L_lora", 16, 0, None) == "L_lora_s16"
+    assert fitmod.out_stem("C_lora", 17, 2, 1) == "C_lora_s17_f1of2"
+
+
+def test_fit_refuses_fold_without_n_folds(tmp_path):
+    with pytest.raises(SystemExit, match="go together"):
+        fitmod.main(["fit", "--arm", "L_lora", "--seed", "16", "--cache-dir", str(tmp_path),
+                     "--ref-dir", str(tmp_path), "--out-dir", str(tmp_path / "o"), "--fold", "0"])

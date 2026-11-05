@@ -116,6 +116,23 @@ def lora_state_dict(module: nn.Module) -> dict[str, torch.Tensor]:
             for n, m in lora_modules(module) for k in ("lora_A", "lora_B")}
 
 
+@torch.no_grad()
+def load_lora_state_dict(module: nn.Module, state: dict[str, torch.Tensor]) -> int:
+    """Inverse of ``lora_state_dict`` on a module with the same LoRA layout; returns tensors copied.
+
+    Refuses a missing, extra or shape-mismatched key, so weights can never load partially.
+    """
+    targets = {f"{n}.{k}": getattr(m, k) for n, m in lora_modules(module) for k in ("lora_A", "lora_B")}
+    if set(targets) != set(state):
+        missing, extra = sorted(set(targets) - set(state)), sorted(set(state) - set(targets))
+        raise KeyError(f"LoRA state does not match the module: missing {missing[:3]}, extra {extra[:3]}")
+    for k, p in targets.items():
+        if tuple(p.shape) != tuple(state[k].shape):
+            raise ValueError(f"{k}: shape {tuple(state[k].shape)} != {tuple(p.shape)}")
+        p.copy_(state[k].to(device=p.device, dtype=p.dtype))
+    return len(targets)
+
+
 def base_state_dict(module: nn.Module) -> dict[str, torch.Tensor]:
     """Every tensor of ``module`` except the LoRA ones (for the 'backbone bit-identical' gate)."""
     return {k: v.detach().cpu().clone() for k, v in module.state_dict().items()

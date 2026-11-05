@@ -16,6 +16,7 @@ import file này.
 - `SWIN_STAGE34_QV`: query + value ở stage 3–4 của HF `SwinModel` (16 lớp với Swin-T: 2 + 6 block).
 - `lora_parameters`, `lora_modules`, `set_lora_train` (chỉ bật dropout của LoRA; `SwinEncoder(frozen=True)`
   luôn giữ backbone ở eval), `merge_lora`, `lora_state_dict`, `base_state_dict` (mọi tensor trừ LoRA, cho
-  cổng "backbone bit-identical").
+  cổng "backbone bit-identical"), `load_lora_state_dict` (2026-11-05: nạp lại
+  `lora_state_dict` vào module cùng bố cục LoRA; từ chối khoá thiếu/thừa hoặc sai shape).
 
 Ghim bởi `tests/test_lateral_lora.py`.

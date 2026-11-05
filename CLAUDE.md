@@ -1444,6 +1444,15 @@ study (not image) → anchor + ≤1 auxiliary view
   (OFF in-sample CE/ECE on train, rule CE_train < 0.9 CE_val) -> B1 (cross-fit experts on train, save weights) -> B2
   (R2 on cached features, read on val PL by section 7) -> B3 (`mode: residual` only if R2 beats R1); each needs
   user approval. Plan: the handoff's "Quyết định của user sau Bước 1" section.
+  ✅ **B0 RAN 2026-11-04/05 (`~/reslat_b0_20261104/`): OFF is NOT overconfident on train** -- CE train PL 0.3668 vs
+  val PL 0.3652 (ratio 1.004; all 0.4712 / 0.4858), ECE 0.039 both; the val pass matched OFF's stored val npz bit
+  for bit. So OFF's train logits can feed the residual; no OFF cross-fit. Evaluate-only on the TRAIN split needs
+  `run.train_splits=[]` (else the train loader shuffles, drops the last batch and loops) and
+  `datasets.mimic_cxr.vis_processor.train.augmentation.enabled=false`; copy the checkpoint to `/home` first, since
+  evaluate-only writes next to it. 222,758 train studies take 2h29m (~25 study/s).
+  🧪 **B1 code (CPU 2026-11-05, GPU not run):** `lateral_lora_fit.py fit --n-folds 2 --fold K --save-weights` (folds by
+  key hash, out-of-fold train predictions, selected-epoch weights, gate G3 = reloaded weights reproduce val);
+  `vision_encoders/lora.load_lora_state_dict`. Commands and gates: the handoff's "B1" section.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE
