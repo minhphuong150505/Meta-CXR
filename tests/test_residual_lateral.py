@@ -300,3 +300,26 @@ def test_load_expert_parts_mean_and_concat(tmp_path):
         rs.load_expert_parts(f"{tmp_path / 'a.npz'}+{tmp_path / 'b.npz'}", "concat")
     with pytest.raises(SystemExit, match="other studies"):
         rs.load_expert_parts(f"{tmp_path / 'a.npz'}+{tmp_path / 'c.npz'}", "mean")
+
+
+# ----------------------------------------------------------------------------- Step 3: fit on val, score test
+def test_r1_apply_params_matches_trainfit():
+    p_tr, e_tr, y_tr = _synthetic(n=300, seed=7)
+    p_va, e_va, _ = _synthetic(n=100, seed=8)
+    out, prm = rs.r1_trainfit(p_tr, [e_tr], y_tr, p_va, [e_va])
+    assert np.array_equal(rs.r1_apply_params(p_va, [e_va], *prm[0]), out)
+
+
+def test_run_cutpoints_from_train():
+    p_tr, e_tr, y_tr = _synthetic(n=400, seed=9)
+    p_te, e_te, y_te = _synthetic(n=200, seed=10)
+    keys = np.array([f"t{i:04d}" for i in range(200)])
+    train = {"p_off": p_tr, "labels": y_tr, "keys": np.array([f"v{i:04d}" for i in range(400)]),
+             "experts": {"L": [e_tr, e_tr]}, "fit_on": "val_pl_all"}
+    res = rs.run(p_te, y_te, NAMES, keys, {"L": [e_te, e_te]}, boot_n=10, train=train, cutpoints_from_train=True)
+    assert res["cutpoints"] == "fit_rows" and res["fit_on"] == "val_pl_all"
+    # OFF's decisions come from cutpoints fitted on the fit rows' OFF probabilities
+    d = rs.cutpoint_decisions_from(p_tr, y_tr, p_te, NAMES)
+    assert res["cutpoint_pl"]["OFF"] == rs.decision_metrics(d, y_te, NAMES)
+    with pytest.raises(ValueError, match="needs train"):
+        rs.run(p_te, y_te, NAMES, keys, {"L": [e_te]}, boot_n=5, cutpoints_from_train=True)

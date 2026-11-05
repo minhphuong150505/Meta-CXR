@@ -1459,6 +1459,12 @@ study (not image) → anchor + ≤1 auxiliary view
   no flag = steps 0/1 unchanged. Reading rule and the gate to B2b: the handoff's "B2a" section.
   ⚠ Trap: prediction `sample_keys` are split-LOCAL (digest of the annotation row index), so a train key can equal a
   val key (217 of 797 val PL studies); never test train/val overlap by key.
+  ❌ **B2a RAN 2026-11-05:** R1 fitted on 103,062 train PL: D1 +0.0158 [+0.0016, +0.0326] (val-fitted +0.0164), D2 +0.0092
+  [-0.0033, +0.0234] -> PARTIAL again; gate to B2b not met, B2b NOT built (user agreed). Final candidate = OFF + R1(L_lora,
+  3 seeds x 2 fold models), R1 fitted on all val PL.
+  🧪 **Step 3 code (2026-11-05, test read ONCE, user-approved):** `lateral_lora_cache.py --split test --allow-test`,
+  `lateral_lora_fit.py predict --weights <f0> <f1>`, `residual_stack.py --train-parts mean --cutpoints-from-train
+  --scored-split test`. Guards and reading rule: the handoff's "Bước 3" section.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

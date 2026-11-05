@@ -76,9 +76,13 @@ def main(argv=None) -> int:
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--workers", type=int, default=10)
     ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--allow-test", action="store_true",
+                    help="Step 3 only (the single test reading the user approved); refused otherwise")
     args = ap.parse_args(argv)
-    if args.split == "test":
-        raise SystemExit("Step 1 reads train and val only; test is Step 3")
+    if args.split == "test" and not args.allow_test:
+        raise SystemExit("test is read once, in Step 3: pass --allow-test")
+    if args.split == "test" and args.limit:
+        raise SystemExit("Step 3 caches the whole test split; --limit is refused")
 
     import torch
     from torch.utils.data import DataLoader

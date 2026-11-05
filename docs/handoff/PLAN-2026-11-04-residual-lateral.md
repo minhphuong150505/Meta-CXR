@@ -691,3 +691,29 @@ OFF 0,8029 → OFF+L 0,7943 (−0,0086; Bước 0 thấy −0,011), wF1 0,8579 �
 **Cổng sang B2b (chốt trước): KHÔNG QUA.** D1(`b2a_train2`) − D1(`b2a_valcv`) = −0,0006 < 0 (rất nhỏ, trong nhiễu, nhưng quy
 tắc là ≥ 0). Fit R1 trên 129 lần nhiều study hơn không làm D1 tăng; D2 vẫn không qua (lần thứ tư: Bước 0, Bước 1 frozen,
 `b2a_valcv`, `b2a_train2`). Theo kế hoạch: báo user trước khi viết code B2b; B2b chưa bắt đầu.
+
+## Bước 3 — đọc test MỘT lần (user duyệt 2026-11-05: "tôi đồng ý"; quy tắc chốt TRƯỚC khi chạy)
+
+**Ứng viên cuối (chốt sau B2a, user đồng ý dừng B2b):** OFF (`run_20261024_nomv`) + R1 với L = L_lora, 3 seed (16/17/18),
+mỗi seed = trung bình 2 mô hình fold của B1 (`~/reslat_b1_20261105/folds/*_weights.pt`). R1 fit trên TOÀN BỘ 797 study
+val PL (OFF val + L val = trung bình fold), áp lên test PL. Không claim D2 nên không dùng C trên test. Mọi study ngoài
+PL nhận đúng dự đoán của OFF.
+
+**Code (opt-in):** `lateral_lora_cache.py --split test` chỉ chạy với `--allow-test` (và từ chối `--limit`);
+`lateral_lora_fit.py predict --weights <f0> <f1> --cache-split <dir> --out <npz>` (chỉ suy luận, trung bình các mô hình
+fold, cùng arm/seed, fold không lặp); `residual_stack.py --train-parts mean --cutpoints-from-train --fit-split-name
+val_pl_all --scored-split test` (R1 fit trên val, cutpoint PL của mỗi arm fit trên xác suất val của arm đó rồi áp lên
+test; ngoài PL dùng cutpoint của OFF). Test CPU: +4.
+
+**Guard (dừng nếu hỏng):** `ntfs3`, GPU rảnh, không job khác, thư mục ra chưa có; số study PL của test = **1.196** (số đã
+ghi ở `PLAN-2026-10-27-multi-view-test-auroc.md`); `predict` trên val của từng seed trùng trung bình 2 file val B1 của seed
+đó (max |Δp| ≤ 1e-4); khoá test của chuyên gia khớp khoá OFF test; ngoài PL trùng OFF từng bit (assert trong script).
+
+**Quy tắc đọc (mục 7 trên test PL, không đổi sau khi thấy số):**
+- **"Lateral giúp" (claim PARTIAL)** khi: D1 = (OFF+L) − OFF trên AP_pos(T) có cận dưới CI 95% > 0 VÀ D1 > NB/√3 (NB từ 3
+  seed trên test), VÀ rào chắn non-T ≥ −NB/√3. Dù qua, claim vẫn viết "PARTIAL: lợi ích chủ yếu đến từ việc ghép thêm
+  một mô hình" (D2 chưa xác lập trên val).
+- Không qua → ghi "KHÔNG QUA trên test".
+- Báo đủ, kể cả số đi ngược: AUROC Pos / Unc, AP present, wF1 / F1-5 / macro recall theo cutpoint trên test PL; cùng các
+  chỉ số trên toàn test (Bước 0 thấy AUROC Pos gộp giảm ~0,01 trên val); từng finding (Holm trên T); Dperm.
+- Đây là lần đọc test duy nhất của ứng viên này.

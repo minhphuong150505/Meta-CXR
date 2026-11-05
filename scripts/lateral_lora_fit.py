@@ -316,6 +316,60 @@ def cmd_fit(args) -> int:
     return 0
 
 
+def check_weight_set(metas: list[dict]) -> tuple[str, bool]:
+    """All weight files of one ``predict`` call: same arm, same seed, distinct folds. Returns (view, lora)."""
+    if not metas:
+        raise SystemExit("predict needs at least one --weights file")
+    arms, seeds = {m["arm"] for m in metas}, {m["seed"] for m in metas}
+    if len(arms) != 1 or len(seeds) != 1:
+        raise SystemExit(f"--weights mix arms {sorted(arms)} or seeds {sorted(seeds)}")
+    folds = [m["fold"] for m in metas]
+    if len(set(folds)) != len(folds):
+        raise SystemExit(f"--weights repeat a fold: {folds}")
+    return ARMS[metas[0]["arm"]]
+
+
+def cmd_predict(args) -> int:
+    """Inference only: mean of the given fold models' probabilities on one cache split."""
+    import torch
+    from swin_finetune_fit import _swin_weights
+
+    from vision_encoders.lora import SWIN_STAGE34_QV, apply_lora, load_lora_state_dict
+    from vision_encoders.swin.swin_encoder import SwinEncoder
+
+    if args.out.exists():
+        raise SystemExit(f"refusing to overwrite {args.out}")
+    metas = [torch.load(w, map_location="cpu", weights_only=False) for w in args.weights]
+    view, use_lora = check_weight_set(metas)
+    img, labels, keys = _load(args.cache_split, view)
+    device = torch.device("cuda")
+    model_name, weights = _swin_weights(args.config)
+    probs = []
+    for m in metas:
+        swin = SwinEncoder(model_name=model_name, backend="medclip", normalize=False, weights_path=weights,
+                           frozen=True).to(device)
+        if use_lora:
+            apply_lora(swin.model, SWIN_STAGE34_QV, m["hyper"]["r"], m["hyper"]["alpha"], m["hyper"]["dropout"])
+            load_lora_state_dict(swin, m["lora"])
+        elif m["lora"]:
+            raise SystemExit("a frozen arm's weights carry LoRA tensors")
+        head = build_attention_probe([(49, swin.embed_dim)], [swin.embed_dim]).to(device)
+        head.load_state_dict(m["head"])
+        swin.eval(), head.eval()
+        out = []
+        with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+            for i in np.array_split(np.arange(len(labels)), max(1, math.ceil(len(labels) / 256))):
+                t = swin(to_swin_input(torch.from_numpy(np.asarray(img[i])).to(device)))
+                out.append(torch.softmax(head([t[:, 1:]], [t[:, 0]]).float(), -1).cpu().numpy())
+        probs.append(np.concatenate(out))
+    p = np.mean(probs, 0).astype(np.float32)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(args.out, keys=keys, probabilities=p, labels=labels)
+    print(f"[lora] predict {metas[0]['arm']} s{metas[0]['seed']} folds {[m['fold'] for m in metas]} on "
+          f"{args.cache_split}: {len(labels)} studies, macro AP present {macro_ap(p, labels):.4f}", flush=True)
+    return 0
+
+
 def load_set(spec: str):
     """``NAME=a.npz,b.npz`` -> (name, keys, [probabilities per seed], labels)."""
     name, paths = spec.split("=", 1)
@@ -386,6 +440,11 @@ def main(argv=None) -> int:
     f.add_argument("--n-folds", type=int, default=0, help="B1: cross-fit over train PL (0 = Step 1, no folds)")
     f.add_argument("--fold", type=int, default=None, help="B1: which fold to predict out of fold")
     f.add_argument("--save-weights", action="store_true", help="B1: save the selected epoch's head + LoRA")
+    pr = sub.add_parser("predict", help="Step 3: inference only, from --save-weights files")
+    pr.add_argument("--weights", type=Path, nargs="+", required=True, help="one arm and seed; its fold models")
+    pr.add_argument("--cache-split", type=Path, required=True, help="<cache>/<split> of lateral_lora_cache.py")
+    pr.add_argument("--config", type=Path, default=_REPO_ROOT / "pretraining/configs/mimic_cxr_full.yaml")
+    pr.add_argument("--out", type=Path, required=True)
     c = sub.add_parser("compare")
     c.add_argument("--base", required=True)
     c.add_argument("--new", required=True)
@@ -393,7 +452,7 @@ def main(argv=None) -> int:
     c.add_argument("--boot", type=int, default=BOOT_N)
     c.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
-    return cmd_fit(args) if args.cmd == "fit" else cmd_compare(args)
+    return {"fit": cmd_fit, "predict": cmd_predict, "compare": cmd_compare}[args.cmd](args)
 
 
 if __name__ == "__main__":

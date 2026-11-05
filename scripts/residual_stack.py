@@ -129,6 +129,22 @@ def r1_crossfit(p_off: np.ndarray, experts: list[np.ndarray], labels: np.ndarray
     return out, params
 
 
+def cutpoint_decisions_from(ref_probs: np.ndarray, ref_labels: np.ndarray, probs: np.ndarray, names) -> np.ndarray:
+    """Step 3: headline cutpoints fitted on the reference (val) rows, applied to the scored (test) rows."""
+    from training.evaluation.threshold_calibration import apply_cutpoints, fit_severity_cutpoints
+
+    cut = fit_severity_cutpoints(SimpleNamespace(probabilities=ref_probs, labels=ref_labels,
+                                                 pathology_names=tuple(names)), grid_size=CUTPOINT_GRID)
+    return apply_cutpoints(probs, cut, tuple(names))
+
+
+def r1_apply_params(p_off: np.ndarray, experts: list[np.ndarray], A: np.ndarray, B: np.ndarray) -> np.ndarray:
+    out = p_off.copy()
+    for j in range(p_off.shape[1]):
+        out[:, j] = apply_r1(p_off[:, j], [e[:, j] for e in experts], A[j], B[j])
+    return out
+
+
 def r1_trainfit(p_off_tr: np.ndarray, ex_tr: list[np.ndarray], y_tr: np.ndarray,
                 p_off_va: np.ndarray, ex_va: list[np.ndarray], lam: float = LAM) -> tuple[np.ndarray, dict]:
     """B2a: R1 fitted on train PL (out-of-fold experts), applied to every val PL row.
@@ -246,14 +262,19 @@ def nb(values_by_arm: list[list[float]]) -> float:
 
 # ----------------------------------------------------------------------------- driver
 def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam=LAM,
-        boot_n=BOOT_N, boot_seed=BOOT_SEED, train: dict | None = None) -> dict:
+        boot_n=BOOT_N, boot_seed=BOOT_SEED, train: dict | None = None,
+        cutpoints_from_train: bool = False) -> dict:
     """Every arm, metric, bootstrap and verdict on the PL rows given (all arrays aligned).
 
     ``train=None``: R1 cross-fitted on these (val) rows, as in Steps 0/1. ``train={"p_off", "labels",
     "keys", "experts"}`` (B2a): R1 fitted on train PL with out-of-fold experts and applied to every val
     row; ``Lperm`` shuffles L's rows within train for the fit and within each val fold for scoring.
     Everything downstream (metrics, bootstrap, cutpoints, verdict) is unchanged.
+    ``cutpoints_from_train`` (Step 3, needs ``train``): each arm's PL cutpoints are fitted on the fit rows'
+    probabilities under that arm (OFF: OFF's) and applied to the scored rows, instead of cross-fitted on them.
     """
+    if cutpoints_from_train and train is None:
+        raise ValueError("cutpoints_from_train needs train")
     names = tuple(names)
     t_idx = np.array([names.index(n) for n in T_FINDINGS])
     other_idx = np.array([j for j in range(len(names)) if j not in t_idx])
@@ -264,6 +285,7 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
         raise ValueError("L and C need the same number of seeds")
 
     arms: dict[str, list[np.ndarray]] = {"OFF": [p_off]}
+    ref_arms: dict[str, list[np.ndarray]] = {"OFF": [train["p_off"]]} if cutpoints_from_train else {}
     params: dict[str, list[dict]] = {}
     specs = {"OFF+L": ["L"], "OFF+Lperm": ["Lperm"]}
     if has_c:
@@ -274,6 +296,8 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
             raise ValueError("train and val need the same experts and seeds")
     for arm, members in specs.items():
         arms[arm], params[arm] = [], []
+        if cutpoints_from_train:
+            ref_arms[arm] = []
         for s in range(k):
             ex = [permute_within_folds(experts["L"][s], fold) if m == "Lperm" else experts[m][s] for m in members]
             if train is None:
@@ -282,6 +306,8 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
                 ex_tr = [permute_within_folds(train["experts"]["L"][s], tr_zero) if m == "Lperm"
                          else train["experts"][m][s] for m in members]
                 probs, prm = r1_trainfit(train["p_off"], ex_tr, train["labels"], p_off, ex, lam)
+                if cutpoints_from_train:
+                    ref_arms[arm].append(r1_apply_params(train["p_off"], ex_tr, *prm[0]))
             arms[arm].append(probs)
             params[arm].append(prm)
     arms["L_alone"] = list(experts["L"])
@@ -290,8 +316,13 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
 
     point = {a: [summary(per_finding_scores(p, labels), t_idx, other_idx) for p in ps] for a, ps in arms.items()}
     per_find = {a: [per_finding_scores(p, labels)["ap_pos"] for p in ps] for a, ps in arms.items()}
-    decisions = {a: [cutpoint_decisions_crossfit(p, labels, names, fold) for p in ps]
-                 for a, ps in arms.items() if not a.endswith("_alone")}
+    if cutpoints_from_train:
+        decisions = {a: [cutpoint_decisions_from(r, train["labels"], p, names) for r, p in zip(ref_arms[a], ps,
+                                                                                               strict=True)]
+                     for a, ps in arms.items() if not a.endswith("_alone")}
+    else:
+        decisions = {a: [cutpoint_decisions_crossfit(p, labels, names, fold) for p in ps]
+                     for a, ps in arms.items() if not a.endswith("_alone")}
     dec = {a: [decision_metrics(d, labels, names) for d in ds] for a, ds in decisions.items()}
 
     # paired bootstrap over PL studies, the same resamples for every arm and seed
@@ -371,7 +402,8 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
 
     return {
         "n_pl": int(n), "fold_sizes": [int((fold == 0).sum()), int((fold == 1).sum())],
-        "fit_on": "val_crossfit" if train is None else "train_pl_oof",
+        "fit_on": "val_crossfit" if train is None else train.get("fit_on", "train_pl_oof"),
+        "cutpoints": "fit_rows" if cutpoints_from_train else "crossfit_scored_rows",
         "n_train_pl": None if train is None else int(len(train["labels"])),
         "T": list(T_FINDINGS), "lambda": lam, "a_max": A_MAX, "k_seeds": k,
         "arms": {a: {"per_seed": v, "mean": {m: float(np.mean([x[m] for x in v])) for m in v[0]},
@@ -430,6 +462,14 @@ def main(argv=None) -> int:
     ap.add_argument("--train-off", type=Path, help="B2a: OFF train predictions npz (fit R1 on train PL)")
     ap.add_argument("--train-expert", action="append", default=[],
                     help="B2a: NAME=s16_f0_oof.npz+s16_f1_oof.npz,... (same names and seed order as --expert)")
+    ap.add_argument("--train-parts", choices=("concat", "mean"), default="concat",
+                    help="how '+' joins --train-expert parts: concat = out-of-fold train (B2a), "
+                         "mean = fold models on val (Step 3, fit on all val PL)")
+    ap.add_argument("--cutpoints-from-train", action="store_true",
+                    help="Step 3: PL cutpoints fitted on the fit rows (val) and applied to the scored rows (test)")
+    ap.add_argument("--fit-split-name", default="train_pl_oof", help="recorded as fit_on in the JSON")
+    ap.add_argument("--scored-split", choices=("val", "test"), default="val",
+                    help="split of --off / --view-map / --expert (Step 3: test, read once)")
     ap.add_argument("--lam", type=float, default=LAM)
     ap.add_argument("--boot", type=int, default=BOOT_N)
     ap.add_argument("--name", required=True)
@@ -478,7 +518,7 @@ def main(argv=None) -> int:
             name, paths = spec.split("=", 1)
             train["experts"][name] = []
             for path in paths.split(","):
-                keys, probs, labels = load_expert_parts(path, "concat")
+                keys, probs, labels = load_expert_parts(path, args.train_parts)
                 if tr_keys is None:
                     tr_keys = keys
                     o_tr = align(toff.sample_keys, tr_keys)
@@ -490,13 +530,17 @@ def main(argv=None) -> int:
                 train["experts"][name].append(probs[idx])
         if set(train["experts"]) != set(experts):
             raise SystemExit("--train-expert names differ from --expert names")
-        train.update(p_off=np.asarray(toff.probabilities, dtype=np.float64)[o_tr], labels=y_tr, keys=tr_keys)
+        train.update(p_off=np.asarray(toff.probabilities, dtype=np.float64)[o_tr], labels=y_tr, keys=tr_keys,
+                     fit_on=args.fit_split_name)
         # No cross-split key check: sample keys digest the split-local annotation row index
         # (batch["image_id"]), so train and val keys can coincide (217 of 797 on 2026-11-05) although
         # the splits are patient- and study-disjoint by construction.
-        print(f"[residual] B2a: R1 fitted on {len(tr_keys)} train PL studies", flush=True)
+        print(f"[residual] R1 fitted on {len(tr_keys)} PL studies ({args.fit_split_name})", flush=True)
+    if args.cutpoints_from_train and train is None:
+        raise SystemExit("--cutpoints-from-train needs --train-off / --train-expert")
 
-    result = run(p_all[pl], y_all[pl], names, pl_keys, experts, lam=args.lam, boot_n=args.boot, train=train)
+    result = run(p_all[pl], y_all[pl], names, pl_keys, experts, lam=args.lam, boot_n=args.boot, train=train,
+                 cutpoints_from_train=args.cutpoints_from_train)
     arm_probs = result.pop("_probs")
     arm_decisions = result.pop("_decisions")
 
@@ -519,7 +563,8 @@ def main(argv=None) -> int:
             rows.append({**summary(per_finding_scores(p, y_all), t_idx, other_idx),
                          **decision_metrics(d, y_all, names)})
         whole[arm] = {m: float(np.mean([r[m] for r in rows])) for m in rows[0]}
-    result["whole_val"] = whole
+    result["whole_val" if args.scored_split == "val" else f"whole_{args.scored_split}"] = whole
+    result["scored_split"] = args.scored_split
     result["name"], result["group_counts"] = args.name, counts
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

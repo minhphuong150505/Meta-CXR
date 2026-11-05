@@ -36,5 +36,9 @@ và thứ tự; mô hình train trên các fold khác, holdout 10% lấy trong p
 `<stem>_weights.pt` (head + LoRA của epoch được chọn). Cổng **G3**: nạp lại trọng số đó và dự đoán lại 256 study val
 phải trùng xác suất đã lưu (≤ 1e-4). Tên file: `out_stem` (`<arm>_s<seed>` hoặc `<arm>_s<seed>_f<K>of<N>`).
 
+## `predict` (Bước 3, 2026-11-05)
+Chỉ suy luận: nạp `--weights` (các mô hình fold của MỘT arm/seed, `check_weight_set`), dựng lại Swin (+LoRA) và head,
+trung bình xác suất trên `--cache-split`, ghi npz cùng định dạng `--expert`.
+
 Hàm thuần `should_stop`, `shared_rows`, `compare`, `load_set`, `fold_of`, `fold_rows`, `fit_holdout_rows`,
 `out_stem` ghim bởi `tests/test_lateral_lora.py`.

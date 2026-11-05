@@ -18,3 +18,5 @@ encoder probe rồi mới lọc PL. `--split test` bị từ chối.
 Thứ tự study của dataset = index dựng lại; mỗi study giữ lại có aux đúng là lateral PL và anchor đúng
 là frontal mặc định (`pl_positions`); key mỗi batch = key frontal kỳ vọng, aux là lateral thật
 (`check_batch`). Dữ liệu dẫn xuất MIMIC-CXR: chỉ để trên máy train.
+
+`--split test` chỉ chạy với `--allow-test` (Bước 3, đọc test một lần) và từ chối `--limit`.

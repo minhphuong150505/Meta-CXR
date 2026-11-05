@@ -310,3 +310,19 @@ def test_fit_refuses_fold_without_n_folds(tmp_path):
     with pytest.raises(SystemExit, match="go together"):
         fitmod.main(["fit", "--arm", "L_lora", "--seed", "16", "--cache-dir", str(tmp_path),
                      "--ref-dir", str(tmp_path), "--out-dir", str(tmp_path / "o"), "--fold", "0"])
+
+
+def test_check_weight_set():
+    m = {"arm": "L_lora", "seed": 16, "fold": 0}
+    assert fitmod.check_weight_set([m, {**m, "fold": 1}]) == ("lateral", True)
+    with pytest.raises(SystemExit, match="mix"):
+        fitmod.check_weight_set([m, {**m, "seed": 17, "fold": 1}])
+    with pytest.raises(SystemExit, match="repeat"):
+        fitmod.check_weight_set([m, m])
+    with pytest.raises(SystemExit):
+        fitmod.check_weight_set([])
+
+
+def test_cache_refuses_test_without_flag(tmp_path):
+    with pytest.raises(SystemExit, match="allow-test"):
+        cache.main(["--split", "test", "--out-dir", str(tmp_path / "x")])

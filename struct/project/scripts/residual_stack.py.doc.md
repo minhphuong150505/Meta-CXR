@@ -48,3 +48,8 @@ scipy (`L-BFGS-B`). Test: `tests/test_residual_lateral.py`.
 áp lên mọi study val PL; `run(..., train=...)` thay `r1_crossfit` bằng nó, mọi phần sau giữ nguyên. Ở `--expert`,
 `a+b` = trung bình các mô hình fold trên val; ở `--train-expert`, `a+b` = nối các phần out-of-fold
 (`load_expert_parts(spec, "mean" | "concat")`, từ chối phần trùng/khác study). JSON thêm `fit_on`, `n_train_pl`.
+
+## Bước 3 (2026-11-05, opt-in): fit trên val, chấm test
+`--train-parts mean` (phía fit là val, chuyên gia = trung bình mô hình fold), `--cutpoints-from-train` (cutpoint PL của
+mỗi arm fit trên xác suất phía fit của arm đó — `r1_apply_params` + `cutpoint_decisions_from` — rồi áp lên phía chấm),
+`--fit-split-name`, `--scored-split test` (khoá JSON `whole_test`, `scored_split`). JSON thêm `cutpoints`.
