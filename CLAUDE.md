@@ -1450,9 +1450,13 @@ study (not image) → anchor + ≤1 auxiliary view
   `run.train_splits=[]` (else the train loader shuffles, drops the last batch and loops) and
   `datasets.mimic_cxr.vis_processor.train.augmentation.enabled=false`; copy the checkpoint to `/home` first, since
   evaluate-only writes next to it. 222,758 train studies take 2h29m (~25 study/s).
-  🧪 **B1 code (CPU 2026-11-05, GPU not run):** `lateral_lora_fit.py fit --n-folds 2 --fold K --save-weights` (folds by
+  ✅ **B1 RAN 2026-11-05 (`~/reslat_b1_20261105/`):** R0 reproduced step 1 bit for bit; 12 fold fits passed G0/G2/G3.
+  **B1 code:** `lateral_lora_fit.py fit --n-folds 2 --fold K --save-weights` (folds by
   key hash, out-of-fold train predictions, selected-epoch weights, gate G3 = reloaded weights reproduce val);
   `vision_encoders/lora.load_lora_state_dict`. Commands and gates: the handoff's "B1" section.
+  🧪 **B2a code (CPU 2026-11-05):** `residual_stack.py --train-off <OFF train npz> --train-expert L=<f0_oof>+<f1_oof>,...`
+  fits R1 on all 103,062 train PL (OOF experts) and scores val PL (experts = mean of the fold models, `--expert L=a+b`);
+  no flag = steps 0/1 unchanged. Reading rule and the gate to B2b: the handoff's "B2a" section.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

@@ -254,3 +254,49 @@ def test_expert_fit_helpers():
     ef.check_labels(y, y.copy(), "same")
     with pytest.raises(SystemExit):
         ef.check_labels(y, y[::-1], "differ")
+
+
+# ----------------------------------------------------------------------------- B2a: R1 fitted on train
+def test_r1_trainfit_learns_on_train_and_applies_to_val():
+    p_tr, e_tr, y_tr = _synthetic(n=600, seed=1)
+    p_va, e_va, y_va = _synthetic(n=300, seed=2)
+    out, prm = rs.r1_trainfit(p_tr, [e_tr], y_tr, p_va, [e_va])
+    assert out.shape == p_va.shape and prm[0][0].shape == (14, 1)
+    assert np.array_equal(prm[0][0], prm[1][0])
+    assert (prm[0][0] > 0.1).mean() > 0.5  # an informative expert gets weight
+    # a train fit held at zero by a huge penalty returns (almost exactly) OFF on val
+    out0, _ = rs.r1_trainfit(p_tr, [e_tr], y_tr, p_va, [e_va], lam=1e6)
+    assert np.allclose(out0, p_va, atol=1e-5)
+
+
+def test_run_with_train_fit_end_to_end():
+    p_tr, e_tr, y_tr = _synthetic(n=500, seed=3)
+    p_va, e_va, y_va = _synthetic(n=300, seed=4)
+    c_tr, c_va = _dirichlet(np.random.default_rng(5), 500), _dirichlet(np.random.default_rng(6), 300)
+    keys = np.array([f"v{i:04d}" for i in range(300)])
+    train = {"p_off": p_tr, "labels": y_tr, "keys": np.array([f"t{i:04d}" for i in range(500)]),
+             "experts": {"L": [e_tr, e_tr], "C": [c_tr, c_tr]}}
+    res = rs.run(p_va, y_va, NAMES, keys, {"L": [e_va, e_va], "C": [c_va, c_va]}, boot_n=20, train=train)
+    assert res["fit_on"] == "train_pl_oof" and res["n_train_pl"] == 500
+    assert res["diffs"]["D1"]["ap_pos_T"]["delta"] > 0
+    with pytest.raises(ValueError, match="same experts"):
+        rs.run(p_va, y_va, NAMES, keys, {"L": [e_va, e_va], "C": [c_va, c_va]}, boot_n=5,
+               train={**train, "experts": {"L": [e_tr], "C": [c_tr]}})
+
+
+def test_load_expert_parts_mean_and_concat(tmp_path):
+    rng = np.random.default_rng(0)
+    y = rng.integers(0, 3, (10, 14))
+    pa, pb = _dirichlet(rng, 10), _dirichlet(rng, 10)
+    k = np.array([f"k{i}" for i in range(10)])
+    np.savez(tmp_path / "a.npz", keys=k, probabilities=pa, labels=y)
+    np.savez(tmp_path / "b.npz", keys=k, probabilities=pb, labels=y)
+    np.savez(tmp_path / "c.npz", keys=np.array([f"z{i}" for i in range(10)]), probabilities=pb, labels=y)
+    kk, p, _ = rs.load_expert_parts(f"{tmp_path / 'a.npz'}+{tmp_path / 'b.npz'}", "mean")
+    assert np.allclose(p, (pa + pb) / 2) and np.array_equal(kk, k)
+    kk, p, lab = rs.load_expert_parts(f"{tmp_path / 'a.npz'}+{tmp_path / 'c.npz'}", "concat")
+    assert len(kk) == 20 and p.shape[0] == 20 and lab.shape == (20, 14)
+    with pytest.raises(SystemExit, match="overlap"):
+        rs.load_expert_parts(f"{tmp_path / 'a.npz'}+{tmp_path / 'b.npz'}", "concat")
+    with pytest.raises(SystemExit, match="other studies"):
+        rs.load_expert_parts(f"{tmp_path / 'a.npz'}+{tmp_path / 'c.npz'}", "mean")

@@ -41,3 +41,10 @@ Mọi key của OFF phải khớp map 100%, nhãn chuyên gia phải trùng nhã
 
 Callee: `classification_metrics`, `threshold_calibration`, [`view_keys`](../training/evaluation/view_keys.py.doc.md),
 scipy (`L-BFGS-B`). Test: `tests/test_residual_lateral.py`.
+
+## B2a (2026-11-05, opt-in): fit R1 trên train
+`--train-off <OFF train npz>` + `--train-expert NAME=<oof_f0>+<oof_f1>,...` (cùng tên, cùng thứ tự seed với `--expert`):
+`r1_trainfit` fit tham số trên toàn bộ study train PL (logit OFF trên train, dự đoán out-of-fold của chuyên gia) rồi
+áp lên mọi study val PL; `run(..., train=...)` thay `r1_crossfit` bằng nó, mọi phần sau giữ nguyên. Ở `--expert`,
+`a+b` = trung bình các mô hình fold trên val; ở `--train-expert`, `a+b` = nối các phần out-of-fold
+(`load_expert_parts(spec, "mean" | "concat")`, từ chối phần trùng/khác study). JSON thêm `fit_on`, `n_train_pl`.

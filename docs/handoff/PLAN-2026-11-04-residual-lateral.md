@@ -626,3 +626,44 @@ for A in L_lora C_lora; do for S in 16 17 18; do for K in 0 1; do
 - Mỗi fit: G0, G2, G3 qua; hai fold của cùng arm/seed phủ đúng 103.062 study train PL, không trùng.
 - Báo cáo (mô tả): macro AP "có bệnh" out-of-fold trên train so với trên val, theo arm/seed.
 - Không đọc test. B2 (residual R2) cần user duyệt riêng.
+
+## Execution report — B1 (GPU 2026-11-05 09:23 → 11:30; test KHÔNG đọc)
+
+Chạy một lần (`~/reslat_b1_20261105/`, host ở `a52acad`, sau khi khởi động lại; `~/b1_chain.sh` + `~/b1_check.py`,
+chỉ in số tổng hợp). 13 fit, 6–13 phút mỗi fit, max mem 3.648 MiB. `B1_DONE`, không ABORT.
+
+- **R0 (tái lập Bước 1) — QUA, trùng từng bit:** L_lora s16 không fold chọn epoch 2 như Bước 1, AP_pos(T) val PL
+  0,46209 = 0,46209, max |Δp| = 0,0 (cùng code path, cùng seed → huấn luyện tất định trên host này). G3 = 0,0.
+- **Fold:** fold 0 / 1 = 51.763 / 51.299 study train PL, không trùng, phủ đủ 103.062, ở cả 6 cặp arm/seed. G0, G2, G3
+  (= 0,0) qua ở cả 12 fit. Epoch được chọn: 1–5.
+- **Mô tả (macro AP "có bệnh", không quyết định):**
+
+| arm | out-of-fold train (f0 / f1, TB 3 seed) | val PL, mô hình fold (TB 6) | val PL, mô hình toàn train (Bước 1) |
+|---|---|---|---|
+| L_lora | 0,370 / 0,372 | 0,385 | 0,395–0,400 |
+| C_lora | 0,402 / 0,405 | 0,411 | ~0,415 |
+
+  Mô hình fold học trên nửa dữ liệu nên kém mô hình toàn train ~0,01 trên val; out-of-fold train thấp hơn val
+  ~0,01–0,015 (tập khác nhau). Lấy tập train làm nơi fit residual thì đầu vào chuyên gia trên train và val phải đến từ
+  cùng loại mô hình (mô hình fold) — xem B2.
+
+## B2a — R1 fit trên train PL (code CPU 2026-11-05, user duyệt "chạy b2a và b2b"; quy tắc chốt TRƯỚC khi có số)
+
+**Code (opt-in):** `residual_stack.py --train-off <OFF train npz> --train-expert L=<s_f0_oof>+<s_f1_oof>,...` (cùng tên và
+thứ tự seed với `--expert`). R1 (`r1_trainfit`, cùng hàm fit từng finding) fit trên toàn bộ study train PL bằng logit OFF
+trên train (B0) và dự đoán out-of-fold của chuyên gia (B1), rồi áp lên MỌI study val PL; không còn cross-fit trên val.
+Chuyên gia trên val = trung bình 2 mô hình fold (`--expert L=<s_f0>+<s_f1>`, `load_expert_parts(..., "mean")`).
+Dperm: L xáo trong train khi fit và trong từng nửa val khi chấm. Cutpoint, bootstrap, NB, phán quyết giữ nguyên.
+Từ chối: thiếu một trong hai cờ, tên chuyên gia khác nhau, nhãn chuyên gia khác nhãn OFF, train và val trùng study.
+Không cờ = Bước 0/1 y như cũ. Test: `tests/test_residual_lateral.py` (+3).
+
+**Hai lượt (CPU, host):**
+- `b2a_train`: L = L_lora, C = C_lora, 3 seed, fit trên train PL (103.062).
+- `b2a_valcv` (đối chứng, mô tả): cùng chuyên gia val (trung bình fold), R1 cross-fit trên val như Bước 1.
+
+**Quy tắc đọc (mục 7, không đổi):** trên `b2a_train`, val PL n = 797, chỉ số AP_pos(T):
+- "lateral giúp": D1 cận dưới CI > 0 và D1 > NB/√3, rào chắn non-T ≥ −NB/√3;
+- "đặc thù lateral": thêm D2 cận dưới > 0; chỉ qua D1 → "PARTIAL: lợi ích chủ yếu đến từ việc ghép thêm một mô hình".
+- **Cổng sang B2b (chốt trước):** B2b (R2 cấp token) chỉ đáng làm nếu `b2a_train` có D1 không kém `b2a_valcv` (hiệu D1 ≥ 0,
+  mô tả) — tức dữ liệu train không làm R1 tệ đi. Nếu kém, báo user trước khi viết code B2b.
+- Báo cả AUROC Pos gộp trên toàn val (Bước 0 thấy giảm ~0,011), wF1/F1-5 theo cutpoint, per-finding. Test không đọc.

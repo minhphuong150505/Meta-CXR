@@ -129,6 +129,23 @@ def r1_crossfit(p_off: np.ndarray, experts: list[np.ndarray], labels: np.ndarray
     return out, params
 
 
+def r1_trainfit(p_off_tr: np.ndarray, ex_tr: list[np.ndarray], y_tr: np.ndarray,
+                p_off_va: np.ndarray, ex_va: list[np.ndarray], lam: float = LAM) -> tuple[np.ndarray, dict]:
+    """B2a: R1 fitted on train PL (out-of-fold experts), applied to every val PL row.
+
+    Same per-finding fit as ``r1_crossfit``; parameters are returned under both fold ids so the
+    callers that average over folds read them unchanged.
+    """
+    F = p_off_va.shape[1]
+    out = p_off_va.copy()
+    A, B = np.zeros((F, len(ex_tr))), np.zeros((F, 3))
+    for j in range(F):
+        m = y_tr[:, j] >= 0
+        A[j], B[j] = fit_r1_finding(_logp(p_off_tr[m, j]), [_logp(e[m, j]) for e in ex_tr], y_tr[m, j], lam)
+        out[:, j] = apply_r1(p_off_va[:, j], [e[:, j] for e in ex_va], A[j], B[j])
+    return out, {0: (A, B), 1: (A, B)}
+
+
 def permute_within_folds(x: np.ndarray, fold: np.ndarray, seed: int = BOOT_SEED) -> np.ndarray:
     """Rows of ``x`` shuffled among the rows of the same fold."""
     rng = np.random.default_rng(seed)
@@ -229,8 +246,14 @@ def nb(values_by_arm: list[list[float]]) -> float:
 
 # ----------------------------------------------------------------------------- driver
 def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam=LAM,
-        boot_n=BOOT_N, boot_seed=BOOT_SEED) -> dict:
-    """Every arm, metric, bootstrap and verdict on the PL rows given (all arrays aligned)."""
+        boot_n=BOOT_N, boot_seed=BOOT_SEED, train: dict | None = None) -> dict:
+    """Every arm, metric, bootstrap and verdict on the PL rows given (all arrays aligned).
+
+    ``train=None``: R1 cross-fitted on these (val) rows, as in Steps 0/1. ``train={"p_off", "labels",
+    "keys", "experts"}`` (B2a): R1 fitted on train PL with out-of-fold experts and applied to every val
+    row; ``Lperm`` shuffles L's rows within train for the fit and within each val fold for scoring.
+    Everything downstream (metrics, bootstrap, cutpoints, verdict) is unchanged.
+    """
     names = tuple(names)
     t_idx = np.array([names.index(n) for n in T_FINDINGS])
     other_idx = np.array([j for j in range(len(names)) if j not in t_idx])
@@ -245,11 +268,20 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
     specs = {"OFF+L": ["L"], "OFF+Lperm": ["Lperm"]}
     if has_c:
         specs.update({"OFF+C": ["C"], "OFF+C+L": ["C", "L"]})
+    if train is not None:
+        tr_zero = np.zeros(len(train["labels"]), dtype=np.int64)
+        if any(len(train["experts"][m]) != k for m in experts):
+            raise ValueError("train and val need the same experts and seeds")
     for arm, members in specs.items():
         arms[arm], params[arm] = [], []
         for s in range(k):
             ex = [permute_within_folds(experts["L"][s], fold) if m == "Lperm" else experts[m][s] for m in members]
-            probs, prm = r1_crossfit(p_off, ex, labels, fold, lam)
+            if train is None:
+                probs, prm = r1_crossfit(p_off, ex, labels, fold, lam)
+            else:
+                ex_tr = [permute_within_folds(train["experts"]["L"][s], tr_zero) if m == "Lperm"
+                         else train["experts"][m][s] for m in members]
+                probs, prm = r1_trainfit(train["p_off"], ex_tr, train["labels"], p_off, ex, lam)
             arms[arm].append(probs)
             params[arm].append(prm)
     arms["L_alone"] = list(experts["L"])
@@ -339,6 +371,8 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
 
     return {
         "n_pl": int(n), "fold_sizes": [int((fold == 0).sum()), int((fold == 1).sum())],
+        "fit_on": "val_crossfit" if train is None else "train_pl_oof",
+        "n_train_pl": None if train is None else int(len(train["labels"])),
         "T": list(T_FINDINGS), "lambda": lam, "a_max": A_MAX, "k_seeds": k,
         "arms": {a: {"per_seed": v, "mean": {m: float(np.mean([x[m] for x in v])) for m in v[0]},
                      "sd": {m: float(np.std([x[m] for x in v], ddof=1)) if len(v) > 1 else 0.0 for m in v[0]}}
@@ -361,6 +395,27 @@ def _load_expert(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         return h["keys"], h["probabilities"].astype(np.float64), labels
 
 
+def load_expert_parts(spec: str, mode: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """One seed's expert from ``a.npz+b.npz+...``. ``mode="mean"``: same studies in every part, probabilities
+    averaged (val scored by the fold models). ``mode="concat"``: disjoint studies, rows concatenated
+    (out-of-fold train). A single path is loaded as is in either mode."""
+    parts = [_load_expert(Path(p)) for p in spec.split("+")]
+    if len(parts) == 1:
+        return parts[0]
+    if mode == "mean":
+        k0, _p0, l0 = parts[0]
+        for k, _p, lab in parts[1:]:
+            if not (np.array_equal(k, k0) and np.array_equal(lab, l0)):
+                raise SystemExit(f"{spec}: parts to average hold other studies or labels")
+        return k0, np.mean([p for _k, p, _l in parts], 0), l0
+    if mode == "concat":
+        keys = np.concatenate([k for k, _p, _l in parts])
+        if len(set(keys.tolist())) != len(keys):
+            raise SystemExit(f"{spec}: out-of-fold parts overlap")
+        return keys, np.concatenate([p for _k, p, _l in parts]), np.concatenate([lab for _k, _p, lab in parts])
+    raise ValueError(mode)
+
+
 def main(argv=None) -> int:
     from training.evaluation.schemas import ClassificationPredictions
     from training.evaluation.threshold_calibration import apply_cutpoints, load_cutpoint_file
@@ -372,6 +427,9 @@ def main(argv=None) -> int:
     ap.add_argument("--off-cutpoints", type=Path, required=True, help="OFF's cutpoint file (non-PL decisions)")
     ap.add_argument("--expert", action="append", required=True, help="NAME=seed1.npz,seed2.npz,... (NAME L or C)")
     ap.add_argument("--expect-counts", default="PL=797,F1=930,other=81")
+    ap.add_argument("--train-off", type=Path, help="B2a: OFF train predictions npz (fit R1 on train PL)")
+    ap.add_argument("--train-expert", action="append", default=[],
+                    help="B2a: NAME=s16_f0_oof.npz+s16_f1_oof.npz,... (same names and seed order as --expert)")
     ap.add_argument("--lam", type=float, default=LAM)
     ap.add_argument("--boot", type=int, default=BOOT_N)
     ap.add_argument("--name", required=True)
@@ -399,7 +457,7 @@ def main(argv=None) -> int:
         name, paths = spec.split("=", 1)
         experts[name] = []
         for path in paths.split(","):
-            keys, probs, labels = _load_expert(Path(path))
+            keys, probs, labels = load_expert_parts(path, "mean")
             idx = align(keys, pl_keys)
             if not np.array_equal(labels[idx], y_all[pl]):
                 raise SystemExit(f"labels of {path} differ from OFF's on PL studies")
@@ -407,7 +465,37 @@ def main(argv=None) -> int:
     if "L" not in experts:
         raise SystemExit("need --expert L=...")
 
-    result = run(p_all[pl], y_all[pl], names, pl_keys, experts, lam=args.lam, boot_n=args.boot)
+    train = None
+    if args.train_off is not None or args.train_expert:
+        if args.train_off is None or not args.train_expert:
+            raise SystemExit("--train-off and --train-expert go together")
+        toff = ClassificationPredictions.load(args.train_off)
+        if tuple(toff.pathology_names) != names:
+            raise SystemExit("train OFF npz has another finding order")
+        train = {"experts": {}}
+        tr_keys = None
+        for spec in args.train_expert:
+            name, paths = spec.split("=", 1)
+            train["experts"][name] = []
+            for path in paths.split(","):
+                keys, probs, labels = load_expert_parts(path, "concat")
+                if tr_keys is None:
+                    tr_keys = keys
+                    o_tr = align(toff.sample_keys, tr_keys)
+                    y_tr = np.asarray(toff.labels, dtype=np.int64)[o_tr]
+                    y_tr[y_tr < 0] = MISSING
+                idx = align(keys, tr_keys)
+                if not np.array_equal(labels[idx], y_tr):
+                    raise SystemExit(f"labels of {path} differ from OFF's train labels")
+                train["experts"][name].append(probs[idx])
+        if set(train["experts"]) != set(experts):
+            raise SystemExit("--train-expert names differ from --expert names")
+        train.update(p_off=np.asarray(toff.probabilities, dtype=np.float64)[o_tr], labels=y_tr, keys=tr_keys)
+        if set(tr_keys.tolist()) & set(pl_keys.tolist()):
+            raise SystemExit("train and val PL studies overlap")
+        print(f"[residual] B2a: R1 fitted on {len(tr_keys)} train PL studies", flush=True)
+
+    result = run(p_all[pl], y_all[pl], names, pl_keys, experts, lam=args.lam, boot_n=args.boot, train=train)
     arm_probs = result.pop("_probs")
     arm_decisions = result.pop("_decisions")
 
