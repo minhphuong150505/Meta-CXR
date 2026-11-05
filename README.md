@@ -482,7 +482,7 @@ val có ảnh lateral, chuyên gia Swin đóng băng cộng vào OFF tăng AP l�
 chưa xác lập, nên kết luận là PARTIAL: lợi ích chủ yếu đến từ việc ghép thêm một mô hình. RAD-DINO và MedSigLIP không
 qua. **Bước 1 (LoRA cho Swin trên ảnh lateral, 2026-11-04): không qua cổng G1, dừng nhánh LoRA.** LoRA không làm
 chuyên gia lateral tốt hơn (−0,0011 [−0,0193; +0,0154]); phần đặc thù lateral vẫn chưa xác lập; test chưa đọc.
-**Quyết định của user (2026-11-04): Residual + Swin LoRA là hướng phát triển chính, theo phương án B (train residual trong Stage 1 trên tập train), dù cổng G1 đã chốt là dừng; claim vẫn là PARTIAL, test chưa đọc.** Checkpoint các run đã chuyển sang `/mnt/drive1tb/meta-cxr-runs/` (symlink giữ ở `~`). Chi tiết: `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
+**Kết quả test (đọc một lần, 2026-11-05): OFF + chuyên gia lateral (R1) trên 1.196 study PL tăng AP Positive trung bình 5 bệnh chính +0,0222 [+0,0134, +0,0304] — PARTIAL (chủ yếu do ghép thêm một mô hình; chưa chứng minh lợi ích riêng của ảnh lateral); AUROC Pos gộp trên toàn test giảm 0,0094.** **Quyết định của user (2026-11-04): Residual + Swin LoRA là hướng phát triển chính, theo phương án B (train residual trong Stage 1 trên tập train), dù cổng G1 đã chốt là dừng; claim vẫn là PARTIAL, test chưa đọc.** Checkpoint các run đã chuyển sang `/mnt/drive1tb/meta-cxr-runs/` (symlink giữ ở `~`). Chi tiết: `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
 
 **Kiểm tra đầu vào và recall của Stage 1 (2026-10-29, chỉ CPU, chỉ đọc dự đoán của `run_20261005_paper`).**
 Kết luận chính: **đầu vào không phải nguyên nhân chính của việc bỏ sót.**

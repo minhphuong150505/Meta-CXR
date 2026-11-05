@@ -193,6 +193,10 @@ The novelty only counts if it survives review. So:
 - **User decision 2026-11-04: Residual + Swin LoRA is the MAIN direction, option B (train the residual inside
   Stage 1 on train), overriding the G1 stop.** Claims unchanged (LoRA = frozen on T, D2 at zero boundary -> PARTIAL).
   Steps B0-B3, each needing approval, in `docs/handoff/PLAN-2026-11-04-residual-lateral.md`.
+- **Residual-lateral TEST (read once, 2026-11-05, test PL n=1,196): D1 +0.0222 [+0.0134, +0.0304] -> PARTIAL.**
+  B2a (R1 fitted on train) gave no gain over val-fitted R1 and B2b was not built. D2 (lateral-specific) never established
+  on val, so the claim is "adding a second (lateral) model helps PL studies", not "the lateral view adds information".
+  Whole-test pooled AUROC Pos falls 0.0094 (PL/non-PL score scales differ). Not ON (View Fusion) vs OFF.
 - Earlier variants that LOST: `max_aux_views: 3` (2026-10-07), EVOKE flags
   `detach_aux` + `mpc_temperature 0.5` (2026-10-10). Do not retry them unchanged.
 

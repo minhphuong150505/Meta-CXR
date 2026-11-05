@@ -1465,6 +1465,13 @@ study (not image) → anchor + ≤1 auxiliary view
   🧪 **Step 3 code (2026-11-05, test read ONCE, user-approved):** `lateral_lora_cache.py --split test --allow-test`,
   `lateral_lora_fit.py predict --weights <f0> <f1>`, `residual_stack.py --train-parts mean --cutpoints-from-train
   --scored-split test`. Guards and reading rule: the handoff's "Bước 3" section.
+  ✅ **Step 3 RAN 2026-11-05 -- TEST READ ONCE (`~/reslat_step3_20261105/`, test PL n=1,196):** D1 = (OFF+L) - OFF
+  AP_pos(T) **+0.0222 [+0.0134, +0.0304]** (NB/sqrt3 0.0018; OFF 0.4824 -> 0.5046), guardrail passes -> **PARTIAL** (claim:
+  "gain mostly from adding a second model"; D2 never established on val, so NOT a lateral-specific claim). Dperm -0.0220*.
+  Test PL: AUROC Pos +0.0070*, cutpoint wF1 +0.0046, F1-5 +0.0059; per finding PE +0.024*, Cardiomegaly +0.040*,
+  Atelectasis +0.024* (Holm). ⚠ Whole test (non-PL = OFF): pooled AUROC Pos 0.7861 -> 0.7767 (-0.0094), AP present
+  -0.004, wF1 +0.0014, F1-5 +0.0021 -- the pooled-ranking drop seen on val replicates. This is OFF + lateral expert at the
+  output vs OFF, not View Fusion ON vs OFF. Record: the handoff's "Execution report — Bước 3".
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

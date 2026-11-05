@@ -717,3 +717,30 @@ ghi ở `PLAN-2026-10-27-multi-view-test-auroc.md`); `predict` trên val của t
 - Báo đủ, kể cả số đi ngược: AUROC Pos / Unc, AP present, wF1 / F1-5 / macro recall theo cutpoint trên test PL; cùng các
   chỉ số trên toàn test (Bước 0 thấy AUROC Pos gộp giảm ~0,01 trên val); từng finding (Holm trên T); Dperm.
 - Đây là lần đọc test duy nhất của ứng viên này.
+
+## Execution report — Bước 3 (TEST, đọc MỘT lần, 2026-11-05 12:57 → 13:01, `~/reslat_step3_20261105/`)
+
+Host ở `ce24848`, `~/s3_chain.sh` chạy một lần, `STEP3_DONE`, không ABORT. Guard: nhóm test PL 1.196 / F1 1.841 / other 232
+(PL khớp số đã ghi 1.196; tổng 3.269); `predict` lại val của mỗi seed trùng trung bình 2 file val B1 từng bit (max |Δp| =
+0,0 ở cả 3 seed); ngoài PL trùng OFF từng bit (assert). R1 fit trên 797 val PL; cutpoint PL của mỗi arm fit trên val.
+
+**Quyết định (mục 7 trên test PL, n = 1.196, AP_pos(T), 3 seed, bootstrap 2.000):**
+- **D1 = (OFF+L) − OFF: +0,0222 [+0,0134, +0,0304]**, NB/√3 0,0018 → qua (val B2a: +0,0164). OFF 0,4824 → OFF+L 0,5046.
+- Rào chắn non-T: +0,0036 [−0,0093, +0,0144] ≥ −0,0008 → qua.
+- **Phán quyết: PARTIAL — "lợi ích chủ yếu đến từ việc ghép thêm một mô hình"** (D2 không đo trên test vì chưa xác lập trên
+  val; claim không được nói là lợi ích đặc thù của ảnh lateral).
+- Dperm (lateral xáo giữa các study): −0,0220 [−0,0334, −0,0091] — lateral của chính study đó có ích hơn lateral ngẫu nhiên.
+
+**Mô tả, test PL:** AUROC Pos TB +0,0070 [+0,0029, +0,0110]; AUROC Unc TB +0,0473; AP present +0,0106; cutpoint
+wF1 0,8476 → 0,8522 (+0,0046), F1-5 0,8080 → 0,8139 (+0,0059), macro recall +0,0029. Từng finding T (Holm): Pleural Effusion
++0,0241 [+0,0157, +0,0335] p 0,000; Cardiomegaly +0,0402 p 0,008; Atelectasis +0,0243 p 0,021; Edema +0,0174 p 0,12;
+Consolidation +0,0049 p 0,50. Ngoài T: Lung Opacity +0,0267 (CI > 0), Lung Lesion −0,0125, Pneumothorax −0,0079 (CI rộng).
+L một mình: AP_pos(T) 0,4652 (< OFF 0,4824).
+
+**Mô tả, TOÀN test (n = 3.269, ngoài PL = OFF):** AP_pos(T) 0,5023 → 0,5062; wF1 0,8189 → 0,8203; F1-5 0,7496 → 0,7517;
+macro recall 0,4433 → 0,4423; **AUROC Pos trung bình gộp 0,7861 → 0,7767 (−0,0094)**, AP Pos ngoài T 0,3116 → 0,3041,
+AP present 0,4191 → 0,4153 — giống val (Bước 0/B2a): khi gộp PL với non-PL, thang điểm của hai nhóm lệch nhau (giả
+thuyết, chưa đo riêng), nên chỉ số xếp hạng gộp giảm dù trong PL tăng. Không CI cho các số toàn test.
+
+Đây là lần đọc test duy nhất của ứng viên này. Không phải so sánh ON (View Fusion) với OFF: là OFF + chuyên gia lateral
+ghép ở đầu ra, so với OFF.
