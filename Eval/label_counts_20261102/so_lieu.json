@@ -1,0 +1,547 @@
+{
+  "labels": {
+    "atelectasis": {
+      "ignore": {
+        "train": {
+          "pos": 44718,
+          "neg": 1502,
+          "unc": 10041
+        },
+        "test": {
+          "pos": 731,
+          "neg": 20,
+          "unc": 191
+        },
+        "val": {
+          "pos": 359,
+          "neg": 9,
+          "unc": 95
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 44718,
+          "neg": 165620,
+          "unc": 10041
+        },
+        "test": {
+          "pos": 731,
+          "neg": 2326,
+          "unc": 191
+        },
+        "val": {
+          "pos": 359,
+          "neg": 1332,
+          "unc": 95
+        }
+      }
+    },
+    "cardiomegaly": {
+      "ignore": {
+        "train": {
+          "pos": 43602,
+          "neg": 15613,
+          "unc": 5869
+        },
+        "test": {
+          "pos": 866,
+          "neg": 174,
+          "unc": 115
+        },
+        "val": {
+          "pos": 377,
+          "neg": 124,
+          "unc": 59
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 43602,
+          "neg": 170908,
+          "unc": 5869
+        },
+        "test": {
+          "pos": 866,
+          "neg": 2267,
+          "unc": 115
+        },
+        "val": {
+          "pos": 377,
+          "neg": 1350,
+          "unc": 59
+        }
+      }
+    },
+    "consolidation": {
+      "ignore": {
+        "train": {
+          "pos": 10476,
+          "neg": 7817,
+          "unc": 4186
+        },
+        "test": {
+          "pos": 220,
+          "neg": 95,
+          "unc": 97
+        },
+        "val": {
+          "pos": 82,
+          "neg": 55,
+          "unc": 48
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 10476,
+          "neg": 205717,
+          "unc": 4186
+        },
+        "test": {
+          "pos": 220,
+          "neg": 2931,
+          "unc": 97
+        },
+        "val": {
+          "pos": 82,
+          "neg": 1656,
+          "unc": 48
+        }
+      }
+    },
+    "edema": {
+      "ignore": {
+        "train": {
+          "pos": 26093,
+          "neg": 25133,
+          "unc": 12777
+        },
+        "test": {
+          "pos": 683,
+          "neg": 305,
+          "unc": 289
+        },
+        "val": {
+          "pos": 242,
+          "neg": 203,
+          "unc": 108
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 26093,
+          "neg": 181509,
+          "unc": 12777
+        },
+        "test": {
+          "pos": 683,
+          "neg": 2276,
+          "unc": 289
+        },
+        "val": {
+          "pos": 242,
+          "neg": 1436,
+          "unc": 108
+        }
+      }
+    },
+    "enlarged_cardio": {
+      "ignore": {
+        "train": {
+          "pos": 6968,
+          "neg": 5168,
+          "unc": 9083
+        },
+        "test": {
+          "pos": 151,
+          "neg": 64,
+          "unc": 204
+        },
+        "val": {
+          "pos": 60,
+          "neg": 51,
+          "unc": 88
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 6968,
+          "neg": 204328,
+          "unc": 9083
+        },
+        "test": {
+          "pos": 151,
+          "neg": 2893,
+          "unc": 204
+        },
+        "val": {
+          "pos": 60,
+          "neg": 1638,
+          "unc": 88
+        }
+      }
+    },
+    "fracture": {
+      "ignore": {
+        "train": {
+          "pos": 4283,
+          "neg": 877,
+          "unc": 548
+        },
+        "test": {
+          "pos": 89,
+          "neg": 3,
+          "unc": 4
+        },
+        "val": {
+          "pos": 18,
+          "neg": 6,
+          "unc": 3
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 4283,
+          "neg": 215548,
+          "unc": 548
+        },
+        "test": {
+          "pos": 89,
+          "neg": 3155,
+          "unc": 4
+        },
+        "val": {
+          "pos": 18,
+          "neg": 1765,
+          "unc": 3
+        }
+      }
+    },
+    "lung_lesion": {
+      "ignore": {
+        "train": {
+          "pos": 6091,
+          "neg": 841,
+          "unc": 1114
+        },
+        "test": {
+          "pos": 123,
+          "neg": 14,
+          "unc": 18
+        },
+        "val": {
+          "pos": 70,
+          "neg": 7,
+          "unc": 9
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 6091,
+          "neg": 213174,
+          "unc": 1114
+        },
+        "test": {
+          "pos": 123,
+          "neg": 3107,
+          "unc": 18
+        },
+        "val": {
+          "pos": 70,
+          "neg": 1707,
+          "unc": 9
+        }
+      }
+    },
+    "lung_opacity": {
+      "ignore": {
+        "train": {
+          "pos": 50099,
+          "neg": 2993,
+          "unc": 3726
+        },
+        "test": {
+          "pos": 1038,
+          "neg": 58,
+          "unc": 79
+        },
+        "val": {
+          "pos": 388,
+          "neg": 18,
+          "unc": 26
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 50099,
+          "neg": 166554,
+          "unc": 3726
+        },
+        "test": {
+          "pos": 1038,
+          "neg": 2131,
+          "unc": 79
+        },
+        "val": {
+          "pos": 388,
+          "neg": 1372,
+          "unc": 26
+        }
+      }
+    },
+    "no_finding": {
+      "ignore": {
+        "train": {
+          "pos": 74305,
+          "neg": 0,
+          "unc": 0
+        },
+        "test": {
+          "pos": 568,
+          "neg": 0,
+          "unc": 0
+        },
+        "val": {
+          "pos": 582,
+          "neg": 0,
+          "unc": 0
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 74305,
+          "neg": 146074,
+          "unc": 0
+        },
+        "test": {
+          "pos": 568,
+          "neg": 2680,
+          "unc": 0
+        },
+        "val": {
+          "pos": 582,
+          "neg": 1204,
+          "unc": 0
+        }
+      }
+    },
+    "pleural_effusion": {
+      "ignore": {
+        "train": {
+          "pos": 52759,
+          "neg": 26615,
+          "unc": 5639
+        },
+        "test": {
+          "pos": 1074,
+          "neg": 340,
+          "unc": 130
+        },
+        "val": {
+          "pos": 467,
+          "neg": 203,
+          "unc": 45
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 52759,
+          "neg": 161981,
+          "unc": 5639
+        },
+        "test": {
+          "pos": 1074,
+          "neg": 2044,
+          "unc": 130
+        },
+        "val": {
+          "pos": 467,
+          "neg": 1274,
+          "unc": 45
+        }
+      }
+    },
+    "pleural_other": {
+      "ignore": {
+        "train": {
+          "pos": 1933,
+          "neg": 126,
+          "unc": 743
+        },
+        "test": {
+          "pos": 63,
+          "neg": 0,
+          "unc": 16
+        },
+        "val": {
+          "pos": 15,
+          "neg": 0,
+          "unc": 6
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 1933,
+          "neg": 217703,
+          "unc": 743
+        },
+        "test": {
+          "pos": 63,
+          "neg": 3169,
+          "unc": 16
+        },
+        "val": {
+          "pos": 15,
+          "neg": 1765,
+          "unc": 6
+        }
+      }
+    },
+    "pneumonia": {
+      "ignore": {
+        "train": {
+          "pos": 16093,
+          "neg": 23904,
+          "unc": 17797
+        },
+        "test": {
+          "pos": 335,
+          "neg": 268,
+          "unc": 350
+        },
+        "val": {
+          "pos": 128,
+          "neg": 166,
+          "unc": 144
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 16093,
+          "neg": 186489,
+          "unc": 17797
+        },
+        "test": {
+          "pos": 335,
+          "neg": 2563,
+          "unc": 350
+        },
+        "val": {
+          "pos": 128,
+          "neg": 1514,
+          "unc": 144
+        }
+      }
+    },
+    "pneumothorax": {
+      "ignore": {
+        "train": {
+          "pos": 10171,
+          "neg": 41271,
+          "unc": 1106
+        },
+        "test": {
+          "pos": 112,
+          "neg": 727,
+          "unc": 19
+        },
+        "val": {
+          "pos": 75,
+          "neg": 358,
+          "unc": 9
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 10171,
+          "neg": 209102,
+          "unc": 1106
+        },
+        "test": {
+          "pos": 112,
+          "neg": 3117,
+          "unc": 19
+        },
+        "val": {
+          "pos": 75,
+          "neg": 1702,
+          "unc": 9
+        }
+      }
+    },
+    "support_devices": {
+      "ignore": {
+        "train": {
+          "pos": 64868,
+          "neg": 3422,
+          "unc": 230
+        },
+        "test": {
+          "pos": 1125,
+          "neg": 34,
+          "unc": 4
+        },
+        "val": {
+          "pos": 565,
+          "neg": 30,
+          "unc": 3
+        }
+      },
+      "negative": {
+        "train": {
+          "pos": 64868,
+          "neg": 155281,
+          "unc": 230
+        },
+        "test": {
+          "pos": 1125,
+          "neg": 2119,
+          "unc": 4
+        },
+        "val": {
+          "pos": 565,
+          "neg": 1218,
+          "unc": 3
+        }
+      }
+    }
+  },
+  "splits": {
+    "train": {
+      "studies": 222758,
+      "labelled": 220379,
+      "no_record": 8,
+      "all_blank": 2371,
+      "unlabelled": 2379
+    },
+    "test": {
+      "studies": 3269,
+      "labelled": 3248,
+      "no_record": 0,
+      "all_blank": 21,
+      "unlabelled": 21
+    },
+    "val": {
+      "studies": 1808,
+      "labelled": 1786,
+      "no_record": 0,
+      "all_blank": 22,
+      "unlabelled": 22
+    }
+  },
+  "paper": {
+    "atelectasis": {
+      "train": {
+        "pos": 48181,
+        "neg": 10759,
+        "unc": 1579
+      }
+    },
+    "pneumothorax": {
+      "train": {
+        "pos": 10988,
+        "neg": 1193,
+        "unc": 44292
+      }
+    }
+  }
+}

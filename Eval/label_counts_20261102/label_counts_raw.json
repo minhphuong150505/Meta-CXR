@@ -1,0 +1,783 @@
+{
+  "excluded_labels": [],
+  "splits": {
+    "train": {
+      "negative": {
+        "classification_valid": 220379,
+        "per_label": {
+          "No Finding": {
+            "neg": 146074,
+            "pos": 74305,
+            "unc": 0,
+            "ignore": 2379,
+            "blank_raw": 146074
+          },
+          "Enlarged Cardiomediastinum": {
+            "neg": 204328,
+            "pos": 6968,
+            "unc": 9083,
+            "ignore": 2379,
+            "blank_raw": 199160
+          },
+          "Cardiomegaly": {
+            "neg": 170908,
+            "pos": 43602,
+            "unc": 5869,
+            "ignore": 2379,
+            "blank_raw": 155295
+          },
+          "Lung Opacity": {
+            "neg": 166554,
+            "pos": 50099,
+            "unc": 3726,
+            "ignore": 2379,
+            "blank_raw": 163561
+          },
+          "Lung Lesion": {
+            "neg": 213174,
+            "pos": 6091,
+            "unc": 1114,
+            "ignore": 2379,
+            "blank_raw": 212333
+          },
+          "Edema": {
+            "neg": 181509,
+            "pos": 26093,
+            "unc": 12777,
+            "ignore": 2379,
+            "blank_raw": 156376
+          },
+          "Consolidation": {
+            "neg": 205717,
+            "pos": 10476,
+            "unc": 4186,
+            "ignore": 2379,
+            "blank_raw": 197900
+          },
+          "Pneumonia": {
+            "neg": 186489,
+            "pos": 16093,
+            "unc": 17797,
+            "ignore": 2379,
+            "blank_raw": 162585
+          },
+          "Atelectasis": {
+            "neg": 165620,
+            "pos": 44718,
+            "unc": 10041,
+            "ignore": 2379,
+            "blank_raw": 164118
+          },
+          "Pneumothorax": {
+            "neg": 209102,
+            "pos": 10171,
+            "unc": 1106,
+            "ignore": 2379,
+            "blank_raw": 167831
+          },
+          "Pleural Effusion": {
+            "neg": 161981,
+            "pos": 52759,
+            "unc": 5639,
+            "ignore": 2379,
+            "blank_raw": 135366
+          },
+          "Pleural Other": {
+            "neg": 217703,
+            "pos": 1933,
+            "unc": 743,
+            "ignore": 2379,
+            "blank_raw": 217577
+          },
+          "Fracture": {
+            "neg": 215548,
+            "pos": 4283,
+            "unc": 548,
+            "ignore": 2379,
+            "blank_raw": 214671
+          },
+          "Support Devices": {
+            "neg": 155281,
+            "pos": 64868,
+            "unc": 230,
+            "ignore": 2379,
+            "blank_raw": 151859
+          }
+        },
+        "ignore_provenance": {
+          "studies": 222758,
+          "no_chexpert_record": 8,
+          "record_all_blank": 2371,
+          "ignore_cells_observed": 33306,
+          "ignore_cells_expected": 33306,
+          "ignore_cells_in_kept_columns_of_informative_studies": 0,
+          "ok": true
+        }
+      },
+      "ignore": {
+        "classification_valid": 220379,
+        "per_label": {
+          "No Finding": {
+            "neg": 0,
+            "pos": 74305,
+            "unc": 0,
+            "ignore": 148453,
+            "blank_raw": 146074
+          },
+          "Enlarged Cardiomediastinum": {
+            "neg": 5168,
+            "pos": 6968,
+            "unc": 9083,
+            "ignore": 201539,
+            "blank_raw": 199160
+          },
+          "Cardiomegaly": {
+            "neg": 15613,
+            "pos": 43602,
+            "unc": 5869,
+            "ignore": 157674,
+            "blank_raw": 155295
+          },
+          "Lung Opacity": {
+            "neg": 2993,
+            "pos": 50099,
+            "unc": 3726,
+            "ignore": 165940,
+            "blank_raw": 163561
+          },
+          "Lung Lesion": {
+            "neg": 841,
+            "pos": 6091,
+            "unc": 1114,
+            "ignore": 214712,
+            "blank_raw": 212333
+          },
+          "Edema": {
+            "neg": 25133,
+            "pos": 26093,
+            "unc": 12777,
+            "ignore": 158755,
+            "blank_raw": 156376
+          },
+          "Consolidation": {
+            "neg": 7817,
+            "pos": 10476,
+            "unc": 4186,
+            "ignore": 200279,
+            "blank_raw": 197900
+          },
+          "Pneumonia": {
+            "neg": 23904,
+            "pos": 16093,
+            "unc": 17797,
+            "ignore": 164964,
+            "blank_raw": 162585
+          },
+          "Atelectasis": {
+            "neg": 1502,
+            "pos": 44718,
+            "unc": 10041,
+            "ignore": 166497,
+            "blank_raw": 164118
+          },
+          "Pneumothorax": {
+            "neg": 41271,
+            "pos": 10171,
+            "unc": 1106,
+            "ignore": 170210,
+            "blank_raw": 167831
+          },
+          "Pleural Effusion": {
+            "neg": 26615,
+            "pos": 52759,
+            "unc": 5639,
+            "ignore": 137745,
+            "blank_raw": 135366
+          },
+          "Pleural Other": {
+            "neg": 126,
+            "pos": 1933,
+            "unc": 743,
+            "ignore": 219956,
+            "blank_raw": 217577
+          },
+          "Fracture": {
+            "neg": 877,
+            "pos": 4283,
+            "unc": 548,
+            "ignore": 217050,
+            "blank_raw": 214671
+          },
+          "Support Devices": {
+            "neg": 3422,
+            "pos": 64868,
+            "unc": 230,
+            "ignore": 154238,
+            "blank_raw": 151859
+          }
+        },
+        "ignore_provenance": {
+          "studies": 222758,
+          "no_chexpert_record": 8,
+          "record_all_blank": 2371,
+          "ignore_cells_observed": 2478012,
+          "ignore_cells_expected": 33306,
+          "ignore_cells_in_kept_columns_of_informative_studies": 2444706,
+          "ok": false
+        }
+      }
+    },
+    "val": {
+      "negative": {
+        "classification_valid": 1786,
+        "per_label": {
+          "No Finding": {
+            "neg": 1204,
+            "pos": 582,
+            "unc": 0,
+            "ignore": 22,
+            "blank_raw": 1204
+          },
+          "Enlarged Cardiomediastinum": {
+            "neg": 1638,
+            "pos": 60,
+            "unc": 88,
+            "ignore": 22,
+            "blank_raw": 1587
+          },
+          "Cardiomegaly": {
+            "neg": 1350,
+            "pos": 377,
+            "unc": 59,
+            "ignore": 22,
+            "blank_raw": 1226
+          },
+          "Lung Opacity": {
+            "neg": 1372,
+            "pos": 388,
+            "unc": 26,
+            "ignore": 22,
+            "blank_raw": 1354
+          },
+          "Lung Lesion": {
+            "neg": 1707,
+            "pos": 70,
+            "unc": 9,
+            "ignore": 22,
+            "blank_raw": 1700
+          },
+          "Edema": {
+            "neg": 1436,
+            "pos": 242,
+            "unc": 108,
+            "ignore": 22,
+            "blank_raw": 1233
+          },
+          "Consolidation": {
+            "neg": 1656,
+            "pos": 82,
+            "unc": 48,
+            "ignore": 22,
+            "blank_raw": 1601
+          },
+          "Pneumonia": {
+            "neg": 1514,
+            "pos": 128,
+            "unc": 144,
+            "ignore": 22,
+            "blank_raw": 1348
+          },
+          "Atelectasis": {
+            "neg": 1332,
+            "pos": 359,
+            "unc": 95,
+            "ignore": 22,
+            "blank_raw": 1323
+          },
+          "Pneumothorax": {
+            "neg": 1702,
+            "pos": 75,
+            "unc": 9,
+            "ignore": 22,
+            "blank_raw": 1344
+          },
+          "Pleural Effusion": {
+            "neg": 1274,
+            "pos": 467,
+            "unc": 45,
+            "ignore": 22,
+            "blank_raw": 1071
+          },
+          "Pleural Other": {
+            "neg": 1765,
+            "pos": 15,
+            "unc": 6,
+            "ignore": 22,
+            "blank_raw": 1765
+          },
+          "Fracture": {
+            "neg": 1765,
+            "pos": 18,
+            "unc": 3,
+            "ignore": 22,
+            "blank_raw": 1759
+          },
+          "Support Devices": {
+            "neg": 1218,
+            "pos": 565,
+            "unc": 3,
+            "ignore": 22,
+            "blank_raw": 1188
+          }
+        },
+        "ignore_provenance": {
+          "studies": 1808,
+          "no_chexpert_record": 0,
+          "record_all_blank": 22,
+          "ignore_cells_observed": 308,
+          "ignore_cells_expected": 308,
+          "ignore_cells_in_kept_columns_of_informative_studies": 0,
+          "ok": true
+        }
+      },
+      "ignore": {
+        "classification_valid": 1786,
+        "per_label": {
+          "No Finding": {
+            "neg": 0,
+            "pos": 582,
+            "unc": 0,
+            "ignore": 1226,
+            "blank_raw": 1204
+          },
+          "Enlarged Cardiomediastinum": {
+            "neg": 51,
+            "pos": 60,
+            "unc": 88,
+            "ignore": 1609,
+            "blank_raw": 1587
+          },
+          "Cardiomegaly": {
+            "neg": 124,
+            "pos": 377,
+            "unc": 59,
+            "ignore": 1248,
+            "blank_raw": 1226
+          },
+          "Lung Opacity": {
+            "neg": 18,
+            "pos": 388,
+            "unc": 26,
+            "ignore": 1376,
+            "blank_raw": 1354
+          },
+          "Lung Lesion": {
+            "neg": 7,
+            "pos": 70,
+            "unc": 9,
+            "ignore": 1722,
+            "blank_raw": 1700
+          },
+          "Edema": {
+            "neg": 203,
+            "pos": 242,
+            "unc": 108,
+            "ignore": 1255,
+            "blank_raw": 1233
+          },
+          "Consolidation": {
+            "neg": 55,
+            "pos": 82,
+            "unc": 48,
+            "ignore": 1623,
+            "blank_raw": 1601
+          },
+          "Pneumonia": {
+            "neg": 166,
+            "pos": 128,
+            "unc": 144,
+            "ignore": 1370,
+            "blank_raw": 1348
+          },
+          "Atelectasis": {
+            "neg": 9,
+            "pos": 359,
+            "unc": 95,
+            "ignore": 1345,
+            "blank_raw": 1323
+          },
+          "Pneumothorax": {
+            "neg": 358,
+            "pos": 75,
+            "unc": 9,
+            "ignore": 1366,
+            "blank_raw": 1344
+          },
+          "Pleural Effusion": {
+            "neg": 203,
+            "pos": 467,
+            "unc": 45,
+            "ignore": 1093,
+            "blank_raw": 1071
+          },
+          "Pleural Other": {
+            "neg": 0,
+            "pos": 15,
+            "unc": 6,
+            "ignore": 1787,
+            "blank_raw": 1765
+          },
+          "Fracture": {
+            "neg": 6,
+            "pos": 18,
+            "unc": 3,
+            "ignore": 1781,
+            "blank_raw": 1759
+          },
+          "Support Devices": {
+            "neg": 30,
+            "pos": 565,
+            "unc": 3,
+            "ignore": 1210,
+            "blank_raw": 1188
+          }
+        },
+        "ignore_provenance": {
+          "studies": 1808,
+          "no_chexpert_record": 0,
+          "record_all_blank": 22,
+          "ignore_cells_observed": 20011,
+          "ignore_cells_expected": 308,
+          "ignore_cells_in_kept_columns_of_informative_studies": 19703,
+          "ok": false
+        }
+      }
+    },
+    "test": {
+      "negative": {
+        "classification_valid": 3248,
+        "per_label": {
+          "No Finding": {
+            "neg": 2680,
+            "pos": 568,
+            "unc": 0,
+            "ignore": 21,
+            "blank_raw": 2680
+          },
+          "Enlarged Cardiomediastinum": {
+            "neg": 2893,
+            "pos": 151,
+            "unc": 204,
+            "ignore": 21,
+            "blank_raw": 2829
+          },
+          "Cardiomegaly": {
+            "neg": 2267,
+            "pos": 866,
+            "unc": 115,
+            "ignore": 21,
+            "blank_raw": 2093
+          },
+          "Lung Opacity": {
+            "neg": 2131,
+            "pos": 1038,
+            "unc": 79,
+            "ignore": 21,
+            "blank_raw": 2073
+          },
+          "Lung Lesion": {
+            "neg": 3107,
+            "pos": 123,
+            "unc": 18,
+            "ignore": 21,
+            "blank_raw": 3093
+          },
+          "Edema": {
+            "neg": 2276,
+            "pos": 683,
+            "unc": 289,
+            "ignore": 21,
+            "blank_raw": 1971
+          },
+          "Consolidation": {
+            "neg": 2931,
+            "pos": 220,
+            "unc": 97,
+            "ignore": 21,
+            "blank_raw": 2836
+          },
+          "Pneumonia": {
+            "neg": 2563,
+            "pos": 335,
+            "unc": 350,
+            "ignore": 21,
+            "blank_raw": 2295
+          },
+          "Atelectasis": {
+            "neg": 2326,
+            "pos": 731,
+            "unc": 191,
+            "ignore": 21,
+            "blank_raw": 2306
+          },
+          "Pneumothorax": {
+            "neg": 3117,
+            "pos": 112,
+            "unc": 19,
+            "ignore": 21,
+            "blank_raw": 2390
+          },
+          "Pleural Effusion": {
+            "neg": 2044,
+            "pos": 1074,
+            "unc": 130,
+            "ignore": 21,
+            "blank_raw": 1704
+          },
+          "Pleural Other": {
+            "neg": 3169,
+            "pos": 63,
+            "unc": 16,
+            "ignore": 21,
+            "blank_raw": 3169
+          },
+          "Fracture": {
+            "neg": 3155,
+            "pos": 89,
+            "unc": 4,
+            "ignore": 21,
+            "blank_raw": 3152
+          },
+          "Support Devices": {
+            "neg": 2119,
+            "pos": 1125,
+            "unc": 4,
+            "ignore": 21,
+            "blank_raw": 2085
+          }
+        },
+        "ignore_provenance": {
+          "studies": 3269,
+          "no_chexpert_record": 0,
+          "record_all_blank": 21,
+          "ignore_cells_observed": 294,
+          "ignore_cells_expected": 294,
+          "ignore_cells_in_kept_columns_of_informative_studies": 0,
+          "ok": true
+        }
+      },
+      "ignore": {
+        "classification_valid": 3248,
+        "per_label": {
+          "No Finding": {
+            "neg": 0,
+            "pos": 568,
+            "unc": 0,
+            "ignore": 2701,
+            "blank_raw": 2680
+          },
+          "Enlarged Cardiomediastinum": {
+            "neg": 64,
+            "pos": 151,
+            "unc": 204,
+            "ignore": 2850,
+            "blank_raw": 2829
+          },
+          "Cardiomegaly": {
+            "neg": 174,
+            "pos": 866,
+            "unc": 115,
+            "ignore": 2114,
+            "blank_raw": 2093
+          },
+          "Lung Opacity": {
+            "neg": 58,
+            "pos": 1038,
+            "unc": 79,
+            "ignore": 2094,
+            "blank_raw": 2073
+          },
+          "Lung Lesion": {
+            "neg": 14,
+            "pos": 123,
+            "unc": 18,
+            "ignore": 3114,
+            "blank_raw": 3093
+          },
+          "Edema": {
+            "neg": 305,
+            "pos": 683,
+            "unc": 289,
+            "ignore": 1992,
+            "blank_raw": 1971
+          },
+          "Consolidation": {
+            "neg": 95,
+            "pos": 220,
+            "unc": 97,
+            "ignore": 2857,
+            "blank_raw": 2836
+          },
+          "Pneumonia": {
+            "neg": 268,
+            "pos": 335,
+            "unc": 350,
+            "ignore": 2316,
+            "blank_raw": 2295
+          },
+          "Atelectasis": {
+            "neg": 20,
+            "pos": 731,
+            "unc": 191,
+            "ignore": 2327,
+            "blank_raw": 2306
+          },
+          "Pneumothorax": {
+            "neg": 727,
+            "pos": 112,
+            "unc": 19,
+            "ignore": 2411,
+            "blank_raw": 2390
+          },
+          "Pleural Effusion": {
+            "neg": 340,
+            "pos": 1074,
+            "unc": 130,
+            "ignore": 1725,
+            "blank_raw": 1704
+          },
+          "Pleural Other": {
+            "neg": 0,
+            "pos": 63,
+            "unc": 16,
+            "ignore": 3190,
+            "blank_raw": 3169
+          },
+          "Fracture": {
+            "neg": 3,
+            "pos": 89,
+            "unc": 4,
+            "ignore": 3173,
+            "blank_raw": 3152
+          },
+          "Support Devices": {
+            "neg": 34,
+            "pos": 1125,
+            "unc": 4,
+            "ignore": 2106,
+            "blank_raw": 2085
+          }
+        },
+        "ignore_provenance": {
+          "studies": 3269,
+          "no_chexpert_record": 0,
+          "record_all_blank": 21,
+          "ignore_cells_observed": 34970,
+          "ignore_cells_expected": 294,
+          "ignore_cells_in_kept_columns_of_informative_studies": 34676,
+          "ok": false
+        }
+      }
+    }
+  },
+  "class_weights_negative": [
+    {
+      "label": "No Finding",
+      "w_pos": 1.966,
+      "w_unc": 1.0,
+      "raw_pos": 1.965870399031021,
+      "raw_unc": null
+    },
+    {
+      "label": "Enlarged Cardiomediastinum",
+      "w_pos": 10.0,
+      "w_unc": 10.0,
+      "raw_pos": 29.323765786452352,
+      "raw_unc": 22.495651216558407
+    },
+    {
+      "label": "Cardiomegaly",
+      "w_pos": 3.92,
+      "w_unc": 10.0,
+      "raw_pos": 3.919728452823265,
+      "raw_unc": 29.120463452036123
+    },
+    {
+      "label": "Lung Opacity",
+      "w_pos": 3.324,
+      "w_unc": 10.0,
+      "raw_pos": 3.3244974949599793,
+      "raw_unc": 44.70048309178744
+    },
+    {
+      "label": "Lung Lesion",
+      "w_pos": 10.0,
+      "w_unc": 10.0,
+      "raw_pos": 34.998194056805126,
+      "raw_unc": 191.35906642728904
+    },
+    {
+      "label": "Edema",
+      "w_pos": 6.956,
+      "w_unc": 10.0,
+      "raw_pos": 6.956233472578853,
+      "raw_unc": 14.205916881897158
+    },
+    {
+      "label": "Consolidation",
+      "w_pos": 10.0,
+      "w_unc": 10.0,
+      "raw_pos": 19.636979763268425,
+      "raw_unc": 49.14405160057334
+    },
+    {
+      "label": "Pneumonia",
+      "w_pos": 10.0,
+      "w_unc": 10.0,
+      "raw_pos": 11.588206052320885,
+      "raw_unc": 10.478676181378884
+    },
+    {
+      "label": "Atelectasis",
+      "w_pos": 3.704,
+      "w_unc": 10.0,
+      "raw_pos": 3.70365400957109,
+      "raw_unc": 16.494373070411314
+    },
+    {
+      "label": "Pneumothorax",
+      "w_pos": 10.0,
+      "w_unc": 10.0,
+      "raw_pos": 20.558647134008456,
+      "raw_unc": 189.0614828209765
+    },
+    {
+      "label": "Pleural Effusion",
+      "w_pos": 3.07,
+      "w_unc": 10.0,
+      "raw_pos": 3.0702060311984685,
+      "raw_unc": 28.725128568895194
+    },
+    {
+      "label": "Pleural Other",
+      "w_pos": 10.0,
+      "w_unc": 10.0,
+      "raw_pos": 112.62441800310398,
+      "raw_unc": 293.0053835800808
+    },
+    {
+      "label": "Fracture",
+      "w_pos": 10.0,
+      "w_unc": 10.0,
+      "raw_pos": 50.326406724258696,
+      "raw_unc": 393.33576642335765
+    },
+    {
+      "label": "Support Devices",
+      "w_pos": 2.394,
+      "w_unc": 10.0,
+      "raw_pos": 2.393799716347043,
+      "raw_unc": 675.1347826086957
+    }
+  ]
+}
