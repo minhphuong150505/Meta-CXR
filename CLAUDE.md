@@ -1496,6 +1496,10 @@ study (not image) → anchor + ≤1 auxiliary view
   P/N/U cues from OFF + R1 for PL studies; `generate_stage2_reports.py --cue-override <npz>` (default off, bit-identical)
   swaps only the PL records' cues on the two OFF pilot adapters (`pilot_OFF` s16, `pilot_OFF17`), after checking the records'
   own cues against OFF's (>= 99%). Rule and guards (G0 control reproduction): the handoff's "R1 vào giai đoạn 2 — bước A".
+  ❌ **RAN 2026-11-07 (`~/r1s2_20261107/`, val n=1,360): NOT AN IMPROVEMENT by the rule.** G0 passed (100/100 identical at
+  both seeds); 223 cue cells changed in 174 of 714 PL records. CheXbert micro F1-14 R - C: s16 +0.0056 [+0.0008, +0.0105],
+  s17 +0.0031 [-0.0017, +0.0086] (rule needed lower > 0 at both); BERTScore guard passes (+0.0013 / -0.0006). PL-only
+  descriptive +0.0144* / +0.0081. Adapters were trained on OFF cues; step B (retrain) is the untested fair version.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

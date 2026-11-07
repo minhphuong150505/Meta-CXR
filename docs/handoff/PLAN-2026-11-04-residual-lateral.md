@@ -878,3 +878,24 @@ Mỗi arm: 1.360 viết / 0 lỗi, cùng thứ tự `sample_key` và reference v
 - Báo đủ: mọi chỉ số khác, số ô cue đổi, và (mô tả) các chỉ số trên riêng nhóm PL.
 - Hạn chế nói trước: adapter train với cue OFF, nên đây chưa là phép thử công bằng (đó là bước B). Test KHÔNG đọc; số giai đoạn
   2 báo cáo (P2, trên ON) không đổi.
+
+## Execution report — R1 vào giai đoạn 2, bước A (GPU 2026-11-07 17:17 → 20:20, `~/r1s2_20261107/`; test KHÔNG đọc)
+
+Chuỗi `~/r1s2_chain.sh` chạy một lần, checkout `~/Meta-CXR-r1s2` ở `bc79175`, env manifest v3. `r1_stage2_cues.py`: val 1.808
+study, PL 797; 268 ô cue đổi ở 208 study, 0 ô ngoài PL. Guard: **G0 qua ở cả hai seed (100/100 báo cáo trùng từng chữ với bản
+ghi cũ)**, nên đối chứng C = JSONL đã có; cue của 714 bản ghi PL (trong 1.360 study có báo cáo) khớp `off_codes` 99,989%; 223 ô
+đổi ở 174 bản ghi; 1.360 viết / 0 lỗi; C và R cùng thứ tự `sample_key` và reference. Báo cáo trùng hệt C: 1.216 (s16), 1.209 (s17).
+
+**Quyết định (quy tắc chốt trước), R − C, val n = 1.360, bootstrap 2.000, seed 16:**
+
+| | CheXbert micro F1-14 | BERTScore |
+|---|---|---|
+| seed 16 | +0,0056 [+0,0008, +0,0105] | +0,0013 [−0,0003, +0,0029] |
+| seed 17 | +0,0031 [−0,0017, +0,0086] | −0,0006 [−0,0026, +0,0012] |
+
+Cận dưới CheXbert > 0 chỉ ở seed 16 → **"KHÔNG CẢI THIỆN"** theo quy tắc (cần cả hai seed). Rào chắn BERTScore qua ở cả hai seed.
+Chiều dương ở cả hai seed (trung bình +0,0044), nhưng chưa đủ.
+
+Mô tả: s16 / s17 — macro F1-14 +0,0020 / −0,0008; micro F1-5 +0,0058 / +0,0036; ROUGE-L +0,0011 / +0,0005; CIDEr +0,0034 / +0,0017;
+lexicon CE +0,0041 / −0,0055 (mọi CI chứa 0). Riêng nhóm PL (n = 714): CheXbert micro F1-14 +0,0144 [+0,0020, +0,0274] / +0,0081
+[−0,0046, +0,0212]; BERTScore +0,0025 / −0,0011. Hạn chế: adapter train với cue OFF; chưa phải phép thử công bằng (bước B).
