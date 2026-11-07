@@ -1484,6 +1484,10 @@ study (not image) → anchor + ≤1 auxiliary view
   arms `scale` / `rank` (rank-swap inside PL), fix = 1-D Platt per (PL / non-PL, finding, channel) fitted on TRAIN, applied to
   OFF and R1 alike; strictly monotone, so within-group metrics are unchanged (asserted); ranking metrics only, decisions
   untouched. Rule (R1_cal - OFF pooled AUROC Pos: TANG / HET GIAM / VAN GIAM): the handoff's "Hiệu chỉnh theo nhóm" section.
+  ✅ **RAN 2026-11-07 (`~/reslat_calib_20261107/`, val n=1,808): the pooled drop IS a scale mismatch, and calibration fixes
+  it.** `scale` arm -0.0112, `rank` arm +0.0033 (Pneumothorax pooled -0.124 raw). R1_cal - OFF **+0.0064 [+0.0031, +0.0095]
+  -> TANG**; half of it is OFF's own calibration (OFF_cal - OFF +0.0032), R1_cal - OFF_cal +0.0032 [+0.0013, +0.0053].
+  Within-group metrics unchanged bit for bit. Reporting-level fix, not a better model; test not read.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

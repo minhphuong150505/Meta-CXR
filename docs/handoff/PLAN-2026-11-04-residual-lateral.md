@@ -794,3 +794,28 @@ từng nhóm không đổi (assert ≤ 1e-12). Chỉ dùng cho chỉ số xếp 
 theo study (seed 16): cận dưới > 0 → "TĂNG"; CI chứa 0 → "HẾT GIẢM"; cận trên < 0 → "VẪN GIẢM". Báo thêm (R1 hiệu chỉnh) −
 (OFF hiệu chỉnh), OFF hiệu chỉnh − OFF, AUROC Unc, AP present gộp, từng finding. Diễn giải: sửa ở mức chấm điểm gộp, không
 phải mô hình tốt hơn. **Test KHÔNG đọc**; số gộp trên test cần lần đọc riêng, khai báo trước là chỉ phục vụ hiệu chuẩn.
+
+## Execution report — Hiệu chỉnh theo nhóm (CPU 2026-11-07, `~/reslat_calib_20261107/`; test KHÔNG đọc)
+
+Host ở `ca3bd51`, rc 0. Val n = 1.808 (PL 797), train n = 222.758 (PL 103.062). OFF 0,8029 và R1 0,7943 tái lập B2a.
+Assert trong nhóm: thay đổi lớn nhất 0,0 (AUROC/AP trong PL và non-PL giữ nguyên từng bit).
+
+| arm | AUROC Pos gộp | AUROC Unc gộp | AP present gộp |
+|---|---|---|---|
+| OFF (báo cáo) | 0,8029 | 0,6752 | 0,4207 |
+| OFF hiệu chỉnh | 0,8061 | 0,6918 | 0,4247 |
+| R1 | 0,7943 | 0,6981 | 0,4202 |
+| `scale` (thứ hạng OFF, giá trị R1) | 0,7917 | 0,6912 | 0,4183 |
+| `rank` (thứ hạng R1, giá trị OFF) | 0,8062 | 0,6859 | 0,4233 |
+| **R1 hiệu chỉnh** | **0,8094** | 0,7028 | 0,4268 |
+
+Bootstrap AUROC Pos gộp: R1 − OFF −0,0086 [−0,0173, −0,0003]; `scale` − OFF −0,0112 [−0,0197, −0,0027]; `rank` − OFF
++0,0033 [+0,0016, +0,0053]; **R1 hiệu chỉnh − OFF +0,0064 [+0,0031, +0,0095] → "TĂNG"**; R1 hiệu chỉnh − OFF hiệu chỉnh
++0,0032 [+0,0013, +0,0053]; OFF hiệu chỉnh − OFF +0,0032 [+0,0000, +0,0064].
+
+**Bước A:** chỉ đổi thang (`scale`) đã giảm −0,0112, còn chỉ đổi thứ hạng (`rank`) tăng +0,0033 → mức giảm gộp là do lệch thang
+giữa PL và non-PL, không phải do R1 xếp hạng kém. Lớn nhất ở Pneumothorax: R1 thô gộp −0,124 (sau hiệu chỉnh −0,008); cũng
+Pneumonia −0,026, Lung Opacity −0,022, PE −0,020 (sau hiệu chỉnh ≈ 0).
+**Bước B:** theo quy tắc → "TĂNG". Một nửa mức tăng (+0,0032) đến từ việc hiệu chỉnh chính OFF (OFF cũng lệch thang giữa
+hai nhóm); phần của R1 sau khi cả hai cùng hiệu chỉnh là +0,0032. Diễn giải: sửa ở mức chấm điểm gộp; quyết định N/U/P
+và mọi số trong nhóm không đổi. Một split (val), Platt fit trên train; test chưa đọc.
