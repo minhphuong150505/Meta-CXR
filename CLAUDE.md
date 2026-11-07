@@ -1488,6 +1488,10 @@ study (not image) → anchor + ≤1 auxiliary view
   it.** `scale` arm -0.0112, `rank` arm +0.0033 (Pneumothorax pooled -0.124 raw). R1_cal - OFF **+0.0064 [+0.0031, +0.0095]
   -> TANG**; half of it is OFF's own calibration (OFF_cal - OFF +0.0032), R1_cal - OFF_cal +0.0032 [+0.0013, +0.0053].
   Within-group metrics unchanged bit for bit. Reporting-level fix, not a better model; test not read.
+  ✅ **TEST READ ONCE for calibration (2026-11-07, `~/reslat_calibtest_20261107/`, n=3,269, the Step-3 candidate: R1 fit on
+  all val PL, Platt on train):** raw numbers reproduce Step 3 bit for bit; `scale` -0.0120, `rank` +0.0025; R1_cal - OFF
+  **+0.0060 [+0.0040, +0.0079] -> TANG** (val +0.0064); R1_cal - OFF_cal +0.0027 [+0.0017, +0.0037]; OFF_cal - OFF +0.0033.
+  Pneumothorax pooled -0.067 raw -> +0.001 calibrated. Say "half of the gain over the reported OFF is OFF's own calibration".
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

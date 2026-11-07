@@ -831,3 +831,27 @@ nguyên lên test. Dùng lại chuyên gia test đã có từ Bước 3 (`~/resl
 **Quy tắc (như val):** Δ = AUROC Pos gộp toàn test (n = 3.269), (R1 hiệu chỉnh) − OFF (bản gốc), TB 3 seed, bootstrap 2.000:
 cận dưới > 0 → "TĂNG"; CI chứa 0 → "HẾT GIẢM"; cận trên < 0 → "VẪN GIẢM". Báo thêm R1_cal − OFF_cal, OFF_cal − OFF, AUROC
 Unc, AP present, từng finding, cánh `scale`/`rank`. Đây là lần đọc test duy nhất cho phép hiệu chuẩn này.
+
+## Execution report — Hiệu chỉnh theo nhóm trên TEST (đọc MỘT lần, CPU 2026-11-07, `~/reslat_calibtest_20261107/`)
+
+Host ở `27e818d`, rc 0. Guard: nhóm test PL 1.196 / F1 1.841 / other 232; số thô tái lập Bước 3 từng bit (OFF 0,78606…,
+R1 0,77672… = `whole_test` của `step3_test.json`); thay đổi trong nhóm lớn nhất 0,0.
+
+| arm (toàn test, n = 3.269) | AUROC Pos gộp | AUROC Unc gộp | AP present gộp |
+|---|---|---|---|
+| OFF (báo cáo) | 0,7861 | 0,6446 | 0,4191 |
+| OFF hiệu chỉnh | 0,7894 | 0,6540 | 0,4221 |
+| R1 | 0,7767 | 0,6656 | 0,4153 |
+| `scale` | 0,7740 | 0,6544 | 0,4140 |
+| `rank` | 0,7886 | 0,6590 | 0,4219 |
+| **R1 hiệu chỉnh** | **0,7920** | 0,6676 | 0,4236 |
+
+Bootstrap AUROC Pos gộp: R1 − OFF −0,0093 [−0,0146, −0,0041]; `scale` − OFF −0,0120 [−0,0173, −0,0069]; `rank` − OFF +0,0025
+[+0,0015, +0,0035]; **R1 hiệu chỉnh − OFF +0,0060 [+0,0040, +0,0079] → "TĂNG"** (val +0,0064); R1 hiệu chỉnh − OFF hiệu chỉnh
++0,0027 [+0,0017, +0,0037] (val +0,0032); OFF hiệu chỉnh − OFF +0,0033 [+0,0016, +0,0050].
+Từng finding, R1 thô − OFF → R1 hiệu chỉnh − OFF: Pneumothorax −0,067 → +0,001; Lung Opacity −0,032 → +0,006; Pneumonia −0,031 →
++0,003; Lung Lesion −0,028 → +0,001; Enlarged Cardiomediastinum −0,018 → +0,002; không finding nào âm sau hiệu chỉnh
+(R1_cal − OFF_cal: nhỏ nhất Pneumonia −0,0006, Cardiomegaly −0,0003).
+Kết luận: val và test cùng chiều — mức giảm gộp là lệch thang PL/non-PL, hiệu chỉnh theo nhóm sửa được. Một nửa mức tăng
+so với OFF báo cáo là nhờ hiệu chỉnh chính OFF. Mức chấm điểm gộp; quyết định N/U/P và số trong nhóm không đổi. Đây là lần
+đọc test duy nhất cho hiệu chuẩn này.
