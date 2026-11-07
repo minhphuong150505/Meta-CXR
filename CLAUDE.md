@@ -1476,6 +1476,9 @@ study (not image) → anchor + ≤1 auxiliary view
   `a0[f] + a1[f] * H(p_OFF)/log3` (a0, a1 in [0, 3]; a1 = 0 = R1), adds an ungated `OFF+L_R1` arm and reads
   `DH = R1H - R1` (`rule_gate`: lower CI > 0, > NB/sqrt3, non-T guardrail). Default `none` is bit-identical. Fit on train
   PL as B2a; test NOT read (variant conceived after R1's test reading). Rule: the handoff's "R1H" section.
+  ❌ **RAN 2026-11-07 (`~/reslat_r1h_20261107/`, val PL n=797): NOT AN IMPROVEMENT.** DH AP_pos(T) +0.0016
+  [-0.0004, +0.0045] (NB/sqrt3 0.0014; lower CI not > 0). a1 > 0 on 13/14 findings (the data lean the hypothesised way),
+  but every per-finding DH CI holds 0; pooled all-val AUROC Pos 0.7944 vs R1 0.7943 (the pooled drop is not fixed). R1 stays.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

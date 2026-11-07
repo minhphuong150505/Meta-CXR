@@ -760,3 +760,19 @@ val PL n = 797; chuyên gia val = trung bình 2 mô hình fold. Thư mục `~/re
   wF1 / F1-5 theo cutpoint, từng finding, Dperm; D2 chỉ mô tả.
 - **Test KHÔNG đọc.** R1H là biến thể nghĩ ra SAU khi đã thấy test của R1; nếu qua, việc đọc test cần user quyết riêng và
   phải ghi rõ điều này.
+
+## Execution report — R1H (CPU 2026-11-07, `~/reslat_r1h_20261107/`; test KHÔNG đọc)
+
+Host ở `2c1fb12`, `run.sh` = lệnh `b2a_train2` + `--gate entropy`, rc 0. Nhóm val PL 797 / F1 930 / other 81 khớp. Arm đối
+chứng `OFF+L_R1` tái lập `b2a_train2` (toàn val AUROC Pos 0,7943, wF1 0,8591, F1-5 0,8093).
+
+**Quyết định (quy tắc chốt trước):** DH = R1H − R1, AP_pos(T): **+0,0016 [−0,0004, +0,0045]**, NB/√3 0,0014. Cận dưới CI
+không > 0 → **"R1H KHÔNG CẢI THIỆN"** (Δ > NB/√3 qua; rào chắn non-T −0,0002 ≥ −0,0014 qua).
+
+Mô tả: D1 của R1H +0,0173 [+0,0027, +0,0353] (R1 +0,0158); D2 +0,0111 [−0,0021, +0,0258] (vẫn không xác lập); Dperm −0,0148.
+DH theo finding T: Edema +0,0050, PE +0,0022, Consolidation +0,0016, Cardiomegaly −0,0001, Atelectasis −0,0008, mọi CI chứa 0.
+DH AUROC Pos TB +0,0004, cutpoint PL wF1 0,0000, F1-5 −0,0008, macro recall +0,0031. Toàn val AUROC Pos gộp 0,7944 (R1 0,7943,
+OFF 0,8029): cổng entropy không sửa được mức giảm xếp hạng gộp.
+a1 fit được > 0 ở 13/14 finding (0,06 Cardiomegaly … 0,39 Pneumonia; No Finding a0 = 0, a1 0,10), a0 nhỏ hơn a của R1, tức dữ
+liệu CÓ nghiêng về "lateral đóng góp nhiều hơn khi OFF không chắc", nhưng mức lợi trên AP_pos(T) nằm trong CI chứa 0.
+Không bước tiếp; ứng viên báo cáo vẫn là R1.
