@@ -1500,6 +1500,12 @@ study (not image) → anchor + ≤1 auxiliary view
   both seeds); 223 cue cells changed in 174 of 714 PL records. CheXbert micro F1-14 R - C: s16 +0.0056 [+0.0008, +0.0105],
   s17 +0.0031 [-0.0017, +0.0086] (rule needed lower > 0 at both); BERTScore guard passes (+0.0013 / -0.0006). PL-only
   descriptive +0.0144* / +0.0081. Adapters were trained on OFF cues; step B (retrain) is the untested fair version.
+  🧪 **Step B (retrain, user-approved 2026-11-08, ~10 h GPU, val only):** the override now carries the R1 RECIPE and is applied
+  to each record's OWN logits (`training/dataio/cue_override.py`; Stage-2 train records come from augmented images), via
+  `run_medgemma_qlora.py --cue-override-train/--cue-override-val` (before `oracle_mix`) and `generate_stage2_reports.py
+  --cue-override`; `r1_stage2_cues.py --out-prefix` writes `<p>_val.npz` / `<p>_train.npz`. Step A's npz format is retired
+  (its numbers stand). C and R are both retrained in one checkout (the YAML-mtime trap makes old pilots unmatched). Rule
+  (two-seed mean CheXbert micro F1-14 > 0.0136 and lower CI > 0 at both seeds): the handoff's "bước B" section.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

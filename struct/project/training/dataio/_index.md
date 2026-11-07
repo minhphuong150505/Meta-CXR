@@ -28,6 +28,7 @@ train/val/test.csv ──► manifest.build_records() ──► list[dict] ─�
 | `validate_manifest.py` | — | [📄](validate_manifest.py.doc.md) | CLI kiểm tra invariant |
 | `study_context.py` | — | [📄](study_context.py.doc.md) | Bối cảnh prompt `paper_context`: INDICATION/HISTORY + FINDINGS lần chụp trước (2026-10-11) |
 | `oracle_cues.py` | — | [📄](oracle_cues.py.doc.md) | Cue train từ nhãn thật trộn MHCAC (`--train-cues oracle_mix`, 2026-10-11) |
+| `cue_override.py` | — | [📄](cue_override.py.doc.md) | Cue PL từ OFF + R1 lateral trên logit của bản ghi (`--cue-override*`, 2026-11-08) |
 
 ## Main responsibilities
 

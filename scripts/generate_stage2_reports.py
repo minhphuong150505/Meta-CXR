@@ -185,10 +185,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "label-leaking upper bound that asks whether the adapter reads "
                              "its cues, never a reportable result.")
     stage1.add_argument("--cue-override", type=Path, default=None,
-                        help="2026-11-07 (opt-in): npz from scripts/r1_stage2_cues.py. Replaces the P/N/U "
-                             "cues of the studies it marks PL by its new_codes (OFF + lateral R1), after "
-                             "checking each record's own cues against its off_codes; every other study "
-                             "keeps its cues byte for byte. Needs --cue-rule cutpoints.")
+                        help="2026-11-07 (opt-in): <prefix>_val.npz from scripts/r1_stage2_cues.py. "
+                             "Recomputes the P/N/U cues of PL studies from each record's own logits with "
+                             "the lateral R1 residual (training/dataio/cue_override.py), after checking its "
+                             "current cues against OFF's cutpoints; every other study keeps its cues byte "
+                             "for byte. Needs --cue-rule cutpoints.")
     stage1.add_argument("--stage1-cache-dir", type=Path, default=None,
                         help="Where .sensitive_stage1_cache lives. Point it at the "
                              "TRAINING output dir to reuse that run's encode pass; "
@@ -528,61 +529,14 @@ def apply_oracle_cues(
     return mix_oracle_cues(records, codes, findings, model_share=0.0, seed=seed)
 
 
-#: Guard of --cue-override: share of the PL records' cue cells that must equal off_codes.
-CUE_OVERRIDE_MIN_AGREEMENT = 0.99
-
-
-def _groups_from_codes(codes, names: Sequence[str], findings: Sequence[str]) -> dict[str, list[str]]:
-    """P/N/U groups in ``findings`` order (as ``classify_with_thresholds`` builds them); No Finding skipped."""
-    by_name = {n: int(c) for n, c in zip(names, codes, strict=True)}
-    out = {"positive": [], "negative": [], "uncertain": []}
-    label = {0: "negative", 1: "positive", 2: "uncertain"}
-    for name in findings:
-        if name == "No Finding":
-            continue
-        out[label[by_name[name]]].append(name)
-    return out
-
-
 def apply_cue_override(records: list[dict], path: Path, findings: Sequence[str]) -> dict[str, int | float]:
-    """Swap the cues of the PL records for the override's ``new_codes``; return counts only.
+    """R1 cues for the PL records (``training/dataio/cue_override.py``); counts only."""
+    try:
+        from training.dataio.cue_override import apply_r1_cues, load_override
+    except ImportError:  # script layout
+        from dataio.cue_override import apply_r1_cues, load_override
 
-    Every record must be in the override (by ``sample_key``). The PL records' own cues are compared with
-    ``off_codes`` cell by cell and the call refuses below ``CUE_OVERRIDE_MIN_AGREEMENT``: that proves the
-    records and the override describe the same studies under the same OFF model. Non-PL records are not
-    touched at all.
-    """
-    import numpy as np
-
-    with np.load(path, allow_pickle=False) as h:
-        keys, names = h["keys"], [str(n) for n in h["names"]]
-        is_pl, off_codes, new_codes = h["is_pl"], h["off_codes"], h["new_codes"]
-    index = {str(k): i for i, k in enumerate(keys)}
-    missing = [r["sample_key"] for r in records if r["sample_key"] not in index]
-    if missing:
-        raise SystemExit(f"--cue-override: {len(missing)} records are not in {path.name}")
-    agree = total = changed_cells = changed_records = n_pl = 0
-    for record in records:
-        i = index[record["sample_key"]]
-        if not bool(is_pl[i]):
-            continue
-        n_pl += 1
-        own = record.get("pred_groups", {})
-        expected = _groups_from_codes(off_codes[i], names, findings)
-        for group in ("positive", "negative", "uncertain"):
-            agree += len(set(own.get(group, [])) & set(expected[group]))
-        total += sum(len(v) for v in expected.values())
-        new = _groups_from_codes(new_codes[i], names, findings)
-        diff = sum(len(set(new[g]) - set(own.get(g, []))) for g in new)
-        changed_cells += diff
-        changed_records += int(diff > 0)
-        record["pred_groups"] = new
-    agreement = agree / total if total else 1.0
-    if agreement < CUE_OVERRIDE_MIN_AGREEMENT:
-        raise SystemExit(f"--cue-override: PL records agree with off_codes on {agreement:.4f} of cue cells "
-                         f"(< {CUE_OVERRIDE_MIN_AGREEMENT}); records and override describe different things")
-    return {"pl_records": n_pl, "changed_records": changed_records, "changed_cells": changed_cells,
-            "off_agreement": round(agreement, 6)}
+    return apply_r1_cues(records, load_override(path), findings)
 
 
 def subsample(records: list[dict], limit: int, seed: int) -> list[dict]:

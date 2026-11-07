@@ -264,11 +264,9 @@ ghi `num_samples`, `temperature`, `top_p`, `top_k` (`None` khi tắt) và `outpu
 Khi tắt, output và kwargs giống hệt trước (`tests/test_beam_generation.py`).
 
 
-## `--cue-override <npz>` (2026-11-07, opt-in)
+## `--cue-override <npz>` (2026-11-07, opt-in; định dạng đổi 2026-11-08)
 
-Thay cue P/N/U của các bản ghi PL bằng `new_codes` của npz từ [`r1_stage2_cues.py`](r1_stage2_cues.py.doc.md) (OFF + R1
-lateral); bản ghi ngoài PL giữ cue từng byte. `apply_cue_override` chạy ngay sau khi gán `sample_key`, sau cache Stage-1
-(identity cache không đổi): mọi bản ghi phải có trong npz; cue hiện có của bản ghi PL phải khớp `off_codes` ở ≥ 99% ô
-(`CUE_OVERRIDE_MIN_AGREEMENT`), nếu không thì dừng. Nhóm được dựng lại theo thứ tự `ABNORMALITIES_14`, bỏ No Finding
-(`_groups_from_codes`). Chỉ với chế độ có cue MHCAC và `--cue-rule cutpoints`; từ chối cùng `--eval-cues oracle` hoặc
-`--soft-token-ablation`. Summary ghi `cue_override`, `cue_override_counts`. Test trong `tests/test_generate_stage2_reports.py`.
+`apply_cue_override` gọi [`training/dataio/cue_override.apply_r1_cues`](../training/dataio/cue_override.py.doc.md): cue của bản
+ghi PL tính lại từ logit của chính bản ghi bằng R1 lateral; bản ghi ngoài PL giữ cue từng byte; cue hiện có phải khớp cutpoint OFF
+≥ 99% ô. Chạy sau cache Stage-1. Chỉ với chế độ có cue MHCAC và `--cue-rule cutpoints`; từ chối cùng `--eval-cues oracle` hoặc
+`--soft-token-ablation`. Summary ghi `cue_override`, `cue_override_counts`.

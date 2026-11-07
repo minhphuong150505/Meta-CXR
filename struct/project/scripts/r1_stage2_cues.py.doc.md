@@ -1,15 +1,13 @@
 # scripts/r1_stage2_cues.py
 
-CPU + dataset annotation (host), opt-in 2026-11-07 (user-approved). Tạo cue P/N/U giai đoạn 2 từ OFF + R1 cho các study PL
-của một split (val), cho `generate_stage2_reports.py --cue-override`.
+CPU + annotation của dataset (host), opt-in 2026-11-07, đổi định dạng 2026-11-08 (bước B). Ghi `<prefix>_val.npz` và
+`<prefix>_train.npz`: CÔNG THỨC R1 cho cue giai đoạn 2 (định dạng: [`cue_override`](../training/dataio/cue_override.py.doc.md)).
 
-- R1 = cấu hình B2a (`residual_stack.r1_trainfit`, L 3 seed, fit trên train PL), xác suất cue = trung bình 3 seed.
-- `pl_cues`: `off_codes` = cutpoint của OFF trên xác suất OFF (mọi study); `new_codes` = như off ngoài PL, trong PL dùng
-  cutpoint fit trên PL dưới OFF + R1.
-- `gen_key(dicom_id)` = `blake2b(dicom_id, 12)` = `generate_stage2_reports.sample_key_for`. dicom id đọc từ annotation của
-  dataset trong bộ nhớ; npz chỉ chứa digest, mã cue và xác suất (vẫn là dẫn xuất MIMIC-CXR, giữ trên host).
-- Guard: view map dựng lại phải trùng `--view-map`; khoá duy nhất. Ghi `<out>.json` (số ô/study đổi, cutpoint R1).
+- A, B mỗi seed: `residual_stack.r1_trainfit` trên train PL (chuyên gia OOF), dùng chung cho hai split.
+- `l_probs`: val = TB 2 mô hình fold mỗi seed; train = OOF mỗi seed.
+- `fit_r1_cutpoints`: cutpoint (weighted F1) trên val PL dưới OFF + R1 (TB seed); `off_cut` = file cutpoint của OFF.
+- `split_keys`: khoá `gen_key(dicom)` theo thứ tự dataset; view map dựng lại phải trùng thứ tự khoá của file dự đoán.
+- `<prefix>.json`: số ô cue val đổi trên xác suất OFF (bước A: 268), cutpoint R1, A trung bình. Từ chối ghi đè.
 
 Callee: [`residual_stack`](residual_stack.py.doc.md), [`residual_pooled_calibration`](residual_pooled_calibration.py.doc.md)
 (`load_split`), `threshold_calibration`, `view_keys`, `training.stage1.lavis_loader`. Test: `tests/test_r1_stage2_cues.py`.
-Quy tắc: handoff `PLAN-2026-11-04-residual-lateral.md`, mục "R1 vào giai đoạn 2 — bước A".

@@ -124,6 +124,17 @@ def parse_args() -> argparse.Namespace:
              "images, as val/test are. Default off: the historical behaviour, "
              "where the dataset applies the training augmentation to them.",
     )
+    parser.add_argument(
+        "--cue-override-train", type=Path, default=None,
+        help="2026-11-07 (opt-in): <prefix>_train.npz from scripts/r1_stage2_cues.py. Recomputes "
+             "the cues of PL TRAIN records from their own logits with the lateral R1 residual "
+             "(dataio/cue_override.py), BEFORE --train-cues oracle_mix. Needs --cue-rule cutpoints.",
+    )
+    parser.add_argument(
+        "--cue-override-val", type=Path, default=None,
+        help="2026-11-07 (opt-in): <prefix>_val.npz, the same for the VALIDATION records "
+             "(in-training val loss and val generation). Test records are never changed.",
+    )
     parser.add_argument("--train-cue-model-share", type=float, default=0.2,
                         help="oracle_mix only: share of (study, finding) cues taken "
                              "from MHCAC instead of the true label.")
@@ -536,6 +547,17 @@ def attach_prompt_inputs(args, train_records: list[dict], val_records: list[dict
     changes the cohort fingerprint or a cached encode pass.
     """
     report: dict = {}
+    for split, records, path in (("train", train_records, getattr(args, "cue_override_train", None)),
+                                 ("val", val_records, getattr(args, "cue_override_val", None))):
+        if path is None:
+            continue
+        try:
+            from dataio.cue_override import apply_r1_cues, load_override
+        except ImportError:  # package layout
+            from training.dataio.cue_override import apply_r1_cues, load_override
+        counts = apply_r1_cues(records, load_override(path), fig9.ABNORMALITIES_14)
+        report[f"cue_override_{split}"] = {"path": str(path), **counts}
+        print(f"[cues] {split} R1 override {path.name}: {counts}", flush=True)
     if args.prompt_style == fig9.PROMPT_STYLE_PAPER_CONTEXT:
         from dataio.study_context import attach_study_context
         from local_config import METADATA_CSV, PATH_TO_MIMIC_CXR
@@ -595,6 +617,10 @@ def main() -> None:
     except ValueError as exc:
         raise SystemExit(str(exc)) from None
     paper_prompt = args.prompt_style in fig9.PAPER_PROMPT_STYLES
+    if args.cue_override_train is not None or args.cue_override_val is not None:
+        if not needs_stage1 or args.cue_rule != fig9.CUE_RULE_CUTPOINTS:
+            raise SystemExit("--cue-override-train/--cue-override-val need a Stage-1 mode with "
+                             "--cue-rule cutpoints")
     if args.train_cues == "oracle_mix":
         if not needs_stage1 or args.cue_rule == fig9.CUE_RULE_NONE:
             raise SystemExit("--train-cues oracle_mix needs a Stage-1 mode with cues "
@@ -755,6 +781,8 @@ def main() -> None:
         "seed": args.seed,
         "finding_tokens": args.finding_tokens,
         "prompt_style": None if prompt_config or not needs_stage1 else args.prompt_style,
+        "cue_override_train": str(args.cue_override_train) if args.cue_override_train else None,
+        "cue_override_val": str(args.cue_override_val) if args.cue_override_val else None,
     }
     (root / "run_manifest.json").write_text(json.dumps(run_manifest, indent=2), encoding="utf-8")
     print("[done]", json.dumps(summary, indent=2), flush=True)

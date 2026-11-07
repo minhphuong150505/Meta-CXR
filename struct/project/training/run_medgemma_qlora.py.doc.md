@@ -192,3 +192,11 @@ trúng nhầm ở seed khác. Ghi vào `summary.json` và `run_manifest.json`. K
 một run sang seed khác. Trước đó seed cố định trong code: chạy lại cùng lệnh cho ra
 báo cáo giống hệt từng chữ (2026-10-26, 1.360/1.360), nên không đo được nhiễu seed
 Stage 2. Test: `tests/test_stage2_seed.py`.
+
+## `--cue-override-train` / `--cue-override-val` (2026-11-08, opt-in)
+
+npz `<prefix>_train.npz` / `<prefix>_val.npz` từ [`scripts/r1_stage2_cues.py`](../scripts/r1_stage2_cues.py.doc.md). Trong
+`attach_prompt_inputs`, TRƯỚC `--train-cues oracle_mix`, cue của bản ghi PL train/val được tính lại từ logit của chính bản ghi
+bằng R1 lateral ([`dataio/cue_override.py`](dataio/cue_override.py.doc.md)); bản ghi ngoài PL và bản ghi test không đổi. Cần chế độ
+Stage-1 và `--cue-rule cutpoints`. Số đếm vào `summary.json` (`prompt_inputs.cue_override_*`), đường dẫn vào `run_manifest.json`.
+Không cờ = như cũ từng bit.

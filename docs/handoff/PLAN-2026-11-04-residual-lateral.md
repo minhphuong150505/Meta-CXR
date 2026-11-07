@@ -899,3 +899,26 @@ Chiều dương ở cả hai seed (trung bình +0,0044), nhưng chưa đủ.
 Mô tả: s16 / s17 — macro F1-14 +0,0020 / −0,0008; micro F1-5 +0,0058 / +0,0036; ROUGE-L +0,0011 / +0,0005; CIDEr +0,0034 / +0,0017;
 lexicon CE +0,0041 / −0,0055 (mọi CI chứa 0). Riêng nhóm PL (n = 714): CheXbert micro F1-14 +0,0144 [+0,0020, +0,0274] / +0,0081
 [−0,0046, +0,0212]; BERTScore +0,0025 / −0,0011. Hạn chế: adapter train với cue OFF; chưa phải phép thử công bằng (bước B).
+
+## R1 vào giai đoạn 2 — bước B, train lại (user duyệt 2026-11-08: "làm bước B đầy đủ đi", sau khi được báo chi phí ~10 h GPU và tác động nhỏ dưới oracle_mix; chốt TRƯỚC khi chạy)
+
+**Thay đổi code (opt-in, mặc định tắt):** override giờ mang CÔNG THỨC R1 (`training/dataio/cue_override.py`): với mỗi bản ghi PL,
+p = softmax logit của chính bản ghi (bản ghi train mã hoá từ ảnh có augmentation), R1 = TB 3 seed của softmax(log p + A log l + B),
+cutpoint R1 (fit trên val PL) → cue. Kiểm tra trước: cue hiện có của bản ghi tính lại từ p bằng cutpoint OFF phải khớp ≥ 99% ô.
+`run_medgemma_qlora.py --cue-override-train/--cue-override-val` (áp TRƯỚC oracle_mix; test không đổi);
+`generate_stage2_reports.py --cue-override` dùng cùng module. `r1_stage2_cues.py --out-prefix` ghi `<p>_val.npz`, `<p>_train.npz`
+(A, B fit trên train PL, giống bước A). Định dạng npz của bước A bị thay; số bước A giữ nguyên.
+
+**Arms** (checkout mới `~/Meta-CXR-r1s2b`, env manifest v3, cùng công thức pilot: 10.000 study train, P2 `paper_context` + `oracle_mix`
+0,2 + LR 3e-4, 1 epoch, batch 2 × 8, cue cutpoints của OFF): C16, R16, C17, R17 (`--seed`), C = không override, R = override train
+và val; sinh val 1.360, beam 4 / lp 2 (R với `--cue-override`). Train lại cả C vì cohort_id (mtime/kích thước YAML) đổi.
+
+**Guard:** `r1_stage2_cues` cho val trên xác suất OFF đổi đúng 268 ô (như bước A); load Stage-1 `unexpected=0`; seed trong manifest;
+override: off_agreement ≥ 0,99 ở train và val; 1.360 viết / 0 lỗi; C và R cùng thứ tự `sample_key` và reference. Mô tả: C16 so với
+OFF16 cũ (số báo cáo trùng hệt).
+
+**Quy tắc đọc (luật ngưỡng nhiễu giai đoạn 2):** Δ = R − C, bootstrap ghép cặp 2.000, seed 16, mỗi seed.
+- "Có lợi": TB hai seed của Δ CheXbert micro F1-14 > NB/√2 = 0,0136 VÀ cận dưới CI > 0 ở cả hai seed; rào chắn: TB hai seed
+  Δ BERTScore ≥ −0,0038.
+- Không đạt: "không cải thiện"; nếu TB CheXbert < −0,0136: "có hại".
+- Báo đủ mọi chỉ số, nhóm PL riêng (mô tả), số ô cue đổi ở train/val. Test KHÔNG đọc.
