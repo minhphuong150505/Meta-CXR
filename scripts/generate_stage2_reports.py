@@ -184,6 +184,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "true class comes from the reference report, so this is a "
                              "label-leaking upper bound that asks whether the adapter reads "
                              "its cues, never a reportable result.")
+    stage1.add_argument("--cue-override", type=Path, default=None,
+                        help="2026-11-07 (opt-in): npz from scripts/r1_stage2_cues.py. Replaces the P/N/U "
+                             "cues of the studies it marks PL by its new_codes (OFF + lateral R1), after "
+                             "checking each record's own cues against its off_codes; every other study "
+                             "keeps its cues byte for byte. Needs --cue-rule cutpoints.")
     stage1.add_argument("--stage1-cache-dir", type=Path, default=None,
                         help="Where .sensitive_stage1_cache lives. Point it at the "
                              "TRAINING output dir to reuse that run's encode pass; "
@@ -308,6 +313,13 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
                 "--eval-cues oracle and --soft-token-ablation are two interventions; "
                 "run them as separate arms against one control"
             )
+    if getattr(args, "cue_override", None) is not None:
+        if not mode.uses_mhcac_prompt:
+            raise SystemExit("--cue-override needs a pipeline mode with MHCAC cues in the prompt")
+        if args.cue_rule != "cutpoints":
+            raise SystemExit("--cue-override replaces cutpoint cues; pass --cue-rule cutpoints")
+        if getattr(args, "eval_cues", "predicted") == "oracle" or args.soft_token_ablation:
+            raise SystemExit("--cue-override is its own intervention; run it as a separate arm")
     if not mode.requires_stage1:
         if args.manifest is None or args.image_root is None:
             raise SystemExit(f"{mode.name} needs --manifest and --image-root")
@@ -516,6 +528,63 @@ def apply_oracle_cues(
     return mix_oracle_cues(records, codes, findings, model_share=0.0, seed=seed)
 
 
+#: Guard of --cue-override: share of the PL records' cue cells that must equal off_codes.
+CUE_OVERRIDE_MIN_AGREEMENT = 0.99
+
+
+def _groups_from_codes(codes, names: Sequence[str], findings: Sequence[str]) -> dict[str, list[str]]:
+    """P/N/U groups in ``findings`` order (as ``classify_with_thresholds`` builds them); No Finding skipped."""
+    by_name = {n: int(c) for n, c in zip(names, codes, strict=True)}
+    out = {"positive": [], "negative": [], "uncertain": []}
+    label = {0: "negative", 1: "positive", 2: "uncertain"}
+    for name in findings:
+        if name == "No Finding":
+            continue
+        out[label[by_name[name]]].append(name)
+    return out
+
+
+def apply_cue_override(records: list[dict], path: Path, findings: Sequence[str]) -> dict[str, int | float]:
+    """Swap the cues of the PL records for the override's ``new_codes``; return counts only.
+
+    Every record must be in the override (by ``sample_key``). The PL records' own cues are compared with
+    ``off_codes`` cell by cell and the call refuses below ``CUE_OVERRIDE_MIN_AGREEMENT``: that proves the
+    records and the override describe the same studies under the same OFF model. Non-PL records are not
+    touched at all.
+    """
+    import numpy as np
+
+    with np.load(path, allow_pickle=False) as h:
+        keys, names = h["keys"], [str(n) for n in h["names"]]
+        is_pl, off_codes, new_codes = h["is_pl"], h["off_codes"], h["new_codes"]
+    index = {str(k): i for i, k in enumerate(keys)}
+    missing = [r["sample_key"] for r in records if r["sample_key"] not in index]
+    if missing:
+        raise SystemExit(f"--cue-override: {len(missing)} records are not in {path.name}")
+    agree = total = changed_cells = changed_records = n_pl = 0
+    for record in records:
+        i = index[record["sample_key"]]
+        if not bool(is_pl[i]):
+            continue
+        n_pl += 1
+        own = record.get("pred_groups", {})
+        expected = _groups_from_codes(off_codes[i], names, findings)
+        for group in ("positive", "negative", "uncertain"):
+            agree += len(set(own.get(group, [])) & set(expected[group]))
+        total += sum(len(v) for v in expected.values())
+        new = _groups_from_codes(new_codes[i], names, findings)
+        diff = sum(len(set(new[g]) - set(own.get(g, []))) for g in new)
+        changed_cells += diff
+        changed_records += int(diff > 0)
+        record["pred_groups"] = new
+    agreement = agree / total if total else 1.0
+    if agreement < CUE_OVERRIDE_MIN_AGREEMENT:
+        raise SystemExit(f"--cue-override: PL records agree with off_codes on {agreement:.4f} of cue cells "
+                         f"(< {CUE_OVERRIDE_MIN_AGREEMENT}); records and override describe different things")
+    return {"pl_records": n_pl, "changed_records": changed_records, "changed_cells": changed_cells,
+            "off_agreement": round(agreement, 6)}
+
+
 def subsample(records: list[dict], limit: int, seed: int) -> list[dict]:
     """Seeded subset, order preserved so the JSONL stays comparable."""
     if limit <= 0 or limit >= len(records):
@@ -567,6 +636,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         records = native_records(args, 0 if restricting else args.limit)
     for record in records:
         record["sample_key"] = sample_key_for(record["image_path"])
+    if getattr(args, "cue_override", None) is not None:
+        from training import train_eval_figure9_llm_variants_200 as fig9
+
+        args.cue_override_counts = apply_cue_override(records, args.cue_override, fig9.ABNORMALITIES_14)
+        print(f"[cues] override {args.cue_override.name}: {args.cue_override_counts}", flush=True)
 
     if restricting:
         wanted = {
@@ -690,6 +764,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "soft_token_ablation": args.soft_token_ablation,
         "eval_cues": args.eval_cues if mode.requires_stage1 else None,
         "eval_cue_counts": getattr(args, "eval_cue_counts", None),
+        "cue_override": str(args.cue_override) if getattr(args, "cue_override", None) else None,
+        "cue_override_counts": getattr(args, "cue_override_counts", None),
         "stage1_options": list(args.stage1_options or []) or None,
         "cue_rule": args.cue_rule if mode.requires_stage1 else None,
         "model_id": llm.model_id,

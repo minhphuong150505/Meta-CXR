@@ -79,6 +79,7 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `lateral_expert_fit.py` | [📄](lateral_expert_fit.py.doc.md) | 🔬 | Chuyên gia lateral L / đối chứng frontal C trên study PL, xác suất val từng seed (2026-11-04) |
 | `residual_stack.py` | [📄](residual_stack.py.doc.md) | 🔬 | Residual R1 ở lớp đầu ra trên OFF đóng băng, cross-fit val, D1/D2/D3, NB, verdict (2026-11-04) |
 | `residual_pooled_calibration.py` | [📄](residual_pooled_calibration.py.doc.md) | 🔬 | Vì sao R1 làm giảm AUROC gộp: chẩn đoán lệch thang + Platt theo nhóm fit trên train (2026-11-07) |
+| `r1_stage2_cues.py` | [📄](r1_stage2_cues.py.doc.md) | 🔬 | Cue P/N/U từ OFF + R1 cho study PL, cho `generate_stage2_reports.py --cue-override` (2026-11-07) |
 | `lateral_lora_cache.py` | [📄](lateral_lora_cache.py.doc.md) | 🔬 | Cache uint8 224 của Swin cho cả frontal và lateral của mọi study PL (Bước 1, 2026-11-04) |
 | `lateral_lora_fit.py` | [📄](lateral_lora_fit.py.doc.md) | 🔬 | LoRA trên Swin: arm L_frozen / L_lora / C_lora, cổng G0/G2, `compare` cho G1(a) (2026-11-04) |
 | `swin_finetune_cache.py` | [📄](swin_finetune_cache.py.doc.md) | 🔬 | Cache uint8 đầu vào 224 của MedCLIP-Swin cho phép đo tinh chỉnh Swin (2026-10-31) |

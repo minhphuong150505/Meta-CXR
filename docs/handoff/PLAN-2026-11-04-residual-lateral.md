@@ -855,3 +855,26 @@ Từng finding, R1 thô − OFF → R1 hiệu chỉnh − OFF: Pneumothorax −0
 Kết luận: val và test cùng chiều — mức giảm gộp là lệch thang PL/non-PL, hiệu chỉnh theo nhóm sửa được. Một nửa mức tăng
 so với OFF báo cáo là nhờ hiệu chỉnh chính OFF. Mức chấm điểm gộp; quyết định N/U/P và số trong nhóm không đổi. Đây là lần
 đọc test duy nhất cho hiệu chuẩn này.
+
+## R1 vào giai đoạn 2 — bước A, chỉ suy luận (user duyệt 2026-11-07: "tôi đồng ý làm bước A trước"; chốt TRƯỚC khi chạy)
+
+**Thiết kế.** Hai adapter giai đoạn 2 đã train trên OFF (công thức pilot 2026-10-16: 10.000 study, P2 + LR 3e-4, cue
+cutpoints của OFF): `~/s2fusion_20261026/pilot_OFF` (seed 16) và `~/s2seed_20261026/pilot_OFF17` (seed 17). Giữ nguyên soft
+token và adapter; chỉ đổi cue P/N/U của study PL thành cue từ OFF + R1 (`scripts/r1_stage2_cues.py`: R1 = B2a, fit trên train
+PL, trung bình 3 seed; cutpoint fit trên val PL dưới OFF + R1). Study ngoài PL giữ cue cũ từng byte
+(`generate_stage2_reports.py --cue-override`). Val 1.360 study, beam 4 / lp 2, 256 token, như các arm cũ.
+
+**Guard.** (G1) `r1_stage2_cues.py`: view map dựng lại = `--view-map`; khoá sinh duy nhất. (G2) mọi bản ghi có trong npz; cue
+của bản ghi PL khớp `off_codes` ≥ 99% ô (refuse dưới mức đó). (G0) checkout mới `~/Meta-CXR-r1s2` (commit này, env v3 như
+`~/Meta-CXR-v3`): chạy lại arm đối chứng (không override) trên 100 study val đầu của JSONL cũ cho từng adapter; khớp 100/100 từng
+chữ → dùng JSONL cũ làm đối chứng C; không khớp → sinh lại toàn bộ đối chứng C' trong checkout mới (thêm ~2,7 h GPU) và so với C'.
+Mỗi arm: 1.360 viết / 0 lỗi, cùng thứ tự `sample_key` và reference với C.
+
+**Quy tắc đọc.** Δ = (cue OFF + R1) − (cue OFF), CheXbert micro F1-14, bootstrap ghép cặp 2.000, seed 16 (scorer như 2026-10-26:
+`score_stage2_paper_protocol.py`, `score_ce_chexbert.py`), mỗi seed adapter:
+- "Có lợi": cận dưới CI > 0 ở CẢ hai seed, VÀ BERTScore không giảm có ý nghĩa (cận trên CI ≥ 0) ở cả hai seed.
+- Ngược lại: "không cải thiện" (nếu cận trên < 0 ở cả hai seed: "có hại").
+- Cùng một adapter nên NB giữa seed không áp dụng cho từng seed; hai seed là hai lần lặp độc lập.
+- Báo đủ: mọi chỉ số khác, số ô cue đổi, và (mô tả) các chỉ số trên riêng nhóm PL.
+- Hạn chế nói trước: adapter train với cue OFF, nên đây chưa là phép thử công bằng (đó là bước B). Test KHÔNG đọc; số giai đoạn
+  2 báo cáo (P2, trên ON) không đổi.

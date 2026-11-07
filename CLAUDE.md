@@ -1492,6 +1492,10 @@ study (not image) → anchor + ≤1 auxiliary view
   all val PL, Platt on train):** raw numbers reproduce Step 3 bit for bit; `scale` -0.0120, `rank` +0.0025; R1_cal - OFF
   **+0.0060 [+0.0040, +0.0079] -> TANG** (val +0.0064); R1_cal - OFF_cal +0.0027 [+0.0017, +0.0037]; OFF_cal - OFF +0.0033.
   Pneumothorax pooled -0.067 raw -> +0.001 calibrated. Say "half of the gain over the reported OFF is OFF's own calibration".
+  🧪 **R1 into Stage 2, step A (inference-only, user-approved 2026-11-07, val only):** `scripts/r1_stage2_cues.py` builds
+  P/N/U cues from OFF + R1 for PL studies; `generate_stage2_reports.py --cue-override <npz>` (default off, bit-identical)
+  swaps only the PL records' cues on the two OFF pilot adapters (`pilot_OFF` s16, `pilot_OFF17`), after checking the records'
+  own cues against OFF's (>= 99%). Rule and guards (G0 control reproduction): the handoff's "R1 vào giai đoạn 2 — bước A".
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

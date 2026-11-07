@@ -326,3 +326,56 @@ def test_oracle_cues_take_the_true_class_and_skip_no_finding(tmp_path):
     # a study with no CheXpert information keeps MHCAC's cues
     assert records[1]["pred_groups"] == mhcac
     assert counts["from_truth"] == 3 and counts["unknown_truth"] == 3 and counts["changed"] == 3
+
+
+# --------------------------------------------------------------------------
+# 2026-11-07: --cue-override (OFF + lateral R1 cues for PL studies)
+# --------------------------------------------------------------------------
+FINDINGS = ["No Finding", "Cardiomegaly", "Edema", "Pleural Effusion"]
+
+
+def _override_npz(tmp_path, keys, is_pl, off, new):
+    import numpy as np
+
+    path = tmp_path / "cues.npz"
+    np.savez(path, keys=np.array(keys), names=np.array(["Edema", "Cardiomegaly", "No Finding", "Pleural Effusion"]),
+             is_pl=np.array(is_pl), off_codes=np.array(off), new_codes=np.array(new))
+    return path
+
+
+def test_cue_override_needs_cutpoint_cues(tmp_path):
+    from training.pipeline_modes import resolve_pipeline_modes
+
+    name = "meta_cxr_qformer_with_mhcac_prompt"
+    args = gen.parse_args(["--output-dir", str(tmp_path), "--checkpoint-root", str(tmp_path),
+                           "--pipeline-mode", name, "--cue-override", str(tmp_path / "c.npz")])
+    with pytest.raises(SystemExit, match="cue-rule cutpoints"):
+        gen.validate_invocation(args, resolve_pipeline_modes(name)[0])
+    assert gen.parse_args(["--output-dir", str(tmp_path)]).cue_override is None
+
+
+def test_cue_override_swaps_pl_cues_only(tmp_path):
+    # codes in npz name order: Edema, Cardiomegaly, No Finding, Pleural Effusion
+    path = _override_npz(tmp_path, ["a", "b"], [True, False],
+                         off=[[0, 1, 1, 0], [1, 0, 1, 0]], new=[[2, 1, 1, 1], [0, 0, 0, 0]])
+    rec_a = {"sample_key": "a", "pred_groups": {"positive": ["Cardiomegaly"],
+                                                 "negative": ["Edema", "Pleural Effusion"], "uncertain": []}}
+    rec_b = {"sample_key": "b", "pred_groups": {"positive": ["Edema"], "negative": ["Cardiomegaly",
+                                                                                     "Pleural Effusion"],
+                                                 "uncertain": []}}
+    before_b = dict(rec_b["pred_groups"])
+    counts = gen.apply_cue_override([rec_a, rec_b], path, FINDINGS)
+    assert rec_a["pred_groups"] == {"positive": ["Cardiomegaly", "Pleural Effusion"], "negative": [],
+                                    "uncertain": ["Edema"]}
+    assert rec_b["pred_groups"] == before_b  # non-PL untouched even though new_codes differ
+    assert counts == {"pl_records": 1, "changed_records": 1, "changed_cells": 2, "off_agreement": 1.0}
+
+
+def test_cue_override_refuses_mismatched_records_and_missing_keys(tmp_path):
+    path = _override_npz(tmp_path, ["a"], [True], off=[[0, 1, 1, 0]], new=[[0, 1, 1, 0]])
+    wrong = {"sample_key": "a", "pred_groups": {"positive": ["Edema", "Pleural Effusion"],
+                                                 "negative": ["Cardiomegaly"], "uncertain": []}}
+    with pytest.raises(SystemExit, match="agree with off_codes"):
+        gen.apply_cue_override([wrong], path, FINDINGS)
+    with pytest.raises(SystemExit, match="not in"):
+        gen.apply_cue_override([{"sample_key": "zz", "pred_groups": {}}], path, FINDINGS)
