@@ -1479,6 +1479,11 @@ study (not image) → anchor + ≤1 auxiliary view
   ❌ **RAN 2026-11-07 (`~/reslat_r1h_20261107/`, val PL n=797): NOT AN IMPROVEMENT.** DH AP_pos(T) +0.0016
   [-0.0004, +0.0045] (NB/sqrt3 0.0014; lower CI not > 0). a1 > 0 on 13/14 findings (the data lean the hypothesised way),
   but every per-finding DH CI holds 0; pooled all-val AUROC Pos 0.7944 vs R1 0.7943 (the pooled drop is not fixed). R1 stays.
+  🧪 **Pooled-ranking calibration, opt-in 2026-11-07 (user-approved, CPU, val only):**
+  `scripts/residual_pooled_calibration.py` asks why R1 lowers WHOLE-split AUROC Pos (B2a val 0.8029 -> 0.7943). Diagnostic
+  arms `scale` / `rank` (rank-swap inside PL), fix = 1-D Platt per (PL / non-PL, finding, channel) fitted on TRAIN, applied to
+  OFF and R1 alike; strictly monotone, so within-group metrics are unchanged (asserted); ranking metrics only, decisions
+  untouched. Rule (R1_cal - OFF pooled AUROC Pos: TANG / HET GIAM / VAN GIAM): the handoff's "Hiệu chỉnh theo nhóm" section.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

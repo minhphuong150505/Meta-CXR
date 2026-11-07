@@ -776,3 +776,21 @@ OFF 0,8029): cổng entropy không sửa được mức giảm xếp hạng gộ
 a1 fit được > 0 ở 13/14 finding (0,06 Cardiomegaly … 0,39 Pneumonia; No Finding a0 = 0, a1 0,10), a0 nhỏ hơn a của R1, tức dữ
 liệu CÓ nghiêng về "lateral đóng góp nhiều hơn khi OFF không chắc", nhưng mức lợi trên AP_pos(T) nằm trong CI chứa 0.
 Không bước tiếp; ứng viên báo cáo vẫn là R1.
+
+## Hiệu chỉnh theo nhóm — AUROC gộp (user duyệt 2026-11-07: "tôi đồng ý"; quy tắc chốt TRƯỚC khi có số)
+
+**Câu hỏi:** R1 làm AUROC Pos gộp toàn val giảm (B2a: OFF 0,8029 → 0,7943). Có phải do thang điểm PL lệch non-PL không, và
+hiệu chỉnh theo nhóm có sửa được không? CPU, `scripts/residual_pooled_calibration.py`, cấu hình B2a (R1 = L_lora 3 seed, fit
+trên train PL, chấm val). Ngoài PL = OFF.
+
+**Kênh điểm** (từng finding): pos = p_pos, unc = p_unc, present = p_pos/(p_pos+p_neg).
+**Bước A (chẩn đoán):** cánh `scale` = trong PL giữ thứ hạng của OFF, dùng tập giá trị của R1; cánh `rank` = thứ hạng của R1,
+tập giá trị của OFF. `scale` giải thích phần lớn −0,0086 → do lệch thang; `rank` cũng giảm → có nguyên nhân khác (báo user).
+**Bước B (sửa):** Platt một chiều `sigmoid(a·logit(x)+b)`, a > 0, cho từng (nhóm PL/non-PL, finding, kênh), fit trên TRAIN
+(logit OFF train B0; R1 áp lên train PL bằng chuyên gia OOF B1), áp cho cả OFF và OFF+R1. Đơn điệu chặt → AUROC/AP trong
+từng nhóm không đổi (assert ≤ 1e-12). Chỉ dùng cho chỉ số xếp hạng gộp; quyết định N/U/P không đổi.
+
+**Quy tắc:** Δ = AUROC Pos gộp toàn val, TB 14 finding, (OFF+R1 hiệu chỉnh) − OFF (bản gốc), TB 3 seed, bootstrap 2.000 cặp
+theo study (seed 16): cận dưới > 0 → "TĂNG"; CI chứa 0 → "HẾT GIẢM"; cận trên < 0 → "VẪN GIẢM". Báo thêm (R1 hiệu chỉnh) −
+(OFF hiệu chỉnh), OFF hiệu chỉnh − OFF, AUROC Unc, AP present gộp, từng finding. Diễn giải: sửa ở mức chấm điểm gộp, không
+phải mô hình tốt hơn. **Test KHÔNG đọc**; số gộp trên test cần lần đọc riêng, khai báo trước là chỉ phục vụ hiệu chuẩn.
