@@ -238,51 +238,72 @@ def run(off_va: np.ndarray, r1_va: list[np.ndarray], y_va: np.ndarray, groups_va
 
 
 # ----------------------------------------------------------------------------- CLI
-def main(argv=None) -> int:
+def load_split(off_path: Path, view_map: Path, expert_spec: str, expect: str):
+    """Whole split ``p [n, F, 3]``, labels, PL row index, groups and the L experts (fold models averaged) on PL."""
     from training.evaluation.schemas import ClassificationPredictions
     from training.evaluation.view_keys import PL, ViewMap, align
 
+    vmap = ViewMap.load(view_map)
+    expected = {k: int(v) for k, v in (kv.split("=") for kv in expect.split(","))}
+    if vmap.counts() != expected:
+        raise SystemExit(f"group counts {vmap.counts()} != expected {expected}")
+    off = ClassificationPredictions.load(off_path)
+    o = align(off.sample_keys, vmap.frontal_keys)
+    p = np.asarray(off.probabilities, dtype=np.float64)[o]
+    y = np.asarray(off.labels, dtype=np.int64)[o]
+    y[y < 0] = -1
+    pl = np.flatnonzero(vmap.groups == PL)
+    name, specs = expert_spec.split("=", 1)
+    if name != "L":
+        raise SystemExit("only the L expert is used (the reported candidate)")
+    experts = []
+    for spec in specs.split(","):
+        keys, probs, labels = rs.load_expert_parts(spec, "mean")
+        idx = align(keys, vmap.frontal_keys[pl])
+        if not np.array_equal(labels[idx], y[pl]):
+            raise SystemExit(f"labels of {spec} differ from OFF's on PL")
+        experts.append(probs[idx])
+    return p, y, pl, np.where(vmap.groups == PL, "PL", "nonPL"), experts
+
+
+def main(argv=None) -> int:
+    from training.evaluation.schemas import ClassificationPredictions
+    from training.evaluation.view_keys import align
+
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--off", type=Path, required=True, help="OFF val predictions npz")
+    ap.add_argument("--off", type=Path, required=True, help="OFF predictions npz of the scored split")
     ap.add_argument("--view-map", type=Path, required=True)
-    ap.add_argument("--expert", required=True, help="L=seed1(a+b),seed2,... val experts (fold models averaged)")
-    ap.add_argument("--train-off", type=Path, required=True)
-    ap.add_argument("--train-expert", required=True, help="L=seed1(f0_oof+f1_oof),... out-of-fold train experts")
+    ap.add_argument("--expert", required=True, help="L=seed1(a+b),seed2,... scored-split experts (fold models averaged)")
     ap.add_argument("--expect-counts", default="PL=797,F1=930,other=81")
+    ap.add_argument("--train-off", type=Path, required=True, help="OFF train npz (Platt is always fitted on train)")
+    ap.add_argument("--train-expert", required=True, help="L=seed1(f0_oof+f1_oof),... out-of-fold train experts")
+    ap.add_argument("--r1-fit-off", type=Path, help="Step 3 candidate: fit R1 on ALL PL of this split (val) instead "
+                                                    "of train PL; R1 is then applied to train PL and the scored split")
+    ap.add_argument("--r1-fit-view-map", type=Path)
+    ap.add_argument("--r1-fit-expert")
+    ap.add_argument("--r1-fit-expect-counts", default="PL=797,F1=930,other=81")
+    ap.add_argument("--scored-split", choices=("val", "test"), default="val")
+    ap.add_argument("--allow-test", action="store_true", help="required with --scored-split test (read once)")
     ap.add_argument("--boot", type=int, default=BOOT_N)
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
     if args.out.exists():
         raise SystemExit(f"refusing to overwrite {args.out}")
+    if args.scored_split == "test" and not args.allow_test:
+        raise SystemExit("--scored-split test needs --allow-test")
+    r1_val = [args.r1_fit_off, args.r1_fit_view_map, args.r1_fit_expert]
+    if any(x is not None for x in r1_val) and not all(x is not None for x in r1_val):
+        raise SystemExit("--r1-fit-off, --r1-fit-view-map and --r1-fit-expert go together")
 
-    vmap = ViewMap.load(args.view_map)
-    expected = {k: int(v) for k, v in (kv.split("=") for kv in args.expect_counts.split(","))}
-    if vmap.counts() != expected:
-        raise SystemExit(f"group counts {vmap.counts()} != expected {expected}")
-    off = ClassificationPredictions.load(args.off)
-    o = align(off.sample_keys, vmap.frontal_keys)
-    p_va = np.asarray(off.probabilities, dtype=np.float64)[o]
-    y_va = np.asarray(off.labels, dtype=np.int64)[o]
-    y_va[y_va < 0] = -1
-    pl = np.flatnonzero(vmap.groups == PL)
-    groups_va = np.where(vmap.groups == PL, "PL", "nonPL")
-
-    name, specs = args.expert.split("=", 1)
-    tname, tspecs = args.train_expert.split("=", 1)
-    if name != "L" or tname != "L":
-        raise SystemExit("only the L expert is used (the reported candidate)")
-    ex_va = []
-    for spec in specs.split(","):
-        keys, probs, labels = rs.load_expert_parts(spec, "mean")
-        idx = align(keys, vmap.frontal_keys[pl])
-        if not np.array_equal(labels[idx], y_va[pl]):
-            raise SystemExit(f"labels of {spec} differ from OFF's on val PL")
-        ex_va.append(probs[idx])
+    p_va, y_va, pl, groups_va, ex_va = load_split(args.off, args.view_map, args.expert, args.expect_counts)
 
     toff = ClassificationPredictions.load(args.train_off)
     p_tr_all = np.asarray(toff.probabilities, dtype=np.float64)
     y_tr_all = np.asarray(toff.labels, dtype=np.int64)
     y_tr_all[y_tr_all < 0] = -1
+    tname, tspecs = args.train_expert.split("=", 1)
+    if tname != "L":
+        raise SystemExit("only the L expert is used (the reported candidate)")
     ex_tr, tr_keys = [], None
     for spec in tspecs.split(","):
         keys, probs, labels = rs.load_expert_parts(spec, "concat")
@@ -297,18 +318,32 @@ def main(argv=None) -> int:
     groups_tr[o_tr] = "PL"
     groups_tr = groups_tr.astype(str)
 
+    fit = None
+    if args.r1_fit_off is not None:
+        p_f, y_f, pl_f, _g, ex_f = load_split(args.r1_fit_off, args.r1_fit_view_map, args.r1_fit_expert,
+                                              args.r1_fit_expect_counts)
+        if len(ex_f) != len(ex_va):
+            raise SystemExit("R1-fit and scored experts need the same seeds")
+        fit = (p_f[pl_f], y_f[pl_f], ex_f)
+
     r1_va, r1_tr = [], []
-    for e_va, e_tr in zip(ex_va, ex_tr, strict=True):
-        probs_pl, prm = rs.r1_trainfit(p_tr_all[o_tr], [e_tr], y_tr_all[o_tr], p_va[pl], [e_va])
+    for s, (e_va, e_tr) in enumerate(zip(ex_va, ex_tr, strict=True)):
+        if fit is None:
+            probs_pl, prm = rs.r1_trainfit(p_tr_all[o_tr], [e_tr], y_tr_all[o_tr], p_va[pl], [e_va])
+        else:
+            probs_pl, prm = rs.r1_trainfit(fit[0], [fit[2][s]], fit[1], p_va[pl], [e_va])
         full_va = p_va.copy()
         full_va[pl] = probs_pl
         r1_va.append(full_va)
         full_tr = p_tr_all.copy()
         full_tr[o_tr] = rs.r1_apply_params(p_tr_all[o_tr], [e_tr], *prm[0])
         r1_tr.append(full_tr)
-    print(f"[calib] val n={len(y_va)} (PL {len(pl)}), train n={len(y_tr_all)} (PL {len(o_tr)})", flush=True)
+    print(f"[calib] scored {args.scored_split} n={len(y_va)} (PL {len(pl)}), train n={len(y_tr_all)} "
+          f"(PL {len(o_tr)}), R1 fitted on {'train PL' if fit is None else 'r1-fit split PL'}", flush=True)
 
     res = run(p_va, r1_va, y_va, groups_va, p_tr_all, r1_tr, y_tr_all, groups_tr, boot_n=args.boot)
+    res["scored_split"] = args.scored_split
+    res["r1_fit_on"] = "train_pl_oof" if fit is None else "r1_fit_split_pl_all"
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=2, sort_keys=True) + "\n")
     for a, m in res["arms"].items():

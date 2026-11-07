@@ -90,3 +90,12 @@ def test_run_end_to_end_and_scale_arm_isolates_the_shift():
     bad[0][np.flatnonzero(g == "nonPL")[0], 0] = [0.2, 0.3, 0.5]
     with pytest.raises(ValueError, match="outside PL"):
         pc.run(p, bad, y, g, tp, r1_tr, ty, tg, boot_n=5)
+
+
+def test_cli_refuses_test_without_allow_test(tmp_path):
+    with pytest.raises(SystemExit, match="allow-test"):
+        pc.main(["--off", "x", "--view-map", "x", "--expert", "L=x", "--train-off", "x", "--train-expert", "L=x",
+                 "--scored-split", "test", "--out", str(tmp_path / "o.json")])
+    with pytest.raises(SystemExit, match="go together"):
+        pc.main(["--off", "x", "--view-map", "x", "--expert", "L=x", "--train-off", "x", "--train-expert", "L=x",
+                 "--r1-fit-off", "x", "--out", str(tmp_path / "o.json")])

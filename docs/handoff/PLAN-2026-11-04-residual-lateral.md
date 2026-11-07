@@ -819,3 +819,15 @@ Pneumonia −0,026, Lung Opacity −0,022, PE −0,020 (sau hiệu chỉnh ≈ 0
 **Bước B:** theo quy tắc → "TĂNG". Một nửa mức tăng (+0,0032) đến từ việc hiệu chỉnh chính OFF (OFF cũng lệch thang giữa
 hai nhóm); phần của R1 sau khi cả hai cùng hiệu chỉnh là +0,0032. Diễn giải: sửa ở mức chấm điểm gộp; quyết định N/U/P
 và mọi số trong nhóm không đổi. Một split (val), Platt fit trên train; test chưa đọc.
+
+## Hiệu chỉnh theo nhóm — đọc test MỘT lần, chỉ để hiệu chuẩn (user duyệt 2026-11-07: "tôi đồng ý đọc test một lần để hiệu chuẩn"; chốt TRƯỚC khi chạy)
+
+**Ứng viên = đúng ứng viên Bước 3:** OFF + R1 (L_lora 3 seed, chuyên gia = trung bình 2 mô hình fold), R1 fit trên TOÀN BỘ
+797 val PL (`--r1-fit-off/--r1-fit-view-map/--r1-fit-expert`), áp lên test PL. Không có tham số nào được chọn trên test.
+**Platt:** fit trên TRAIN như lượt val (OFF train B0; R1 với tham số fit trên val áp lên train PL bằng chuyên gia OOF B1), áp
+nguyên lên test. Dùng lại chuyên gia test đã có từ Bước 3 (`~/reslat_step3_20261105/pred/L_lora_s*_test.npz`), không chạy GPU.
+**Guard:** nhóm test PL 1.196 / F1 1.841 / other 232; số thô phải tái lập Bước 3 trên toàn test: OFF AUROC Pos gộp 0,7861, R1
+0,7767 (sai khác > 1e-4 → kết quả không dùng được, báo user); assert trong nhóm không đổi.
+**Quy tắc (như val):** Δ = AUROC Pos gộp toàn test (n = 3.269), (R1 hiệu chỉnh) − OFF (bản gốc), TB 3 seed, bootstrap 2.000:
+cận dưới > 0 → "TĂNG"; CI chứa 0 → "HẾT GIẢM"; cận trên < 0 → "VẪN GIẢM". Báo thêm R1_cal − OFF_cal, OFF_cal − OFF, AUROC
+Unc, AP present, từng finding, cánh `scale`/`rank`. Đây là lần đọc test duy nhất cho phép hiệu chuẩn này.
