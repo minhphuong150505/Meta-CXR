@@ -53,3 +53,11 @@ scipy (`L-BFGS-B`). Test: `tests/test_residual_lateral.py`.
 `--train-parts mean` (phía fit là val, chuyên gia = trung bình mô hình fold), `--cutpoints-from-train` (cutpoint PL của
 mỗi arm fit trên xác suất phía fit của arm đó — `r1_apply_params` + `cutpoint_decisions_from` — rồi áp lên phía chấm),
 `--fit-split-name`, `--scored-split test` (khoá JSON `whole_test`, `scored_split`). JSON thêm `cutpoints`.
+
+## R1H (2026-11-07, opt-in): trọng số theo độ không chắc của OFF
+`--gate entropy` (mặc định `none` = như cũ, từng bit). Trọng số của chuyên gia E ở finding f thành
+`a0[f,E] + a1[f,E] * h`, với `h = H(p_OFF)/log 3` ∈ [0, 1] (`off_entropy`); cài bằng cách thêm đặc trưng
+`h * log p_E` (`r1_features`), nên `fit_r1_finding` không đổi; a0, a1 ∈ [0, A_MAX]. `apply_r1_gated` (= `apply_r1`
+khi `none`; a1 = 0 trùng R1). `run(..., gate="entropy")`: mọi arm residual dùng R1H, thêm arm `OFF+L_R1` (R1 không cổng,
+trùng arm `OFF+L` của lượt `none` từng bit), hiệu `DH = (OFF+L) − (OFF+L_R1)` và `rule_gate` (cận dưới CI > 0, Δ >
+NB/√k, rào chắn non-T ≥ −NB/√k). `a_per_finding` ghi `L:a0`, `L:a1_entropy`. Test: +4 trong `tests/test_residual_lateral.py`.

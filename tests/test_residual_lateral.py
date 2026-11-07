@@ -323,3 +323,54 @@ def test_run_cutpoints_from_train():
     assert res["cutpoint_pl"]["OFF"] == rs.decision_metrics(d, y_te, NAMES)
     with pytest.raises(ValueError, match="needs train"):
         rs.run(p_te, y_te, NAMES, keys, {"L": [e_te]}, boot_n=5, cutpoints_from_train=True)
+
+
+# ----------------------------------------------------------------------------- R1H: entropy-gated weight
+def test_off_entropy_range():
+    assert rs.off_entropy(np.array([[1.0, 0.0, 0.0]]))[0] == pytest.approx(0.0, abs=1e-5)
+    assert rs.off_entropy(np.full((1, 3), 1 / 3))[0] == pytest.approx(1.0)
+
+
+def test_r1h_with_a1_zero_equals_r1():
+    rng = np.random.default_rng(0)
+    p, e = _dirichlet(rng, 80)[:, 0], _dirichlet(rng, 80)[:, 0]
+    a, b = np.array([0.7]), np.array([0.0, 0.3, -0.2])
+    r1 = rs.apply_r1(p, [e], a, b)
+    r1h = rs.apply_r1_gated(p, [e], np.array([0.7, 0.0]), b, "entropy")
+    assert np.allclose(r1h, r1, atol=1e-12)
+    assert np.array_equal(rs.apply_r1_gated(p, [e], a, b, "none"), r1)
+    assert np.array_equal(rs.apply_r1_gated(p, [e], np.zeros(2), np.zeros(3), "entropy"), p)
+    with pytest.raises(ValueError):
+        rs.r1_features(p, [e], "max")
+
+
+def test_r1h_learns_a1_when_expert_helps_only_uncertain_rows():
+    rng = np.random.default_rng(4)
+    n = 4000
+    y = rng.integers(0, 3, n)
+    sure = rng.random(n) < 0.5
+    off = np.full((n, 3), 1 / 3)  # uncertain rows: OFF flat
+    off[sure] = 0.05
+    off[sure, y[sure]] = 0.9  # sure rows: OFF already right
+    good = np.full((n, 3), 0.1)
+    good[np.arange(n), y] = 0.8
+    bad = rng.dirichlet(np.ones(3), n)
+    expert = np.where(sure[:, None], bad, good)  # expert is noise exactly where OFF is sure
+    a, _ = rs.fit_r1_finding(rs._logp(off), rs.r1_features(off, [expert], "entropy"), y)
+    assert a[1] > a[0] and a[1] > 0.5
+
+
+def test_run_with_gate_adds_r1_reference_and_rule():
+    p_tr, e_tr, y_tr = _synthetic(n=500, seed=3)
+    p_va, e_va, y_va = _synthetic(n=300, seed=4)
+    keys = np.array([f"v{i:04d}" for i in range(300)])
+    train = {"p_off": p_tr, "labels": y_tr, "keys": np.array([f"t{i:04d}" for i in range(500)]),
+             "experts": {"L": [e_tr, e_tr]}}
+    base = rs.run(p_va, y_va, NAMES, keys, {"L": [e_va, e_va]}, boot_n=10, train=train)
+    res = rs.run(p_va, y_va, NAMES, keys, {"L": [e_va, e_va]}, boot_n=10, train=train, gate="entropy")
+    assert base["rule_gate"] is None and "OFF+L_R1" not in base["arms"]
+    assert "DH" in res["diffs"] and res["rule_gate"]["verdict"].startswith("R1H")
+    # the ungated reference arm reproduces the plain R1 arm exactly
+    for a, b in zip(res["_probs"]["OFF+L_R1"], base["_probs"]["OFF+L"], strict=True):
+        assert np.array_equal(a, b)
+    assert set(res["a_per_finding"]["OFF+L"]["Atelectasis"]) == {"L:a0", "L:a1_entropy"}

@@ -1472,6 +1472,10 @@ study (not image) → anchor + ≤1 auxiliary view
   Atelectasis +0.024* (Holm). ⚠ Whole test (non-PL = OFF): pooled AUROC Pos 0.7861 -> 0.7767 (-0.0094), AP present
   -0.004, wF1 +0.0014, F1-5 +0.0021 -- the pooled-ranking drop seen on val replicates. This is OFF + lateral expert at the
   output vs OFF, not View Fusion ON vs OFF. Record: the handoff's "Execution report — Bước 3".
+  🧪 **R1H, opt-in 2026-11-07 (user-approved, CPU, val only):** `residual_stack.py --gate entropy` makes L's weight
+  `a0[f] + a1[f] * H(p_OFF)/log3` (a0, a1 in [0, 3]; a1 = 0 = R1), adds an ungated `OFF+L_R1` arm and reads
+  `DH = R1H - R1` (`rule_gate`: lower CI > 0, > NB/sqrt3, non-T guardrail). Default `none` is bit-identical. Fit on train
+  PL as B2a; test NOT read (variant conceived after R1's test reading). Rule: the handoff's "R1H" section.
   🧪 **Step 1 code (CPU only):** `vision_encoders/lora.py` (hand-written LoRA, no `peft`; B=0 ->
   bit-identical at init; `SwinEncoder(frozen=True)` keeps the backbone in eval, so `set_lora_train` turns on only
   the LoRA dropout), `scripts/lateral_lora_cache.py` (uint8 Swin-224 cache of BOTH views of every PL study from ONE

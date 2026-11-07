@@ -101,6 +101,40 @@ def fit_r1_finding(base: np.ndarray, experts: list[np.ndarray], y: np.ndarray,
     return res.x[:k].copy(), np.r_[0.0, res.x[k:]]
 
 
+GATES = ("none", "entropy")
+
+
+def off_entropy(p_off: np.ndarray) -> np.ndarray:
+    """Normalised entropy ``H(p_OFF) / log 3`` in [0, 1] per row of a ``[n, 3]`` probability array."""
+    p = np.clip(np.asarray(p_off, dtype=np.float64), EPS, 1.0)
+    return -(p * np.log(p)).sum(-1) / math.log(3.0)
+
+
+def r1_features(p_off: np.ndarray, experts: list[np.ndarray], gate: str = "none") -> list[np.ndarray]:
+    """Log-prob features of one finding. ``gate="entropy"`` (R1H) appends ``h * log p_E`` per expert, so the
+    fitted weight of expert E is ``a0[E] + a1[E] * h`` with ``h = off_entropy(p_off)``; both bounded [0, A_MAX]."""
+    if gate not in GATES:
+        raise ValueError(f"gate {gate!r} not in {GATES}")
+    logs = [_logp(e) for e in experts]
+    if gate == "none":
+        return logs
+    h = off_entropy(p_off)[:, None]
+    return logs + [h * lg for lg in logs]
+
+
+def apply_r1_gated(p_off: np.ndarray, experts: list[np.ndarray], a: np.ndarray, b: np.ndarray,
+                   gate: str = "none") -> np.ndarray:
+    """``apply_r1`` for ``gate="none"`` (bit for bit); R1H otherwise, ``a = [a0 per expert, a1 per expert]``."""
+    if gate == "none":
+        return apply_r1(p_off, experts, a, b)
+    if not np.any(a) and not np.any(b):
+        return np.asarray(p_off).copy()
+    z = _logp(p_off) + b
+    for coef, ft in zip(a, r1_features(p_off, experts, gate), strict=True):
+        z = z + coef * ft
+    return _softmax(z).astype(np.asarray(p_off).dtype)
+
+
 def apply_r1(p_off: np.ndarray, experts: list[np.ndarray], a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """``[n, 3]`` ON probabilities of one finding; exactly ``p_off`` when every parameter is 0."""
     if not np.any(a) and not np.any(b):
@@ -112,19 +146,21 @@ def apply_r1(p_off: np.ndarray, experts: list[np.ndarray], a: np.ndarray, b: np.
 
 
 def r1_crossfit(p_off: np.ndarray, experts: list[np.ndarray], labels: np.ndarray, fold: np.ndarray,
-                lam: float = LAM) -> tuple[np.ndarray, dict]:
+                lam: float = LAM, gate: str = "none") -> tuple[np.ndarray, dict]:
     """Out-of-fold ON probabilities ``[n, F, 3]`` and per-fold parameters ``{fold: (a [F, k], b [F, 3])}``."""
     n, F, _ = p_off.shape
     out = p_off.copy()
     params = {}
     for f_fit, f_score in ((0, 1), (1, 0)):
         fit_rows, score_rows = fold == f_fit, fold == f_score
-        A, B = np.zeros((F, len(experts))), np.zeros((F, 3))
+        A, B = np.zeros((F, len(experts) * (1 if gate == "none" else 2))), np.zeros((F, 3))
         for j in range(F):
             m = fit_rows & (labels[:, j] >= 0)
-            A[j], B[j] = fit_r1_finding(_logp(p_off[m, j]), [_logp(e[m, j]) for e in experts],
+            A[j], B[j] = fit_r1_finding(_logp(p_off[m, j]),
+                                        r1_features(p_off[m, j], [e[m, j] for e in experts], gate),
                                         labels[m, j], lam)
-            out[score_rows, j] = apply_r1(p_off[score_rows, j], [e[score_rows, j] for e in experts], A[j], B[j])
+            out[score_rows, j] = apply_r1_gated(p_off[score_rows, j], [e[score_rows, j] for e in experts],
+                                                A[j], B[j], gate)
         params[f_score] = (A, B)
     return out, params
 
@@ -138,15 +174,17 @@ def cutpoint_decisions_from(ref_probs: np.ndarray, ref_labels: np.ndarray, probs
     return apply_cutpoints(probs, cut, tuple(names))
 
 
-def r1_apply_params(p_off: np.ndarray, experts: list[np.ndarray], A: np.ndarray, B: np.ndarray) -> np.ndarray:
+def r1_apply_params(p_off: np.ndarray, experts: list[np.ndarray], A: np.ndarray, B: np.ndarray,
+                    gate: str = "none") -> np.ndarray:
     out = p_off.copy()
     for j in range(p_off.shape[1]):
-        out[:, j] = apply_r1(p_off[:, j], [e[:, j] for e in experts], A[j], B[j])
+        out[:, j] = apply_r1_gated(p_off[:, j], [e[:, j] for e in experts], A[j], B[j], gate)
     return out
 
 
 def r1_trainfit(p_off_tr: np.ndarray, ex_tr: list[np.ndarray], y_tr: np.ndarray,
-                p_off_va: np.ndarray, ex_va: list[np.ndarray], lam: float = LAM) -> tuple[np.ndarray, dict]:
+                p_off_va: np.ndarray, ex_va: list[np.ndarray], lam: float = LAM,
+                gate: str = "none") -> tuple[np.ndarray, dict]:
     """B2a: R1 fitted on train PL (out-of-fold experts), applied to every val PL row.
 
     Same per-finding fit as ``r1_crossfit``; parameters are returned under both fold ids so the
@@ -154,11 +192,12 @@ def r1_trainfit(p_off_tr: np.ndarray, ex_tr: list[np.ndarray], y_tr: np.ndarray,
     """
     F = p_off_va.shape[1]
     out = p_off_va.copy()
-    A, B = np.zeros((F, len(ex_tr))), np.zeros((F, 3))
+    A, B = np.zeros((F, len(ex_tr) * (1 if gate == "none" else 2))), np.zeros((F, 3))
     for j in range(F):
         m = y_tr[:, j] >= 0
-        A[j], B[j] = fit_r1_finding(_logp(p_off_tr[m, j]), [_logp(e[m, j]) for e in ex_tr], y_tr[m, j], lam)
-        out[:, j] = apply_r1(p_off_va[:, j], [e[:, j] for e in ex_va], A[j], B[j])
+        A[j], B[j] = fit_r1_finding(_logp(p_off_tr[m, j]),
+                                    r1_features(p_off_tr[m, j], [e[m, j] for e in ex_tr], gate), y_tr[m, j], lam)
+        out[:, j] = apply_r1_gated(p_off_va[:, j], [e[:, j] for e in ex_va], A[j], B[j], gate)
     return out, {0: (A, B), 1: (A, B)}
 
 
@@ -263,7 +302,7 @@ def nb(values_by_arm: list[list[float]]) -> float:
 # ----------------------------------------------------------------------------- driver
 def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam=LAM,
         boot_n=BOOT_N, boot_seed=BOOT_SEED, train: dict | None = None,
-        cutpoints_from_train: bool = False) -> dict:
+        cutpoints_from_train: bool = False, gate: str = "none") -> dict:
     """Every arm, metric, bootstrap and verdict on the PL rows given (all arrays aligned).
 
     ``train=None``: R1 cross-fitted on these (val) rows, as in Steps 0/1. ``train={"p_off", "labels",
@@ -272,7 +311,12 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
     Everything downstream (metrics, bootstrap, cutpoints, verdict) is unchanged.
     ``cutpoints_from_train`` (Step 3, needs ``train``): each arm's PL cutpoints are fitted on the fit rows'
     probabilities under that arm (OFF: OFF's) and applied to the scored rows, instead of cross-fitted on them.
+    ``gate="entropy"`` (R1H, 2026-11-07): every residual arm uses the entropy-gated weight
+    ``a0 + a1 * H(p_OFF)/log 3``; an ungated ``OFF+L_R1`` arm is added and ``DH = (OFF+L) - (OFF+L_R1)``
+    is read by ``rule_gate`` (lower CI > 0, delta > NB/sqrt(k), non-T >= -NB/sqrt(k)).
     """
+    if gate not in GATES:
+        raise ValueError(f"gate {gate!r} not in {GATES}")
     if cutpoints_from_train and train is None:
         raise ValueError("cutpoints_from_train needs train")
     names = tuple(names)
@@ -290,6 +334,10 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
     specs = {"OFF+L": ["L"], "OFF+Lperm": ["Lperm"]}
     if has_c:
         specs.update({"OFF+C": ["C"], "OFF+C+L": ["C", "L"]})
+    arm_gate = {arm: gate for arm in specs}
+    if gate != "none":
+        specs["OFF+L_R1"] = ["L"]
+        arm_gate["OFF+L_R1"] = "none"
     if train is not None:
         tr_zero = np.zeros(len(train["labels"]), dtype=np.int64)
         if any(len(train["experts"][m]) != k for m in experts):
@@ -300,14 +348,15 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
             ref_arms[arm] = []
         for s in range(k):
             ex = [permute_within_folds(experts["L"][s], fold) if m == "Lperm" else experts[m][s] for m in members]
+            g = arm_gate[arm]
             if train is None:
-                probs, prm = r1_crossfit(p_off, ex, labels, fold, lam)
+                probs, prm = r1_crossfit(p_off, ex, labels, fold, lam, g)
             else:
                 ex_tr = [permute_within_folds(train["experts"]["L"][s], tr_zero) if m == "Lperm"
                          else train["experts"][m][s] for m in members]
-                probs, prm = r1_trainfit(train["p_off"], ex_tr, train["labels"], p_off, ex, lam)
+                probs, prm = r1_trainfit(train["p_off"], ex_tr, train["labels"], p_off, ex, lam, g)
                 if cutpoints_from_train:
-                    ref_arms[arm].append(r1_apply_params(train["p_off"], ex_tr, *prm[0]))
+                    ref_arms[arm].append(r1_apply_params(train["p_off"], ex_tr, *prm[0], g))
             arms[arm].append(probs)
             params[arm].append(prm)
     arms["L_alone"] = list(experts["L"])
@@ -383,6 +432,17 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
         diffs.update({"D2": diff("OFF+C+L", "OFF+C"), "D3": diff("OFF+C", "OFF"),
                       "L_minus_C_alone": diff("L_alone", "C_alone")})
 
+    rule_gate = None
+    if gate != "none":
+        diffs["DH"] = diff("OFF+L", "OFF+L_R1")
+        dh = diffs["DH"]["ap_pos_T"]
+        dh_non = diffs["DH"]["ap_pos_nonT"]
+        rule_gate = {"gate": gate,
+                     "lower_ci_pass": bool(dh["lo"] > 0),
+                     "nb_pass": bool(dh["delta"] > dh["nb_over_sqrt_k"]),
+                     "guardrail_pass": bool(dh_non["delta"] >= -dh_non["nb_over_sqrt_k"])}
+        ok = rule_gate["lower_ci_pass"] and rule_gate["nb_pass"] and rule_gate["guardrail_pass"]
+        rule_gate["verdict"] = "R1H TOT HON R1" if ok else "R1H KHONG CAI THIEN"
     d1 = diffs["D1"]
     d1_pass = d1["ap_pos_T"]["lo"] > 0 and d1["ap_pos_T"]["delta"] > d1["ap_pos_T"]["nb_over_sqrt_k"]
     guard = d1["ap_pos_nonT"]["delta"] >= -d1["ap_pos_nonT"]["nb_over_sqrt_k"]
@@ -397,6 +457,8 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
     def a_table(arm):
         """Mean over seeds and folds of a[f, E] per finding, for the arm's experts."""
         members = specs.get(arm, [])
+        if arm_gate.get(arm, "none") != "none":
+            members = [f"{m}:a0" for m in members] + [f"{m}:a1_entropy" for m in members]
         A = np.mean([np.mean([prm[f][0] for f in (0, 1)], 0) for prm in params[arm]], 0)  # [F, k]
         return {name: {m: float(A[j, e]) for e, m in enumerate(members)} for j, name in enumerate(names)}
 
@@ -415,6 +477,7 @@ def run(p_off, labels, names, keys, experts: dict[str, list[np.ndarray]], *, lam
         "rule": {"D1_pass": bool(d1_pass), "guardrail_pass": bool(guard), "D2_pass": bool(d2_pass),
                  "views_1_equal_OFF": True},
         "verdict": verdict,
+        "gate": gate, "rule_gate": rule_gate,
         "_probs": {a: ps for a, ps in arms.items()},
         "_decisions": decisions,
     }
@@ -470,6 +533,8 @@ def main(argv=None) -> int:
     ap.add_argument("--fit-split-name", default="train_pl_oof", help="recorded as fit_on in the JSON")
     ap.add_argument("--scored-split", choices=("val", "test"), default="val",
                     help="split of --off / --view-map / --expert (Step 3: test, read once)")
+    ap.add_argument("--gate", choices=GATES, default="none",
+                    help="entropy = R1H: weight a0 + a1 * H(p_OFF)/log3 per finding, compared with ungated R1 (DH)")
     ap.add_argument("--lam", type=float, default=LAM)
     ap.add_argument("--boot", type=int, default=BOOT_N)
     ap.add_argument("--name", required=True)
@@ -540,7 +605,7 @@ def main(argv=None) -> int:
         raise SystemExit("--cutpoints-from-train needs --train-off / --train-expert")
 
     result = run(p_all[pl], y_all[pl], names, pl_keys, experts, lam=args.lam, boot_n=args.boot, train=train,
-                 cutpoints_from_train=args.cutpoints_from_train)
+                 cutpoints_from_train=args.cutpoints_from_train, gate=args.gate)
     arm_probs = result.pop("_probs")
     arm_decisions = result.pop("_decisions")
 
@@ -548,7 +613,7 @@ def main(argv=None) -> int:
     cut, _meta = load_cutpoint_file(args.off_cutpoints)
     off_dec = apply_cutpoints(p_all, cut, names)
     whole = {}
-    for arm in ("OFF", "OFF+C", "OFF+L", "OFF+C+L"):
+    for arm in ("OFF", "OFF+C", "OFF+L", "OFF+C+L", "OFF+L_R1"):
         if arm != "OFF" and arm not in result["arms"]:
             continue
         rows = []
@@ -575,6 +640,8 @@ def main(argv=None) -> int:
         print(f"  {dname:16s} AP_pos(T) {x['delta']:+.4f} [{x['lo']:+.4f}, {x['hi']:+.4f}]  "
               f"NB/sqrt(k) {x.get('nb_over_sqrt_k', float('nan')):.4f}")
     print(f"  verdict: {result['verdict']}")
+    if result["rule_gate"] is not None:
+        print(f"  gate {args.gate}: {result['rule_gate']}")
     return 0
 
 

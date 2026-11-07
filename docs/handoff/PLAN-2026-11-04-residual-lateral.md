@@ -744,3 +744,19 @@ thuyết, chưa đo riêng), nên chỉ số xếp hạng gộp giảm dù trong
 
 Đây là lần đọc test duy nhất của ứng viên này. Không phải so sánh ON (View Fusion) với OFF: là OFF + chuyên gia lateral
 ghép ở đầu ra, so với OFF.
+
+## R1H — trọng số lateral theo entropy của OFF (user duyệt 2026-11-07: "tôi đồng ý"; quy tắc chốt TRƯỚC khi có số)
+
+**Thay đổi (opt-in, CPU):** `residual_stack.py --gate entropy`. Trọng số của L ở finding f là `a0[f] + a1[f]·h`,
+`h = H(p_OFF)/log 3` ∈ [0, 1]; a0, a1 ∈ [0, 3] (lateral chỉ được đóng góp NHIỀU HƠN khi OFF không chắc); thêm 1 tham số
+mỗi finding; a1 = 0 trùng R1. Cùng λ, khởi tạo 0, L-BFGS-B. Ngoài PL vẫn là OFF từng bit.
+
+**Lượt (CPU host, như `b2a_train2`):** fit trên 103.062 train PL (OFF train B0, L_lora + C_lora OOF B1, 3 seed), chấm
+val PL n = 797; chuyên gia val = trung bình 2 mô hình fold. Thư mục `~/reslat_r1h_20261107/`.
+
+**Quy tắc đọc (val PL, AP_pos(T), 3 seed, bootstrap 2.000 cặp):** DH = (OFF+L qua R1H) − (OFF+L qua R1), cả hai fit trên train.
+- "R1H tốt hơn R1" khi: cận dưới CI 95% của DH > 0 VÀ DH > NB/√3 VÀ rào chắn non-T của DH ≥ −NB/√3. Ngược lại: "không cải thiện".
+- Báo đủ: a1 từng finding (a1 ≈ 0 = dữ liệu không ủng hộ giả thuyết), D1 của R1H, AUROC Pos gộp toàn val (R1 −0,0086),
+  wF1 / F1-5 theo cutpoint, từng finding, Dperm; D2 chỉ mô tả.
+- **Test KHÔNG đọc.** R1H là biến thể nghĩ ra SAU khi đã thấy test của R1; nếu qua, việc đọc test cần user quyết riêng và
+  phải ghi rõ điều này.
