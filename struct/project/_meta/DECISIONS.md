@@ -1447,3 +1447,10 @@ Bộ test CPU ở máy phát triển: 21 lỗi nền (thiếu torchvision/transf
 **Kiểm trên máy train 2026-11-27** (`~/d029check_20261127/`, clone `53b86b2`): bộ test 1.244 đạt / 0 lỗi / 2 bỏ qua;
 OFF val evaluate-only trùng npz đã lưu từng bit (6/6 mảng); adapter P2 sinh lại 20 study test của G0 2026-10-28
 trùng 20/20 từng chữ (cần `env_config` trỏ manifest v3 cho Stage 2).
+
+## D-030 — Chấm Stage 1 bằng argmax; cutpoint chỉ cho cue Stage 2 (2026-11-27)
+
+**Quyết định của user:** argmax (giao thức bài báo) là luật chấm điểm mô hình Stage 1; hai cutpoint fit trên val vẫn
+được tính và đưa vào Stage 2 làm cue (`--cue-rule cutpoints`, file trong `configs/stage1_cutpoints/`). Thay phần
+"headline = cutpoint" của quyết định 2026-10-10; không đổi code (`evaluate_stage1.py` không `--cutpoints` đã là argmax).
+Lượt Stage 2 đang chạy (`~/s2main_20261127/`) giữ cue cutpoint. Số: `docs/BAO_CAO_STAGE1_ARGMAX_2026-11-27.md`.

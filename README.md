@@ -65,7 +65,7 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 
 Repo đã được dọn về một pipeline (nhánh `cleanup/r1-main-pipeline`; người dùng xác nhận từng nhóm xóa):
 
-- **Stage 1** = OFF (`run_20261024_nomv`, `multi_view: false`, ba lớp, cutpoint của headline) cộng chuyên gia
+- **Stage 1** = OFF (`run_20261024_nomv`, `multi_view: false`, ba lớp; chấm bằng argmax, cutpoint chỉ cho cue Stage 2 — D-030) cộng chuyên gia
   lateral R1 cộng ở đầu ra cho study có ảnh frontal + lateral (`scripts/residual_stack.py`, chuyên gia từ
   `scripts/lateral_lora_fit.py`, đặc trưng từ `scripts/lateral_lora_cache.py` / `encoder_probe_features.py`;
   hiệu chỉnh nhóm `scripts/residual_pooled_calibration.py`).
@@ -404,7 +404,12 @@ hai ngưỡng trên điểm `p_pos/(p_pos+p_neg)` fit trên val. Trên `run_2026
 việc dời ngưỡng âm/dương; dải Uncertain ở giữa gần như không giúp (precision Uncertain 0,16). Đây
 không phải giao thức argmax của bài báo, nên chỉ báo cạnh số argmax.
 
-**Từ 2026-10-10, số Stage 1 CHÍNH của dự án dùng hai ngưỡng fit trên val (quyết
+**⚠ Từ 2026-11-27 (D-030, quyết định của user): chấm điểm mô hình Stage 1 dùng LẠI argmax (giao thức bài báo);
+ngưỡng vẫn fit trên val và vẫn đưa vào Stage 2 làm cue (`--cue-rule cutpoints`).** Số theo cutpoint dưới đây chỉ còn
+là số bổ sung. Test n = 3.269, argmax: ON wF1 0,780 / F1-5 0,669; OFF 0,774 / 0,656; **OFF + R1 0,793 / 0,692**. Báo
+cáo: [`docs/BAO_CAO_STAGE1_ARGMAX_2026-11-27.md`](docs/BAO_CAO_STAGE1_ARGMAX_2026-11-27.md).
+
+**[Thay bởi D-030 cho việc chấm điểm] Từ 2026-10-10, số Stage 1 CHÍNH của dự án dùng hai ngưỡng fit trên val (quyết
 định của user), không còn là argmax.** Mỗi bệnh: âm dưới t1, Uncertain trong
 [t1, t2), dương từ t2, trên `p_pos/(p_pos+p_neg)`, chọn để tối đa weighted F1 ba
 lớp của bệnh đó trên val (1.808 study). File ngưỡng của model báo cáo:

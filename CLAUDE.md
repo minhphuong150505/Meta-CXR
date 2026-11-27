@@ -103,7 +103,13 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   Cardiomegaly, Consolidation, Edema, Pleural Effusion (Tables 5/7: 0.701);
   one-vs-rest AUROC per class per finding (Fig. 5). All 14 findings count,
   No Finding and Support Devices included.
-- ⚠ **HEADLINE DECISION RULE SINCE 2026-10-10 (user decision): two
+- ⚠⚠ **D-030, 2026-11-27 (user decision): Stage-1 MODEL SCORING IS ARGMAX again (the paper's protocol); the
+  validation cutpoints are still fitted and still feed Stage 2 as cues (`--cue-rule cutpoints`).** Cutpoint numbers
+  below are now supplementary (the cue operating point), not the headline. Test n=3,269, argmax: ON
+  (`run_20261005_paper`) wP/wR/wF1 0.839 / 0.781 / 0.780, F1-5 0.669; OFF 0.846 / 0.781 / 0.774, F1-5 0.656;
+  **OFF + R1 0.838 / 0.801 / 0.793, F1-5 0.692** (vs OFF wF1 +0.0190 [+0.0171, +0.0209], F1-5 +0.0365 -- mostly a
+  precision-for-recall shift; pooled AUROC does not rise). Report: `docs/BAO_CAO_STAGE1_ARGMAX_2026-11-27.md`.
+- ⚠ **[SUPERSEDED for scoring by D-030; cutpoints still drive Stage-2 cues] HEADLINE DECISION RULE SINCE 2026-10-10 (user decision): two
   validation-fitted cutpoints per finding, NOT argmax.** On
   `s = p_pos/(p_pos+p_neg)`: Negative < t1 <= Uncertain < t2 <= Positive, fitted
   on val (1,808) to maximise each finding's weighted F1 -- still three classes.
