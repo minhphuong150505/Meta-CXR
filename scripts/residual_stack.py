@@ -539,9 +539,15 @@ def main(argv=None) -> int:
     ap.add_argument("--boot", type=int, default=BOOT_N)
     ap.add_argument("--name", required=True)
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--save-arms", type=Path, default=None,
+                    help="opt-in (2026-11-27): also write OFF and OFF+L over the WHOLE scored split (probabilities "
+                         "and headline decisions, per seed) to this npz, for scripts/r1_stage1_table.py. "
+                         "Patient-level derivative: keep it on the host.")
     args = ap.parse_args(argv)
     if args.out.exists():
         raise SystemExit(f"refusing to overwrite {args.out}")
+    if args.save_arms is not None and args.save_arms.exists():
+        raise SystemExit(f"refusing to overwrite {args.save_arms}")
 
     vmap = ViewMap.load(args.view_map)
     counts = vmap.counts()
@@ -613,6 +619,7 @@ def main(argv=None) -> int:
     cut, _meta = load_cutpoint_file(args.off_cutpoints)
     off_dec = apply_cutpoints(p_all, cut, names)
     whole = {}
+    saved: dict[str, list[np.ndarray]] = {"probs": [], "decisions": [], "off_decisions": []}
     for arm in ("OFF", "OFF+C", "OFF+L", "OFF+C+L", "OFF+L_R1"):
         if arm != "OFF" and arm not in result["arms"]:
             continue
@@ -623,6 +630,11 @@ def main(argv=None) -> int:
             assert np.array_equal(np.delete(p, pl, 0), np.delete(p_all, pl, 0))  # non-PL bit-identical to OFF
             d = off_dec.copy()
             d[pl] = d_pl
+            if arm == "OFF+L":
+                saved["probs"].append(p)
+                saved["decisions"].append(d)
+            elif arm == "OFF":  # OFF with ITS OWN PL cutpoints: the comparator every residual reading uses
+                saved["off_decisions"].append(d)
             t_idx = np.array([names.index(n) for n in T_FINDINGS])
             other_idx = np.array([j for j in range(len(names)) if j not in t_idx])
             rows.append({**summary(per_finding_scores(p, y_all), t_idx, other_idx),
@@ -632,6 +644,15 @@ def main(argv=None) -> int:
     result["scored_split"] = args.scored_split
     result["name"], result["group_counts"] = args.name, counts
 
+    if args.save_arms is not None:
+        args.save_arms.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            args.save_arms, sample_keys=vmap.frontal_keys, labels=y_all, pathology_names=np.array(names),
+            is_pl=(vmap.groups == PL), off_probabilities=p_all, off_decisions=saved["off_decisions"][0],
+            off_headline_decisions=off_dec,
+            r1_probabilities=np.stack(saved["probs"]), r1_decisions=np.stack(saved["decisions"]),
+            scored_split=np.array(args.scored_split))
+        print(f"[residual] saved OFF and OFF+L ({len(saved['probs'])} seeds) to {args.save_arms}")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(f"[residual] {args.name}: n_PL {result['n_pl']}, groups {counts}")

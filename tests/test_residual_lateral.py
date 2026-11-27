@@ -374,3 +374,52 @@ def test_run_with_gate_adds_r1_reference_and_rule():
     for a, b in zip(res["_probs"]["OFF+L_R1"], base["_probs"]["OFF+L"], strict=True):
         assert np.array_equal(a, b)
     assert set(res["a_per_finding"]["OFF+L"]["Atelectasis"]) == {"L:a0", "L:a1_entropy"}
+
+
+# ----------------------------------------------------------------------------- --save-arms + r1_stage1_table (2026-11-27)
+
+def test_save_arms_and_paper_table_reproduce_whole_split(tmp_path):
+    vm = build_view_map(_rows())
+    n = len(vm)
+    rng = np.random.default_rng(7)
+    y = rng.integers(0, 3, size=(n, 14))
+    p = _dirichlet(rng, n)
+    ClassificationPredictions(labels=y, probabilities=p, pathology_names=NAMES,
+                              sample_keys=vm.frontal_keys).save(tmp_path / "off.npz")
+    vm.save(tmp_path / "vm.npz")
+    CutpointFile({nm: (0.3, 0.6) for nm in NAMES}, {}).save(tmp_path / "cut.json")
+    pl = np.flatnonzero(vm.groups == PL)
+    paths = []
+    for s in range(2):
+        np.savez(tmp_path / f"L{s}.npz", keys=vm.frontal_keys[pl],
+                 probabilities=_dirichlet(np.random.default_rng(20 + s), len(pl)), labels=y[pl].copy())
+        paths.append(str(tmp_path / f"L{s}.npz"))
+    argv = ["--off", str(tmp_path / "off.npz"), "--view-map", str(tmp_path / "vm.npz"),
+            "--off-cutpoints", str(tmp_path / "cut.json"), "--expert", "L=" + ",".join(paths),
+            "--expect-counts", "PL=3,F1=1,other=2", "--boot", "5", "--name", "fake"]
+    assert rs.main(argv + ["--out", str(tmp_path / "plain.json")]) == 0
+    assert rs.main(argv + ["--out", str(tmp_path / "res.json"), "--save-arms", str(tmp_path / "arms.npz")]) == 0
+    plain, res = json.loads((tmp_path / "plain.json").read_text()), json.loads((tmp_path / "res.json").read_text())
+    assert plain == res  # the flag only adds a file
+    with pytest.raises(SystemExit):  # never overwrites
+        rs.main(argv + ["--out", str(tmp_path / "res2.json"), "--save-arms", str(tmp_path / "arms.npz")])
+
+    tbl = _module("r1_stage1_table")
+    with np.load(tmp_path / "arms.npz") as z:
+        arms = {k: z[k] for k in z.files}
+    assert arms["r1_probabilities"].shape == (2, n, 14, 3)
+    t = tbl.build_table(arms, boot_n=3)
+    for m in ("weighted_f1", "mean_weighted_f1_5", "macro_recall"):
+        key = m if m != "mean_weighted_f1_5" else "f1_5"
+        assert t["all"][f"headline.{m}"]["r1"] == pytest.approx(res["whole_val"]["OFF+L"][key], abs=1e-12)
+        assert t["all"][f"headline.{m}"]["off"] == pytest.approx(res["whole_val"]["OFF"][key], abs=1e-12)
+
+    # identical arms -> zero deltas; a non-PL difference is refused
+    same = dict(arms, r1_probabilities=np.stack([arms["off_probabilities"]] * 2),
+                r1_decisions=np.stack([arms["off_decisions"]] * 2))
+    t0 = tbl.build_table(same, boot_n=3)
+    assert all(v["delta"] == 0.0 for v in t0["all"].values())
+    bad = dict(same, r1_decisions=same["r1_decisions"].copy())
+    bad["r1_decisions"][0, np.flatnonzero(~arms["is_pl"])[0], 0] = (bad["r1_decisions"][0, np.flatnonzero(~arms["is_pl"])[0], 0] + 1) % 3
+    with pytest.raises(ValueError, match="non-PL"):
+        tbl.build_table(bad, boot_n=3)

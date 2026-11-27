@@ -265,6 +265,7 @@ def evaluate_classification(
     zero_division: float = PAPER_ZERO_DIVISION,
     thresholds: dict[str, dict[str, float]] | None = None,
     cutpoints: dict[str, tuple[float, float]] | None = None,
+    decisions: np.ndarray | None = None,
 ) -> ClassificationReport:
     """Score one split with the paper's three-class protocol.
 
@@ -284,9 +285,15 @@ def evaluate_classification(
     Negative / Uncertain band / Positive. This project's HEADLINE rule since
     2026-10-10 (user decision); still not the paper's protocol. Mutually
     exclusive with ``thresholds``.
+
+    ``decisions`` (``[N, P]`` class indices computed by the caller, 2026-11-27)
+    is scored as is, for a decision rule that is not one cutpoint per finding
+    -- e.g. OFF + residual lateral R1, whose frontal+lateral studies use their
+    own cutpoints. Exclusive with ``thresholds`` and ``cutpoints``. AUROC and
+    AUPRC still come from ``probabilities``.
     """
-    if thresholds is not None and cutpoints is not None:
-        raise ValueError("pass thresholds or cutpoints, not both")
+    if sum(x is not None for x in (thresholds, cutpoints, decisions)) > 1:
+        raise ValueError("pass at most one of thresholds, cutpoints, decisions")
     if predictions.num_classes != NUM_CLASSES:
         raise SchemaError(
             f"the paper's protocol is three-class; got {predictions.num_classes} "
@@ -294,7 +301,13 @@ def evaluate_classification(
         )
     labels = predictions.labels
     probabilities = predictions.probabilities
-    if cutpoints is not None:
+    if decisions is not None:
+        predicted = np.asarray(decisions)
+        if predicted.shape != labels.shape:
+            raise SchemaError(f"decisions {predicted.shape} != labels {labels.shape}")
+        if predicted.size and (predicted.min() < 0 or predicted.max() >= NUM_CLASSES):
+            raise SchemaError("decisions must be class indices in [0, 3)")
+    elif cutpoints is not None:
         from training.evaluation.threshold_calibration import apply_cutpoints
 
         predicted = apply_cutpoints(
@@ -385,6 +398,8 @@ def evaluate_classification(
             "sklearn-weighted P/R/F1 (zero_division=1), mean over findings; "
             "one-vs-rest AUROC per class",
             "decision": (
+                "precomputed decisions supplied by the caller -- NOT the paper's "
+                "protocol" if decisions is not None else
                 "per-finding validation cutpoints on p_pos/(p_pos+p_neg): "
                 "Negative < t1 <= Uncertain < t2 <= Positive -- project headline, "
                 "NOT the paper's protocol" if cutpoints is not None

@@ -40,3 +40,38 @@ def test_npz_roundtrip_through_cue_override(tmp_path, monkeypatch):
     assert ov["l_probs"].shape == (2, len(pl), 3, 3) and (ov["pl_row"] >= 0).sum() == len(pl)
     j = ov["pl_row"][pl[3]]
     assert np.allclose(co.r1_probs(p[pl[3]], ov["l_probs"][:, j], ov["A"], ov["B"]), probs[3], atol=1e-5)
+
+
+def test_test_only_copies_the_recipe_and_takes_test_experts(tmp_path, monkeypatch):
+    """``--test-only`` (2026-11-27): A/B/cutpoints bit for bit from the recipe, l_probs from the test experts."""
+    rng = np.random.default_rng(1)
+    n, pl = 40, np.arange(0, 40, 4)
+    params = [(rng.normal(size=(3, 1)), rng.normal(size=(3, 3))) for _ in range(2)]
+    keys_va = np.array([rc.gen_key(f"v{i}") for i in range(n)])
+    l_va = [rng.dirichlet(np.ones(3), (len(pl), 3)) for _ in range(2)]
+    rc.write_npz(tmp_path / "r_val.npz", keys_va, pl, NAMES, l_va, params, {k: (0.3, 0.6) for k in NAMES},
+                 {k: (0.2, 0.7) for k in NAMES})
+    l_te = [rng.dirichlet(np.ones(3), (len(pl), 3)) for _ in range(2)]
+    keys_te = np.array([rc.gen_key(f"t{i}") for i in range(n)])
+
+    class _Off:
+        pathology_names = NAMES
+
+    monkeypatch.setattr(rc.pc, "load_split", lambda *a: (None, None, pl, None, l_te))
+    monkeypatch.setattr(rc, "split_keys", lambda split, config, expected: (keys_te, None))
+    import training.evaluation.schemas as sch
+    import training.evaluation.view_keys as vk
+    monkeypatch.setattr(sch.ClassificationPredictions, "load", staticmethod(lambda p: _Off()))
+    monkeypatch.setattr(vk.ViewMap, "load", staticmethod(lambda p: type("V", (), {"frontal_keys": None})()))
+    argv = ["--off", "x", "--view-map", "y", "--expert", "L=a,b", "--test-only", "--recipe",
+            str(tmp_path / "r_val.npz"), "--out-prefix", str(tmp_path / "r")]
+    assert rc.main(argv) == 0
+    a, b = np.load(tmp_path / "r_val.npz"), np.load(tmp_path / "r_test.npz")
+    for k in ("A", "B", "off_cut", "r1_cut", "names"):
+        assert np.array_equal(a[k], b[k])
+    assert np.array_equal(b["keys"], keys_te) and (b["pl_row"] >= 0).sum() == len(pl)
+    assert np.allclose(b["l_probs"], np.stack(l_te))
+    with pytest.raises(SystemExit):  # never overwrites
+        rc.main(argv)
+    with pytest.raises(SystemExit):  # --test-only needs --recipe
+        rc.main(["--off", "x", "--view-map", "y", "--expert", "L=a", "--test-only", "--out-prefix", str(tmp_path / "q")])

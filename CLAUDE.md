@@ -46,6 +46,14 @@ names them now fails):**
 | Probe / diagnostic scripts: `probe_soft_tokens*.py`, `probe_image_features.py`, `biovil_prior_*.py`, `check_itc_gate.py`, `compare_stage1_operating_points.py`, `diagnose_qformer_collapse.py`, `diagnose_stream_scale.py`, `embed_cxr_encoders.py`, `embed_medgemma_images.py`, `evaluate_stage1_cutpoints.py`, `prior_report_baseline.py`, `retrieval_report_baselines.py` | gone (git history) |
 | 23 stale `docs/*.md` audits / baselines / migration notes | gone |
 
+🧪 **Main-pipeline numbers, 2026-11-27 (plan `docs/handoff/PLAN-2026-11-27-main-pipeline-eval.md`, rules fixed before
+any number):** Stage-1 paper-protocol table = `residual_stack.py --save-arms` (opt-in; JSON unchanged) +
+`scripts/r1_stage1_table.py` (re-scores Step 3's single test reading, paired bootstrap vs OFF; needs
+`evaluate_classification(decisions=...)`, opt-in). Stage 2 full run on OFF + R1 cues; its test override comes from
+`r1_stage2_cues.py --test-only --recipe <r1_val.npz>` (recipe copied bit for bit). ⚠ OFF's cutpoint file
+`~/nomv_probe_20261024/cutpoints_nomv.json` is GONE from the host (the directory was deleted); it is now tracked as
+`configs/stage1_cutpoints/run_20261024_nomv.json`, refitted from OFF's val npz and bit-identical to `off_cut` in step
+B's `r1_val.npz`. Use that path everywhere the old one appears.
 ⚠ The `mimic_cxr_full.yaml` edit changes its size/mtime, so in a checkout that pulls it the Stage-2
 `cohort_id` and the `oracle_mix` draw change (the mtime trap below); the user accepted this.
 ✅ **Verified on the training host 2026-11-27** (`~/d029check_20261127/`, fresh clone of `53b86b2` at

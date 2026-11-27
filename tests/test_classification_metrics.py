@@ -264,3 +264,25 @@ def test_save_and_load_round_trip(tmp_path):
     assert got.keys() == want.keys()
     for key in want:
         assert (math.isnan(got[key]) and math.isnan(want[key])) or got[key] == want[key], key
+
+
+def test_precomputed_decisions_match_cutpoints_and_are_exclusive():
+    """``decisions=`` (2026-11-27) scores the caller's decisions as is."""
+    from training.evaluation.threshold_calibration import apply_cutpoints
+
+    rng = np.random.default_rng(3)
+    names = ("Atelectasis", "Cardiomegaly")
+    probs = rng.dirichlet(np.ones(3), size=(40, 2))
+    labels = rng.integers(0, 3, size=(40, 2))
+    labels[0, 0] = -1
+    preds = ClassificationPredictions(labels=labels, probabilities=probs, pathology_names=names,
+                                      sample_keys=np.array([f"k{i}" for i in range(40)]))
+    cut = {n: (0.4, 0.6) for n in names}
+    via_cut = evaluate_classification(preds, cutpoints=cut).aggregates
+    dec = apply_cutpoints(probs, cut, names)
+    via_dec = evaluate_classification(preds, decisions=dec).aggregates
+    assert via_cut == via_dec
+    with pytest.raises(ValueError):
+        evaluate_classification(preds, cutpoints=cut, decisions=dec)
+    with pytest.raises(Exception):
+        evaluate_classification(preds, decisions=dec[:, :1])

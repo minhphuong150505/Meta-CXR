@@ -14,6 +14,11 @@ applied to each record's own logits):
   npz holds digests, probabilities and parameters -- still a MIMIC-CXR derivative, kept on the training host.
 
 Also writes ``<out>_val.json`` with a check: the val cues the recipe gives on OFF's own val probabilities (counts only).
+
+``--test-only --recipe <prefix>_val.npz`` (opt-in, 2026-11-27) writes ONLY ``<prefix>_test.npz`` for the test split:
+``A``, ``B``, ``off_cut`` and ``r1_cut`` are copied bit for bit from the recipe the adapter was trained with (nothing is
+refitted, no test label is read for fitting), and ``l_probs`` are the test L experts (fold models averaged, from
+``lateral_lora_fit.py predict``). Used once, for the main pipeline's test generation.
 """
 
 from __future__ import annotations
@@ -96,18 +101,53 @@ def write_npz(path: Path, keys, pl_rows: np.ndarray, names, l_pl: list[np.ndarra
              off_cut=cut_array(off_cut, names), r1_cut=cut_array(r1_cut, names))
 
 
+def write_test_from_recipe(args) -> int:
+    """``--test-only``: the trained recipe + the test L experts -> ``<prefix>_test.npz``."""
+    from training.evaluation.schemas import ClassificationPredictions
+    from training.evaluation.view_keys import ViewMap
+
+    out = Path(f"{args.out_prefix}_test.npz")
+    if out.exists():
+        raise SystemExit(f"refusing to overwrite {out}")
+    with np.load(args.recipe, allow_pickle=False) as h:
+        recipe = {k: h[k] for k in ("names", "A", "B", "off_cut", "r1_cut", "l_probs")}
+    names = tuple(str(n) for n in recipe["names"])
+    _p, _y, pl, _g, ex = pc.load_split(args.off, args.view_map, args.expert, args.expect_counts)
+    if tuple(ClassificationPredictions.load(args.off).pathology_names) != names:
+        raise SystemExit("test OFF npz has another finding order than the recipe")
+    if len(ex) != recipe["A"].shape[0]:
+        raise SystemExit(f"{len(ex)} test experts but the recipe has {recipe['A'].shape[0]} seeds")
+    keys, _vm = split_keys("test", args.config, ViewMap.load(args.view_map).frontal_keys)
+    pl_row = np.full(len(keys), -1, dtype=np.int64)
+    pl_row[pl] = np.arange(len(pl))
+    np.savez(out, keys=keys, pl_row=pl_row, names=recipe["names"], l_probs=np.stack(ex).astype(np.float32),
+             A=recipe["A"], B=recipe["B"], off_cut=recipe["off_cut"], r1_cut=recipe["r1_cut"])
+    print(f"[r1-cues] test {len(keys)} (PL {len(pl)}) from recipe {args.recipe}", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--off", type=Path, required=True, help="OFF val predictions npz")
     ap.add_argument("--view-map", type=Path, required=True, help="val view map")
     ap.add_argument("--expert", required=True, help="L=seed1(a+b),... val experts (fold models averaged)")
     ap.add_argument("--expect-counts", default="PL=797,F1=930,other=81")
-    ap.add_argument("--train-off", type=Path, required=True, help="OFF train predictions npz (B0)")
-    ap.add_argument("--train-expert", required=True, help="L=seed1(f0_oof+f1_oof),... out-of-fold train experts")
-    ap.add_argument("--off-cutpoints", type=Path, required=True, help="OFF's cutpoint file (its Stage-2 cues)")
+    ap.add_argument("--train-off", type=Path, help="OFF train predictions npz (B0)")
+    ap.add_argument("--train-expert", help="L=seed1(f0_oof+f1_oof),... out-of-fold train experts")
+    ap.add_argument("--off-cutpoints", type=Path, help="OFF's cutpoint file (its Stage-2 cues)")
+    ap.add_argument("--test-only", action="store_true",
+                    help="write only <prefix>_test.npz: --off/--view-map/--expert are the TEST split's, "
+                         "parameters and cutpoints come from --recipe")
+    ap.add_argument("--recipe", type=Path, help="with --test-only: the <prefix>_val.npz the adapter trained with")
     ap.add_argument("--config", type=Path, default=_REPO_ROOT / "pretraining/configs/mimic_cxr_full.yaml")
     ap.add_argument("--out-prefix", type=Path, required=True, help="writes <prefix>_val.npz and <prefix>_train.npz")
     args = ap.parse_args(argv)
+    if args.test_only:
+        if args.recipe is None:
+            raise SystemExit("--test-only needs --recipe")
+        return write_test_from_recipe(args)
+    if args.train_off is None or args.train_expert is None or args.off_cutpoints is None:
+        raise SystemExit("--train-off, --train-expert and --off-cutpoints are required (unless --test-only)")
     outs = [Path(f"{args.out_prefix}_{s}.npz") for s in ("val", "train")]
     if any(o.exists() for o in outs):
         raise SystemExit(f"refusing to overwrite {outs}")

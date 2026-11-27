@@ -11,3 +11,9 @@ CPU + annotation của dataset (host), opt-in 2026-11-07, đổi định dạng 
 
 Callee: [`residual_stack`](residual_stack.py.doc.md), [`residual_pooled_calibration`](residual_pooled_calibration.py.doc.md)
 (`load_split`), `threshold_calibration`, `view_keys`, `training.stage1.lavis_loader`. Test: `tests/test_r1_stage2_cues.py`.
+
+## `--test-only --recipe <prefix>_val.npz` (2026-11-27, opt-in)
+`write_test_from_recipe`: chỉ ghi `<prefix>_test.npz`. `A`, `B`, `off_cut`, `r1_cut`, `names` chép từng bit từ công thức
+adapter đã train (không fit lại, không đọc nhãn test để fit); `l_probs` = chuyên gia L trên test (TB mô hình fold,
+từ `lateral_lora_fit.py predict`); khoá `split_keys("test", ...)`. Khi không có cờ, `--train-off`/`--train-expert`/
+`--off-cutpoints` vẫn bắt buộc như trước. Từ chối ghi đè. Test: `tests/test_r1_stage2_cues.py`.

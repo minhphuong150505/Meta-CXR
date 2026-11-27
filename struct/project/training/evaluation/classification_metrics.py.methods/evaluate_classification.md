@@ -1,4 +1,4 @@
-# `evaluate_classification(predictions, *, zero_division=1.0, thresholds=None, cutpoints=None)`
+# `evaluate_classification(predictions, *, zero_division=1.0, thresholds=None, cutpoints=None, decisions=None)`
 
 > File: [`classification_metrics.py`](../classification_metrics.py.doc.md) · dòng 262
 
@@ -24,3 +24,8 @@ Chấm một split theo ba lớp (Negative / Positive / Uncertain).
 Trả `ClassificationReport(per_pathology, aggregates, settings)`;
 `settings["decision"]` ghi luật đã dùng. Không còn `uncertain_policy`,
 `include_meta_labels` (D-023).
+
+**`decisions` (2026-11-27, opt-in):** mảng `[N, P]` chỉ số lớp do caller tính, chấm nguyên như vậy — cho luật quyết
+định không phải một cặp cutpoint mỗi finding (OFF + R1: study PL có cutpoint riêng). Loại trừ với `thresholds` và
+`cutpoints` (truyền >1 → `ValueError`); sai shape hoặc ngoài [0, 3) → `SchemaError`. AUROC/AUPRC vẫn từ `probabilities`.
+Caller: [`r1_stage1_table.py`](../../../scripts/r1_stage1_table.py.doc.md). Test: `tests/test_classification_metrics.py`.

@@ -61,3 +61,10 @@ mỗi arm fit trên xác suất phía fit của arm đó — `r1_apply_params` +
 khi `none`; a1 = 0 trùng R1). `run(..., gate="entropy")`: mọi arm residual dùng R1H, thêm arm `OFF+L_R1` (R1 không cổng,
 trùng arm `OFF+L` của lượt `none` từng bit), hiệu `DH = (OFF+L) − (OFF+L_R1)` và `rule_gate` (cận dưới CI > 0, Δ >
 NB/√k, rào chắn non-T ≥ −NB/√k). `a_per_finding` ghi `L:a0`, `L:a1_entropy`. Test: +4 trong `tests/test_residual_lateral.py`.
+
+## `--save-arms <npz>` (2026-11-27, opt-in)
+Không cờ = như cũ (JSON trùng từng byte, test). Có cờ: ghi thêm, trên TOÀN split chấm, `off_probabilities`,
+`off_decisions` (OFF với cutpoint PL của chính nó — đúng arm "OFF" mà `whole_<split>` so), `off_headline_decisions`
+(file cutpoint của OFF trên mọi study), `r1_probabilities` / `r1_decisions` (arm `OFF+L`, `[seed, N, 14(, 3)]`),
+`is_pl`, `labels`, `sample_keys`. Từ chối ghi đè. Là dẫn xuất mức bệnh nhân: chỉ để trên host. Đọc bởi
+[`r1_stage1_table.py`](r1_stage1_table.py.doc.md).
