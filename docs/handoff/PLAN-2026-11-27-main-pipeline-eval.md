@@ -72,3 +72,20 @@ precision lấy recall. AUROC gộp thô giảm vì lệch thang PL / non-PL (đ
 là dịch điểm vận hành (R1 làm xác suất P/U lớn hơn), không phải bằng chứng xếp hạng tốt hơn. Kết luận của Bước 3 giữ
 nguyên: PARTIAL, "lợi ích chủ yếu do ghép thêm một mô hình". `off_reported` (file cutpoint trên mọi study, như số đã báo
 cáo của OFF): wF1 0,8174, F1-5 0,7484, macro recall 0,4403.
+
+### Bảng argmax (giao thức bài báo), test n = 3.269 — theo yêu cầu của user 2026-11-27
+
+ON = `run_20261005_paper` (fusion ON, chấm lại `~/argmax_on_20261127/`, bootstrap 1.000; trùng số đã ghi). OFF và
+OFF + R1 từ `~/r1table_20261127/table_test.json` (bootstrap 2.000). AUROC không phụ thuộc luật quyết định.
+
+| | Bài báo | ON | OFF | OFF + R1 |
+|---|---|---|---|---|
+| weighted P | 0,87 | 0,8392 | 0,8463 | 0,8375 |
+| weighted R | 0,78 | 0,7814 | 0,7805 | 0,8007 |
+| weighted F1 | 0,73 | 0,7795 | 0,7738 | 0,7928 |
+| F1-5 | 0,701 | 0,6687 | 0,6558 | 0,6923 |
+| macro recall | — | 0,4609 | 0,4548 | 0,4543 |
+| AUROC N / P / U | — | 0,7780 / 0,7836 / 0,6633 | 0,7772 / 0,7861 / 0,6446 | 0,7687 / 0,7767 / 0,6656 |
+
+OFF + R1 − OFF (cặp): wP −0,0088*, wR +0,0202*, wF1 +0,0190 [+0,0171, +0,0209], F1-5 +0,0365 [+0,0328, +0,0405], macro
+recall −0,0006 (CI qua 0). ON − OFF+R1 chưa bootstrap cặp.
