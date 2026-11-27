@@ -1442,6 +1442,8 @@ và các `docs/handoff/PLAN-*.md`; mã thì chỉ còn trong git history.
   `late_view_pool` trong danh sách trainable) → đổi size/mtime → đổi `cohort_id` Stage 2 và lượt rút
   `oracle_mix` ở checkout nào pull nó (bẫy mtime, xem `CLAUDE.md`). User chấp nhận (phương án a).
 
-**Chưa kiểm.** Chỉ chạy bộ test CPU (21 lỗi nền, đều do thiếu torchvision/transformers). Cần trên máy train:
-OFF val npz bit-for-bit với `run_20261024_nomv`, bộ test đầy đủ, sinh lại 20 báo cáo Stage 2 đã có và so
-từng chữ.
+Bộ test CPU ở máy phát triển: 21 lỗi nền (thiếu torchvision/transformers).
+
+**Kiểm trên máy train 2026-11-27** (`~/d029check_20261127/`, clone `53b86b2`): bộ test 1.244 đạt / 0 lỗi / 2 bỏ qua;
+OFF val evaluate-only trùng npz đã lưu từng bit (6/6 mảng); adapter P2 sinh lại 20 study test của G0 2026-10-28
+trùng 20/20 từng chữ (cần `env_config` trỏ manifest v3 cho Stage 2).

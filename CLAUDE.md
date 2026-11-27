@@ -48,9 +48,13 @@ names them now fails):**
 
 ⚠ The `mimic_cxr_full.yaml` edit changes its size/mtime, so in a checkout that pulls it the Stage-2
 `cohort_id` and the `oracle_mix` draw change (the mtime trap below); the user accepted this.
-⚠ **Not yet verified on GPU:** OFF's val npz reproduced bit for bit from the cleaned code, the host's
-full test suite, and 20 recorded Stage-2 reports regenerated word for word. CPU suite: the usual
-missing-torchvision/transformers failures only.
+✅ **Verified on the training host 2026-11-27** (`~/d029check_20261127/`, fresh clone of `53b86b2` at
+`~/Meta-CXR-d029`): host test suite **1,244 passed, 0 failed, 2 skipped**; OFF (`run_20261024_nomv` phase1c
+best) re-scored evaluate-only on val is **bit-identical** to its stored `val_predictions_epoch_best.npz` (6 of 6
+arrays); the P2 adapter regenerates the 20 test studies of the 2026-10-28 G0 run **20/20 word for word** (same
+keys, same references; still 8/20 vs the reported beams, as before). ⚠ The Stage-2 check needs the
+`env_config.yaml` of `~/Meta-CXR-v3` (manifest `full_allviews_v3`); with `~/Meta-CXR`'s (v2) the test cohort is
+a different 2,984-study set and nothing pairs. Stage 1 (OFF) uses v2.
 
 ## ⚠⚠⚠ USER GOAL (2026-10-25): multi-view fusion is the novelty — fusion ON must beat OFF; confirm EVERY change
 

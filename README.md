@@ -86,8 +86,10 @@ Repo đã được dọn về một pipeline (nhánh `cleanup/r1-main-pipeline`;
 | Prompt ablation, `mhcac.py`/`mhcac_2..11.py`, bản sao `vision_encoders/biovil_t/`, các script probe/chẩn đoán, 23 tài liệu cũ trong `docs/` | Đã xóa (còn trong git history) |
 
 ⚠ Sửa `mimic_cxr_full.yaml` đổi size/mtime → đổi `cohort_id` Stage 2 và lượt rút `oracle_mix` ở checkout pull nó
-(người dùng chấp nhận). ⚠ **Chưa kiểm trên GPU:** tái lập bit-for-bit npz val của OFF từ mã đã dọn, bộ test đầy đủ
-trên máy train, và sinh lại 20 báo cáo Stage 2 đã ghi.
+(người dùng chấp nhận). ✅ **Đã kiểm trên máy train 2026-11-27** (`~/d029check_20261127/`, clone mới của `53b86b2`): bộ test 1.244 đạt,
+0 lỗi, 2 bỏ qua; OFF chấm lại trên val trùng npz đã lưu **từng bit** (6/6 mảng); adapter P2 sinh lại 20 study test của
+lượt G0 ngày 28/10 **trùng 20/20 từng chữ**. ⚠ Phép kiểm Stage 2 cần `env_config.yaml` của `~/Meta-CXR-v3` (manifest
+`full_allviews_v3`); Stage 1 (OFF) dùng v2.
 
 ## Những thay đổi so với META-CXR gốc
 
