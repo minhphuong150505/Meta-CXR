@@ -68,7 +68,6 @@ section ở entrypoint chính.
 | `_forward_batch` | 1082 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/_forward_batch.md) |
 | `evaluate_loss` | 1108 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/evaluate_loss.md) |
 | `generate` | 1869 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/generate.md) ★ |
-| `generate_candidates` | 1919 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/generate_candidates.md) |
 | `assert_vision_tower_frozen` | 825 | [📄](train_eval_figure9_llm_variants_200.py.methods/VariantLLM/assert_vision_tower_frozen.md) |
 
 ### Method phụ trợ
@@ -162,29 +161,15 @@ Method contract: [with_cue_state](train_eval_figure9_llm_variants_200.py.methods
 
 `with_cue_state(record, cue_rule)` tạo dict mới, giữ tensor, gắn cue_rule và cue_state. none xoá nhóm và ghi not_provided; rule khác có nhóm ghi predicted, rỗng ghi abstained. build_stage1_records áp dụng cho cả cache hit lẫn record mới. Cache identity vẫn phân biệt rule, default cache vẫn tái dùng được. Prompt consumer: stage2.prompts.records → PromptBuilder; caller: training entrypoint và scripts/generate_stage2_reports.py.
 
-## 🧪 Finding tokens — 2026-09-10, mặc định TẮT
+## Finding tokens — ĐÃ GỠ 2026-11-27 ([D-029](../_meta/DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27))
 
-`VariantLLM(..., finding_tokens={"off","q_only","full"})`. Khi bật:
-
-* đăng ký `<finding_token>` như special token thứ hai và resize embedding;
-* dựng `FindingTokenEncoder` (fp32, như `img_proj`) và calibrate `output_scale`
-  theo RMS **đầu ra** của bảng embedding;
-* `encode_train_example` thêm `finding_features` `[13,k]`; `collate_train`
-  stack sẵn mọi tensor không phải sequence nên không cần sửa;
-* `_forward_batch` và `generate` **compose** `FindingTokenEmbeddingWrapper`
-  quanh `SoftTokenEmbeddingWrapper` — `soft_tokens.py` không bị sửa;
-* `save_adapter` ghi `finding_tokens.pt`; `load_finding_encoder_if_present`
-  **raise** khi thiếu hoặc khi mode trong file không khớp;
-* `finding_features_for()` là **một** hàm dùng chung cho train, val và
-  generation, nên phân phối đầu vào không thể lệch giữa hai đường.
-
-⚠ `finding_features` đọc từ `batch` gốc chứ không từ bản đã ép dtype: bf16 chỉ
-mang ~3 chữ số thập phân và sẽ lượng tử hoá `m*q_pos` của một finding hiếm
-thành 0 trước khi encoder kịp nhìn thấy.
-
-`build_stage1_records` giờ luôn lưu `class_logits` (42 float/study).
-`stage1_cohort_fingerprint` thêm `record_features` **chỉ khi** nhánh bật, nên
-mọi cache cũ vẫn hit; `assert_class_logits_present` fail-closed nếu không.
+Nhánh `VariantLLM(finding_tokens=...)` (13 finding token học được, `FindingTokenEncoder`,
+`load_finding_encoder_if_present`, `finding_features_for`, `assert_class_logits_present`,
+`record_features` trong fingerprint) đã bị gỡ; pilot 2026-09-11 cho kết quả âm. Còn giữ:
+`build_stage1_records` vẫn luôn lưu `class_logits` (42 float/study) vì R1 `cue_override`
+(`training/dataio/cue_override.py`) đọc nó. `_prompt_metadata`, `meta.json` và
+`training_config` vẫn ghi `finding_tokens: "off"` / `num_finding_tokens: 0` dạng hằng số để
+danh tính cache và adapter cũ không đổi.
 
 ## Prompt legacy: `fine` và `paper` (2026-10-05, D-027)
 
@@ -194,12 +179,9 @@ mọi cache cũ vẫn hit; `assert_class_logits_present` fail-closed nếu khôn
 > đổi để dùng bối cảnh và không bịa so sánh khi không có lần trước. `paper` và `fine` giữ
 > nguyên từng byte; `_prompt_metadata` chỉ thêm khoá `context` cho `paper_context`.
 > `generate(...)` nhận thêm `num_beams` (mặc định 1 = greedy) và `length_penalty`; khi beam,
-> soft token và finding token được lặp theo số beam (`tests/test_beam_generation.py`).
-> **2026-10-14:** thân hàm `generate` chuyển sang `_generate_texts` (dùng chung với
-> `generate_candidates`, trả về mọi chuỗi đã decode); `generate` lấy `[0]` và gửi đúng
-> các kwargs như trước. `generate_candidates` sampling N chuỗi cho giải mã MBR
-> (`scripts/mbr_select_stage2.py`); soft/finding token được lặp theo số chuỗi trả về,
-> vì HF nhân batch theo `num_return_sequences` khi `num_beams == 1`.
+> soft token được lặp theo số beam (`tests/test_beam_generation.py`).
+> **2026-10-14:** thân hàm `generate` chuyển sang `_generate_texts`; `generate` lấy `[0]`.
+> `generate_candidates` (lấy mẫu cho MBR) đã gỡ 2026-11-27; kwargs greedy/beam không đổi.
 
 `build_instruction(groups, prompt_style)` có hai chữ: `PROMPT_STYLE_FINE`
 (câu lệnh ngắn tự viết, mọi số legacy đã ghi đều dùng nó) và

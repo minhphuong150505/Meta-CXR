@@ -47,9 +47,7 @@ là chủ ý. Ghi lại hash trong mọi báo cáo.
 
 `TEMPLATE_VERSION=stage2_prompt_v2_cue_states_v1` ghi nhận thay đổi semantics của builder, dù text fragment cũ vẫn giữ. Không dùng metric của `none` cũ để đại diện cho prompt mới.
 
-## 🧪 `FINDING_TOKEN_HEADER` — 2026-09-10
+## `FINDING_TOKEN_HEADER` — đã gỡ 2026-11-27 cùng nhánh finding token (D-029)
 
-**Cố ý KHÔNG nằm trong `_HASH_FRAGMENTS`.** Đưa vào đó sẽ đổi `template_hash`
-của **mọi** mode, kể cả các arm phải chạy đúng thứ đã tạo ra số đã ghi. Thay vào
-đó `template_hash(visual_mode, length, finding_token_count=N)` gộp nó vào payload
-**chỉ khi** nhánh bật, nên khi tắt hash giống hệt từng byte.
+`template_hash(visual_mode, length)` không còn tham số `finding_token_count`. Khi nhánh tắt nó chưa từng thêm gì vào payload, nên hash của mọi mode giữ nguyên từng byte.
+

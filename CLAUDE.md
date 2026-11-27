@@ -11,6 +11,47 @@ branch `main`). It is a sibling of the older `../META-CXR/` checkout. The parent
 `medgemma_inference/`; Stage-2 test counts), **this file wins for work done
 inside this directory.**
 
+## ⚠⚠⚠ MAIN PIPELINE SINCE 2026-11-27 (user decision, D-029): OFF + residual lateral R1
+
+The repo was cleaned down to one pipeline on branch `cleanup/r1-main-pipeline` (user confirmed every
+group of deletions):
+
+- **Stage 1** = OFF (`run_20261024_nomv`, `multi_view: false`, three classes, headline cutpoints) plus the
+  residual lateral expert R1 added at the OUTPUT for frontal+lateral studies
+  (`scripts/residual_stack.py`, experts from `scripts/lateral_lora_fit.py`, features from
+  `scripts/lateral_lora_cache.py` / `encoder_probe_features.py`); calibration
+  `scripts/residual_pooled_calibration.py`. Test reading: the "Residual-lateral" bullets below.
+- **Stage 2 reported** = the P2 adapter (`meta_cxr_qformer_with_mhcac_prompt` + `--prompt-style
+  paper_context` + `--train-cues oracle_mix`, beam 4 / lp 2). R1 cues go in through `--cue-override`
+  (`training/dataio/cue_override.py`, `scripts/r1_stage2_cues.py`); step A/B did not pass their rule.
+- **Kept on purpose:** View Fusion ON code (early fusion, StreamAdapters, MPC, view consistency — the
+  novelty direction), XAI (`training/explainability/`, `scripts/explain_stage2.py`,
+  `evaluate_explanation.py`), `record["class_logits"]` (read by `cue_override`), `oracle_cues.py`.
+
+**REMOVED (code gone; every number about them in this file stays as history, and every command that
+names them now fails):**
+
+| Removed | What happens now |
+|---|---|
+| `phase1q` refit, `qformer_input_norm`, `lambda_query_diversity`, `qformer_dropout`, `eval_mode_modules`, `vision_encoders/qformer_inputs.py`, `scripts/merge_qformer_refit.py` | keys REFUSED by `pretraining.retired_keys.reject_removed_experiment_keys` (also inside phase blocks); `lavis_loader` refuses a checkpoint carrying `qformer_input_norm.*` |
+| `view_fusion.mode` (`late` / `tokens`), `late_*`, `mhcac/late_view_pool.py`, MHCAC `aux_view_tokens` | refused |
+| `view_fusion.detach_aux`, `loss.mpc_temperature` (EVOKE flags) | refused; YAML lines dropped (they held the defaults, so the math is unchanged) |
+| `mhcac.asymmetric_loss` (ASL) | refused |
+| TTA (`vis_processor.*.tta`, `model/lavis/data/tta.py`) | `MIMIC_CXR_Dataset` raises |
+| Stage 2: `--finding-tokens`, `--finding-feature-ablation`, `training/medgemma/finding_tokens.py`, `--soft-token-ablation`, `--eval-cues`, `--num-samples` / `generate_candidates` (MBR), `scripts/mbr_select_stage2.py` | argparse error. Manifests still write `finding_tokens: "off"` / `num_finding_tokens: 0` as constants, so old adapter and cache identities still match; `template_hash` is unchanged |
+| P8 external MedGemma (`medgemma_inference/`, `model/pretrained_medgemma/`, the two `pretrained_medgemma_*` modes, `configs/experiments/pretrained_medgemma_findings_first.yaml`) | gone; `runtime/` now has NO caller |
+| P9 Vicuna demo (`inference.py`, `inference.sh`, `Dockerfile`, `build_container.sh`, `run_container.sh`), `utils/`, `threshold.json` | gone; `modeling_llama_imgemb.py` has no caller |
+| Prompt ablation (`configs/prompt_ablation/`, `scripts/run_prompt_ablation.py`) | gone |
+| `mhcac/mhcac.py`, `mhcac_2..11.py`, the `vision_encoders/biovil_t/` copy (use the repo-root `biovil_t/`) | gone |
+| Probe / diagnostic scripts: `probe_soft_tokens*.py`, `probe_image_features.py`, `biovil_prior_*.py`, `check_itc_gate.py`, `compare_stage1_operating_points.py`, `diagnose_qformer_collapse.py`, `diagnose_stream_scale.py`, `embed_cxr_encoders.py`, `embed_medgemma_images.py`, `evaluate_stage1_cutpoints.py`, `prior_report_baseline.py`, `retrieval_report_baselines.py` | gone (git history) |
+| 23 stale `docs/*.md` audits / baselines / migration notes | gone |
+
+⚠ The `mimic_cxr_full.yaml` edit changes its size/mtime, so in a checkout that pulls it the Stage-2
+`cohort_id` and the `oracle_mix` draw change (the mtime trap below); the user accepted this.
+⚠ **Not yet verified on GPU:** OFF's val npz reproduced bit for bit from the cleaned code, the host's
+full test suite, and 20 recorded Stage-2 reports regenerated word for word. CPU suite: the usual
+missing-torchvision/transformers failures only.
+
 ## ⚠⚠⚠ USER GOAL (2026-10-25): multi-view fusion is the novelty — fusion ON must beat OFF; confirm EVERY change
 
 The user wants View Fusion (multi-view) to be the paper's novelty, so work on
@@ -106,7 +147,7 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   the model by 0.12 lexicon CE. Novelty index vs the paper:
   `docs/CHI_MUC_TINH_MOI.md`; pilot awaiting approval:
   `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
-- 🧪 **Collapse fix, opt-in, user-approved 2026-10-15 -- NOT ADOPTED: attempt 1 failed its final gate,
+- 🧪 **[CODE REMOVED 2026-11-27, D-029 — history only]** **Collapse fix, opt-in, user-approved 2026-10-15 -- NOT ADOPTED: attempt 1 failed its final gate,
   attempt 2 passed every gate and the Stage-2 pilot rejected it (both below):** phase
   `phase1q` re-fits ONLY the META-Former on a finished, frozen Stage-1 checkpoint
   (`run.phases.phase1q.init_from.path=<1c checkpoint_best.pth>`; `init_from.skip` leaves the
@@ -184,7 +225,7 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
     adaptive logit adjustment and Menon's: decisions are 100% identical, because the shift is monotone
     in `s`. Only better ranking raises recall at equal precision.
   - Record: `docs/handoff/PLAN-2026-10-29-stage1-recall-input-audit.md`.
-- 🧪 **`model.mhcac.asymmetric_loss: {gamma_neg, clip}` (opt-in 2026-10-29, user-approved; absent = off,
+- 🧪 **[CODE REMOVED 2026-11-27, D-029 — history only]** **`model.mhcac.asymmetric_loss: {gamma_neg, clip}` (opt-in 2026-10-29, user-approved; absent = off,
   bit-identical).**
   - Applies Ridnik et al. ICCV 2021 asymmetric focusing to Negative cells only: the cell costs
     `-stopgrad((1-q)^gamma) log q`, with `q = min(p_neg + clip, 1)`.
@@ -235,7 +276,7 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   AP moves in opposite directions between runs. The epochs of one 1b run rank almost identically, so weight
   averaging (SWA) was not tried. C42 best + L42 best: -0.0035. Record:
   `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensemble.md`.
-- 🧪 **Test-time augmentation, opt-in since 2026-10-30 (user-approved): `datasets.mimic_cxr.vis_processor.eval.tta:
+- 🧪 **[CODE REMOVED 2026-11-27, D-029 — history only]** **Test-time augmentation, opt-in since 2026-10-30 (user-approved): `datasets.mimic_cxr.vis_processor.eval.tta:
   {degrees, scale}`** (`model/lavis/data/tta.py`, PIL only; absent = bit-identical). One fixed rotate/scale about the
   centre on the raw radiograph, in `_row_visual`, BEFORE every stream's own preprocessing. Refused for `train`, with
   `run.feature_cache_dir`, and when an explanation mask is passed -- and the shipped YAML still sets
@@ -258,8 +299,8 @@ called this a mistake and had all of it removed on 2026-09-29.** What exists now
   >= +0.02). So the shipped Swin is the strongest frozen encoder here, and a small probe on it alone matches the
   whole Stage-1 model. BioViL-T's backbone loads its pretrained weights correctly (362/364 tensors change; its 128-d
   projector loads with `joint_feature_size=128`). Caveat: MedCLIP's pretraining used MIMIC-CXR with an unverifiable
-  split. Trap: the eval hook's npz writes "no label" as -1, this probe as -100. Import `biovil_t` from the repo root,
-  not `vision_encoders/biovil_t` (no `device.py`). Record: `docs/handoff/PLAN-2026-10-31-encoder-probe.md`.
+  split. Trap: the eval hook's npz writes "no label" as -1, this probe as -100. Import `biovil_t` from the repo root
+  (the `vision_encoders/biovil_t` copy, which lacked `device.py`, was deleted 2026-11-27). Record: `docs/handoff/PLAN-2026-10-31-encoder-probe.md`.
 - ❌ **Swin fine-tune probe (val 2026-10-31, measurement only, pre-declared rule): STOP.** F (frozen) val macro AP
   0.4204 (G1 floor 0.4203), T (unfrozen) 0.4158, T - F -0.0046 [-0.0119, +0.0029]; T - R1C -0.0113 (descriptive). T's
   holdout peaks at epoch 2 (0.4344, +0.005 over F) then falls to 0.4196 as train loss keeps dropping, so it overfits the
@@ -1004,11 +1045,6 @@ python scripts/calibrate_thresholds.py --predictions <val.npz> --output <thresho
 # the argmax numbers, never instead. This is NOT the binary --thresholds removed
 # by D-023; load_thresholds refuses that old format.
 python scripts/evaluate_stage1.py --predictions <test.npz> --thresholds <thresholds.json> --output-dir <dir>
-# SUPPLEMENTARY, not the paper's protocol (user chose this over retraining,
-# 2026-10-01): one/two cutpoints on p_pos/(p_pos+p_neg) fitted on val, test
-# scored with a paired bootstrap against argmax. Uncertain sits between N and P
-# on that score but a middle band adds ~nothing; the gain is the P/N cutpoint.
-python scripts/evaluate_stage1_cutpoints.py --val <val.npz> --test <test.npz> --output-dir <dir>
 # HEADLINE since 2026-10-10 (user decision): fit two cutpoints per finding on
 # val, commit the file, score test with it (argmax is printed beside it):
 python scripts/calibrate_thresholds.py --rule cutpoints --predictions <val.npz> \
@@ -1225,7 +1261,7 @@ study (not image) → anchor + ≤1 auxiliary view
   drop is as large on the 2,022 single-view studies whose input is identical,
   while the view-gaining group is no better (AUROC -0.0152 [-0.0383, +0.0031]).
   One run per arm, so seed variance is not separated.
-- **Two EVOKE-alignment flags, 2026-10-09, both OFF by default.** Compared
+- **[CODE REMOVED 2026-11-27, D-029 — history only]** **Two EVOKE-alignment flags, 2026-10-09, both OFF by default.** Compared
   against EVOKE's paper (arXiv 2411.10224) AND its released code
   (`github.com/mk-runner/EVOKE`, `models/model_pretrain_finetune_v0425_ori.py`):
   `model.view_fusion.detach_aux: true` detaches the auxiliary-view K/V inside
@@ -1311,7 +1347,7 @@ study (not image) → anchor + ≤1 auxiliary view
   0.0054). The ON recipe alone moved CheXbert micro F1-14 by +0.0134 between seeds. Direction still
   leans OFF (seed-17 delta negative on all 9 metrics), and ON does not beat OFF. Record:
   `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
-  🧪 **Late fusion, opt-in since 2026-10-26 (user-approved): `model.view_fusion.mode: late`**
+  🧪 **[CODE REMOVED 2026-11-27, D-029 — history only]** **Late fusion, opt-in since 2026-10-26 (user-approved): `model.view_fusion.mode: late`**
   (absent = `early` = every recorded run). Builds no `view_fusion` / `stream_adapters` /
   `mpc_heads`: the anchor takes the OFF path, MHCAC (same weights) also classifies each real
   aux view, and `late_view_pool` (`mhcac/late_view_pool.py`, 112 params) pools the logits per
@@ -1332,7 +1368,7 @@ study (not image) → anchor + ≤1 auxiliary view
   0.48-0.50 at both seeds, i.e. a plain average of the two views. Bit-identity of single-view studies
   with/without the aux view re-confirmed on both pilot models. No full run. Record:
   `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
-  🧪 **`model.view_fusion.late_detach_aux: true` (opt-in 2026-10-26, user-approved; absent = false =
+  🧪 **[CODE REMOVED 2026-11-27, D-029 — history only]** **`model.view_fusion.late_detach_aux: true` (opt-in 2026-10-26, user-approved; absent = false =
   the LF path):** the aux-view pass (ln_vision / projector / MHCAC) runs under `torch.no_grad()`, so
   MHCAC, the projector and the text tower learn from the anchor only; `late_view_pool` still trains.
   Refused outside `late`. Not in the YAML (an edit would move its mtime); set
@@ -1345,7 +1381,7 @@ study (not image) → anchor + ≤1 auxiliary view
   recall -0.0073*): with one shared MHCAC the aux view helps two-view studies only when MHCAC trains on
   laterals, and that costs the anchor path about as much. Pool again ~0.5 per finding. No full run.
   Record: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
-  🧪 **`model.view_fusion.late_aux_head: true` (opt-in 2026-10-27, user-approved; absent = false = the LF
+  🧪 **[CODE REMOVED 2026-11-27, D-029 — history only]** **`model.view_fusion.late_aux_head: true` (opt-in 2026-10-27, user-approved; absent = false = the LF
   path, bit-identical):** a second MHCAC, `mhcac_aux` (a deep copy of `mhcac`, re-copied by
   `prepare_phase_model` when the init checkpoint holds no `mhcac_aux.*`), classifies the aux views; loss
   `CE(anchor) + CE(aux views) + CE(pooled)` (`late_aux_head_loss`). Every gradient path from the aux side
@@ -1365,7 +1401,7 @@ study (not image) → anchor + ≤1 auxiliary view
   -0.0248* and wF1 -0.0043*, both beyond NB/sqrt2 at both seeds. The aux head alone is weaker than the pool
   (views_2 F1-5 -0.0161*); AHnoaux - OFF within NB on every metric, so the gradient cut holds. Pool ~0.5
   again. 47-49 min per arm, 6,481 MiB. Third late variant against the same OFF arms; none passes. No full run.
-  🧪 **`model.view_fusion.mode: tokens` (opt-in 2026-10-27, user-approved; candidate 2 "TK"):** the aux
+  🧪 **[CODE REMOVED 2026-11-27, D-029 — history only]** **`model.view_fusion.mode: tokens` (opt-in 2026-10-27, user-approved; candidate 2 "TK"):** the aux
   view's tokens (frozen encode as in `late`, then `ln_vision` + the SAME shared projector, with gradient)
   are appended to MHCAC's image key axis, with their own per-stream `aux_pos_enc` and an `aux_view_emb`
   by view type (`mhcac_12.py`, `aux_view_tokens`; 230,400 params at the shipped layout, under the `mhcac`
@@ -2136,7 +2172,7 @@ GPU.** Pinned by `tests/test_prompt_style.py` (15 tests). README has the command
 - Beam: `VariantLLM.generate(num_beams=, length_penalty=)` and
   `generate_stage2_reports.py --num-beams 4 --length-penalty 2.0`; soft/finding
   tokens are repeated per beam. Defaults stay greedy.
-- **MBR decoding (2026-10-14, opt-in). DONE 2026-10-15: the pre-declared val rule chose
+- **[CODE REMOVED 2026-11-27, D-029 — history only]** **MBR decoding (2026-10-14, opt-in). DONE 2026-10-15: the pre-declared val rule chose
   M (val n=1,360: BERTScore +0.0199 [+0.0132, +0.0262]; greedy alone not eligible), and
   test, run ONCE (n=2,800, paired vs the reported beam 4 / lp 2), replicates the
   BERTScore gain: 0.4656 -> 0.4847, +0.0191 [+0.0155, +0.0228].** All of it is precision
@@ -2223,7 +2259,7 @@ caches still hit. Default unchanged. Piloted 2026-10-12 against P2: no gain (nor
 from LoRA r16); only LR 3e-4 passed
 (`docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`).
 
-🧪 **`generate_stage2_reports.py --eval-cues oracle` (2026-10-28, user-approved; default `predicted` =
+🧪 **[CODE REMOVED 2026-11-27, D-029 — history only]** **`generate_stage2_reports.py --eval-cues oracle` (2026-10-28, user-approved; default `predicted` =
 bit-identical).** Inference-only probe: every record's P/N/U cues become the TRUE CheXpert classes via
 `oracle_cues.true_label_codes` + `mix_oracle_cues(model_share=0)` (the D-018 mapping `--train-cues oracle_mix`
 trains on; No Finding skipped; a study with no CheXpert information keeps MHCAC's cues), applied after the
@@ -2317,10 +2353,9 @@ implementation detail and made the hybrid easy to mislabel as "native MedGemma")
 | `text_only_language_prior_ablation` | no | none — the only mode with `requires_multimodal=False` |
 | `both_for_ablation` | — | runs direct then qformer sequentially |
 
-Two further modes are inference-only against external checkpoints:
-`pretrained_medgemma_findings_first` (routes through `medgemma_inference.run_pretrained_findings`,
-not the fine-tuning CLI) and `pretrained_medgemma_impression_phase2` (declared but
-disabled by a runtime guard).
+The two inference-only modes against external checkpoints
+(`pretrained_medgemma_findings_first`, `pretrained_medgemma_impression_phase2`) and
+`medgemma_inference/` were REMOVED on 2026-11-27 (D-029).
 
 **The independence invariant, enforced by `tests/test_native_independence.py`:**
 every LAVIS/Stage-1 import lives in `training/stage1/lavis_loader.py` and nowhere
@@ -2352,7 +2387,7 @@ labels at all, which is what keeps the ablation uncontaminated.
 Opt-in via `--prompt-config configs/stage2_prompt_v2.yaml`; without the flag the
 legacy prompt is used. The prompt prefix is masked out of training labels, and
 the soft token is added to `bad_words_ids` at generation.
-`configs/prompt_ablation/P1..P9.yaml` drive `scripts/run_prompt_ablation.py`.
+`configs/prompt_ablation/` and `scripts/run_prompt_ablation.py` were removed 2026-11-27 (D-029).
 
 ### Full-pipeline inference on the TEST split — measured 2026-08-31
 
@@ -2936,7 +2971,7 @@ Verification and aggregate-only cache audit:
 `docs/handoff/PLAN-2026-09-08-cue-contract.md`. GPU generation was not launched
 because the card was occupied; CPU checks cannot establish better reports.
 
-🧪 **LEARNABLE FINDING TOKENS — EXPERIMENTAL BRANCH, DEFAULT OFF, RESULT
+🧪 **[CODE REMOVED 2026-11-27, D-029 — history only]** **LEARNABLE FINDING TOKENS — EXPERIMENTAL BRANCH, DEFAULT OFF, RESULT
 NEGATIVE (added 2026-09-10, pilot 2026-09-11, `feat/stage2-finding-tokens`).**
 `--finding-tokens {off,q_only,full}` on both `run_medgemma_qlora.py` and
 `generate_stage2_reports.py`. The pilot has run and the answer is no — see the
@@ -4463,8 +4498,8 @@ This remote is public.
   When a CPU test needs a GPU-only import, stub it here — do not pip-install into
   the CPU venv.
 - `model/lavis/` is a modified fork of Salesforce LAVIS and is excluded from ruff:
-  reformatting it would make every future upstream diff unreadable. Same for
-  `mhcac/mhcac_8..11.py` (legacy variants; only `mhcac_12.py` is wired).
+  reformatting it would make every future upstream diff unreadable. (The legacy
+  `mhcac/mhcac_8..11.py` it also excluded were deleted 2026-11-27; `mhcac_12.py` is the only MHCAC.)
 - **Never run `ruff check --fix` on a directory. Only on the files you edited.**
   On this branch it twice reformatted `scripts/evaluate_stage1.py` and
   `scripts/export_stage2_prompt_samples.py` — files the change had nothing to do
@@ -4476,11 +4511,10 @@ This remote is public.
 - Modules under `training/` carry a dual import shim
   (`try: from stage2_utils ... except ImportError: from training.stage2_utils ...`)
   so they work both as scripts and via `python -m`. Match it in new files there.
-- `inference.py` is the legacy Vicuna-7B + LoRA Gradio path and has **not** been
-  migrated to MedGemma. Two functionally identical copies of BioViL-T exist
-  (`biovil_t/`, `vision_encoders/biovil_t/`).
-- The many `docs/*audit*.md` / `*_baseline.md` files are point-in-time records of
-  past integration work, not living specs. `docs/STAGE2_PIPELINE_MODES.md` is the
+- `inference.py` (the legacy Vicuna-7B Gradio demo) and the `vision_encoders/biovil_t/` copy were
+  removed 2026-11-27 (D-029). BioViL-T lives only in the repo-root `biovil_t/`.
+- Most `docs/*audit*.md` / `*_baseline.md` point-in-time records were deleted 2026-11-27 (D-029);
+  what is left of them is history, not a living spec. `docs/STAGE2_PIPELINE_MODES.md` is the
   one to actually follow.
 
 ## Keep CLAUDE.md and README.md current — this is part of the work

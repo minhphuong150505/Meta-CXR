@@ -39,7 +39,7 @@ Gọi: `yaml`, `schemas`, `policies`, `ontology`.
 `tests/test_stage2_prompts.py:401-403` — `configs/stage2_prompt_v2.yaml` parse được
 
 ## Developer notes
-`configs/stage2_prompt_v2.yaml` và 9 file `configs/prompt_ablation/P*.yaml` đều
+`configs/stage2_prompt_v2.yaml` và 9 file `configs/prompt_ablation/P (đã xóa 2026-11-27)*.yaml` đều
 phải qua đây. Thêm trường mới nhớ thêm validate, nếu không typo sẽ bị bỏ qua âm thầm.
 
 ## Source relationships

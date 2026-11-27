@@ -3,7 +3,7 @@
 The v2 prompt builder (`stage2/prompts/`) is one shared, versioned, torch-free entry
 point for both training and inference. It replaces prompt logic that was scattered
 across `format_findings`, `build_instruction`, `build_prompt` and
-`build_native_instruction`. See `stage2_prompt_audit.md` for what it fixes.
+`build_native_instruction`. `stage2_prompt_audit.md`, which listed what it fixes, was removed on 2026-11-27 (see git history).
 
 ## Data flow
 

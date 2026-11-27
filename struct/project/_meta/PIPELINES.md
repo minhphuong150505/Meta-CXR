@@ -1,4 +1,4 @@
-> Source: `pretraining/`, `training/`, `scripts/`, `medgemma_inference/`, `preporcessing/`
+> Source: `pretraining/`, `training/`, `scripts/`, `medgemma_inference/` (đã xóa 2026-11-27), `preporcessing/`
 > Status: ✅ ACTIVE
 > Last verified against source: 2026-08-14
 
@@ -20,10 +20,10 @@ một thứ — mỗi cái có entrypoint, input, output và điều kiện tiê
 | [P3](#p3--preprocessing--dựng-split) | Preprocessing / dựng split | ✅ ACTIVE | ❌ | ❌ |
 | [P4](#p4--evaluation-stage-1) | Evaluation Stage 1 | ✅ ACTIVE | ❌ | ❌ |
 | [P5](#p5--evaluation-stage-2) | Evaluation Stage 2 | ✅ ACTIVE | ❌ | ❌ |
-| [P6](#p6--prompt-ablation-dry-run) | Prompt ablation (dry run) | 🧪 ABLATION | ❌ | ❌ |
+| [P6](#p6--prompt-ablation-dry-run) | Prompt ablation (dry run) | ❌ ĐÃ XÓA 2026-11-27 (còn script phụ) | ❌ | ❌ |
 | [P7](#p7--feature-precompute) | Feature precompute | 🟡 OPTIONAL | ❌ | ✅ |
-| [P8](#p8--external-medgemma-inference-baseline) | External MedGemma inference | ✅ ACTIVE (baseline) | ❌ | ✅ |
-| [P9](#p9--gradio-demo-vicuna-7b) | Gradio demo Vicuna-7B | ✅ ACTIVE (demo) | ✅ checkpoint | ✅ |
+| [P8](#p8--external-medgemma-inference-baseline) | External MedGemma inference | ❌ ĐÃ XÓA 2026-11-27 | ❌ | ✅ |
+| [P9](#p9--gradio-demo-vicuna-7b) | Gradio demo Vicuna-7B | ❌ ĐÃ XÓA 2026-11-27 | ✅ checkpoint | ✅ |
 | [P10](#p10--stage-1-encoder-ablation-table-5) | Encoder ablation Table 5 | ✅ COMPLETE (4/4) | ✅ checkpoint | ✅ |
 | [P11](#p11--evaluation-xai-grad-cam) | Evaluation XAI Grad-CAM | ✅ IMPLEMENTED, chưa GPU-run | ✅ checkpoint | ✅ |
 
@@ -254,30 +254,10 @@ hallucination, bootstrap CI.
 
 ## P6 — Prompt ablation (dry run)
 
-**Không load model, không sinh metric.** Nó render từng prompt variant cho mỗi
-record và ghi metadata + aggregate ở mức prompt.
+**❌ ĐÃ XÓA 2026-11-27** (`scripts/run_prompt_ablation.py`, `configs/prompt_ablation/P1..P9.yaml`) — dọn repo về pipeline chính OFF + residual R1, xem [D-029](DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27). Mã chỉ còn trong git history.
 
-```bash
-python scripts/run_prompt_ablation.py \
-    --prompt-configs configs/prompt_ablation/P5_visual_primary.yaml \
-    --max-samples 1000 --output-dir outputs/prompt_ablation
-```
-
-Chín cấu hình `configs/prompt_ablation/P1..P9.yaml`:
-
-| | |
-|---|---|
-| P1 | legacy style |
-| P2 | positive + uncertain, bỏ negative |
-| P3 | positive + uncertain + negative quan trọng |
-| P4 | thêm thông tin view |
-| P5 | visual primary |
-| P6 | qformer visual only |
-| P7 | confidence bins |
-| P8 | compact normal |
-| P9 | full negative control |
-
-Hai script cùng họ: `scripts/export_stage2_prompt_samples.py` (debug JSONL — ⚠
+Còn lại:
+ `scripts/export_stage2_prompt_samples.py` (debug JSONL — ⚠
 **có chứa findings text**, đặt `--output` ở nơi riêng tư),
 `scripts/prompt_length_statistics.py`, `scripts/audit_temporal_targets.py`.
 
@@ -312,76 +292,13 @@ redistribute**. `.gitignore` chặn `features/`, `feature_cache/`, `*.npy`, `*.n
 
 ## P8 — External MedGemma inference (baseline)
 
-**Mục đích:** sinh FINDINGS bằng checkpoint MedGemma do **bên thứ ba** fine-tune,
-làm số đối chứng chính thức ([D-005](DECISIONS.md#d-005--track-inference-checkpoint-ngoài-là-baseline-chính-thức)).
-
-```bash
-python -m medgemma_inference.run_pretrained_findings \
-    --config configs/experiments/pretrained_medgemma_findings_first.yaml \
-    --split validation --max-samples 100
-```
-
-### Provenance — phải nêu ở mọi nơi báo cáo kết quả này
-
-Checkpoint `erjui/medgemma-4b-srrg-findings` được fine-tune từ `google/medgemma-4b-it`
-trên csrrg_ift (dẫn xuất từ MIMIC-CXR + CheXpert+) bởi **bên thứ ba**, không phải
-project này, và **không** trên split của repository này.
-
-### Đặc điểm
-
-- **Inference only.** Không dựng optimizer, không tính gradient, không gọi
-  `model.train()`. Enforce bằng `tests/test_inference_only_invariants.py`.
-- **Không chạy được qua CLI fine-tuning.** `resolve_pipeline_modes` chủ động
-  raise nếu ai đó thử — một run inference ngoại lai không được lọt vào đường
-  fine-tuning.
-- **Resume an toàn.** `prediction_writer.py` flush + fsync từng dòng; dòng dở
-  dang bị cắt khi resume. `progress.py` kiểm tra run identity: nếu model, revision,
-  generation setting, split hay dataset fingerprint đổi, nó **từ chối append** —
-  vì trộn output của hai cấu hình vào một file kết quả thì không metric nào phát
-  hiện ra được.
-- **Budget theo wall-clock.** `runtime/budget.py`, mang `prior_elapsed_seconds`
-  để resume không reset trần chi phí.
-- **Lazy load.** Model chỉ được dựng khi còn việc chưa xong → run đã resume hoàn
-  toàn tốn 0 GPU time. Guard Impression chạy **trước** mọi thứ, nên cấu hình sai
-  fail trong mili-giây thay vì sau khi tải xong 4B weight.
-
-### Phase 2 — bị vô hiệu hóa
-
-`pretrained_medgemma_impression_phase2` **được khai báo nhưng bị runtime guard
-chặn**. `model/pretrained_medgemma/impression_reporter.py` cố ý trơ: import nó
-không được tải checkpoint, không dựng processor, không cấp VRAM, không import
-transformers. Nó tồn tại để interface Phase 2 được chốt và review, không phải để
-chạy.
+**❌ ĐÃ XÓA 2026-11-27** (`medgemma_inference/`, `model/pretrained_medgemma/`) — dọn repo về pipeline chính OFF + residual R1, xem [D-029](DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27). Mã chỉ còn trong git history.
 
 ---
 
 ## P9 — Gradio demo Vicuna-7B
 
-**Status:** ✅ ACTIVE theo [D-002](DECISIONS.md#d-002--đường-vicuna-7b-legacy-vẫn-là-demo-active).
-Đây là đường **legacy về mặt kiến trúc** (Vicuna, không phải MedGemma) nhưng vẫn
-là đường demo đang dùng.
-
-```bash
-./build_container.sh && ./run_container.sh     # Docker, Gradio ở :7860
-# hoặc trực tiếp:
-bash inference.sh
-```
-
-`Dockerfile:5` → `ENTRYPOINT ["/bin/bash", "inference.sh"]`
-`inference.sh:7` → `python3 inference.py --cfg-path pretraining/configs/blip2_pretrain_stage1_emb.yaml`
-
-| | |
-|---|---|
-| LLM | Vicuna-7B + LoRA adapter từ `checkpoints/` |
-| Config | `pretraining/configs/blip2_pretrain_stage1_emb.yaml` |
-| Determinism | `SEED = 16` đặt cứng ở đầu `inference.py` |
-| CheXpert labeler | Cần Java — `JAVA_HOME`/`JAVA_PATH` từ `local_config.py` |
-
-⚠ `inference.py:312` hardcode `device_map={"": 0}` — đây là chỗ duy nhất còn ghim
-GPU 0 trong repo.
-
-⚠ Đường này **chưa được migrate sang MedGemma**. Nó không dùng
-`stage2/prompts/PromptBuilder`; nó là một đường prompt riêng.
+**❌ ĐÃ XÓA 2026-11-27** (`inference.py`, `inference.sh`, Docker) — dọn repo về pipeline chính OFF + residual R1, xem [D-029](DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27). Mã chỉ còn trong git history.
 
 ---
 
@@ -444,11 +361,11 @@ checkpoint/GPU **chưa từng chạy**.
 
 | Loại | Pipeline |
 |---|---|
-| **Production** | P1 (Stage 1), P2 với `medgemma_direct` |
-| **Baseline đối chứng** | P8 (external checkpoint), `text_only_language_prior_ablation` |
-| **Ablation** | P2 với `meta_cxr_qformer*`, P6 (prompt), P10 (encoder; complete) |
+| **Production** (user chọn 2026-11-27) | P1 cho OFF (`run_20261024_nomv`) + residual lateral R1 ở đầu ra (`scripts/residual_stack.py`); Stage 2 đã báo cáo: P2 với `meta_cxr_qformer_with_mhcac_prompt`, `--prompt-style paper_context`, `--train-cues oracle_mix` |
+| **Baseline đối chứng** | `text_only_language_prior_ablation` (P8 đã xóa 2026-11-27) |
+| **Ablation** | P2 với `medgemma_direct` / `meta_cxr_qformer`, P10 (encoder; complete) |
 | **Hỗ trợ** | P3, P4, P5, P7, P11 |
-| **Demo** | P9 |
+| **Demo** | không còn (P9 đã xóa 2026-11-27) |
 | **Legacy đã chết** | notebooks 01/02/03 — xem [LEGACY_AND_OPTIONAL.md](LEGACY_AND_OPTIONAL.md) |
 
 ---

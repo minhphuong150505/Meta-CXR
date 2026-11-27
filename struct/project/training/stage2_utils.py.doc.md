@@ -56,7 +56,7 @@ Hai nơi phải khớp nhau.
 
 Gọi: stdlib + `hashlib`, `pathlib`.
 Được gọi: `fig9:63,79`; `run_medgemma_qlora.py` (gián tiếp); `dataio/manifest.py:21`;
-`medgemma/soft_tokens.py:20`; `medgemma_inference/run_pretrained_findings.py:39`;
+`medgemma/soft_tokens.py:20`;
 `tests/test_stage2_utils.py`, `test_stage2_prompts.py:41`, `test_section_metrics.py:21`
 
 ## Side effects
@@ -76,10 +76,6 @@ Không (`file_identity` đọc metadata file).
 
 ← [training/](_index.md) · [HOME](../../HOME.md)
 
-## 🧪 `adapter_is_complete(path, image_mode, finding_tokens="off")` — 2026-09-10
+## `adapter_is_complete(path, image_mode)`
 
-Tham số thứ ba, mặc định `"off"` nên mọi lời gọi cũ không đổi hành vi. Khi khác
-`off`, `finding_tokens.pt` trở thành file bắt buộc — cùng lý do như
-`img_proj.pt`: encoder được train ở Stage 2, thiếu nó thì 13 vị trí prompt được
-thay bằng một projection khởi tạo ngẫu nhiên và model viết báo cáo trôi chảy
-quanh chúng, không lỗi ở đâu cả.
+Tham số thứ ba `finding_tokens` (2026-09-10) đã gỡ 2026-11-27 cùng nhánh finding token. Mode soft token vẫn bắt buộc `img_proj.pt`.

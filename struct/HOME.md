@@ -186,38 +186,30 @@ Meta-CXR-source/
 │   │   ├── data/
 │   │   │   ├── ReportDataset.py         ✅ ★ MIMIC_CXR_Dataset (1130)
 │   │   │   ├── mimic_cxr_utils.py       ✅ build_study_index
-│   │   │   ├── external_eval.py         ⚠ CheXpert val → bảng MIMIC (Bảng 4, opt-in)
-│   │   │   └── tta.py                   ⚠ affine cố định lúc suy luận (TTA, opt-in)
+│   │   │   └── external_eval.py         ⚠ CheXpert val → bảng MIMIC (Bảng 4, opt-in)
 │   │   ├── runners/runner_base.py       ✅ ★ train loop (1182)
 │   │   ├── tasks/image_text_pretrain.py ✅ eval hook
 │   │   ├── common/                      ✅ config, registry, optims, dist_utils…
 │   │   ├── datasets/  processors/       ✅
 │   │   └── blip_models/blip_outputs.py  ✅
-│   └── pretrained_medgemma/        ✅ checkpoint NGOÀI (baseline)
-│       ├── findings_loader.py           ✅
-│       ├── findings_reporter.py         ✅
-│       ├── impression_reporter.py       ⛔ DISABLED có chủ đích
-│       ├── output_schema.py             ✅
-│       └── errors.py                    ✅
+│   └── (pretrained_medgemma/ đã xóa 2026-11-27)
 │
 ├── mhcac/                          ✅ phân loại bất thường
 │   ├── mhcac_12.py                 ✅ ★ bản DUY NHẤT được wire (471)
 │   ├── explanation.py              🟡 explanation-aware loss (lambda-gated)
 │   ├── loss.py                     ✅ ★ 11 objective Stage-1 hiện hữu (628)
 │   ├── view_fusion.py              🟡 multi_view: true
-│   ├── late_view_pool.py           🧪 view_fusion.mode: late (opt-in)
 │   ├── utils.py                    🕰 (624 — chỉ notebook legacy gọi)
-│   ├── aggregator.py               🕰 ⚠ chỉ còn string trong freeze-list
-│   └── mhcac.py, mhcac_2..11.py    🕰 11 variant, zero reference
+│   └── aggregator.py               🕰 ⚠ chỉ còn string trong freeze-list
+│       (late_view_pool.py, mhcac.py, mhcac_2..11.py đã xóa 2026-11-27)
 │
 ├── vision_encoders/
 │   ├── shared_visual_tokens.py     ✅ ★ điểm chiếu DUY NHẤT
-│   ├── qformer_inputs.py           🧪 norm đầu vào Q-Former + loss đa dạng query (opt-in, 2026-10-15)
+│   ├── lora.py                     🟡 LoRA viết tay cho Swin (lateral expert của R1)
 │   ├── pubmedclip/pubmed_clip.py   ✅
 │   ├── pubmedclip/preprocess.py    ✅ tiền xử lý CLIP riêng (D-022)
 │   ├── swin/swin_encoder.py        ✅
 │   ├── rad_dino/rad_dino_encoder.py 🟡 raddino: false ở mọi config
-│   ├── biovil_t/                   🕰 ⚠ BẢN SAO — bản dùng thật là biovil_t/ ở root
 │   └── medclip/medclip.py          🕰 import bị comment
 │
 ├── biovil_t/                       ✅ BioViL-T (bản ĐƯỢC import)
@@ -261,11 +253,6 @@ Meta-CXR-source/
 │   ├── schemas.py  policies.py  templates.py
 │   └── ontology.py  records.py  validation.py
 │
-├── medgemma_inference/             ✅ baseline checkpoint NGOÀI
-│   ├── run_pretrained_findings.py  ✅ ★ ENTRYPOINT
-│   ├── runner.py  config.py
-│   └── prediction_writer.py  progress.py
-│
 ├── runtime/                        ✅ stdlib-only
 │   ├── budget.py                   ✅ tính tiền theo wall-clock
 │   └── device.py                   ✅ không hardcode cuda:0
@@ -278,11 +265,10 @@ Meta-CXR-source/
 │   ├── vm_preflight.py             🧰 chạy TRƯỚC mọi run dài
 │   ├── train_healthcheck.sh         🧰 monitor chỉ đọc Stage 1/2; cron dùng exit code
 │   ├── calibrate_thresholds.py     ✅ ngưỡng theo (bệnh, lớp), Eq. 22   evaluate_stage1.py ✅ giao thức bài báo
-│   ├── evaluate_stage1_cutpoints.py ✅ BỔ SUNG (không phải giao thức bài báo): ngưỡng trên p_pos/(p_pos+p_neg)
 │   ├── evaluate_chexpert_crossdomain.py ✅ Bảng 4   evaluate_clinical_efficacy.py ✅ Bảng 3 CE
 │   ├── evaluate_explanation.py     ✅ XAI, checkpoint + autograd, không train
 │   ├── evaluate_stage2.py          ✅   check_notebook_privacy.py ✅ pre-commit
-│   ├── run_prompt_ablation.py      🧪   export_stage2_prompt_samples.py 🧪 ⚠ chứa findings
+│   ├── export_stage2_prompt_samples.py 🧪 ⚠ chứa findings
 │   ├── prompt_length_statistics.py 🧪   audit_temporal_targets.py 🧪
 │   └── _stage2_fixtures.py         🧪 dữ liệu tổng hợp, KHÔNG phải MIMIC
 │
@@ -293,9 +279,7 @@ Meta-CXR-source/
 │
 ├── configs/
 │   ├── env_config.yaml.example     ✅ (env_config.yaml git-ignored)
-│   ├── stage2_prompt_v2.yaml       ✅ opt-in Prompt v2
-│   ├── experiments/pretrained_medgemma_findings_first.yaml ✅
-│   └── prompt_ablation/P1..P9.yaml 🧪
+│   └── stage2_prompt_v2.yaml       ✅ opt-in Prompt v2
 │
 ├── results/                        ✅ Table 5 encoder ablation (4/4 complete)
 │   └── table5_encoder_ablation.{md,json,csv}
@@ -308,24 +292,16 @@ Meta-CXR-source/
 │   ├── test_generation_stop_tokens.py ✅ model chat stop IDs and tokenizer fallback
 │   └── fixtures/notebooks/*.fixture
 │
-├── utils/                          ⚠ POTENTIALLY_UNUSED — zero import toàn repo
-│   ├── prompter.py  callbacks.py  datacollator.py
-│   └── split_emb.py                ⚠ chạy ngay khi import, path không tồn tại
-│
 ├── docs/                           ⚠ đa số là BIÊN BẢN, không phải spec
 │   ├── STAGE2_PIPELINE_MODES.md    ✅ nên theo
 │   ├── FEATURE_CACHE.md            ✅   notebook_privacy.md ✅
 │   ├── handoff/                    ✅ bàn giao planner → executor (cả hai là Claude)
 │   ├── so_sanh_voi_repo_goc.md     ✅ đối chiếu source với DasithEdirisinghe/META-CXR
-│   └── *_audit.md  *_baseline.md  final_*.md   🕰 chỉ đọc như lịch sử
+│   └── (23 biên bản audit/baseline/merge cũ đã xóa 2026-11-27, xem git history)
 │
 ├── checkpoints/                    (generated — chỉ .gitkeep; LoRA Vicuna ở đây)
 │
-├── inference.py                    ✅ demo Gradio Vicuna-7B (670) ⚠ device_map ghim GPU 0
-├── inference.sh                    ✅   Dockerfile ✅ ENTRYPOINT → inference.sh
-├── build_container.sh              ✅   run_container.sh ✅
 ├── local_config.py                 ✅ ★ nạp configs/env_config.yaml
-├── threshold.json                  ⚠ artifact lịch sử, không được load ngầm
 ├── pyproject.toml                  🧰 CỐ Ý zero runtime dependency
 ├── requirements-stage1.txt         ✅   requirements-stage2.txt ✅ (additive, bao gồm stage1)
 ├── requirements.txt                ✅ alias mặc định → requirements-stage1.txt
@@ -362,9 +338,6 @@ Meta-CXR-source/
 - [`models/blip2_models/Qformer.py`](project/model/lavis/models/blip2_models/Qformer.py.doc.md)
 - [`models/blip2_models/modeling_llama_imgemb.py`](project/model/lavis/models/blip2_models/modeling_llama_imgemb.py.doc.md)
 
-#### `model/pretrained_medgemma/`
-[📁 Directory documentation](project/model/pretrained_medgemma/_index.md)
-
 ### `mhcac/` — phân loại bất thường
 [📁 Directory documentation](project/mhcac/_index.md)
 
@@ -372,7 +345,6 @@ Meta-CXR-source/
 - [`explanation.py`](project/mhcac/explanation.py.doc.md) 🟡
 - [`loss.py`](project/mhcac/loss.py.doc.md) ★
 - [`view_fusion.py`](project/mhcac/view_fusion.py.doc.md)
-- [`late_view_pool.py`](project/mhcac/late_view_pool.py.doc.md) 🧪
 
 ### `vision_encoders/`
 [📁 Directory documentation](project/vision_encoders/_index.md)
@@ -399,28 +371,21 @@ Meta-CXR-source/
 ### `stage2/prompts/` — Prompt v2
 [📁 Directory documentation](project/stage2/prompts/_index.md)
 
-### `medgemma_inference/` — baseline checkpoint ngoài
-[📁 Directory documentation](project/medgemma_inference/_index.md)
-
 ### `runtime/` · `safety/`
 [📁 runtime](project/runtime/_index.md) · [📁 safety](project/safety/_index.md)
 
-### `scripts/` · `preporcessing/` · `configs/` · `tests/` · `utils/`
+### `scripts/` · `preporcessing/` · `configs/` · `tests/`
 [📁 scripts](project/scripts/_index.md) ·
 [📁 preporcessing](project/preporcessing/_index.md) ·
 [📁 configs](project/configs/_index.md) ·
-[📁 tests](project/tests/_index.md) ·
-[📁 utils](project/utils/_index.md)
+[📁 tests](project/tests/_index.md)
 
 ### `results/` — artifact nghiên cứu đã track
 [📁 Directory documentation](project/results/_index.md)
 
 ### File ở root
-- [`inference.py`](project/inference.py.doc.md) — demo Gradio Vicuna
 - [`local_config.py`](project/local_config.py.doc.md) — nạp env config
-- [`Dockerfile`](project/Dockerfile.doc.md) · [`inference.sh`](project/inference.sh.doc.md)
-- [`build_container.sh`](project/build_container.sh.doc.md) · [`run_container.sh`](project/run_container.sh.doc.md)
-- [`threshold.json`](project/threshold.json.doc.md) · [`pyproject.toml`](project/pyproject.toml.doc.md)
+- [`pyproject.toml`](project/pyproject.toml.doc.md)
 - [`requirements-stage1.txt`](project/requirements-stage1.txt.doc.md) ·
   [`requirements-stage2.txt`](project/requirements-stage2.txt.doc.md) ·
   [`requirements.txt`](project/requirements.txt.doc.md) ·

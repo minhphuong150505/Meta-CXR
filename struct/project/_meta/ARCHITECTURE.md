@@ -411,7 +411,6 @@ Ghi lại để không ai đi vòng lại:
 | Nguồn | Nói gì | Code thực tế |
 |---|---|---|
 | `CLAUDE.md`, `README.md` §Stage 1 | `selection_metric: f1_positive_macro` | `mimic_cxr_full.yaml:109` → **`macro_auprc`** |
-| `docs/stage2_prompt_audit.md:20` | `utils/prompter.py` dùng bởi `inference.py` | Không có import nào — xem [D-002](DECISIONS.md#d-002--đường-vicuna-7b-legacy-vẫn-là-demo-active) |
 | Tên file `train_eval_figure9_llm_variants_200.py` | script vẽ figure | Là động cơ Stage 2 |
 
 ---

@@ -42,7 +42,7 @@ split CSV ──► MIMIC_CXR_Dataset.__getitem__ ──► collater ──► B
 
 ## Used in
 
-Training ✅ · Validation ✅ · Test ✅ · Inference ✅ (transform, qua `inference.py`)
+Training ✅ · Validation ✅ · Test ✅ (`inference.py` đã xóa 2026-11-27)
 
 ## Entry point
 
@@ -77,7 +77,7 @@ Dict sample — xem [DATA_FLOW.md §2.2](../../../_meta/DATA_FLOW.md#22-__getite
 
 | Hàm | Doc | Vai trò |
 |---|---|---|
-| `create_chest_xray_transform_for_inference` (`:107`) | — | Dùng bởi `inference.py:28` |
+| `create_chest_xray_transform_for_inference` (`:107`) | — | Dùng bởi `inference.py:28` | ⚠ hàm này không còn trong code (kiểm 2026-11-27)
 
 ## Main methods — `MIMIC_CXR_Dataset`
 
@@ -129,7 +129,7 @@ collater(samples)
 ## Called by
 
 `pretraining/train.py:118-155` · `training/stage1/lavis_loader.py:31,96` ·
-`inference.py:28` (chỉ transform) · `tests/test_mimic_data_pipeline.py`
+`tests/test_mimic_data_pipeline.py`
 
 ## Side effects
 
@@ -201,14 +201,9 @@ bảng ảnh và bảng nhãn từ
 collate) giữ nguyên. Khoá vắng mặt → hành vi cũ từng byte. Từ chối khi đặt cùng
 `run.feature_cache_dir`. Danh sách 14 cột nay là hằng lớp `CHEXPERT_COLS`.
 
-## Test-time augmentation: `vis_processor.eval.tta` (2026-10-30)
+## Test-time augmentation: `vis_processor.eval.tta` — ĐÃ GỠ 2026-11-27
 
-Opt-in, chỉ split đánh giá. `__init__` gọi
-[`tta.resolve_tta_affine`](tta.py.doc.md) trên `vis_processor.eval.tta`
-(`{degrees, scale}`); khoá vắng → `self.tta_affine = None`, hành vi cũ từng byte.
-Từ chối split `train` và `run.feature_cache_dir`. `_row_visual` áp một phép
-affine cố định lên ảnh gốc trước tiền xử lý của mọi encoder. Một lượt chấm = một
-phép biến đổi; trung bình xác suất giữa các lượt làm ngoài mô hình.
+Probe val 2026-10-31 dưới ngưỡng (CLAUDE.md). `__init__` giờ raise `ValueError` nếu `vis_processor.<split>.tta` còn được đặt; `model/lavis/data/tta.py` đã xóa.
 
 ## Nhãn CheXpert: `blank_label_policy` (2026-09-24)
 

@@ -38,13 +38,8 @@ def _config():
     return OmegaConf.load(CONFIG)
 
 
-REFIT_INIT = "/nonexistent/run/phase1c/checkpoint_best.pth"
-
-
 def _spec(name):
     config = _config()
-    if name == "phase1q":  # its init checkpoint is named on the command line
-        config.run.phases.phase1q.init_from.path = REFIT_INIT
     return apply_phase_to_config(config, name), config
 
 
@@ -72,7 +67,6 @@ class FakeBlip2(nn.Module):
         self.stream_adapters = nn.Linear(8, 8)
         self.view_fusion = nn.Linear(8, 8)
         self.mpc_heads = nn.Linear(8, 8)
-        self.qformer_input_norm = nn.LayerNorm(8)
 
     def forward(self, x):
         parts = [
@@ -81,7 +75,7 @@ class FakeBlip2(nn.Module):
             self.shared_visual_projector["projections"](x), self.ln_vision(x),
             self.visual_encoder["encoder"](x), self.visual_encoder["projector"](x),
             self.pubmedclip(x), self.swin(x), self.mhcac(x), self.stream_adapters(x),
-            self.view_fusion(x), self.mpc_heads(x), self.qformer_input_norm(x),
+            self.view_fusion(x), self.mpc_heads(x),
         ]
         return (sum(p.sum() for p in parts) + self.query_tokens.sum() + self.temp
                 + self.siglip_logit_scale + self.siglip_bias)
@@ -94,9 +88,8 @@ class FakeBlip2(nn.Module):
 
 def test_the_shipped_yaml_defines_the_three_paper_phases():
     config = _config()
-    # 1a/1b/1c are the paper's; phase1q (2026-10-15) is an opt-in refit of the
-    # META-Former on a finished checkpoint and is in no default chain.
-    assert list(config.run.phases) == ["phase1a", "phase1b", "phase1c", "phase1q"]
+    # 1a/1b/1c are the paper's; the opt-in phase1q refit was removed 2026-11-27.
+    assert list(config.run.phases) == ["phase1a", "phase1b", "phase1c"]
     assert config.run.phase is None
 
 
@@ -173,7 +166,6 @@ def test_init_checkpoint_chain(tmp_path):
     assert resolve_init_checkpoint(_spec("phase1a")[0], tmp_path) is None
     assert resolve_init_checkpoint(_spec("phase1b")[0], tmp_path) == tmp_path / "checkpoint_phase1a.pth"
     assert resolve_init_checkpoint(_spec("phase1c")[0], tmp_path) == tmp_path / "checkpoint_phase1b.pth"
-    assert resolve_init_checkpoint(_spec("phase1q")[0], tmp_path) == Path(REFIT_INIT)
     with pytest.raises(PhaseConfigError, match="phase_root"):
         resolve_init_checkpoint(_spec("phase1b")[0], "")
 
@@ -191,14 +183,10 @@ EXPECTED_TRAINABLE = {
     "phase1c": {"query_tokens", "Qformer", "vision_proj", "text_proj", "itm_head", "temp",
                 "siglip_logit_scale", "siglip_bias", "shared_visual_projector", "ln_vision", "mhcac", "stream_adapters",
                 "view_fusion", "mpc_heads", "visual_encoder"},
-    # Nothing upstream of the Q-Former and nothing of MHCAC: the refit cannot move
-    # the classifier or its inputs.
-    "phase1q": {"query_tokens", "Qformer", "vision_proj", "text_proj", "temp",
-                "siglip_logit_scale", "siglip_bias", "qformer_input_norm"},
 }
 
 
-@pytest.mark.parametrize("phase", ["phase1a", "phase1b", "phase1c", "phase1q"])
+@pytest.mark.parametrize("phase", ["phase1a", "phase1b", "phase1c"])
 def test_each_phase_trains_exactly_its_modules(phase):
     model = FakeBlip2()
     apply_trainable(model, _spec(phase)[0])
@@ -211,7 +199,7 @@ def test_each_phase_trains_exactly_its_modules(phase):
     assert model.visual_encoder["projector"].weight.requires_grad is (phase == "phase1c")
 
 
-@pytest.mark.parametrize("phase", ["phase1a", "phase1b", "phase1c", "phase1q"])
+@pytest.mark.parametrize("phase", ["phase1a", "phase1b", "phase1c"])
 def test_frozen_parameters_get_no_gradient(phase):
     model = FakeBlip2()
     apply_trainable(model, _spec(phase)[0])
@@ -370,42 +358,6 @@ def test_runner_optimizer_holds_only_trainable_parameters_and_hands_over():
     assert not remaining & frozen, "a frozen parameter is still in the optimizer"
     assert not model.Qformer["bert"].weight.requires_grad
     assert model.mhcac.weight.requires_grad
-
-
-# --------------------------------------------------------------------------
-# phase1q -- META-Former refit on a frozen checkpoint (2026-10-15)
-# --------------------------------------------------------------------------
-
-
-def test_phase1q_needs_its_checkpoint_on_the_command_line():
-    with pytest.raises(PhaseConfigError, match="needs phase or path"):
-        apply_phase_to_config(_config(), "phase1q")
-
-
-def test_phase1q_refits_only_the_qformer_side():
-    spec, config = _spec("phase1q")
-    assert set(spec.init_skip) == {"query_tokens", "Qformer", "vision_proj", "text_proj", "itm_head",
-                                   "temp", "siglip_logit_scale", "siglip_bias"}
-    # lambda_mpc 0 -> no MPC heads in this model; the 1c checkpoint's are ignored
-    # (found by the 2026-10-15 integration smoke: they were "unexpected" tensors).
-    assert spec.init_ignore == ("mpc_heads",)
-    assert float(config.model.loss.lambda_mpc) == 0.0
-    assert spec.epochs == config.run.max_epoch == 2
-    model = config.model
-    assert model.qformer_input_norm == "per_stream"
-    assert list(model.eval_mode_modules) == ["view_fusion"]
-    # The diversity term must see the eval-mode queries: the first refit (2026-10-15) ran with
-    # dropout on and learned to amplify it. Both training-only noise sources are off.
-    assert float(model.qformer_dropout) == 0.0 and float(model.feature_mask_ratio) == 0.0
-    assert model.multi_view is True and int(model.gradcache_chunk_size) > 0
-    assert model.encoder_finetune.enabled is False
-    on = {k for k, v in model.loss.items() if k.startswith("lambda_") and float(v) > 0}
-    assert on == {"lambda_itc", "lambda_lm", "lambda_query_diversity"}
-    assert config.run.feature_cache_dir is None
-    # 8 workers x prefetch 2 x ~0.9 GB image batches of 128 OOMed the 30 GB host (2026-10-15)
-    assert int(config.run.num_workers) == 4
-    assert config.datasets.mimic_cxr.vis_processor.train.augmentation.enabled is False
-    assert config.run.selection_metric == "loss" and list(config.run.test_splits) == []
 
 
 def test_init_from_is_validated():

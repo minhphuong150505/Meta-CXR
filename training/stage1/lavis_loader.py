@@ -30,7 +30,6 @@ from model.lavis.common.config import Config  # noqa: E402
 from model.lavis.common.registry import registry  # noqa: E402
 from model.lavis.data.ReportDataset import MIMIC_CXR_Dataset  # noqa: E402
 from training.torch_io import load_torch_checkpoint  # noqa: E402
-from vision_encoders.qformer_inputs import assert_input_norm_keys_match  # noqa: E402
 
 registry.mapping["paths"]["cache_root"] = "."
 
@@ -85,8 +84,14 @@ def build_stage1_model(context, checkpoint_root: Path, device: torch.device):
     ckpt_path = context.resolve_checkpoint_path(checkpoint_root)
     ckpt = load_torch_checkpoint(ckpt_path)
     state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
-    # Before the shape filter, which would drop a mismatched norm silently.
-    assert_input_norm_keys_match(model.state_dict().keys(), state_dict.keys(), where=str(ckpt_path))
+    # The phase-1q refit (model.qformer_input_norm) was removed on 2026-11-27. Its
+    # checkpoints carry a Q-Former trained behind that norm; the shape filter below
+    # would drop the norm silently, so refuse them here.
+    if any(str(key).startswith("qformer_input_norm.") for key in state_dict):
+        raise ValueError(
+            f"{ckpt_path} is a phase-1q refit checkpoint (qformer_input_norm.*); that "
+            "path was removed on 2026-11-27 and this checkpoint no longer loads correctly"
+        )
     state_dict = filter_state_dict_for_model(model, state_dict)
     missing, unexpected = load_state_dict_materializing_meta(model, state_dict)
     print(f"[stage1] loaded {ckpt_path}; missing={len(missing)} unexpected={len(unexpected)}")

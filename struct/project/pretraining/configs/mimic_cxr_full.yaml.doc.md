@@ -6,7 +6,6 @@
 
 > ⚠ **D-025 (2026-10-01) — `model.mhcac.logit_adjustment` đã cài nhưng KHÔNG bật.** Production vẫn dùng `class_weights`. Khóa thay thế: `{tau, class_counts: 14×[neg, pos, unc]}` đếm trên train; hai khóa loại trừ nhau. Xem [D-025](../../_meta/DECISIONS.md#d-025--logit-adjusted-loss-thay-trọng-số-lớp-bị-chặn-2026-10-01).
 
-> 🧪 **`model.mhcac.asymmetric_loss: {gamma_neg, clip}` (2026-10-29): có cài, nhưng KHÔNG có trong YAML.** Bật bằng override ở phase, ví dụ `run.phases.phase1b.model.mhcac.asymmetric_loss.gamma_neg=4`. Sửa YAML sẽ đổi mtime, và Stage 2 dùng mtime đó cho cache và `oracle_mix`. Thiếu khóa thì loss giống hệt bản cũ, đến từng bit. Xem [`loss.py`](../../mhcac/loss.py.doc.md) và [`PLAN-2026-10-29-stage1-asymmetric-loss.md`](../../../docs/handoff/PLAN-2026-10-29-stage1-asymmetric-loss.md).
 
 > ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Đã XÓA khỏi YAML: `gate_class_weights`, `mention_conditioned_pos_weights`, `uncertain_policy` (model và run), `include_meta_labels`, `lambda_gate`, `lambda_mention_conditioned_cls`, `report_study_presence`. Viết lại chúng sẽ bị `pretraining/retired_keys.py` từ chối. Xem [D-023](../../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
 
@@ -44,9 +43,6 @@ run.accum_grad_iters=11`. Khi tái lập kết quả phải truyền lại ba ov
 | `mhcac.num_common_tokens` | **8** (từ 2026-10-05, D-026; trước đó 14 cứng trong code) | Fig. 10 bài báo. Đánh giá run cũ cần `--options model.mhcac.num_common_tokens=14` |
 | `multi_view` | **`true`** | |
 | `view_fusion.p_view_drop` | 0.15 | |
-| `view_fusion.mode` | vắng (= `early`) | 2026-10-26, opt-in `late` (`mhcac/late_view_pool.py`). Đặt trong khối phase, cùng `lambda_mpc = lambda_view_consistency = 0`. `late_view_pool` có trong `trainable` của phase1b/1c (prefix không khớp gì khi `early`) |
-| `view_fusion.detach_aux` | `false` | Từ 2026-10-09. `true` = detach K/V ảnh phụ như code EVOKE. Full run 2026-10-10: bật cùng cờ kia (D) kém mặc định, giữ tắt |
-| `loss.mpc_temperature` | `0.07` | Từ 2026-10-09. EVOKE dùng 0.5. Full run 2026-10-10: bật cùng cờ kia (D) kém mặc định, giữ tắt |
 | `data.study_sampling` | `true` | ★ Một dòng = một study |
 | `data.anchor_priority` | `[PA, AP, lateral]` | |
 | `data.max_aux_views` | 1 | 0..3 hợp lệ từ 2026-10-06 (ablation đa góc nhìn); chỉ ~5% study có aux thứ hai |
@@ -123,22 +119,12 @@ live microbatch plus the queue, not from gradient accumulation."* — tăng
 - `run.phases.phase1b.run.test_splits: [test]`: 1b là pha cuối mặc định, chấm test một lần.
 - `phase1c` giữ trong YAML nhưng không chạy mặc định (`scripts/run_stage1_phases.sh`).
 
-## 2026-10-15 — `phase1q`: train lại META-Former trên checkpoint đã xong (opt-in; đã chạy, không áp dụng)
-- Đã chạy GPU hai lần: lần 1 (15/10, dropout 0,1) trượt cổng sụp; lần 2 (16/10, cấu hình dưới đây) đạt
-  cổng sụp và cổng thông tin, nhưng pilot Stage 2 không nhận (BERTScore B − A +0,0007 [−0,0057; +0,0067]).
-  Không đổi mặc định nào; pha giữ lại để tái lập. Kết quả: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.
-- Không nằm trong chuỗi mặc định. `run.phases.phase1q.init_from.path` phải cho trên dòng lệnh
-  (thiếu → `PhaseConfigError`); `init_from.skip` = phía Q-Former → khởi tạo BLIP-2;
-  `init_from.ignore: [mpc_heads]` — `lambda_mpc 0` nên model không dựng đầu MPC; file gộp giữ
-  đầu MPC của checkpoint gốc.
-- `trainable`: Q-Former, query, chiếu ITC, `temp`/SigLIP, `qformer_input_norm`. Không MHCAC,
-  không adapter/fusion/projector/`ln_vision`, encoder đóng băng (`encoder_finetune` tắt).
-- `model`: `multi_view: true`, `qformer_input_norm: per_stream`, `eval_mode_modules: [view_fusion]`,
-  `qformer_dropout: 0.0` và `feature_mask_ratio: 0.0` (lần 2, 2026-10-15: lượt train của query phải là
-  lượt eval — lần 1 với dropout 0,1 thì loss đa dạng bị lách), `gradcache_chunk_size: 32`; loss `lambda_itc 1`, `lambda_lm 1`, `lambda_query_diversity 1`,
-  `lambda_itm 0`, mọi loss MHCAC 0. `run`: không cache đặc trưng, batch 128, `num_workers: 4`
-  (8 worker × prefetch 2 × batch ảnh ~0,9 GB làm máy 30 GB hết RAM, OOM killer 2026-10-15), augmentation tắt,
-  2 epoch, chọn theo val loss, cổng ITC mỗi epoch (chỉ ghi, không dừng).
-- ⚠ Checkpoint của nó thiếu block encoder 1c đã mở: chỉ dùng qua `scripts/merge_qformer_refit.py`.
-- Bốn khóa model mới (`qformer_input_norm`, `loss.lambda_query_diversity`, `eval_mode_modules`,
-  `qformer_dropout`) vắng ở khối model gốc = đường cũ, giống từng bit; `feature_mask_ratio` gốc vẫn 0,1. Kế hoạch: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.
+## 2026-11-27 — dọn YAML ([D-029](../../_meta/DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27))
+- Khối `phase1q` (refit META-Former, 2026-10-15, đã chạy, không áp dụng) đã bị xóa; YAML chỉ còn
+  `phase1a`, `phase1b`, `phase1c`. Kết quả của nó: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.
+- Đã bỏ `loss.mpc_temperature: 0.07` và `view_fusion.detach_aux: false` (cả hai là mặc định, nên toán
+  học không đổi), và `late_view_pool` trong danh sách `trainable` của 1b/1c (không khớp gì ở early).
+- Mọi khóa đã gỡ (`view_fusion.mode`, `late_*`, `detach_aux`, `mpc_temperature`, `mhcac.asymmetric_loss`,
+  `qformer_input_norm`, `lambda_query_diversity`, `qformer_dropout`, `eval_mode_modules`) giờ bị
+  `pretraining.retired_keys.reject_removed_experiment_keys` TỪ CHỐI, kể cả qua override phase.
+- ⚠ Sửa file đổi size/mtime → đổi `cohort_id` Stage 2 và lượt rút `oracle_mix` ở checkout pull nó.

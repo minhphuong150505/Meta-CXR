@@ -11,17 +11,7 @@ chỉ-ảnh trong layer text. Mặc định (khóa vắng) = hành vi cũ, ghim 
 
 # `mhcac/mhcac_12.py`
 
-> 🧪 **2026-10-27 — `aux_view_tokens` (chỉ ở `model.view_fusion.mode: tokens`, opt-in; pilot val 2026-10-27:
-> qua quy tắc đọc, phần lợi nằm ở study một view; chạy lặp seed 7 + 23 KHÔNG QUA, không áp dụng, xem `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`).** `__init__(..., aux_view_tokens=False, num_view_types=4)`: bật thì dựng ở CUỐI `__init__`
-> `aux_pos_enc` (ModuleDict, một `TrainablePositionalEncoding` mỗi stream, std 0.02) và
-> `aux_view_emb = nn.Embedding(num_view_types, embed_dim)` (std 0.02); tắt thì không có tham số mới,
-> không tiêu RNG, state dict không đổi. Cần `stream_layouts`. `forward(...,
-> aux_visual_tokens=None, aux_slot_mask=None, aux_view_ids=None)`: `_aux_image_patches` chiếu token
-> ảnh phụ qua cùng `embedding_alignment`, cộng `aux_pos_enc[name]` và `aux_view_emb[view_id]`, nối
-> sau token anchor trên trục key; key của slot không thật bị che bằng `image_key_padding_mask`
-> (truyền qua `ExpertTokenCrossAttention.forward` / `_self_then_image` vào `expert_to_image_attention`;
-> `None` = lời gọi cũ). Batch không có ảnh phụ thật nào → đúng đường cũ, bit-identical. Sparsity
-> loss nhận `attention_key_mask` và chia cho số ô THẬT. Test: `tests/test_aux_token_fusion.py`.
+> **2026-10-27 — `aux_view_tokens` (view_fusion.mode: tokens) đã gỡ 2026-11-27 (D-029):** không còn `aux_pos_enc`, `aux_view_emb`, `_aux_image_patches`, tham số `aux_*` của `forward` hay `image_key_padding_mask`; state dict của đường mặc định không đổi.
 
 > ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** `mention_heads` và tham số `uncertain_policy` đã bị XÓA. `forward` trả `(logits, attention_weights_list, contrastive_loss, orth_loss, sparsity_loss)`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
 

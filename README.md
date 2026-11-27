@@ -49,7 +49,7 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 
 | Thành phần | Trạng thái |
 |---|---|
-| Branch integration | Các nhánh tính năng đã được tích hợp tuyến tính vào `main`; xem [integration audit](docs/final_branch_integration_audit.md) |
+| Branch integration | Các nhánh tính năng đã được tích hợp tuyến tính vào `main`; tài liệu audit tích hợp đã được xóa ngày 2026-11-27 |
 | Stage 1 implementation | Study-level/multi-view, Q-Former, MHCAC có trong code và đã chạy full trên GPU. Explanation loss **tắt** (lambda 0/0) sau A/B 2026-08-17; khối vision-language ITC/ITM/LM **tắt** (lambda 0/0/0) từ 2026-08-19 sau gate check — giống repo gốc |
 | Stage 2 implementation | MedGemma QLoRA. ✅ **Đã chạy trên GPU**: arm A (`medgemma_direct`) dừng ở **0,86 epoch** — không có validation, `best_val_loss` = `+inf`, adapter promote bằng tay. arm C (`meta_cxr_native_qformer_guided`) **xong trọn 1 epoch 2026-09-07**, 82h28m, `val_loss` **1,0019** — run Stage-2 đầu tiên thực sự có chọn mô hình |
 | Explanation masks | Full cache đã build và kiểm chứng (`explanation_masks_v2`, có `masks_bbox_*`). Không còn được training tiêu thụ; giữ cho evaluator |
@@ -60,6 +60,34 @@ Repository nghiên cứu cho bài toán hiểu ảnh X-quang ngực và sinh bá
 | Full MIMIC-CXR training | ✅ **Đã chạy xong 2026-08-20** — `run_20260819_xmpoff`, 10/10 epoch, `rc=0`, 12h35m, 0.3505 s/it, 0 kernel fault. Best epoch 6 |
 | Reproduced metrics | ✅ Stage 1 đã có kết quả test split (3.269 study), ngưỡng calibrate trên val. Stage 2 có NLG Arm A/C trên cùng 2.772 ca test; Arm C kém hơn, nhưng lịch training khác nhau. Chưa có kết luận về độ đúng lâm sàng hay lợi ích so với zero-shot trên cùng cohort. |
 | Máy train | Lỗi kernel fault liên tục từ 17/08 đã **hết** sau khi **tắt XMP** trong BIOS (4 thanh RAM 2 hãng chạy 3200 MT/s ngoài mức Intel validate). Chi phí: **+1.3%** tốc độ |
+
+## Pipeline chính từ 2026-11-27 (quyết định của người dùng, D-029)
+
+Repo đã được dọn về một pipeline (nhánh `cleanup/r1-main-pipeline`; người dùng xác nhận từng nhóm xóa):
+
+- **Stage 1** = OFF (`run_20261024_nomv`, `multi_view: false`, ba lớp, cutpoint của headline) cộng chuyên gia
+  lateral R1 cộng ở đầu ra cho study có ảnh frontal + lateral (`scripts/residual_stack.py`, chuyên gia từ
+  `scripts/lateral_lora_fit.py`, đặc trưng từ `scripts/lateral_lora_cache.py` / `encoder_probe_features.py`;
+  hiệu chỉnh nhóm `scripts/residual_pooled_calibration.py`).
+- **Stage 2 báo cáo** = adapter P2 (`meta_cxr_qformer_with_mhcac_prompt` + `--prompt-style paper_context` +
+  `--train-cues oracle_mix`, beam 4 / lp 2). Cue R1 đi vào qua `--cue-override`; bước A/B chưa qua quy tắc.
+- **Giữ lại có chủ đích:** mã View Fusion ON (hướng novelty), XAI, `record["class_logits"]` (cue_override đọc),
+  `oracle_cues.py`.
+
+**Đã gỡ (mã không còn; số liệu về chúng trong README này giữ làm lịch sử, lệnh nào gọi tới chúng sẽ lỗi):**
+
+| Đã gỡ | Bây giờ |
+|---|---|
+| Refit `phase1q`, `qformer_input_norm`, `lambda_query_diversity`, `qformer_dropout`, `eval_mode_modules`, `merge_qformer_refit.py` | Khóa bị `reject_removed_experiment_keys` từ chối (kể cả trong khối phase) |
+| `view_fusion.mode` (`late` / `tokens`), `late_*`, `late_view_pool.py`; cờ EVOKE `detach_aux`, `mpc_temperature`; `mhcac.asymmetric_loss` | Bị từ chối |
+| TTA (`vis_processor.*.tta`, `tta.py`) | Dataset báo lỗi |
+| Stage 2: `--finding-tokens`, `--finding-feature-ablation`, `--soft-token-ablation`, `--eval-cues`, `--num-samples` (MBR), `mbr_select_stage2.py` | argparse báo lỗi; manifest vẫn ghi `finding_tokens: "off"` dạng hằng số nên danh tính adapter/cache cũ không đổi |
+| P8 MedGemma ngoài (`medgemma_inference/`, `model/pretrained_medgemma/`), P9 demo Vicuna (`inference.py`, Docker), `utils/`, `threshold.json` | Đã xóa |
+| Prompt ablation, `mhcac.py`/`mhcac_2..11.py`, bản sao `vision_encoders/biovil_t/`, các script probe/chẩn đoán, 23 tài liệu cũ trong `docs/` | Đã xóa (còn trong git history) |
+
+⚠ Sửa `mimic_cxr_full.yaml` đổi size/mtime → đổi `cohort_id` Stage 2 và lượt rút `oracle_mix` ở checkout pull nó
+(người dùng chấp nhận). ⚠ **Chưa kiểm trên GPU:** tái lập bit-for-bit npz val của OFF từ mã đã dọn, bộ test đầy đủ
+trên máy train, và sinh lại 20 báo cáo Stage 2 đã ghi.
 
 ## Những thay đổi so với META-CXR gốc
 
@@ -262,7 +290,7 @@ Các `--pipeline-mode` mà CLI fine-tuning thực sự chấp nhận:
 | `text_only_language_prior_ablation` | Ablation không có ảnh; không phải vision pipeline |
 | `both_for_ablation` | Chạy `medgemma_direct`, sau đó `meta_cxr_qformer` trên cùng một GPU |
 
-`training/pipeline_modes.py` còn đăng ký hai mode dành riêng cho external-checkpoint inference. `pretrained_medgemma_findings_first` chạy qua `medgemma_inference.run_pretrained_findings`, không qua fine-tuning CLI; `pretrained_medgemma_impression_phase2` chỉ được khai báo và đang bị runtime guard vô hiệu hóa.
+Hai mode external-checkpoint inference (`pretrained_medgemma_findings_first`, `pretrained_medgemma_impression_phase2`) và `medgemma_inference/` đã xóa 2026-11-27 (D-029).
 
 Các mode Q-Former chỉ hỗ trợ target `findings_only`. Native route còn hỗ trợ `impression_only` và `findings_and_impression`; Prompt v2 được thiết kế để sinh FINDINGS.
 
@@ -318,8 +346,6 @@ Prompt v2 ở [`configs/stage2_prompt_v2.yaml`](configs/stage2_prompt_v2.yaml) l
 Temporal target policy mặc định vẫn là `keep`; guard trong prompt không đồng nghĩa dữ liệu train đã có prior linkage. Chi tiết:
 
 - [Stage 2 prompt design](docs/stage2_prompt_design.md)
-- [Prompt audit](docs/stage2_prompt_audit.md)
-- [Prompt ablation](docs/stage2_prompt_ablation.md)
 - [Temporal-target audit](docs/stage2_temporal_target_audit.md)
 
 ## Evaluation
@@ -364,7 +390,7 @@ Có thể chấm thêm tập test bằng chính các ngưỡng val này
 tích bổ sung, không phải giao thức của bài báo, nên luôn báo cạnh số argmax chứ
 không thay thế.
 
-Phân tích bổ sung thứ hai (2026-10-01): `scripts/evaluate_stage1_cutpoints.py` quyết định theo một hoặc
+**[ĐÃ GỠ MÃ 2026-11-27, D-029 — chỉ còn là lịch sử]** Phân tích bổ sung thứ hai (2026-10-01): `scripts/evaluate_stage1_cutpoints.py` quyết định theo một hoặc
 hai ngưỡng trên điểm `p_pos/(p_pos+p_neg)` fit trên val. Trên `run_20260930_3class` (test): weighted F1
 0,766 → 0,815, F1 5 bệnh 0,644 → 0,743, macro recall 0,456 → 0,437. Gần như toàn bộ cải thiện đến từ
 việc dời ngưỡng âm/dương; dải Uncertain ở giữa gần như không giúp (precision Uncertain 0,16). Đây
@@ -392,7 +418,7 @@ paper_context` (thêm INDICATION/HISTORY và FINDINGS lần chụp trước vào
 và CE thật bằng CheXbert `scripts/score_ce_chexbert.py` (venv riêng `~/.venvs/chexbert`).
 Pilot chọn công thức Stage 2: `docs/handoff/PLAN-2026-10-11-stage2-context-pilot.md`.
 
-**`generate_stage2_reports.py --eval-cues oracle` (2026-10-28, user duyệt; mặc định `predicted` = giống
+**[ĐÃ GỠ MÃ 2026-11-27, D-029 — chỉ còn là lịch sử]** **`generate_stage2_reports.py --eval-cues oracle` (2026-10-28, user duyệt; mặc định `predicted` = giống
 hệt trước):** phép thử chỉ suy luận, thay cue P/N/U của mọi study bằng lớp thật CheXpert (cùng ánh xạ
 với `--train-cues oracle_mix`), để đo adapter có đọc cue không. Lớp thật lấy từ chính báo cáo tham chiếu
 nên đây là mức trần có rò nhãn, không bao giờ là số báo cáo. Không dùng cùng `--soft-token-ablation`.
@@ -426,7 +452,7 @@ ngưỡng đó, kết luận "Stage 2 trên Stage-1 OFF tốt hơn ON" nằm tro
 -0,0115 (CheXbert) và -0,0020 (BERTScore), chưa vượt NB/√2. Fusion ON không đem lại lợi ích đo được
 cho Stage 2 ở ngân sách này. Chi tiết: `docs/handoff/PLAN-2026-10-26-stage2-seed-noise.md`.
 
-**Late fusion đa view (`model.view_fusion.mode: late`, opt-in 2026-10-26, user đã duyệt):**
+**[ĐÃ GỠ MÃ 2026-11-27, D-029 — chỉ còn là lịch sử]** **Late fusion đa view (`model.view_fusion.mode: late`, opt-in 2026-10-26, user đã duyệt):**
 không đặt khóa thì giữ early fusion như mọi run trước. Ở chế độ `late`, ảnh chính đi đúng
 đường của OFF (không adapter, không khối fusion, không MPC); MHCAC (cùng trọng số) phân
 loại thêm từng ảnh phụ, rồi `late_view_pool` (`mhcac/late_view_pool.py`, 112 tham số) gộp
@@ -458,7 +484,7 @@ cả hai vượt ngưỡng nhiễu. Nhánh ảnh chính giữ đúng mức của
 phụ vẫn không đem lại lợi ích ở các chỉ số quyết định. Không chạy full. Chi tiết:
 `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
 
-Hướng thứ tư (user đã duyệt 2026-10-27, "TK"): `model.view_fusion.mode: tokens` (vắng = `early`). Token
+**[ĐÃ GỠ MÃ 2026-11-27, D-029 — chỉ còn là lịch sử]** Hướng thứ tư (user đã duyệt 2026-10-27, "TK"): `model.view_fusion.mode: tokens` (vắng = `early`). Token
 của ảnh phụ, qua cùng projector với ảnh chính, được nối vào trục key ảnh của MHCAC, kèm positional
 encoding riêng cho ảnh phụ và một embedding theo loại view. Như vậy mỗi expert token trong 8 token chung
 của MHCAC có thể đọc ảnh frontal, ảnh lateral hay cả hai, và mỗi finding gộp các token đó theo trọng số
@@ -505,7 +531,7 @@ Logit adjustment (kiểu PromptMRG hay kiểu Menon) chỉ dời điểm số c�
 cutpoint thì quyết định giữ nguyên 100%. Muốn tăng recall ở cùng mức precision, mô hình phải xếp hạng tốt
 hơn. Chi tiết: `docs/handoff/PLAN-2026-10-29-stage1-recall-input-audit.md`.
 
-**`model.mhcac.asymmetric_loss: {gamma_neg, clip}` (tùy chọn, 2026-10-29; vắng khóa thì giống hệt bản cũ,
+**[ĐÃ GỠ MÃ 2026-11-27, D-029 — chỉ còn là lịch sử]** **`model.mhcac.asymmetric_loss: {gamma_neg, clip}` (tùy chọn, 2026-10-29; vắng khóa thì giống hệt bản cũ,
 đến từng bit).** Áp asymmetric loss của Ridnik et al. (ICCV 2021) lên các ô có nhãn Negative.
 
 - Ô Negative có loss `-stopgrad((1-q)^gamma)·log q`, với `q = min(p_neg + clip, 1)`. Ô âm tính dễ bị bỏ
@@ -552,7 +578,7 @@ Trung bình xác suất của epoch 2, 3, 4 so với checkpoint best: macro AP "
 (L42), trung bình −0,0003 [−0,0028; +0,0022]. Rào chắn đạt, nhưng xếp hạng không tốt lên, nên không thử trung
 bình trọng số. Chi tiết: `docs/handoff/PLAN-2026-10-30-stage1-epoch-ensemble.md`.
 
-**Test-time augmentation (TTA) cho Stage 1 (val 2026-10-31, chỉ suy luận, 2 mô hình): DỪNG.**
+**[ĐÃ GỠ MÃ 2026-11-27, D-029 — chỉ còn là lịch sử]** **Test-time augmentation (TTA) cho Stage 1 (val 2026-10-31, chỉ suy luận, 2 mô hình): DỪNG.**
 
 - **Cách bật (opt-in, mặc định tắt):** `datasets.mimic_cxr.vis_processor.eval.tta.{degrees,scale}`
   (`model/lavis/data/tta.py`). Một phép xoay/phóng cố định trên ảnh gốc, trước tiền xử lý của mọi encoder; chỉ
@@ -618,7 +644,7 @@ CheXbert micro F1-14 +0,104 [+0,092; +0,116]. ⚠ **Không cùng điều kiện 
 của lần chụp trước trong prompt. Bước sinh ban đầu chỉ lấy 300 study vì script quên `--limit`;
 `generate_stage2_reports.py` cần `--limit 0` để sinh cả 2.800 study (đã sinh và chấm lại, số trên).
 
-**Giải mã MBR để tăng BERTScore (2026-10-14, tùy chọn; xong 2026-10-15).** Quy tắc chốt trước
+**[ĐÃ GỠ MÃ 2026-11-27, D-029 — chỉ còn là lịch sử]** **Giải mã MBR để tăng BERTScore (2026-10-14, tùy chọn; xong 2026-10-15).** Quy tắc chốt trước
 chọn MBR trên val (n = 1.360, ghép cặp với beam 4 / lp 2: BERTScore +0,0199 [+0,0132; +0,0262]).
 **Test, chạy một lần (n = 2.800, ghép cặp với beam đã báo cáo): BERTScore 0,4656 → 0,4847,
 +0,0191 [+0,0155; +0,0228]**, toàn bộ nhờ precision (0,493 → 0,545; recall 0,439 → 0,426, tức MBR
@@ -632,14 +658,7 @@ trên output test đã có, BERTScore của beam là precision 0,493 / recall 0,
 study rồi giữ ứng viên (beam, greedy hoặc một mẫu) có kỳ vọng BERTScore cao nhất so với các
 mẫu, không dùng báo cáo tham chiếu:
 
-```bash
-python scripts/generate_stage2_reports.py <các cờ như lần sinh test> --split val --limit 0 \
-    --num-samples 8 --temperature 0.7 --top-p 0.95 --top-k 0 --output-dir <dir>/gen_val_samples
-python scripts/mbr_select_stage2.py --split val \
-    --hyp beam=<dir>/gen_val_beam/generated_val.jsonl \
-    --hyp greedy=<dir>/gen_val_greedy/generated_val.jsonl \
-    --samples <dir>/gen_val_samples/candidates_val.jsonl --output-dir <dir>/mbr_val
-```
+(Lệnh MBR cũ — `--num-samples` và `scripts/mbr_select_stage2.py` — đã gỡ 2026-11-27.)
 
 Utility chính là mô hình của BERTScore, nên mọi số từ MBR phải ghi "MBR (utility =
 BERTScore)" và chấm kèm BLEU/ROUGE-L/CIDEr/CheXbert. Quy tắc chọn trên val và lệnh đầy đủ:
@@ -652,7 +671,7 @@ biệt so với bài báo: [`docs/CHI_MUC_TINH_MOI.md`](docs/CHI_MUC_TINH_MOI.md
 bài báo (hai checkpoint được báo cáo và cấu hình của chúng, kết quả theo các phép đo của bài
 báo, sai khác và lý do, giải thích chênh lệch): [`docs/SO_SANH_VOI_BAI_BAO.md`](docs/SO_SANH_VOI_BAI_BAO.md).
 
-**Sửa soft token sụp (2026-10-15, tùy chọn, user duyệt) — KHÔNG áp dụng: lần 1 trượt cổng, lần 2 đạt
+**[ĐÃ GỠ MÃ 2026-11-27, D-029 — chỉ còn là lịch sử]** **Sửa soft token sụp (2026-10-15, tùy chọn, user duyệt) — KHÔNG áp dụng: lần 1 trượt cổng, lần 2 đạt
 mọi cổng nhưng pilot Stage 2 không nhận (xem cuối đoạn).** Pha `phase1q` train lại
 CHỈ META-Former trên một checkpoint Stage 1 đã xong và đóng băng (`run_20261005_paper/phase1c`), nên
 MHCAC, ngưỡng, cue và mọi số Stage 1 không đổi. Q-Former khởi tạo lại từ BLIP-2
@@ -1161,7 +1180,7 @@ CUDA_VISIBLE_DEVICES="" python -m pytest tests/ -q \
   --ignore=tests/test_blip2_negative_sampling.py \
   --ignore=tests/test_encoder_ablation.py
 CUDA_VISIBLE_DEVICES="" python -m compileall -q \
-  stage2 training scripts runtime safety tests medgemma_inference
+  stage2 training scripts runtime safety tests
 ```
 
 Với hai file cần torchvision bị ignore theo lệnh chuẩn, kết quả thật là **541
@@ -1518,14 +1537,8 @@ Bài báo META-CXR gốc có báo cáo classification và report-generation metr
 
 - [Stage 2 pipeline modes](docs/STAGE2_PIPELINE_MODES.md)
 - [Stage 2 prompt design](docs/stage2_prompt_design.md)
-- [Stage 2 prompt audit](docs/stage2_prompt_audit.md)
-- [Stage 2 prompt ablation](docs/stage2_prompt_ablation.md)
 - [Temporal-target audit](docs/stage2_temporal_target_audit.md)
 - [Evaluator validation](docs/evaluator_validation.md)
-- [Evaluator audit](docs/evaluator_audit.md)
-- [MedGemma runtime smoke status](docs/medgemma_real_runtime_smoke.md)
-- [Final branch integration audit](docs/final_branch_integration_audit.md)
-- [Final merge plan](docs/final_merge_plan.md)
 - [Feature cache](docs/FEATURE_CACHE.md)
 - [Notebook privacy](docs/notebook_privacy.md)
 - [So sánh với repo gốc của bài báo](docs/so_sanh_voi_repo_goc.md)
@@ -1620,7 +1633,7 @@ agent nằm ở [AGENTS.md](AGENTS.md) và `CLAUDE.md`.
 - `native_multiview` tồn tại trong Prompt v2, nhưng native manifest hiện chỉ luồn anchor image và để `auxiliary_views` rỗng; Stage 2 native multi-image chưa hoàn chỉnh end-to-end.
 - METEOR, CIDEr và BERTScore phụ thuộc package tùy chọn; clinical metric adapters chưa được wire/validate.
 - Stage 2 chưa hỗ trợ DDP; mỗi run dùng một GPU.
-- Gradio `inference.py` vẫn là đường Vicuna legacy, chưa phải UI cho pipeline MedGemma mới.
+- Demo Gradio `inference.py` (Vicuna legacy) đã xóa 2026-11-27; repo không có UI cho pipeline MedGemma.
 
 ## Acknowledgements và Citation
 
@@ -1874,7 +1887,7 @@ micro/macro là suy luận từ hai phép đo cộng độ hẹp ngưỡng — n
 chế, nhưng chưa được kiểm bằng một metric hiệu chuẩn chuyên dụng (ECE theo nhãn
 sẽ chốt được, và chưa chạy).
 
-## 🧪 Finding tokens học được — nhánh THỬ NGHIỆM (2026-09-10)
+## 🧪 Finding tokens học được — nhánh THỬ NGHIỆM (2026-09-10) — ĐÃ GỠ 2026-11-27 (D-029), chỉ còn lịch sử
 
 > **Chưa đo được gì. Chưa chạy trên GPU. Không được trích như một kết quả, và
 > không đổi mặc định production vì nó.** Mặc định là `--finding-tokens off`;

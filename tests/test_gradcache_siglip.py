@@ -342,38 +342,3 @@ def test_reused_tokens_replay_the_same_features_under_dropout_and_random_masks()
     assert len(seen) == 6
     for first, replay in zip(seen[:3], seen[3:], strict=True):
         assert torch.equal(first[0], replay[0]) and torch.equal(first[1], replay[1])
-
-
-def test_gradcache_adds_the_query_diversity_term_to_the_gradient():
-    from vision_encoders.qformer_inputs import query_diversity_loss
-
-    batch = _batch()
-    model = _tiny_model("sigmoid", chunk=6).train()
-    model.lambda_itm = 0.0
-    model.lambda_query_diversity = 0.5
-    torch.manual_seed(5)
-    out = model.forward_gradcache(batch)
-    g_cache = _grads(model)
-    assert float(out["loss_query_div"]) > 0
-    assert float(out["loss"]) == pytest.approx(
-        float(out["loss_itc"]) + float(out["loss_lm"]) + 0.5 * float(out["loss_query_div"]), rel=1e-5)
-
-    plain = _tiny_model("sigmoid", chunk=6).train()
-    plain.load_state_dict(model.state_dict())
-    torch.manual_seed(5)
-    tokens = plain.tokenizer(batch["text_output"], padding="max_length", truncation=True,
-                             max_length=plain.max_txt_len, return_tensors="pt")
-    tok = SimpleNamespace(input_ids=tokens.input_ids, attention_mask=tokens.attention_mask)
-    mask = batch["generation_mask"]
-    img_f, txt_f, embeds, q_tokens, q_out = plain._alignment_features(batch, tok)
-    loss_itc, *_ = plain._image_text_contrastive(img_f, txt_f, mask)
-    loss_lm = plain._language_modeling(tok, q_tokens, q_out, mask, image_embeds=embeds)
-    loss_div = query_diversity_loss(q_out.last_hidden_state)
-    (loss_itc + loss_lm + 0.5 * loss_div).backward()
-    g_plain = _grads(plain)
-    for name, grad in g_plain.items():
-        if name.startswith("itm_head"):
-            continue
-        diff = (g_cache[name] - grad).abs().max().item()
-        scale = grad.abs().max().item()
-        assert diff <= 1e-6 + 1e-3 * scale, f"{name}: max |diff| {diff:.3g} at scale {scale:.3g}"

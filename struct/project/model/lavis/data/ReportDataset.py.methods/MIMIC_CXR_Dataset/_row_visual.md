@@ -77,8 +77,7 @@ Thông điệp `KeyError` (`:654`) là ví dụ tốt: nó nói **cái gì thi�
 
 ## Config dependencies
 `paths.mimic_cxr_jpg_root` → `vis_root` · `run.feature_cache_dir` ·
-`model.explanation.mask_cache_dir` ·
-`datasets.mimic_cxr.vis_processor.eval.tta` ([tta.py](../../tta.py.doc.md))
+`model.explanation.mask_cache_dir` (`vis_processor.eval.tta` đã gỡ 2026-11-27)
 
 ## Modification risk
 ⚠ **Đừng nới lỏng validate path.** Nó là thứ ngăn một CSV bị sửa đọc file tùy ý

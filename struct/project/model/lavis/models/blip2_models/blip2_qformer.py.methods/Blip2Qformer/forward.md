@@ -34,8 +34,7 @@ def forward(self, samples) -> BlipOutput
 |---|---|
 | `shared_visual` | `SharedVisualTokens` — biểu diễn **duy nhất**, dùng bởi cả MHCAC và Q-Former |
 | `image_embeds` | `shared_visual.tokens [B,ΣP,1408]` (thiết bị, batch, `zero`) |
-| `qformer_embeds` | `_qformer_tokens(shared_visual)` — bản Q-Former, ITM và LM đọc; = `image_embeds` trừ khi `qformer_input_norm` bật (2026-10-15) |
-| `loss_query_div` | `query_diversity_loss(query_output.last_hidden_state)` khi `lambda_query_diversity > 0` (2026-10-15) |
+| `qformer_embeds` | `_qformer_tokens(shared_visual)` = `shared.tokens` — bản Q-Former, ITM và LM đọc (`qformer_input_norm` đã gỡ 2026-11-27) |
 | `query_output` | Có `past_key_values` → tái dùng cho LM, không tính lại |
 | `teacher_mask` | `classification_mask & generation_mask` — teacher cần **cả hai** |
 | `student_logits` | Đường inference thật |
@@ -128,12 +127,6 @@ Các điều kiện này quyết định MHCAC chạy 1, 2 hay 3 lần và có d
 | Không clear `_last_cam_streams` | Giữ graph qua batch → rò bộ nhớ |
 | Gọi autograd khi lambda bằng 0 | Phá gate hiệu năng classification-only |
 
-## Late fusion — 2026-10-26 (`view_fusion.mode: late`, opt-in)
+## Late fusion — đã gỡ 2026-11-27 (D-029); khóa liên quan bị `reject_removed_experiment_keys` từ chối.
 
-`student_logits` vẫn là logit của ANCHOR (đường OFF). Ngay sau lời gọi MHCAC của
-anchor, `classification_logits = self._late_view_logits(student_logits, text...)`:
-MHCAC chạy thêm một lần trên các ảnh phụ thật (cùng text/row mask khi text-guided) và
-`late_view_pool` gộp logit. Loss phân loại là
-`late_classification_loss` = `(1-w) CE(pooled) + w CE(anchor)`, `w = late_anchor_weight`
-(0.5). `BlipOutput.classification_logits` là logit đã gộp (eval hook ghi vào `.npz`).
-Ở `early` (vắng key): `classification_logits = student_logits`, loss như cũ.
+`classification_logits = student_logits`; loss phân loại như cũ.

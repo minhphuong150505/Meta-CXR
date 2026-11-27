@@ -62,11 +62,6 @@ extend-exclude = [
     # Vendored fork of Salesforce LAVIS. Reformatting it would make every
     # future upstream diff unreadable.
     "model/lavis",
-    # Legacy MHCAC variants 8-11, kept for reference; only mhcac_12 is wired.
-    "mhcac/mhcac_8.py",
-    "mhcac/mhcac_9.py",
-    "mhcac/mhcac_10.py",
-    "mhcac/mhcac_11.py",
     "notebooks",
 ]
 

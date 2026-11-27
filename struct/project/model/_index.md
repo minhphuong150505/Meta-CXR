@@ -6,19 +6,13 @@
 
 ## Purpose
 
-Hai thứ **hoàn toàn không liên quan nhau**, chỉ tình cờ cùng thư mục cha:
-
-1. `lavis/` — fork LAVIS đã sửa, nơi model Stage 1 thực sự sống.
-2. `pretrained_medgemma/` — loader cho checkpoint MedGemma **của bên thứ ba**,
-   dùng cho baseline inference (P8).
-
-Chúng không import lẫn nhau và thuộc hai pipeline khác nhau.
+`lavis/` — fork LAVIS đã sửa, nơi model Stage 1 thực sự sống. (`pretrained_medgemma/`,
+loader MedGemma bên thứ ba cho baseline P8, đã xóa 2026-11-27 theo D-029.)
 
 ## Role in project
 
 ```text
-model/lavis/               → Stage 1 (P1) và demo Vicuna (P9)
-model/pretrained_medgemma/ → baseline external MedGemma (P8)
+model/lavis/               → Stage 1 (P1)
 ```
 
 ## Parent
@@ -30,7 +24,6 @@ model/pretrained_medgemma/ → baseline external MedGemma (P8)
 | Thư mục | Doc | Status | Nội dung |
 |---|---|---|---|
 | `lavis/` | [📁](lavis/_index.md) | ✅ | 24 file, 10.862 LOC — fork Salesforce LAVIS |
-| `pretrained_medgemma/` | [📁](pretrained_medgemma/_index.md) | ✅ | 6 file, 526 LOC — checkpoint ngoài |
 | `__init__.py` | — | ✅ | Rỗng |
 
 ## Main responsibilities
@@ -47,8 +40,7 @@ Xem `_index.md` của từng thư mục con.
 
 ## Used by
 
-`pretraining/train.py`, `inference.py`, `training/stage1/lavis_loader.py`
-(→ `lavis/`); `medgemma_inference/` (→ `pretrained_medgemma/`).
+`pretraining/train.py`, `training/stage1/lavis_loader.py` (→ `lavis/`).
 
 ## Status
 
@@ -69,7 +61,7 @@ Xem `_index.md` của từng thư mục con.
 
 ## Related documentation
 
-[`lavis/_index.md`](lavis/_index.md) · [`pretrained_medgemma/_index.md`](pretrained_medgemma/_index.md) ·
+[`lavis/_index.md`](lavis/_index.md) ·
 [ARCHITECTURE.md](../_meta/ARCHITECTURE.md)
 
 ← [Về HOME](../../HOME.md)

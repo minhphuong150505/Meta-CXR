@@ -151,31 +151,3 @@ def test_two_cutpoints_recover_a_middle_uncertain_band():
     assert (apply_cutpoints(preds.probabilities, cut, ("Edema",))[:, 0] == preds.labels[:, 0]).all()
     one = fit_severity_cutpoints(preds, objective="weighted_f1", allow_uncertain=False)
     assert one["Edema"][0] == one["Edema"][1]
-
-
-def test_cutpoint_script_refuses_to_fit_on_test(tmp_path):
-    from scripts import evaluate_stage1_cutpoints as cli
-
-    preds = _ordinal_preds()
-    test_like = ClassificationPredictions(
-        labels=preds.labels, probabilities=preds.probabilities, pathology_names=preds.pathology_names,
-        sample_keys=preds.sample_keys, metadata={"split": "test"},
-    )
-    path = test_like.save(tmp_path / "t.npz")
-    assert cli.main(["--val", str(path), "--test", str(path), "--output-dir", str(tmp_path / "o")]) == 2
-
-
-def test_cutpoint_script_runs_end_to_end(tmp_path):
-    import json as _json
-
-    from scripts import evaluate_stage1_cutpoints as cli
-
-    val = _ordinal_preds().save(tmp_path / "v.npz")
-    test = _ordinal_preds().save(tmp_path / "te.npz")
-    out = tmp_path / "o"
-    assert cli.main(["--val", str(val), "--test", str(test), "--output-dir", str(out),
-                     "--bootstrap-samples", "20"]) == 0
-    report = _json.loads((out / "cutpoints_report.json").read_text())
-    assert "not the paper" in report["note"]
-    assert report["rules"]["two cutpoints"]["metrics"]["weighted_f1"] == pytest.approx(1.0)
-    assert report["rules"]["one cutpoint"]["uncertain_predicted"] == 0

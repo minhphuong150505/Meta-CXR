@@ -15,6 +15,6 @@ lần). R@1 chỉ báo, không bắt buộc (kỳ vọng 1 lần trúng ở n=25
 
 `itc_features` đi qua `model.encode_samples`, cùng lệnh `forward()` dùng — kể
 cả `swin_image` của MedCLIP và đặc trưng từ cache — rồi qua `model._qformer_tokens`
-(2026-10-15), nên cổng chấm đúng bản token Q-Former đọc khi `model.qformer_input_norm` bật.
+(2026-10-15), nên cổng chấm đúng bản token Q-Former đọc (`qformer_input_norm` đã gỡ 2026-11-27; nay `_qformer_tokens` = `shared.tokens`).
 
 Test: `tests/test_paper_mode.py`.

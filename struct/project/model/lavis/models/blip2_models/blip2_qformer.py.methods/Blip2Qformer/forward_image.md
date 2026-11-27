@@ -11,7 +11,7 @@ Q-Former embeddings cho Vicuna demo hoặc Stage-2 Q-Former records.
 ## Flow
 
 `_encode_image_streams(apply_aug=False)` → MHCAC student không text (đọc `shared_visual`) → Q-Former
-(đọc `_qformer_tokens(shared_visual)`; bản LayerNorm từng luồng khi `qformer_input_norm` bật, 2026-10-15)
+(đọc `_qformer_tokens(shared_visual)` = `shared.tokens`)
 query cross-attention → trả `(logits [B,14,3], query [B,32,768])`.
 
 ## Important invariant
@@ -26,8 +26,4 @@ invariant gián tiếp trong `tests/test_stage1_objectives.py`.
 
 ← [`Blip2Qformer`](_index.md) · [`blip2_qformer.py`](../../blip2_qformer.py.doc.md)
 
-## Late fusion — 2026-10-26
-
-Ở `view_fusion.mode: late`, `classification_logits` là logit đã gộp qua các view
-thật (`_late_view_logits`, không text). Soft token Q-Former vẫn đọc token của anchor.
-Ở `early`, `_late_view_logits` trả nguyên logit vào.
+## Late fusion — đã gỡ 2026-11-27 (D-029); khóa liên quan bị `reject_removed_experiment_keys` từ chối.

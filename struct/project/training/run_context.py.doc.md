@@ -36,7 +36,7 @@ identity đó vào fingerprint artifact.
 | `fingerprint_payload()` | 70 | ★ Vân tay ghi vào metadata |
 
 Trường `config_options` (2026-10-15): tuple `KEY=VALUE` áp vào YAML Stage 1 khi dựng mô hình
-(`--stage1-options`; refit META-Former cần `model.qformer_input_norm=per_stream`). Kiểm dạng
+(`--stage1-options`, ví dụ `model.mhcac.num_common_tokens=14` cho checkpoint cũ). Kiểm dạng
 `KEY=VALUE` trong `__post_init__`; vào `fingerprint_payload()` **chỉ khi khác rỗng**, cùng quy tắc
 với `cutpoints`, nên vân tay của mọi run cũ không đổi.
 

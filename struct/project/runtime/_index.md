@@ -36,7 +36,7 @@ device/dtype.
 
 Resolve device và dtype từ config hoặc từ máy. **Không chỗ nào hardcode `cuda:0`.**
 
-⚠ Ngoại lệ duy nhất còn lại trong repo: `inference.py:312` (`device_map={"": 0}`)
+(Ngoại lệ cũ `inference.py:312` `device_map={"": 0}` đã hết: file đã xóa 2026-11-27.)
 — xem [I4](../_meta/LEGACY_AND_OPTIONAL.md#-potential-issues--ghi-nhận-không-sửa).
 
 ## Main responsibilities
@@ -54,12 +54,7 @@ Chỉ stdlib (`device.py` có thể chạm `torch` để dò GPU ⚠ cần runti
 
 ## Used by
 
-`medgemma_inference/runner.py:23` → `budget.BudgetExceeded`, `BudgetState`
-`medgemma_inference/config.py:230`, `run_pretrained_findings.py:122` → `config.runtime.*`
-`model/pretrained_medgemma/findings_loader.py:24` → `device.DevicePlan`, `plan_device`
-`tests/test_pretrained_findings.py:39`
-
-⚠ **Chỉ pipeline P8 dùng thư mục này.** Stage 1 và Stage 2 không dùng.
+⚠ **Không còn caller nào từ 2026-11-27.** Người dùng duy nhất là pipeline P8 (`medgemma_inference/`, `model/pretrained_medgemma/`, `tests/test_pretrained_findings.py`), đã xóa theo D-029. Thư mục được giữ lại; xóa hay không là quyết định riêng.
 
 ## Status
 
@@ -74,7 +69,7 @@ mới — đặc biệt là ngữ nghĩa `prior_elapsed_seconds`.
 
 ## Related documentation
 
-[`medgemma_inference/_index.md`](../medgemma_inference/_index.md) ·
+`medgemma_inference/` (đã xóa 2026-11-27) ·
 [ARCHITECTURE.md §5](../_meta/ARCHITECTURE.md#5-hai-khối-stdlib-only)
 
 ← [Về HOME](../../HOME.md)

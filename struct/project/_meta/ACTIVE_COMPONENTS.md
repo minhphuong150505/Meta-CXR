@@ -120,41 +120,12 @@ scripts/evaluate_explanation.py                               ✅ model-driven X
 
 ---
 
-## External MedGemma baseline (P8)
+## External MedGemma baseline (P8) và demo Vicuna (P9) — ĐÃ XÓA 2026-11-27
 
-```text
-medgemma_inference/run_pretrained_findings.py                 ✅ ENTRYPOINT
- ├── medgemma_inference/config.py         validate YAML       ✅
- ├── medgemma_inference/runner.py                             ✅
- │    └── runtime/budget.py    BudgetState, BudgetExceeded    ✅
- ├── medgemma_inference/prediction_writer.py  JSONL fsync     ✅
- ├── medgemma_inference/progress.py       run identity        ✅
- ├── model/pretrained_medgemma/findings_loader.py             ✅
- │    └── runtime/device.py    plan_device                    ✅
- ├── model/pretrained_medgemma/findings_reporter.py           ✅
- ├── model/pretrained_medgemma/output_schema.py               ✅
- ├── model/pretrained_medgemma/errors.py                      ✅
- ├── model/pretrained_medgemma/impression_reporter.py         ⛔ DISABLED có chủ đích
- └── configs/experiments/pretrained_medgemma_findings_first.yaml ✅
-```
-
----
-
-## Demo Vicuna (P9)
-
-```text
-Dockerfile → inference.sh → inference.py                      ✅ D-002
- ├── pretraining/configs/blip2_pretrain_stage1_emb.yaml       ✅
- ├── model/lavis/models/blip2_models/modeling_llama_imgemb.py ✅
- ├── model/lavis/data/ReportDataset.py                        ✅
- │     create_chest_xray_transform_for_inference, ExpandChannels
- ├── checkpoints/                        LoRA adapter (không track) ✅
- ├── build_container.sh  run_container.sh                     ✅
- └── local_config.py    JAVA_HOME / JAVA_PATH cho CheXpert    ✅
-```
-
-⚠ `utils/prompter.py`, `callbacks.py`, `datacollator.py` **không** được
-`inference.py` import, dù docs cũ nói vậy — xem [LEGACY_AND_OPTIONAL.md](LEGACY_AND_OPTIONAL.md).
+`medgemma_inference/` (đã xóa 2026-11-27), `model/pretrained_medgemma/` (đã xóa 2026-11-27), `configs/experiments/pretrained_medgemma_findings_first.yaml`,
+`inference.py`, `inference.sh`, `Dockerfile`, `build_container.sh`, `run_container.sh` và `utils/` đã xóa theo [D-029](DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27).
+`runtime/` (budget, device) và `model/lavis/models/blip2_models/modeling_llama_imgemb.py` còn trong repo nhưng
+không còn caller. `checkpoints/` (LoRA Vicuna, không track) còn trên đĩa.
 
 ---
 
@@ -169,7 +140,7 @@ Dockerfile → inference.sh → inference.py                      ✅ D-002
 | `scripts/vm_preflight.py` | 🧰 | Kiểm tra trước run dài |
 | `scripts/check_notebook_privacy.py` | ✅ | Pre-commit hook chặn rò rỉ |
 | `pretraining/precompute_features.py` | 🟡 | Chỉ khi `run.feature_cache_dir` |
-| `scripts/run_prompt_ablation.py` + `_stage2_fixtures.py` | 🧪 | P6 |
+| `scripts/run_prompt_ablation.py` (đã xóa 2026-11-27) + `_stage2_fixtures.py` | 🧪 | P6 |
 | `scripts/export_stage2_prompt_samples.py` | 🧪 | ⚠ output chứa findings text |
 | `scripts/prompt_length_statistics.py` | 🧪 | |
 | `scripts/audit_temporal_targets.py` | 🧪 | |
@@ -199,9 +170,7 @@ Nếu một trong ba invariant sau bị phá, bản đồ trên **sai ngay lập
    `training/stage1/lavis_loader.py`. Utility Stage-1 độc lập
    `scripts/evaluate_explanation.py` import LAVIS trễ trong hàm và không nằm trên
    đường `medgemma_direct`. Bảo vệ bởi `tests/test_native_independence.py`.
-2. **Inference-only** — `medgemma_inference/` và `model/pretrained_medgemma/`
-   không được dựng optimizer / tính gradient / gọi `model.train()`. Bảo vệ bởi
-   `tests/test_inference_only_invariants.py`.
+2. (Đã hết 2026-11-27) Invariant inference-only của `medgemma_inference/` đi cùng thư mục đó; test của nó đã xóa.
 3. **Teacher-only text** — MHCAC không bao giờ nhận text ở nhánh student. Bảo vệ
    bởi `tests/test_stage1_objectives.py::test_mhcac_text_is_teacher_only_and_student_shape_matches_inference`.
 

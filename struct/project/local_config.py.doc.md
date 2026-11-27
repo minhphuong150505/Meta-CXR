@@ -29,7 +29,7 @@ việc cần làm.
 ## Calls / Called by
 Gọi: `omegaconf.OmegaConf` (`resolve=True` → biến nội suy được giải).
 Được gọi: `pretraining/train.py:22`, `inference.py:9`,
-`training/dataio/validate_manifest.py`, `medgemma_inference/run_pretrained_findings.py`,
+`training/dataio/validate_manifest.py`, `medgemma_inference/run_pretrained_findings.py` (đã xóa 2026-11-27),
 `scripts/vm_preflight.py`.
 
 ## Side effects

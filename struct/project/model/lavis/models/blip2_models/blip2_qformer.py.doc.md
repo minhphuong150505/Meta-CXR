@@ -100,10 +100,9 @@ from vision_encoders.rad_dino.rad_dino_encoder import RadDinoEncoder  # :28
 from vision_encoders.shared_visual_tokens import SharedVisualTokenProjector  # :29
 # from vision_encoders.medclip.medclip import Medclip         # :30  ← LEGACY, đã comment
 from mhcac.loss import (ClassificationLoss, MultiPositiveContrastiveLoss,
-                        asymmetric_loss_settings,  # 2026-10-29: model.mhcac.asymmetric_loss -> cls_loss_fn
                         soft_target_kl_loss, view_consistency_loss)  # :36
 from mhcac.view_fusion import ViewFusionModule                # :42
-from mhcac.late_view_pool import LateViewPooling, late_classification_loss, resolve_view_fusion_mode  # 2026-10-26
+from pretraining.retired_keys import reject_removed_experiment_keys  # 2026-11-27, D-029
 ```
 
 `VISUAL_DIM = 1408` (`:33`) — hằng số neo cả kiến trúc.
@@ -152,8 +151,8 @@ dòng đọc ở đây = key đó không làm gì.
 | `from_config` | [📄](blip2_qformer.py.methods/from_config.md) | ★ YAML → tham số |
 | `generate` | [📄](blip2_qformer.py.methods/Blip2Qformer/generate.md) | Sinh caption (không dùng ở Stage 1 training) |
 | `forward_image` | [📄](blip2_qformer.py.methods/Blip2Qformer/forward_image.md) | Trích Q-Former image embeddings cho downstream |
-| `_qformer_tokens` | — | 2026-10-15: token ảnh Q-Former đọc = `shared.tokens`, hoặc bản LayerNorm từng luồng khi `qformer_input_norm` bật. MỌI `encoder_hidden_states` chứa token ảnh đi qua đây (forward, GradCache, ITM, LM, `forward_image`, `extract_features`, cổng ITC) |
-| `forward_gradcache` | — | Pha 1a/1q: ITC trên cả batch, activation từng chunk. 2026-10-15: thêm `lambda_query_diversity` theo chunk; dùng lại token ảnh của lượt no-grad khi `_gradcache_reuse` cho phép |
+| `_qformer_tokens` | — | Token ảnh Q-Former đọc = `shared.tokens`. MỌI `encoder_hidden_states` chứa token ảnh đi qua đây (forward, GradCache, ITM, LM, cổng ITC). Bản LayerNorm từng luồng (`qformer_input_norm`) đã gỡ 2026-11-27 |
+| `forward_gradcache` | — | Pha 1a: ITC trên cả batch, activation từng chunk; dùng lại token ảnh của lượt no-grad khi `_gradcache_reuse` cho phép (loss đa dạng query đã gỡ 2026-11-27) |
 | `_gradcache_reuse` | — | 2026-10-15: encode một chunk với grad bật, hỏi autograd token có cần gradient không (khôi phục RNG); cache theo mẫu `requires_grad`; ghi đè bằng `gradcache_reuse_image_tokens` (test) |
 
 ### Trivial helpers
@@ -163,9 +162,6 @@ dòng đọc ở đây = key đó không làm gì.
 | `_create_mask` | Mask ngẫu nhiên patch — ⚠ không thấy caller trong forward |
 | `_stash_prefusion` | Giữ tensor pre-fusion khi loss phụ cần |
 | `_fuse` | Wrapper gọi `ViewFusionModule[name]` |
-| `_late_view_logits` | 2026-10-26, chỉ ở `view_fusion.mode: late`: chạy MHCAC (cùng trọng số) trên ảnh phụ thật đã cất ở `_last_late_aux`, gộp với logit anchor qua `late_view_pool`; trả nguyên logit anchor khi không có ảnh phụ thật hoặc ở `early`. Với `late_detach_aux: true` lượt ảnh phụ (ln_vision / projector / MHCAC) chạy dưới `torch.no_grad()` và raise nếu logit ảnh phụ còn `requires_grad`; lời gọi `late_view_pool` nằm ngoài nên pool vẫn có gradient. Từ 2026-10-27 phần này nằm trong `mhcac.late_view_pool.late_aux_view_logits` (kết quả bit-identical). Với `late_aux_head: true` ảnh phụ đi qua `mhcac_aux`, projector `no_grad`, text detach, pool nhận logit anchor đã detach; khi train, `(aux_logits, aux_mask)` được cất ở `_last_late_aux_logits` cho `late_aux_head_loss` trong `forward` |
-| `_aux_token_inputs` | 2026-10-27, chỉ ở `view_fusion.mode: tokens`: đọc (và xoá) `_last_aux_tokens` do `_encode_image_streams` cất; đưa các slot ảnh phụ thật qua `ln_vision` (BioViL) và CÙNG shared projector (có gradient), scatter về `B·N` slot (slot đệm = 0) và trả kwargs `aux_visual_tokens` / `aux_slot_mask` / `aux_view_ids` cho `self.mhcac(...)`; `{}` ở mode khác hoặc khi không có ảnh phụ thật. `forward` gọi ngay sau `encode_samples`, `forward_image` ngay sau `_encode_image_streams` |
-| `sync_aux_head_from_anchor` | 2026-10-27, chỉ khi `late_aux_head`: chép `mhcac` vào `mhcac_aux` từng tensor; `pretraining/train.py:prepare_phase_model` gọi sau khi nạp checkpoint init không có `mhcac_aux.*` |
 | `_gather_with_local_grad` | All-gather giữ grad ở rank cục bộ |
 | `_batch_mask` | Đọc mask từ samples, có fallback |
 | `initialize_expert_tokens` | Khởi tạo expert token từ embedding tên bệnh lý |
@@ -313,51 +309,21 @@ head mention vẫn tồn tại (parameter set không đổi, checkpoint cũ vẫ
 nhưng không nhận gradient; BCE gate chỉ cộng vào total khi `lambda_gate > 0`;
 `mention_logits` vẫn được trả trong output nhưng là giá trị ngẫu nhiên.
 
-## Sửa soft token sụp — 2026-10-15 (opt-in, chưa chạy GPU)
+## Khóa thử nghiệm đã gỡ — 2026-11-27 ([D-029](../../../../_meta/DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27))
 
-Bốn khóa model, vắng = đường cũ giống từng bit:
-
-- `qformer_input_norm: per_stream` → `self.qformer_input_norm = QformerInputNorm(...)`
-  ([`qformer_inputs.py`](../../../../vision_encoders/qformer_inputs.py.doc.md)); `None` khi tắt.
-  KHÔNG có class attribute cùng tên (nó sẽ che module đã đăng ký) — `_qformer_tokens` đọc bằng
-  `getattr(..., None)`, nên đối tượng dựng bằng `__new__` (test) vẫn chạy. Không kết hợp được với
-  `active_encoders` (LayerNorm(0) = bias, luồng bị ablate vẫn tới Q-Former) → `from_config` báo lỗi.
-- `loss.lambda_query_diversity` → `loss_query_div` (trường mới của `BlipOutput`, nên được log ở
-  train và val; cộng vào `loss`). Cần một mục tiêu vision-language (không thì Q-Former không chạy) →
-  `__init__` báo lỗi nếu thiếu. Trong `forward_gradcache` tính theo chunk (trung bình batch của chunk),
-  trọng số `len(chunk)/batch` để các chunk cộng thành trung bình batch. Từ 2026-10-15 (lần 2)
-  `__init__` gọi `assert_noise_free_query_path`: `lambda_query_diversity > 0` đòi
-  `qformer_dropout: 0.0` và `feature_mask_ratio: 0.0`, không thì lỗi — refit lần 1 chạy với dropout
-  0,1 và học cách khuếch đại nhiễu dropout lên 3,9 lần phần phụ thuộc ảnh (PR lúc train ~30, eval 2,32).
-- `eval_mode_modules: [view_fusion]` → `train()` giữ các module đó ở eval (dropout và bỏ ảnh phụ
-  20% của view fusion tắt khi train, như lúc dựng record Stage 2). Tên không phải submodule → lỗi.
-- `qformer_dropout` (2026-10-15, lần 2) → `set_dropout_probability(self.Qformer, p)` ngay sau khi
-  Q-Former được dựng (đặt `p` cho mọi lớp dropout, ghi cả `hidden_dropout_prob` /
-  `attention_probs_dropout_prob` trong config, log `Q-Former dropout set to ...`). Module vẫn ở chế độ
-  train: gradient checkpointing của `BertEncoder` chỉ bật khi `self.training`, nên đưa Q-Former về eval
-  để tắt dropout sẽ tắt luôn checkpointing. Class attribute `qformer_dropout = None` cho đối tượng `__new__`.
+`qformer_input_norm`, `loss.lambda_query_diversity` (`loss_query_div`), `eval_mode_modules`,
+`qformer_dropout`, `view_fusion.mode` (`late` / `tokens`), `late_*`, `detach_aux`,
+`loss.mpc_temperature` và `mhcac.asymmetric_loss` đã gỡ khỏi `from_config` / `__init__` /
+`forward`. `from_config` gọi `reject_removed_experiment_keys(cfg)` ngay sau
+`reject_retired_binary_keys(cfg)`: một YAML còn khóa nào trong số đó bị TỪ CHỐI kèm giải thích,
+không bị bỏ qua âm thầm (`tests/test_removed_experiment_keys.py`). Khi tắt, các nhánh đó
+bit-identical với đường còn lại, nên toán học của OFF không đổi.
 
 GradCache dùng lại token: khi `_gradcache_reuse` thấy token ảnh không cần gradient (phía trước
-Q-Former đóng băng — pha `phase1q`), lượt 1 encode mỗi chunk MỘT lần, ghi RNG SAU encode, lượt 3
+Q-Former đóng băng; pha `phase1q` từng dùng đường này, đã gỡ 2026-11-27), lượt 1 encode mỗi chunk MỘT lần, ghi RNG SAU encode, lượt 3
 phát lại từ đó với token đã giữ → cùng dropout của Q-Former, gradient như khi tính lại (test trên
 máy train). Ngược lại (1a có projector train được) giữ nguyên hành vi cũ.
 
-## Late fusion đa view — 2026-10-26 (opt-in, chưa chạy GPU)
+## Late fusion / tokens fusion — đã gỡ 2026-11-27
 
-`model.view_fusion.mode: late` ([late_view_pool.py](../../../../mhcac/late_view_pool.py.doc.md)):
-anchor đi đúng đường OFF; MHCAC phân loại thêm từng ảnh phụ thật với cùng trọng số;
-`late_view_pool` gộp logit theo từng finding. Vắng key = `early` = mọi run đã ghi.
-Hai script đọc MHCAC trực tiếp (`scripts/evaluate_explanation.py`,
-`scripts/diagnose_stream_scale.py`) dừng với `SystemExit` ở mode `late`, vì chúng chỉ
-thấy logit của anchor. Plan: `docs/handoff/PLAN-2026-10-26-late-view-fusion.md`.
-Test: `tests/test_late_view_fusion.py`.
-
-## Tokens fusion — 2026-10-27 (opt-in, chưa chạy GPU)
-
-`model.view_fusion.mode: tokens` (`self.aux_tokens_on`): ảnh phụ được mã hoá như ở `late`
-(frozen, feature mask, không adapter) và cất ở `_last_aux_tokens`; anchor đi đúng đường OFF.
-`_aux_token_inputs` chiếu ảnh phụ qua cùng projector và đưa vào hai lời gọi MHCAC student
-(`forward`, `forward_image`), nơi token ảnh phụ được nối vào trục key ảnh
-([mhcac_12.py](../../../../mhcac/mhcac_12.py.doc.md), `aux_view_tokens`). Q-Former chỉ đọc anchor.
-Hai script đọc MHCAC trực tiếp dừng với `SystemExit` ở `tokens`. Plan:
-`docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`. Test: `tests/test_aux_token_fusion.py`.
+Cả hai pilot thất bại theo quy tắc đã khai trước (CLAUDE.md); mã chỉ còn trong git history.

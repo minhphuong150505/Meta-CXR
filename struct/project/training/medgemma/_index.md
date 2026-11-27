@@ -1,14 +1,14 @@
 > Source: `training/medgemma/`
 > Status: ✅ ACTIVE
-> Last verified against source: 2026-09-10
+> Last verified against source: 2026-11-27
 
 # `training/medgemma/`
 
 ## Purpose
 
-Ba thứ đặc thù MedGemma: tiêm soft token (mode Q-Former), kiểm tra model có
-thật sự đa phương thức hay không, và (🧪, mặc định tắt) tiêm 13 finding token
-học được mang thông tin mention của Stage 1.
+Hai thứ đặc thù MedGemma: tiêm soft token (mode Q-Former) và kiểm tra model có
+thật sự đa phương thức hay không. (`finding_tokens.py`, 13 finding token học được,
+đã gỡ 2026-11-27 — pilot 2026-09-11 âm tính; xem D-029.)
 
 ## Parent
 
@@ -20,7 +20,6 @@ học được mang thông tin mention của Stage 1.
 |---|---|---|---|
 | `soft_tokens.py` | — | [📄](soft_tokens.py.doc.md) | 🟡 `SoftTokenEmbeddingWrapper`, `soft_token_bad_words_ids` |
 | `capabilities.py` | 221 | [📄](capabilities.py.doc.md) | ✅ Kiểm tra khả năng đa phương thức |
-| `finding_tokens.py` | ~300 | [📄](finding_tokens.py.doc.md) | 🧪 **EXPERIMENTAL, mặc định TẮT** — 13 finding token học được mang `m` và `m*q` của Stage 1 |
 
 ## ⚠ `soft_tokens.py` — chỗ dễ sai nhất repository
 
@@ -50,27 +49,11 @@ Module này kiểm tra khả năng đa phương thức và **fail-closed**: mọ
 `text_only_language_prior_ablation` đều có `requires_multimodal=True` và sẽ dừng
 nếu model hóa ra là text-only.
 
-## 🧪 `finding_tokens.py` — nhánh thử nghiệm 2026-09-10
-
-Kênh **thứ hai** đưa dự đoán Stage-1 vào Stage 2: 13 token học được, mỗi token
-mang danh tính finding cộng các số `m` / `m*q` liên tục, thay cho ngưỡng cứng +
-câu tiếng Anh của `--cue-rule`. Bốn phép đo độc lập nói kênh chữ **không giúp**
-(xem `CLAUDE.md`); nhánh này hỏi liệu có phải do **kênh truyền**, không phải do
-thông tin.
-
-Composition chứ không sửa `soft_tokens.py`:
-`FindingTokenEmbeddingWrapper(SoftTokenEmbeddingWrapper(base))`. Mặc định
-`--finding-tokens off`, và khi tắt thì đường mặc định giống hệt từng byte.
-
-> Chưa có bằng chứng nào cho thấy nó giúp. Đừng đổi mặc định production.
-
 ## Main responsibilities
 
 1. Tiêm soft token đúng vị trí, đúng hàng.
 2. Chặn model tự sinh soft token.
 3. Xác nhận model thật sự đa phương thức trước khi train/generate.
-4. (🧪) Tiêm 13 finding token mang `m` / `m*q`, sau soft token, trước
-   instruction — chỉ khi được bật rõ ràng.
 
 ## Entry points
 
@@ -113,13 +96,12 @@ Chỉ hoạt động khi `--pipeline-mode meta_cxr_qformer` hoặc
 ```text
 ✅ ACTIVE      — capabilities.py
 🟡 CONDITIONAL — soft_tokens.py (chỉ mode Q-Former)
-🧪 EXPERIMENTAL — finding_tokens.py (mặc định TẮT, chưa có kết quả)
 ```
 
 ## Notes
 
 - `SoftTokenEmbeddingWrapper` từng nằm trong `fig9`; đã tách ra
-  (`docs/migration_guide.md:11`). Tên cũ vẫn được re-export nên code cũ chạy được.
+  (`docs/migration_guide.md`, đã xóa 2026-11-27). Tên cũ vẫn được re-export nên code cũ chạy được.
   `num_img_tokens` là tham số vị trí **thứ 4**, mặc định 32.
 
 - **Số soft token phải khớp `num_query_token` của Stage 1.** Đổi một bên mà không

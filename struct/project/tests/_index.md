@@ -6,6 +6,8 @@
 
 > ⚠⚠ **D-023 (2026-09-29) — ba lớp, không bao giờ nhị phân.** Đã XÓA: `test_gate_off.py`, `test_mention_gate.py`, `test_selective_cues.py`, `test_cue_mention_gate.py`, `test_label_framing.py`. Mới: `test_three_class_only.py` (quét AST cấm tên nhị phân, từ chối khóa config đã gỡ, bỏ head cũ khi load checkpoint) và `test_paper_protocol.py` (Eq. 21, CE, BERTScore của bài báo). Viết lại: `test_classification_metrics.py` (đối chiếu sklearn), `test_threshold_calibration.py`, `test_stage1_eval_hook.py`. Xem [D-023](../_meta/DECISIONS.md#d-023--ba-lớp-không-bao-giờ-nhị-phân-gỡ-toàn-bộ-khung-nhị-phân).
 
+> **D-029 (2026-11-27) — dọn về pipeline chính OFF + residual R1.** Đã xóa test của các nhánh gỡ bỏ: `test_late_view_fusion.py`, `test_aux_token_fusion.py`, `test_evoke_multiview_flags.py`, `test_qformer_inputs.py`, `test_merge_qformer_refit.py`, `test_asymmetric_loss.py`, `test_tta_affine.py`, `test_finding_tokens.py`, `test_pretrained_findings.py`, `test_inference_only_invariants.py` và các test probe. Mới: `test_removed_experiment_keys.py` (mọi khóa thử nghiệm đã gỡ bị từ chối kèm giải thích, kể cả trong khối phase; YAML ship không còn khóa nào).
+
 
 ## Purpose
 
@@ -70,7 +72,6 @@ do thiếu full training stack.
 | Test | Invariant được bảo vệ |
 |---|---|
 | `test_native_independence.py` (215) | **Mọi import LAVIS/Stage-1 chỉ nằm trong `training/stage1/lavis_loader.py`.** Thông điệp fail chỉ đúng cách sửa. Bảo vệ tính độc lập của `medgemma_direct` và tính sạch của ablation |
-| `test_inference_only_invariants.py` (258) | `medgemma_inference/` và `model/pretrained_medgemma/` **không** dựng optimizer, không tính gradient, không gọi `model.train()`. Cho phép rõ ràng cho `pretraining/`, `mhcac/`, `vision_encoders/`, `model/lavis/` |
 | `test_notebook_privacy.py` (279) | Guard chống rò rỉ MIMIC qua notebook. Fixture ở `tests/fixtures/notebooks/` (clean, credential_like, executed_output, kaggle_ids, synthetic_identifier) |
 
 **Nếu bạn phá một trong ba invariant này, đó không phải "test fail" — đó là lỗi
@@ -85,9 +86,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | `test_explanation_loss.py` | Logit Difference Squared, disease-positive gate, Grad-CAM FP32, top-k mềm có gradient, double backprop, warmup, resize mask và vòng đời capture stream |
 | `test_explanation_mask_pipeline.py` | RLE row-major round-trip, union phổi, bbox override, Dice gate, memmap lazy, affine dùng chung params, geometry 512→448 và no-cache regression |
 | `test_view_fusion.py` | `ViewFusionBlock` là **identity chính xác tại step 0** (zero-init `W_O` + FFN cuối) → checkpoint single-view load không hỏng |
-| `test_late_view_fusion.py` | Late fusion (2026-10-26): study một view nhận đúng logit anchor; slot đệm không bị đọc; zero-init = trung bình; trọng số cộng 1; từ chối khi `multi_view: false` / MPC / view consistency / explanation; loss study một view = loss OFF; mặc định không dựng gì mới; YAML ship giữ `early` |
 | `test_multiview_losses.py` | `MultiPositiveContrastiveLoss`, `view_consistency_loss` |
-| `test_evoke_multiview_flags.py` | Hai cờ theo EVOKE (2026-10-09): `view_fusion.detach_aux` cắt gradient vào aux nhưng giữ output và `view_emb`; `loss.mpc_temperature` được dùng; YAML ship giữ `false`/`0.07`; `from_config` đọc cả hai key |
 | `test_shared_visual_tokens.py` (209) | Thứ tự stream chuẩn hóa, `spans` đúng, `without()` zero-out mà không đổi shape, gradient chảy đúng luồng |
 | `test_encoder_ablation.py` (72) | `active_encoders` zero đúng span, all-three giữ đường gốc, tên lạ fail-closed, ablation bị cấm khi training |
 | `test_blip2_negative_sampling.py` | Hard negative sampling ⚠ cần torchvision |
@@ -95,9 +94,7 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 | `test_mimic_data_pipeline.py` | Study sampling — nạp `mimic_cxr_utils.py` theo path |
 | `test_training_core.py` | Scheduler giữ `lr_scale`, đuôi accumulation |
 | `test_eval_start_epoch.py` (20 test) | Cửa sổ warm-up `run.eval_start_epoch`: epoch [0]–[4] không eval và **không thể được tuyển làm best**; patience chỉ đếm epoch đã chấm (kẹp `max(best_epoch, eval_start_epoch)`), nếu không run chết ngay ở epoch chấm đầu tiên và log ra như hội tụ. Cũng khẳng định config hiện tại **không thể** early stop |
-| `test_qformer_inputs.py` (2026-10-15) | Sửa soft token sụp: `QformerInputNorm` = LayerNorm từng span, không sửa bản MHCAC; `query_diversity_loss` tính sụp, hằng số theo query, và "một query + 31 hằng" đều là ~1 (không bị lách), query độc lập thấp, bất biến thang, batch 1 → 0; khóa norm model/checkpoint phải khớp. Lần 2 (2026-10-15): nhiễu kiểu dropout ~4 lần phần phụ thuộc ảnh làm 32 query giống hệt bị đọc là đa dạng (lý do có khóa); `qformer_dropout` hợp lệ; p = 0 làm lượt train trùng lượt eval mà vẫn ở chế độ train; `assert_noise_free_query_path` nêu đúng khóa thiếu |
-| `test_merge_qformer_refit.py` (2026-10-15) | File gộp lấy phía Q-Former từ refit, block encoder 1c và MHCAC từ BASE; từ chối MHCAC/buffer lệch 1e-6, thiếu tensor Q-Former, tensor lạ |
-| `test_phases.py` (thêm 2026-10-15) | `phase1q`: cần `init_from.path`, chỉ train phía Q-Former, cấu hình đúng (kể cả `qformer_dropout 0` và `feature_mask_ratio 0`, lần 2); `init_from` chỉ nhận phase/path/skip; `filter_init_state` |
+| `test_phases.py` | Ba pha 1a/1b/1c; `init_from` chỉ nhận phase/path/skip/ignore; `filter_init_state` bỏ đúng tiền tố skip (pha `phase1q` đã gỡ 2026-11-27) |
 | `test_gradcache_siglip.py` (thêm 2026-10-15, máy train) | GradCache dùng lại token ảnh khi phía trước đóng băng (mỗi chunk encode 1 lần, gradient như tính lại), lượt phát lại thấy đúng đặc trưng dưới dropout + mask ngẫu nhiên, `lambda_query_diversity` cộng đúng vào gradient |
 
 ## Nhóm 3 — Stage 2: mode, soft token, capability
@@ -146,7 +143,6 @@ kiến trúc hoặc lỗi tuân thủ dữ liệu.**
 
 | Test | Kiểm gì |
 |---|---|
-| `test_pretrained_findings.py` (553) | P8: loader fail-closed, resume, budget, guard Impression, provenance |
 | `test_safety_pipeline.py` (297) | ❓ `SafetyPipeline`, `RuleBasedClaimReconciler`, `require_grounding` |
 
 ## Nhóm 8 — Explainability Stage 2

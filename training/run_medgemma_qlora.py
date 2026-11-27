@@ -73,9 +73,8 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         default=[],
         metavar="KEY=VALUE",
-        help="Overrides for the Stage-1 YAML when the model is built, e.g. "
-        "model.qformer_input_norm=per_stream for a META-Former refit checkpoint "
-        "(scripts/merge_qformer_refit.py). Enters the Stage-1 cache identity only when given.",
+        help="Overrides for the Stage-1 YAML when the model is built (KEY=VALUE). "
+        "Enters the Stage-1 cache identity only when given.",
     )
     parser.add_argument("--output-dir", default="training/outputs/medgemma_qlora_full")
     parser.add_argument(
@@ -88,13 +87,6 @@ def parse_args() -> argparse.Namespace:
         help="Per-class thresholds from scripts/calibrate_thresholds.py (fitted on "
              "Stage-1 validation); required by --cue-rule paper_thresholds. With "
              "--cue-rule cutpoints: a file from calibrate_thresholds.py --rule cutpoints.",
-    )
-    parser.add_argument(
-        "--finding-tokens", choices=fig9.FINDING_TOKEN_MODES, default=fig9.FINDING_TOKENS_OFF,
-        help="EXPERIMENTAL, default off. Feed Stage-1's per-finding three-class "
-             "probabilities to Stage 2 as 13 learnable tokens instead of (or "
-             "alongside) text cues. Requires a Stage-1 pipeline mode and a guided "
-             "--prompt-config.",
     )
     parser.add_argument(
         "--cue-rule", choices=fig9.CUE_RULES, default=fig9.DEFAULT_CUE_RULE,
@@ -277,16 +269,14 @@ def deterministic_subset(records: list[dict], limit: int, seed: int) -> list[dic
     return [records[index] for index in indices]
 
 
-def resumable_adapter(path: Path, image_mode: str, finding_tokens: str = "off") -> bool:
+def resumable_adapter(path: Path, image_mode: str) -> bool:
     weights = (path / "adapter_model.safetensors").is_file() or (path / "adapter_model.bin").is_file()
     # Any mode that carries soft tokens owns a trained img_proj; resuming
     # without it would silently restart the bridge from a fresh nn.Linear.
     projector_ok = image_mode not in fig9.SOFT_TOKEN_MODES or (path / "img_proj.pt").is_file()
-    findings_ok = finding_tokens in (None, "off") or (path / "finding_tokens.pt").is_file()
     return (
         weights
         and projector_ok
-        and findings_ok
         and (path / "adapter_config.json").is_file()
         and (path / "trainer_state.pt").is_file()
     )
@@ -357,7 +347,7 @@ def train_mode(
     adapter_dir = root / "adapters" / f"medgemma_qlora_{mode.name}"
     last_dir = adapter_dir / "checkpoints" / "last"
     training_summary: dict = {}
-    complete = fig9.adapter_is_complete(adapter_dir, image_mode, args.finding_tokens)
+    complete = fig9.adapter_is_complete(adapter_dir, image_mode)
     if complete and not args.force_retrain:
         assert_adapter_prompt_style(adapter_dir, args.prompt_style)
     if args.force_retrain or not complete:
@@ -365,12 +355,10 @@ def train_mode(
         if (
             resume_dir is None
             and not args.force_retrain
-            and resumable_adapter(last_dir, image_mode, args.finding_tokens)
+            and resumable_adapter(last_dir, image_mode)
         ):
             resume_dir = last_dir
-        if resume_dir is not None and not resumable_adapter(
-            Path(resume_dir), image_mode, args.finding_tokens
-        ):
+        if resume_dir is not None and not resumable_adapter(Path(resume_dir), image_mode):
             raise RuntimeError(f"incomplete --resume-from checkpoint: {resume_dir}")
         if resume_dir is not None:
             assert_adapter_prompt_style(Path(resume_dir), args.prompt_style)
@@ -384,12 +372,9 @@ def train_mode(
             lora_rank=args.lora_rank,
             lora_alpha=args.lora_alpha,
             prompt_config=mode_prompt_config,
-            finding_tokens=args.finding_tokens,
             legacy_prompt_style=args.prompt_style,
         )
         llm.load_img_proj_if_present(resume_dir)
-        if resume_dir is not None:
-            llm.load_finding_encoder_if_present(resume_dir)
         training_summary = llm.train_fine(
             train_records,
             adapter_dir,
@@ -415,7 +400,7 @@ def train_mode(
         training_summary = json.loads(
             (adapter_dir / "manifest.json").read_text(encoding="utf-8")
         ).get("training_config", {})
-    if not fig9.adapter_is_complete(adapter_dir, image_mode, args.finding_tokens):
+    if not fig9.adapter_is_complete(adapter_dir, image_mode):
         raise RuntimeError(f"training did not produce a complete adapter: {adapter_dir}")
 
     llm = fig9.VariantLLM(
@@ -424,15 +409,13 @@ def train_mode(
         quantize_4bit=True,
         image_mode=image_mode,
         prompt_config=mode_prompt_config,
-        finding_tokens=args.finding_tokens,
         legacy_prompt_style=args.prompt_style,
     )
     llm.load_img_proj_if_present(adapter_dir)
-    llm.load_finding_encoder_if_present(adapter_dir)
     val_eval_records = deterministic_subset(val_records, args.val_generation_limit, fig9.SEED + 1)
     val_cohort, _ = fig9.stage1_cohort_fingerprint(
         context, Path(args.checkpoint_root), "val", args.val_limit,
-        cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
+        cue_rule=args.cue_rule,
     )
     val_metrics = fig9.evaluate_variant(
         "medgemma",
@@ -452,7 +435,7 @@ def train_mode(
     if not args.skip_test:
         test_cohort, _ = fig9.stage1_cohort_fingerprint(
             context, Path(args.checkpoint_root), "test", args.test_limit,
-            cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
+            cue_rule=args.cue_rule,
         )
         test_metrics = fig9.evaluate_variant(
             "medgemma",
@@ -641,17 +624,6 @@ def main() -> None:
             ) for mode in modes
         ))):
             raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
-    if args.finding_tokens != fig9.FINDING_TOKENS_OFF:
-        if not needs_stage1:
-            raise SystemExit(
-                "--finding-tokens needs a Stage-1 pipeline mode: the features are "
-                "MHCAC's three-class probabilities"
-            )
-        if prompt_config is None:
-            raise SystemExit(
-                "--finding-tokens requires a guided --prompt-config; the "
-                "placeholders come from the v2 prompt builder"
-            )
     context = Stage1Context(
         run_name=args.stage1_run,
         config_path=args.stage1_config,
@@ -694,18 +666,18 @@ def main() -> None:
         print(f"[stage1] train limit={args.train_limit or 'all'}", flush=True)
         train_records = fig9.build_stage1_records(
             context, checkpoint_root, root, "train", args.train_limit, args.num_workers,
-            cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
+            cue_rule=args.cue_rule,
             clean_train_images=args.clean_train_records, train_seed=args.seed,
         )
         print(f"[stage1] validation limit={args.val_limit or 'all'}", flush=True)
         val_records = fig9.build_stage1_records(
             context, checkpoint_root, root, "val", args.val_limit, args.num_workers,
-            cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
+            cue_rule=args.cue_rule,
         )
         print(f"[stage1] held-out test limit={args.test_limit or 'all'}", flush=True)
         test_records = fig9.build_stage1_records(
             context, checkpoint_root, root, "test", args.test_limit, args.num_workers,
-            cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
+            cue_rule=args.cue_rule,
         )
     else:
         print(
@@ -751,7 +723,6 @@ def main() -> None:
             args.train_cue_model_share if args.train_cues == "oracle_mix" else None
         ),
         "prompt_inputs": prompt_inputs,
-        "finding_tokens": args.finding_tokens,
         "lora_rank": args.lora_rank,
         "lora_alpha": args.lora_alpha,
         "section_mode": args.section_mode,
@@ -779,7 +750,6 @@ def main() -> None:
         "train_cues": args.train_cues if needs_stage1 else None,
         "clean_train_records": bool(args.clean_train_records) if needs_stage1 else None,
         "seed": args.seed,
-        "finding_tokens": args.finding_tokens,
         "prompt_style": None if prompt_config or not needs_stage1 else args.prompt_style,
         "cue_override_train": str(args.cue_override_train) if args.cue_override_train else None,
         "cue_override_val": str(args.cue_override_val) if args.cue_override_val else None,

@@ -52,7 +52,6 @@ và có thể trôi dạt sang hai biểu diễn khác nhau.
 | `swin/swin_encoder.py` | [📄](swin_encoder.py.doc.md) | ✅ | 768 (medclip) | Backend `medclip` (production, D-020) — MedCLIP Swin-Tiny, 50 token; backend `hf` + `ChayanM/SwinV2-GPT2_Mimic` chỉ còn cho ablation |
 | `swin/medclip_swin.py` | [📄](medclip_swin.py.doc.md) | ✅ | 768 | Tiền xử lý MedCLIP, nạp weights strict, ghép pooled + 49 patch |
 | `feature_mask.py` | [📄](feature_mask.py.doc.md) | ✅ | giữ `D` | Mask 10% token mỗi encoder lúc train (bài báo) |
-| `qformer_inputs.py` | [📄](qformer_inputs.py.doc.md) | 🧪 opt-in | giữ `D` | 2026-10-15, sửa soft token sụp: `QformerInputNorm` (LayerNorm từng luồng cho bản sao Q-Former đọc; MHCAC đọc bản gốc), `query_diversity_loss`, `assert_input_norm_keys_match` |
 | `lora.py` | [📄](lora.py.doc.md) | 🧪 opt-in | giữ `D` | 2026-11-04, LoRA tối giản cho `nn.Linear` (không `peft`), chỉ script chẩn đoán Bước 1 residual-lateral dùng; B=0 nên bit-identical ở init |
 | `rad_dino/rad_dino_encoder.py` | [📄](rad_dino_encoder.py.doc.md) | 🟡 | `embed_dim` ⚠ runtime | `microsoft/rad-dino`; `raddino: false` ở **mọi** config |
 | `biovil_t/` (8 file) | — | 🕰 | — | **Bản sao.** Xem cảnh báo trên |

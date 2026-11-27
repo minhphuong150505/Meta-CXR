@@ -160,7 +160,7 @@ Last verified 2026-07-22 against the source, on branch `feature/complete-evaluat
 - **Classification evaluation** — `training/evaluation/` now covers per-pathology
   AUROC/AUPRC, threshold calibration on validation only, bootstrap CIs resampled
   by study, trivial baselines, subgroup analysis and error analysis. See
-  `docs/evaluator_audit.md` for what was wrong before and
+  the git history of `docs/evaluator_audit.md` (removed 2026-11-27) for what was wrong before and
   `docs/evaluator_validation.md` for the measured checks.
 - `run_medgemma_qlora.py` still imports the Figure-9 module for `VariantLLM` and
   the evaluation helpers, so LAVIS/torch/transformers load even in

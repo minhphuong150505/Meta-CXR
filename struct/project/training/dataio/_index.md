@@ -51,8 +51,8 @@ python -m training.dataio.validate_manifest --section-mode findings_and_impressi
 ## Used by
 
 `training/run_medgemma_qlora.py:27` · `train_eval_figure9…:116/122` ·
-`medgemma_inference/run_pretrained_findings.py:33` ·
-`model/pretrained_medgemma/output_schema.py:15` ·
+`medgemma_inference/run_pretrained_findings.py:33` (đã xóa 2026-11-27) ·
+`model/pretrained_medgemma/output_schema.py:15` (đã xóa 2026-11-27) ·
 `tests/test_manifest.py`, `tests/test_section_metrics.py`
 
 ## Execution flow

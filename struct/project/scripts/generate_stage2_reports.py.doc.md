@@ -23,7 +23,7 @@ generation kwargs **giống hệt** lúc train.
 
 Nhánh Stage-1 **không dùng** `--manifest` / `--image-root`: record của nó đã mang
 `image_path` **tuyệt đối** (dataset đã join `vis_root`). Đây chính là cái bẫy đã
-ghi ở [`probe_soft_tokens.py.doc.md`](probe_soft_tokens.py.doc.md) — join thêm
+ghi ở `probe_soft_tokens.py` (đã xóa 2026-11-27) — join thêm
 một lần nữa sẽ ra đường dẫn sai.
 
 Import LAVIS nằm **trong** `stage1_records()`, không ở module scope, để giữ bất
@@ -80,34 +80,21 @@ Cache chỉ trúng khi khớp `cohort_id`, tức cùng `--checkpoint-root`,
 `build_stage1_records` với `sample_limit=None` và áp `--limit` **sau đó**, trên
 danh sách record — thu hẹp ở tầng dưới sẽ trượt cache.
 
-## `--stage1-options`, `--soft-token-ablation` (2026-10-15)
+## `--stage1-options` (2026-10-15)
 
-- `--stage1-options KEY=VALUE ...` — override YAML khi dựng mô hình Stage 1; checkpoint gộp của
-  refit META-Former ([`merge_qformer_refit.py`](merge_qformer_refit.py.doc.md)) cần
-  `model.qformer_input_norm=per_stream`. Vào `Stage1Context.config_options` và danh tính cache
-  (`stage1_options`) **chỉ khi có**, nên mọi cache cũ vẫn trúng. Ghi vào `generation_summary.json`.
-- `--soft-token-ablation permute_across` — mỗi study nhận 32 soft token của study khác
-  (derangement có seed, `permute_soft_tokens_across_studies`), giữ cue và bối cảnh của chính nó;
-  đo adapter có đọc kênh ảnh không. Áp lên mọi record trước `--limit`, nên cùng `--limit` chọn
-  cùng study với lần sinh thường. Chỉ cho mode soft token; ngoài phân phối, không phải arm đối chứng.
+- `--stage1-options KEY=VALUE ...` — override YAML khi dựng mô hình Stage 1. Vào
+  `Stage1Context.config_options` và danh tính cache (`stage1_options`) **chỉ khi có**, nên mọi
+  cache cũ vẫn trúng. Ghi vào `generation_summary.json`.
 
-## `--eval-cues {predicted,oracle}` (2026-10-28)
+## Đã gỡ 2026-11-27 ([D-029](../_meta/DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27))
 
-- Mặc định `predicted`: cue P/N/U của MHCAC theo `--cue-rule`, không đổi gì so với trước.
-- `oracle`: phép thử chỉ suy luận. `apply_oracle_cues` thay `pred_groups` của mọi record bằng lớp
-  thật CheXpert.
-  - Dùng lại `training/dataio/oracle_cues.true_label_codes` và `mix_oracle_cues` với
-    `model_share=0`, cùng ánh xạ D-018 mà `--train-cues oracle_mix` dùng lúc train.
-  - Bỏ qua `No Finding`. Study không có thông tin CheXpert giữ cue của MHCAC.
-  - Chạy sau cache Stage 1 nên không đổi danh tính cache. Áp lên mọi record trước `--limit`.
-- Số đếm tổng hợp (`cells`, `changed`, `unknown_truth`, ...) được in ra và ghi vào
-  `generation_summary.json` (`eval_cues`, `eval_cue_counts`).
-- Bị từ chối khi: mode không có cue MHCAC trong prompt (`uses_mhcac_prompt` false), `--cue-rule none`,
-  hoặc dùng cùng `--soft-token-ablation` (mỗi arm chỉ một can thiệp).
-- ⚠ Lớp thật lấy từ chính báo cáo tham chiếu, nên đây là mức trần có rò nhãn: nó trả lời "adapter có
-  đọc cue không", không bao giờ là kết quả được báo cáo.
-- Plan: `docs/handoff/PLAN-2026-10-28-stage2-final-channel-probes.md`. Test:
-  `tests/test_generate_stage2_reports.py`.
+`--soft-token-ablation permute_across` (`permute_soft_tokens_across_studies`), `--eval-cues oracle`
+(`apply_oracle_cues`), `--finding-tokens` / `--finding-feature-ablation`
+(`permute_finding_features_across_studies`), và lấy mẫu MBR (`--num-samples`, `--temperature`,
+`--top-p`, `--top-k`, `study_seed`, `candidates_<split>.jsonl`). Output luôn là
+`generated_<split>.jsonl`; summary không còn các khóa `soft_token_ablation`, `eval_cues`,
+`eval_cue_counts`, `finding_tokens`, `finding_feature_ablation`, `num_samples`, `temperature`,
+`top_p`, `top_k`. Số đo của các phép thử này vẫn ở `CLAUDE.md` và các plan trong `docs/handoff/`.
 
 ## Chống lặp — `--no-repeat-ngram-size`, `--repetition-penalty`
 
@@ -204,7 +191,6 @@ bệnh nhân — để ngoài repo.**
 
 [`scripts/_index.md`](_index.md) ·
 [`evaluate_stage2.py.doc.md`](evaluate_stage2.py.doc.md) — đọc `.jsonl` này ·
-[`probe_soft_tokens.py.doc.md`](probe_soft_tokens.py.doc.md) ·
 [DECISIONS.md](../_meta/DECISIONS.md)
 
 ← [Về `scripts/`](_index.md)
@@ -241,32 +227,8 @@ Với `paper`, `--cue-rule paper_thresholds` không cần `--prompt-config`.
 `generation_summary.json` ghi `prompt_style` (chỉ khi mode `qformer` dùng prompt
 legacy; còn lại `None`). Một `Namespace` thiếu thuộc tính này được coi là `fine`.
 
-## `--num-samples` — ứng viên cho giải mã MBR (2026-10-14)
-
-`--num-samples N` (mặc định 0 = tắt) thay một lần giải mã tất định bằng N mẫu
-sampling cho mỗi study, qua `VariantLLM.generate_candidates` — cùng prompt, stop ID và
-đường soft token với `generate`. Output là **`candidates_<split>.jsonl`** (mỗi dòng
-`candidates: [...]`, KHÔNG có khoá `generated`), để không script chấm nào nhầm một mẫu
-ngẫu nhiên là bản giải mã. Chọn bằng
-[`mbr_select_stage2.py`](mbr_select_stage2.py.doc.md).
-
-| Cờ | Mặc định | Ghi chú |
-|---|---|---|
-| `--temperature` | 0,7 | phải > 0 |
-| `--top-p` | 0,95 | (0, 1]; 1,0 = tắt |
-| `--top-k` | 0 | 0 = tắt. Luôn truyền tường minh: `generation_config` của MedGemma không đặt gì, bỏ trống thì HF tự dùng `top_k=50` |
-
-Seed theo study: `torch.manual_seed(study_seed(seed, sample_key))` trước mỗi study, nên
-mẫu của một study không phụ thuộc vị trí của nó trong cohort. `validate_invocation`
-từ chối `--num-samples` cùng `--num-beams > 1` hoặc cùng cờ chống lặp (đường sampling
-không dùng chúng), và temperature/top-p/top-k ngoài miền. `generation_summary.json`
-ghi `num_samples`, `temperature`, `top_p`, `top_k` (`None` khi tắt) và `output_file`.
-Khi tắt, output và kwargs giống hệt trước (`tests/test_beam_generation.py`).
-
-
 ## `--cue-override <npz>` (2026-11-07, opt-in; định dạng đổi 2026-11-08)
 
 `apply_cue_override` gọi [`training/dataio/cue_override.apply_r1_cues`](../training/dataio/cue_override.py.doc.md): cue của bản
 ghi PL tính lại từ logit của chính bản ghi bằng R1 lateral; bản ghi ngoài PL giữ cue từng byte; cue hiện có phải khớp cutpoint OFF
-≥ 99% ô. Chạy sau cache Stage-1. Chỉ với chế độ có cue MHCAC và `--cue-rule cutpoints`; từ chối cùng `--eval-cues oracle` hoặc
-`--soft-token-ablation`. Summary ghi `cue_override`, `cue_override_counts`.
+≥ 99% ô. Chạy sau cache Stage-1. Chỉ với chế độ có cue MHCAC và `--cue-rule cutpoints`. Summary ghi `cue_override`, `cue_override_counts`.

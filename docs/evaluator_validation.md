@@ -297,7 +297,7 @@ The evaluator does not substitute a different implementation and does not report
 
 ✅ **Đạt.** Ba metric thiếu **không xuất hiện** trong `corpus` (nên không thể lọt vào bảng kết
 quả như số 0), mà nằm trong `unavailable` kèm câu lệnh cài đặt. Đây chính là lỗi S2-A trong
-`evaluator_audit.md` đã được đóng.
+`evaluator_audit.md` đã được đóng (file đã xóa ngày 2026-11-27, xem lịch sử git).
 
 ---
 

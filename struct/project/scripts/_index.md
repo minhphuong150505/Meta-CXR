@@ -28,7 +28,6 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `run_stage1_phases.sh` | [📄](run_stage1_phases.sh.doc.md) | ✅ | Chạy nối pha 1a → 1b → 1c (D-020): dựng cache anchor, dừng ở gate ITC |
 | `phase_report.py` | [📄](phase_report.py.doc.md) | ✅ CPU | Bảng gate/phân loại/nhiễu gradient của một run 3 pha (mục H) |
 | `make_medclip_preprocess_reference.py` | — | 🔬 | Sinh fixture tiền xử lý MedCLIP dưới transformers 4.24 (venv riêng; ảnh tổng hợp) |
-| `check_itc_gate.py` (305) | [📄](check_itc_gate.py.doc.md) | 🔬 | Cổng ITC: ITC đã thoát chance chưa, trước khi đốt ~33 h GPU. Exit 1 khi trượt |
 
 ### Evaluation
 
@@ -39,11 +38,9 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `evaluate_clinical_efficacy.py` | [📄](evaluate_clinical_efficacy.py.doc.md) | ✅ Bảng 3 CE của bài báo (chấm nhãn labeler có sẵn) |
 | `count_chexpert_blank_policy.py` | [📄](count_chexpert_blank_policy.py.doc.md) | ✅ CPU, đếm nhãn study-level dưới hai `blank_label_policy`, in class weight cho `negative`, kiểm nguồn gốc ô -100 |
 | `evaluate_stage1.py` (236) | [📄](evaluate_stage1.py.doc.md) | ✅ Chấm classification từ `.npz`, giao thức ba lớp của bài báo |
-| `evaluate_stage1_cutpoints.py` | [📄](evaluate_stage1_cutpoints.py.doc.md) | ✅ **Bổ sung, không phải giao thức bài báo**: fit 1 hoặc 2 ngưỡng trên `p_pos/(p_pos+p_neg)` ở val, chấm test, bootstrap ghép cặp so với argmax (2026-10-01) |
-| `compare_stage1_operating_points.py` | [📄](compare_stage1_operating_points.py.doc.md) | 🔬 | **Không phải giao thức bài báo**: so cutpoint headline, cutpoint thiên recall F-beta và argmax (cross-fit trên val; ghép cặp trên test) (2026-11-01) |
 | `compare_stage1_predictions.py` | [📄](compare_stage1_predictions.py.doc.md) | Bootstrap ghép cặp hai file `.npz` Stage-1 trên cùng study, toàn split và theo `num_views`; dùng cho ablation đa góc nhìn (2026-10-06) |
 | `evaluate_stage2.py` (294) | [📄](evaluate_stage2.py.doc.md) | ✅ Chấm generation từ `.jsonl` |
-| `generate_stage2_reports.py` (381) | [📄](generate_stage2_reports.py.doc.md) | ✅ Sinh `.jsonl` cho dòng trên. `--pipeline-mode` chọn nguồn record: CSV (native) hay Stage-1 (soft token). ⚠ Hai cohort khác nhau — dùng `--restrict-to` mới so sánh được. `--num-samples N` (2026-10-14) ghi `candidates_<split>.jsonl` cho `mbr_select_stage2.py`. `--eval-cues oracle` (2026-10-28): phép thử cue từ nhãn thật, chỉ suy luận |
+| `generate_stage2_reports.py` (381) | [📄](generate_stage2_reports.py.doc.md) | ✅ Sinh `.jsonl` cho dòng trên. `--pipeline-mode` chọn nguồn record: CSV (native) hay Stage-1 (soft token). ⚠ Hai cohort khác nhau — dùng `--restrict-to` mới so sánh được. `--cue-override` (R1, 2026-11-07/08). `--num-samples`, `--eval-cues`, `--soft-token-ablation`, `--finding-tokens` đã gỡ 2026-11-27 |
 | `evaluate_explanation.py` | [📄](evaluate_explanation.py.doc.md) | ✅ XAI — load checkpoint, cần autograd sống, không train |
 | `explain_stage2.py` | [📄](explain_stage2.py.doc.md) | ✅ XAI Stage 2 — JSONL + npz lưới gốc; cổng triệt tiêu huỷ được cả lần chạy |
 
@@ -51,7 +48,6 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 
 | File | Doc | Status | Cảnh báo |
 |---|---|---|---|
-| `run_prompt_ablation.py` | [📄](run_prompt_ablation.py.doc.md) | 🧪 | **Dry run** — không load model, không sinh metric model |
 | `export_stage2_prompt_samples.py` | [📄](export_stage2_prompt_samples.py.doc.md) | 🧪 | ⚠ **Output CHỨA findings text** — `--output` phải ở nơi riêng tư |
 | `prompt_length_statistics.py` | [📄](prompt_length_statistics.py.doc.md) | 🧪 | Không có tokenizer MedGemma → fallback whitespace, đánh dấu `"approximate": true` |
 | `audit_temporal_targets.py` | [📄](audit_temporal_targets.py.doc.md) | 🧪 | Đo ngôn ngữ so sánh thời gian khi input không có prior |
@@ -60,19 +56,9 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 
 | File | Doc | Status | Vai trò |
 |---|---|---|---|
-| `diagnose_stream_scale.py` (231) | [📄](diagnose_stream_scale.py.doc.md) | 🔬 | Đo RMS token mỗi encoder tại điểm nối + attention mass của MHCAC. **Read-only** — đo được chênh lệch **32×**, xem trang doc |
-| `probe_soft_tokens.py` (215) | [📄](probe_soft_tokens.py.doc.md) | 🔬 | Linear probe trên 32 soft token của Q-Former, trước khi đốt ~70 h cho arm C. Đo được **macro AUROC 0,6847** (xáo trộn 0,4838; MHCAC 0,7643) — soft token có tín hiệu dù cross-attention chưa train |
-| `probe_soft_tokens_cached.py` | [📄](probe_soft_tokens_cached.py.doc.md) | 🔬 | Probe soft token từ cache Stage 2 (train→val→test), so với MHCAC trên cùng study. 2026-10-11: pooled 0,713 vs MHCAC 0,745; **32 token sụp thành một** (cosine trong study 0,9995) |
-| `diagnose_qformer_collapse.py` | [📄](diagnose_qformer_collapse.py.doc.md) | 🔬 | Q-Former sụp ở phase nào: cosine/PR theo tầng, entropy cross-attention, token "hút" attention, norm token ảnh. 2026-10-11: sụp ở **1a**, 1b làm lệch đầu vào. 2026-10-15: `--options`, hai chỉ số cổng của refit (`xattn_mean_query_map_cos`, `final_pr_batch_centred`) |
-| `merge_qformer_refit.py` | [📄](merge_qformer_refit.py.doc.md) | ✅ | 2026-10-15: checkpoint 1c với phía META-Former thay bằng bản refit `phase1q`; từ chối nếu tensor nào khác lệch. Mọi nơi dùng refit phải đọc file này |
 | `analyze_stage2_generations.py` | [📄](analyze_stage2_generations.py.doc.md) | 🔬 | Lỗi báo cáo sinh: độ dài, khuôn mẫu, ngôn ngữ so sánh thời gian, CE xấp xỉ bằng lexicon |
-| `retrieval_report_baselines.py` | [📄](retrieval_report_baselines.py.doc.md) | 🔬 | Mốc truy hồi theo soft token / nhãn MHCAC / nhãn thật / embedding ngoài |
-| `embed_medgemma_images.py` | [📄](embed_medgemma_images.py.doc.md) | 🔬 | Embedding ảnh của MedGemma cho mốc truy hồi |
-| `prior_report_baseline.py` | [📄](prior_report_baseline.py.doc.md) | 🔬 | Mốc chép FINDINGS lần chụp trước của cùng bệnh nhân |
-| `probe_image_features.py` | [📄](probe_image_features.py.doc.md) | 🔬 | Probe tuyến tính cùng giao thức cho soft token và embedding ngoài (vd. MedGemma), so với MHCAC |
 | `score_stage2_paper_protocol.py` | [📄](score_stage2_paper_protocol.py.doc.md) | ✅ | Chấm Stage 2 theo giao thức bài báo + CE lexicon + so sánh ghép cặp (2026-10-11) |
 | `score_ce_chexbert.py` | [📄](score_ce_chexbert.py.doc.md) | ✅ | CE bằng CheXbert (`f1chexbert`, venv riêng) + so sánh ghép cặp (2026-10-11) |
-| `mbr_select_stage2.py` | [📄](mbr_select_stage2.py.doc.md) | ✅ | Giải mã MBR (2026-10-14): chọn ứng viên có kỳ vọng BERTScore cao nhất so với các mẫu `--num-samples`; ghi `generated_<split>.jsonl` |
 | `analyze_radiologist_labels.py` | [📄](analyze_radiologist_labels.py.doc.md) | 🔬 | Nhiễu nhãn CheXpert so với nhãn bác sĩ (687 study test) và chấm Stage 1 theo nhãn bác sĩ |
 | `encoder_probe_features.py` | [📄](encoder_probe_features.py.doc.md) | 🔬 | Đặc trưng toàn cục + lưới token của 5 encoder (Swin, PubMedCLIP, BioViL-T 512, RAD-DINO, MedSigLIP) cho phép đo encoder (2026-10-31); `--views lateral` (2026-11-04) cho ảnh lateral của study PL |
 | `encoder_probe_fit.py` | [📄](encoder_probe_fit.py.doc.md) | 🔬 | Probe tuyến tính + attention, macro AP "có bệnh", quy tắc ứng viên encoder (2026-10-31) |
@@ -84,9 +70,6 @@ tích prompt, chẩn đoán kiến trúc, và guard quyền riêng tư.
 | `lateral_lora_fit.py` | [📄](lateral_lora_fit.py.doc.md) | 🔬 | LoRA trên Swin: arm L_frozen / L_lora / C_lora, cổng G0/G2, `compare` cho G1(a) (2026-11-04) |
 | `swin_finetune_cache.py` | [📄](swin_finetune_cache.py.doc.md) | 🔬 | Cache uint8 đầu vào 224 của MedCLIP-Swin cho phép đo tinh chỉnh Swin (2026-10-31) |
 | `swin_finetune_fit.py` | [📄](swin_finetune_fit.py.doc.md) | 🔬 | Swin đóng băng vs mở khóa toàn bộ (LR giảm theo tầng), cổng G0–G2, quy tắc đọc (2026-10-31) |
-| `biovil_prior_features.py` | [📄](biovil_prior_features.py.doc.md) | 🔬 | Đặc trưng Swin + BioViL-T có/không có ảnh lần chụp trước (2026-10-31) |
-| `biovil_prior_fit.py` | [📄](biovil_prior_fit.py.doc.md) | 🔬 | Probe attention, cổng G0/G1, quy tắc đọc của phép đo ảnh trước BioViL-T (2026-10-31) |
-| `embed_cxr_encoders.py` | [📄](embed_cxr_encoders.py.doc.md) | 🔬 | Đặc trưng từng encoder (BioViL, PubMedCLIP, Swin, RAD-DINO) cho probe so sánh |
 | `_stage2_fixtures.py` | [📄](_stage2_fixtures.py.doc.md) | 🧪 | ⚠ Dữ liệu **tổng hợp, KHÔNG phải MIMIC** |
 | `__init__.py` | — | ✅ | |
 
@@ -177,12 +160,6 @@ a negative assertion. Keep the matching guided prompt requirement. Explicit
 `conditional_positive` restores q-only behavior; no calibration file is loaded
 automatically. Low-level Figure-9 helper defaults remain historical compatibility.
 
-## 🧪 Finding tokens — nhánh thử nghiệm 2026-09-10
+## Finding tokens — đã gỡ 2026-11-27
 
-`generate_stage2_reports.py --finding-tokens {off,q_only,full}` (mặc định `off`)
-đọc `m` và `m*q` của Stage 1 qua 13 token học được thay vì qua cue chữ. Cần
-Stage-1 pipeline mode, guided `--prompt-config`, và `--adapter` có
-`finding_tokens.pt` — mode trong file được kiểm tra khớp, không có dạng
-zero-shot. `--finding-feature-ablation {zero,shuffle_within,permute_across}` là
-probe cơ chế **ngoài phân phối**, không thay thế arm `q_only` train riêng.
-Xem `docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`.
+`--finding-tokens` và `--finding-feature-ablation` không còn (D-029). Kết quả âm tính: `docs/handoff/PLAN-2026-09-10-mention-finding-tokens.md`.

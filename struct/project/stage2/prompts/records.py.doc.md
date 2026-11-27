@@ -25,7 +25,7 @@ Hai helper `_as_*` chuẩn hóa dữ liệu vào — record đến từ ba ngu�
 ## Calls / Called by
 Gọi: `schemas.PromptContext`. Stdlib.
 Được gọi: `builder.py`; `scripts/prompt_length_statistics.py:24`,
-`run_prompt_ablation.py`, `export_stage2_prompt_samples.py`.
+`run_prompt_ablation.py` (đã xóa 2026-11-27), `export_stage2_prompt_samples.py`.
 
 ## Side effects
 Không.
@@ -58,7 +58,7 @@ nhánh đối chứng.
 
 Nhóm rỗng không phải bằng chứng bình thường. `cue_state` được truyền vào `PromptContext`; record cũ rỗng suy ra abstained. Missing prediction keys vẫn raise ở guided mode, trừ khi ghi rõ `cue_state=not_provided`. State mâu thuẫn bị schema từ chối. `build_stage1_records` / `with_cue_state` là producer, `VariantLLM` là caller dùng chung train/inference.
 
-## 🧪 `finding_token_count` — 2026-09-10
+## `finding_token_count` — đã gỡ 2026-11-27 cùng nhánh finding token (D-029)
 
-Tham số keyword mới, mặc định `None` (tắt). Chỉ được truyền vào `PromptContext`,
-không đọc từ record — số lượng do runtime quyết định, không phải dữ liệu.
+`context_from_record` không còn tham số này.
+

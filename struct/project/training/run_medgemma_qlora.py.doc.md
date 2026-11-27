@@ -122,7 +122,6 @@ Ghi adapter + JSONL + `meta.json` · Upload GCS (trừ `--no-upload`) · Cấp p
 | Tình huống | Hành vi |
 |---|---|
 | Mode Q-Former + `findings_and_impression` | **Raise**, nêu lý do (`ReportDataset.text_output` không có IMPRESSION) |
-| `--pipeline-mode pretrained_medgemma_*` | **Raise**, chỉ đúng lệnh `python -m medgemma_inference.run_pretrained_findings` |
 | Mode lạ | `ValueError` liệt kê `CHOICES` |
 | Manifest thiếu cột impression | `assert_columns` raise nêu tên cột |
 | Split leakage | `assert_no_leakage` raise |
@@ -168,15 +167,11 @@ a negative assertion. Keep the matching guided prompt requirement. Explicit
 `conditional_positive` restores q-only behavior; no calibration file is loaded
 automatically. Low-level Figure-9 helper defaults remain historical compatibility.
 
-## 🧪 `--finding-tokens` — 2026-09-10, mặc định `off`
+## `--finding-tokens` — ĐÃ GỠ 2026-11-27
 
-Yêu cầu Stage-1 pipeline mode và guided `--prompt-config` (placeholder đến từ
-prompt builder v2; thiếu nó thì substitution tìm thấy 0 vị trí và run âm thầm
-trở thành arm không có cue). Được truyền vào cả ba lần
-`build_stage1_records`, vào `VariantLLM`, vào `adapter_is_complete` /
-`resumable_adapter`, và vào `stage1_cohort_fingerprint` khi chấm val/test — nếu
-bỏ sót chỗ cuối, `cohort_id` của evaluation sẽ không khớp cohort của records.
-Ghi vào `run_manifest.json` và `training_config`.
+Cờ và mọi chỗ truyền nó (`build_stage1_records`, `VariantLLM`, `adapter_is_complete`,
+`resumable_adapter`, fingerprint val/test, `run_manifest.json`) đã bị gỡ; xem
+[D-029](../_meta/DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27).
 
 ## `--seed` — 2026-10-26, mặc định = `fig9.SEED` (16)
 
