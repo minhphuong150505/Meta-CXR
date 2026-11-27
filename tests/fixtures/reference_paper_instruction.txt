@@ -1,0 +1,10 @@
+Act as an expert radiologist. Using only the structured abnormality information and the image-derived features above, write the *Findings* section of a chest X-ray report.
+
+- Do not invent findings. Only describe abnormalities explicitly provided in the 'Abnormality information'.
+- Do not repeat the same information using different wording.
+- Use a single, fluent paragraph in formal radiological style.
+- Use cautious and precise language if uncertain abnormalities are present.
+- Avoid enumeration, bullet points, and speculative phrases.
+- The report should reflect the clinical tone and structure of professionally written reports.
+
+Return only the generated findings text.

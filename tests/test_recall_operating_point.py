@@ -1,7 +1,5 @@
 """Pins the recall-leaning cutpoint objective (docs/handoff/PLAN-2026-11-01-recall-operating-point.md)."""
 
-import importlib.util
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -13,11 +11,6 @@ from training.evaluation.threshold_calibration import (
     present_fbeta,
     severity_scores,
 )
-
-_ROOT = Path(__file__).resolve().parents[1]
-_spec = importlib.util.spec_from_file_location("ops", _ROOT / "scripts" / "compare_stage1_operating_points.py")
-ops = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(ops)
 
 NAMES = ("Atelectasis", "Cardiomegaly")
 
@@ -66,27 +59,3 @@ def test_t2_split_does_not_change_present_calls():
 def test_default_objective_unchanged():
     pred = _pred(seed=2)
     assert fit_severity_cutpoints(pred) == fit_severity_cutpoints(pred, objective="weighted_f1", beta=9.0)
-
-
-def test_crossfit_never_scores_where_it_fitted(monkeypatch):
-    pred = _pred(n=60, seed=3)
-    pred.probabilities = pred.probabilities.copy()
-    pred.probabilities[:, 0, 2] = np.arange(60) * 1e-6  # row identity in an unused cell
-    seen = []
-
-    def spy(rule, fit_on, score_on):
-        seen.append((set(np.rint(fit_on.probabilities[:, 0, 2] * 1e6).astype(int)),
-                     set(np.rint(score_on.probabilities[:, 0, 2] * 1e6).astype(int))))
-        return np.zeros(score_on.labels.shape, int)
-
-    monkeypatch.setattr(ops, "rule_decisions", spy)
-    ops.crossfit(pred, ["headline"], repeats=3)
-    assert len(seen) == 6 and all(not (a & b) and len(a | b) == 60 for a, b in seen)
-
-
-def test_summarize_counts_present_recall_and_precision():
-    labels = np.array([[1, 0], [2, 0], [0, 1], [0, -1]])
-    decisions = np.array([[1, 0], [0, 1], [2, 1], [0, 1]])
-    m = ops.summarize(decisions, labels, NAMES)
-    # present cells: (0,0) (1,0) (2,1) -> called: (0,0) (2,1); calls on valid cells: (0,0) (1,1) (2,0) (2,1)
-    assert m["present_recall"] == pytest.approx(2 / 3) and m["present_precision"] == pytest.approx(2 / 4)

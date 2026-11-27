@@ -16,7 +16,6 @@ BLIP-2, Q-Former, dataset MIMIC-CXR, train loop, task hook.
 
 ```text
 pretraining/train.py  ──► model/lavis/  ──► toàn bộ Stage 1
-inference.py          ──► model/lavis/  ──► đường Vicuna (P9)
 training/stage1/lavis_loader.py ──► model/lavis/  ──► Stage 2 mode Q-Former
 ```
 
@@ -54,7 +53,6 @@ Quyết định phạm vi: [D-007](../../_meta/DECISIONS.md#d-007--độ-sâu-do
 | `models/__init__.py` | 201 | Đăng ký model qua registry | ⚠ có |
 | `data/mimic_cxr_utils.py` | 80 | `view_id()`, `build_study_index()` | ⚠ mới |
 | `data/external_eval.py` | 197 | [📄](data/external_eval.py.doc.md) `datasets.mimic_cxr.external_eval`: CheXpert val → hai bảng MIMIC cho Bảng 4 | ⚠ mới 2026-10-16, opt-in; git-ignored dir → `git add -f` |
-| `data/tta.py` | 69 | [📄](data/tta.py.doc.md) `vis_processor.eval.tta`: một phép affine cố định lúc suy luận (TTA) | ⚠ mới 2026-10-30, opt-in; git-ignored dir → `git add -f` |
 | `data/chexpert_labels.py` | 170 | [📄](data/chexpert_labels.py.doc.md) `blank_label_policy`, ánh xạ nhãn CheXpert, join + cờ hợp lệ | ⚠ mới 2026-09-24; git-ignored dir → `git add -f` |
 | `datasets/builders/base_dataset_builder.py` | 234 | Dựng dataset từ config | upstream |
 | `datasets/datasets/base_dataset.py` | — | `BaseDataset`, `collater` mặc định | upstream |
@@ -79,7 +77,7 @@ Cộng: `configs/*.yaml` (default + BLIP-2 model config), `data/templates/vicuna
 
 ## Entry points
 
-Không có. Được `pretraining/train.py` và `inference.py` dùng.
+Không có. Được `pretraining/train.py` và `training/stage1/lavis_loader.py` dùng (`inference.py` đã xóa 2026-11-27).
 
 ## Dependencies
 
@@ -94,7 +92,7 @@ Ngoài repo: `biovil_t/`, `vision_encoders/`, `mhcac/`, và **`training/evaluati
 
 ## Used by
 
-`pretraining/train.py` (star import) · `inference.py` · `training/stage1/lavis_loader.py`
+`pretraining/train.py` (star import) · `training/stage1/lavis_loader.py`
 · `pretraining/precompute_features.py` · `tests/test_stage1_eval_hook.py`,
 `tests/test_native_independence.py`, `tests/test_blip2_negative_sampling.py`
 

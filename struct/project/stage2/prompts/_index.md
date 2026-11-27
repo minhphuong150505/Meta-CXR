@@ -77,7 +77,7 @@ Không có. Thư viện.
 ## Used by
 
 `training/train_eval_figure9_llm_variants_200.py:146-151, :928` ·
-`training/run_medgemma_qlora.py:410` · `scripts/run_prompt_ablation.py` ·
+`training/run_medgemma_qlora.py:410` · `scripts/run_prompt_ablation.py` (đã xóa 2026-11-27) ·
 `scripts/export_stage2_prompt_samples.py` · `scripts/prompt_length_statistics.py` ·
 `scripts/audit_temporal_targets.py:28` · `tests/test_stage2_prompts.py` (408 dòng)
 
@@ -86,7 +86,7 @@ Không có. Thư viện.
 | File | Vai trò |
 |---|---|
 | `configs/stage2_prompt_v2.yaml` | Prompt v2 — **opt-in** qua `--prompt-config`; bỏ flag → prompt legacy |
-| `configs/prompt_ablation/P1..P9.yaml` | 9 biến thể cho `scripts/run_prompt_ablation.py` |
+| `configs/prompt_ablation/P1..P9.yaml` (đã xóa 2026-11-27) | 9 biến thể cho `scripts/run_prompt_ablation.py` (đã xóa 2026-11-27) |
 
 ## Status
 

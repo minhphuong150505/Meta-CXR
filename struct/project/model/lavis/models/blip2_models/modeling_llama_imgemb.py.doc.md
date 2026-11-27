@@ -16,8 +16,10 @@ cần một `forward` chấp nhận embedding đã tính sẵn ở vị trí ả
 
 ## Role in architecture
 
+⚠ **Từ 2026-11-27 không còn nơi nào dùng file này.** Người dùng duy nhất là demo Vicuna-7B `inference.py` (P9), đã xóa theo D-029. File giữ lại vì nằm trong fork LAVIS.
+
 ```text
-inference.py (P9)
+(đã xóa) inference.py (P9)
    ├─ Blip2Qformer  → image embedding
    └─ LlamaForCausalLM (file này) + LoRA adapter  → text báo cáo
 ```
@@ -52,8 +54,8 @@ Không.
 
 ## Main classes
 
-Kiến trúc Llama chuẩn đã sửa: `LlamaForCausalLM` là điểm vào chính (được
-`inference.py:29` import). ⚠ Phần lớn là code upstream HuggingFace/LAVIS.
+Kiến trúc Llama chuẩn đã sửa: `LlamaForCausalLM` là điểm vào chính (trước đây
+`inference.py` import, file đó đã xóa 2026-11-27). ⚠ Phần lớn là code upstream HuggingFace/LAVIS.
 
 Các đường chính: [`LlamaModel.forward`](modeling_llama_imgemb.py.methods/LlamaModel/forward.md)
 và [`LlamaForCausalLM.forward`](modeling_llama_imgemb.py.methods/LlamaForCausalLM/forward.md).
@@ -64,9 +66,7 @@ và [`LlamaForCausalLM.forward`](modeling_llama_imgemb.py.methods/LlamaForCausal
 
 ## Called by
 
-`inference.py:29` — `from model.lavis.models.blip2_models.modeling_llama_imgemb import LlamaForCausalLM`
-
-Không nơi nào khác trong repo import file này.
+Không còn nơi nào trong repo import file này (`inference.py` đã xóa 2026-11-27).
 
 ## Data flow
 
@@ -82,8 +82,7 @@ prompt text ─► token ids ───┤
 
 ## Side effects
 
-Cấp phát Vicuna-7B trên GPU. ⚠ `inference.py:312` dùng `device_map={"": 0}` —
-ghim cứng GPU 0 ([I4](../../../../_meta/LEGACY_AND_OPTIONAL.md#-potential-issues--ghi-nhận-không-sửa)).
+Cấp phát Vicuna-7B trên GPU khi được gọi (hiện không có caller).
 
 ## Error / edge cases
 
@@ -96,22 +95,21 @@ Không có test nào cover file này.
 ## Related documentation
 
 [PIPELINES.md → P9](../../../../_meta/PIPELINES.md#p9--gradio-demo-vicuna-7b) ·
-[`inference.py`](../../../../inference.py.doc.md) ·
+`inference.py` (đã xóa 2026-11-27) ·
 [D-002](../../../../_meta/DECISIONS.md#d-002--đường-vicuna-7b-legacy-vẫn-là-demo-active)
 
 ## Developer notes
 
 1. **Đây không phải đường Stage 2.** Đừng nhầm cơ chế tiêm ảnh ở đây với
    `SoftTokenEmbeddingWrapper` — chúng khác nhau.
-2. Nếu migrate demo sang MedGemma, file này và `inference.py` cùng bị ảnh hưởng,
-   và `checkpoints/` (LoRA Vicuna) trở nên vô dụng.
+2. Demo `inference.py` đã xóa 2026-11-27; file này là code chết trong fork LAVIS.
 3. **Không có test.** Sửa file này không có lưới an toàn nào.
 4. ⚠ Nhiều nội dung chưa được đọc kỹ trong lần audit này — mô tả ở đây dựa trên
-   chữ ký, import và vai trò trong `inference.py`. Kiểm code trước khi dựa vào.
+   chữ ký, import và vai trò cũ trong `inference.py`. Kiểm code trước khi dựa vào.
 
 ## Source relationships
 
 - **Parent:** [`model/lavis/_index.md`](../../_index.md)
-- **Related:** [`inference.py`](../../../../inference.py.doc.md) · [`blip2_qformer.py`](blip2_qformer.py.doc.md)
+- **Related:** [`blip2_qformer.py`](blip2_qformer.py.doc.md)
 
 ← [HOME](../../../../../HOME.md)

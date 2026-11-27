@@ -28,8 +28,7 @@ aux raw [B,N,P,D] ──────┘
 
 Một module **cho mỗi encoder bật**, vì mỗi encoder có `D` khác nhau.
 
-> 2026-10-26: `model.view_fusion.mode: late` không dựng module này; xem
-> [late_view_pool.py](late_view_pool.py.doc.md). Vắng key = `early` = module này.
+> `model.view_fusion.mode` (late / tokens) đã gỡ 2026-11-27: module này là đường đa view duy nhất.
 
 ## Status
 
@@ -69,16 +68,11 @@ model:
   view_fusion:
     num_heads: 8        ffn_ratio: 4      num_blocks: 1
     num_view_types: 4   dropout: 0.1      p_view_drop: 0.15
-    detach_aux: false   # từ 2026-10-09, cờ theo EVOKE
 ```
 
-⚠ `from_config` đọc **tường minh** bảy key này (`Blip2Qformer.from_config`, khối `view_fusion_cfg`).
+⚠ `from_config` đọc **tường minh** sáu key này (`Blip2Qformer.from_config`, khối `view_fusion_cfg`).
 
-**`detach_aux`** (thêm 2026-10-09): `true` thì `aux.detach()` trước khi cộng
-view embedding, đúng như code EVOKE (arXiv 2411.10224,
-`multiview_image_embed.detach()`): ảnh phụ chỉ học qua MPC, không qua fusion.
-Chỉ đặc trưng aux bị detach — `view_emb` vẫn train. Output forward giống hệt,
-chỉ gradient khác. Mặc định `false` = mọi run đã ghi nhận. Full run 2026-10-10 (cùng `mpc_temperature: 0.5`) kém mặc định trên test; giữ `false`.
+**`detach_aux`** (2026-10-09, theo EVOKE) đã gỡ 2026-11-27: full run 2026-10-10 kém mặc định; khóa giờ bị từ chối.
 Thêm key mới mà quên thêm dòng đọc = key không có hiệu lực.
 
 ## Main classes

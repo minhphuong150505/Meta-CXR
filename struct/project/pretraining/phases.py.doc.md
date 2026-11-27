@@ -24,13 +24,8 @@ một pha như cũ; có `run.phases` mà thiếu `run.phase` → lỗi.
 `init_from` chỉ nhận `phase` / `path` / `skip` / `ignore` và phải có `phase` hoặc `path` (khóa lạ
 → lỗi; một tiền tố ở cả `skip` lẫn `ignore` → lỗi); `PhaseSpec.init_skip` / `init_ignore`.
 `ignore` có vì smoke tích hợp 2026-10-15: checkpoint 1c có 18 tensor `mpc_heads.*`, mà model
-`phase1q` (`lambda_mpc 0`) không dựng → trình nạp báo "tensor lạ".
+`phase1q` (`lambda_mpc 0`, đã gỡ 2026-11-27) không dựng → trình nạp báo "tensor lạ". Cơ chế giữ lại.
 
-**`phase1q` (2026-10-15, opt-in, không nằm trong chuỗi của `run_stage1_phases.sh`):** train lại
-CHỈ META-Former trên một checkpoint đã xong, đóng băng — xem
-[`mimic_cxr_full.yaml`](configs/mimic_cxr_full.yaml.doc.md) và
-`docs/handoff/PLAN-2026-10-15-qformer-refit.md`. Vì `keep` là hợp các `trainable`, checkpoint của
-1q KHÔNG chứa block encoder mà 1c mở bằng `encoder_finetune` → chỉ dùng qua
-[`scripts/merge_qformer_refit.py`](../scripts/merge_qformer_refit.py.doc.md).
+**`phase1q`** (2026-10-15) và `scripts/merge_qformer_refit.py` đã gỡ 2026-11-27 (D-029).
 
 Test: `tests/test_phases.py`.

@@ -306,13 +306,11 @@ Tra ngược cho các thành phần hay bị sửa:
 | `ClassificationLoss.__call__` | `Blip2Qformer.forward` (`:913` student, `:933` teacher) |
 | `soft_target_kl_loss` | `Blip2Qformer.forward` (`:936`) |
 | `MIMIC_CXR_Dataset` | `pretraining/train.py:main`, `training/stage1/lavis_loader.py:make_stage1_loader` |
-| `PromptBuilder` | `fig9.VariantLLM` (`:928`), `scripts/run_prompt_ablation.py`, `export_stage2_prompt_samples.py`, `prompt_length_statistics.py` |
+| `PromptBuilder` | `fig9.VariantLLM`, `export_stage2_prompt_samples.py`, `prompt_length_statistics.py` (`run_prompt_ablation.py` đã xóa 2026-11-27) |
 | `SoftTokenEmbeddingWrapper` | `fig9` (`:100` / `:108`, dual-import shim) |
-| `dataio.manifest.build_records` | `run_medgemma_qlora.py:27`, `fig9:116/122`, `medgemma_inference/run_pretrained_findings.py:33` |
+| `dataio.manifest.build_records` | `run_medgemma_qlora.py:27`, `fig9:116/122` |
 | `training.torch_io.load_torch_checkpoint` | `stage1/lavis_loader.py:32`, `trainer/checkpointing.py:23`, `fig9:102/113` |
 | `safety.claims.*` | `training/evaluation/error_analysis.py:30` **(caller duy nhất ngoài test)** |
-| `runtime.budget.BudgetState` | `medgemma_inference/runner.py:23` |
-| `runtime.device.plan_device` | `model/pretrained_medgemma/findings_loader.py:24` |
 | `training/evaluation/classification_metrics` | `scripts/evaluate_stage1.py`, và **`tasks/image_text_pretrain.py:223` (import trễ trong hàm)** |
 | `training/evaluation/explanation_metrics` | `scripts/evaluate_explanation.py` |
 | `mhcac.explanation.grad_cam` / `logit_difference_squared` | `Blip2Qformer.forward` qua `ExplanationLoss`; `scripts/evaluate_explanation.py` trực tiếp |

@@ -27,7 +27,9 @@ from training.pipeline_modes import (
 
 REPO = Path(__file__).resolve().parents[1]
 FIG9 = REPO / "training" / "train_eval_figure9_llm_variants_200.py"
-REFERENCE = REPO / "inference.py"
+# The reference implementation's inference.py was removed from this repo on
+# 2026-11-27; its instruction text is kept verbatim as a fixture.
+REFERENCE = REPO / "tests" / "fixtures" / "reference_paper_instruction.txt"
 
 GROUPS = {
     "positive": ["Edema", "Pleural Effusion"],
@@ -56,16 +58,8 @@ def _prompt_namespace() -> dict:
 
 
 def _reference_instruction() -> str:
-    """The instruction body the reference ``inference.py`` shows the user."""
-    tree = ast.parse(REFERENCE.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.JoinedStr) and all(
-            isinstance(v, ast.Constant) for v in node.values
-        ):
-            text = "".join(v.value for v in node.values)
-            if text.startswith("Act as an expert radiologist"):
-                return text
-    raise AssertionError("reference instruction not found in inference.py")
+    """The instruction body the reference ``inference.py`` showed the user."""
+    return REFERENCE.read_text(encoding="utf-8")
 
 
 def test_paper_style_is_byte_identical_to_the_reference_implementation():

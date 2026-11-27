@@ -19,10 +19,9 @@ swin/raddino tùy model), nên phải có module riêng.
 ## Constructor (`:87`)
 ```python
 ViewFusionModule(dim, num_heads=8, ffn_ratio=4, num_view_types=4,
-                 num_blocks=1, dropout=0.1, p_view_drop=0.2, detach_aux=False)
+                 num_blocks=1, dropout=0.1, p_view_drop=0.2)
 ```
-`detach_aux=True` cắt gradient từ fusion vào đặc trưng aux (theo EVOKE);
-view embedding vẫn nhận gradient. Mặc định tắt.
+(`detach_aux` đã gỡ 2026-11-27.)
 ⚠ Prod đặt `p_view_drop: 0.15` (không phải default 0.2).
 
 `num_view_types=4` → embedding cho PA / AP / LATERAL / UNKNOWN.
@@ -54,14 +53,14 @@ Nếu model luôn có aux view lúc train, nó sẽ **phụ thuộc** vào aux. 
 aux buộc anchor tự đứng vững — quan trọng vì nhiều study thật chỉ có một view.
 
 ## Config dependencies
-`model.view_fusion.{num_heads, ffn_ratio, num_blocks, num_view_types, dropout, p_view_drop, detach_aux}`
+`model.view_fusion.{num_heads, ffn_ratio, num_blocks, num_view_types, dropout, p_view_drop}`
 — **7 key này được `from_config` đọc tường minh**.
 
 ## Called by
 `Blip2Qformer._fuse:465` — một lần cho mỗi encoder bật.
 
 ## Tests
-`tests/test_view_fusion.py`, `tests/test_evoke_multiview_flags.py` (`detach_aux`)
+`tests/test_view_fusion.py`
 
 ## Modification risk
 Thêm key config mới mà quên thêm dòng đọc ở `from_config` → key không có hiệu lực,

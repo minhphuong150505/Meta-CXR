@@ -28,10 +28,6 @@ Dựng 6 khối con theo đúng thứ tự phụ thuộc, và đăng ký ITC que
 | `freeze_vit` | `True` | |
 | `multi_view` | `False` | ⚠ prod `True` |
 | `lambda_*` (11 objective cũ) | xem code | |
-| `qformer_input_norm` | `None` | 2026-10-15: `"per_stream"` dựng `QformerInputNorm` NGAY SAU `shared_visual_projector` |
-| `lambda_query_diversity` | `0.0` | 2026-10-15: > 0 cần một trong `lambda_itc/itm/lm` > 0, và (lần 2) `qformer_dropout: 0.0` + `feature_mask_ratio: 0.0` (`assert_noise_free_query_path`), không thì lỗi |
-| `eval_mode_modules` | `()` | 2026-10-15: kiểm ở cuối `__init__` (mỗi tên phải là submodule); `train()` giữ chúng ở eval |
-| `qformer_dropout` | `None` | 2026-10-15 (lần 2): `None` = dropout 0,1 của BERT; số trong [0, 1) đặt `p` cho mọi lớp dropout của Q-Former ngay sau khi dựng, module vẫn ở train (giữ gradient checkpointing) |
 | `lambda_explanation` | `0.0` | Gate cứng: zero không dựng `ExplanationLoss` |
 | `explanation_cfg` | `None` | `top_k`, warmup và danh sách stream |
 | `itc_queue_size` | 1024 | |
@@ -94,21 +90,6 @@ Không encoder nào bật → `ValueError` (`:174`) · `itc_queue_size < 0` → 
 | Đổi `VISUAL_DIM` | Kéo theo projector, MHCAC, Q-Former, và mọi checkpoint cũ |
 | Đổi `default_class_weights` | Đổi cân bằng loss; giá trị hiện tại tính từ cohort train thật |
 
-## `view_fusion.mode` — 2026-10-26
+## `view_fusion.mode` — đã gỡ 2026-11-27 (D-029); khóa liên quan bị `reject_removed_experiment_keys` từ chối.
 
-`resolve_view_fusion_mode` (mhcac/late_view_pool.py) đọc `view_fusion_cfg["mode"]`
-(vắng = `early`) và từ chối `late` khi `multi_view: false`, `lambda_mpc > 0`,
-`lambda_view_consistency > 0` hoặc explanation loss bật. `late` dựng
-`self.late_view_pool = LateViewPooling(14, 3, num_view_types)` và KHÔNG dựng
-`view_fusion`, `stream_adapters`, `mpc_heads`. `early` dựng như trước, không tiêu thêm
-RNG. `late_anchor_weight` (0.5) cũng được pop khỏi `view_fusion_cfg`, và
-`late_detach_aux` (vắng = `False`, 2026-10-26) — bật mà không ở `late` thì `ValueError`
-(early fusion có `detach_aux` riêng). Plan: `docs/handoff/PLAN-2026-10-26-late-fusion-detach-aux.md`.
-`late_aux_head` (vắng = `False`, 2026-10-27) — bật mà không ở `late`, hoặc cùng `late_detach_aux`, thì
-`ValueError`; bật thì ngay sau `self.mhcac` dựng `self.mhcac_aux = copy.deepcopy(self.mhcac)` (tắt: `None`,
-không tiêu RNG, state dict không đổi). Plan: `docs/handoff/PLAN-2026-10-27-late-aux-head.md`.
-`view_fusion.mode: tokens` (2026-10-27): `self.aux_tokens_on = multi_view and mode == "tokens"`; không dựng
-module fusion nào (nhánh `elif self.aux_tokens_on:` chỉ log), và MHCAC được dựng với
-`aux_view_tokens=self.aux_tokens_on, num_view_types=view_fusion.num_view_types` — tắt thì MHCAC không
-có tham số mới và không tiêu RNG. `late_detach_aux` / `late_aux_head` vẫn đòi `late`, nên bị từ chối ở
-`tokens`. Plan: `docs/handoff/PLAN-2026-10-27-aux-tokens-mhcac.md`.
+Chỉ còn đường early fusion (`view_fusion`, `stream_adapters`, `mpc_heads` khi `multi_view: true`). `late_view_pool`, `mhcac_aux`, `aux_tokens_on` và tham số `aux_view_tokens` của MHCAC không còn.

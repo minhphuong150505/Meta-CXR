@@ -245,11 +245,7 @@ class ExpertTokenCrossAttention(nn.Module):
         text_embeddings=None,
         text_attention_mask=None,
         text_row_mask=None,
-        image_key_padding_mask=None,
     ):
-        """``image_key_padding_mask`` [B, K] (True = ignore) masks image keys; only
-        ``model.view_fusion.mode: tokens`` passes one (padded aux-view tokens), and
-        ``None`` is the historical call."""
         use_text = text_embeddings is not None and self.expert_to_text_attention is not None
         if self.layer_order == "self_first":
             # Paper, Eqs. (2), (4), (5): self-attention among expert tokens,
@@ -264,7 +260,6 @@ class ExpertTokenCrossAttention(nn.Module):
                 )
             expert_image, attention_weights = self.expert_to_image_attention(
                 query=expert_refined, key=image_patches, value=image_patches,
-                key_padding_mask=image_key_padding_mask,
             )
             expert_image = self.norm_expert_image(expert_image + expert_refined)
             expert_image = self.norm_ff(self.ffn_expert(expert_image) + expert_image)
@@ -274,7 +269,7 @@ class ExpertTokenCrossAttention(nn.Module):
             expert_text = self._attend_text(
                 expert_tokens, text_embeddings, text_attention_mask, text_row_mask
             )
-            return self._self_then_image(expert_text, image_patches, image_key_padding_mask)
+            return self._self_then_image(expert_text, image_patches)
 
         if text_embeddings is not None and self.expert_to_text_attention is not None:
             # Report text is privileged teacher information.  Whole-report
@@ -305,9 +300,9 @@ class ExpertTokenCrossAttention(nn.Module):
             # In inference mode or when text_embeddings is unavailable, rely on image patches alone
             expert_text = expert_tokens
         
-        return self._self_then_image(expert_text, image_patches, image_key_padding_mask)
+        return self._self_then_image(expert_text, image_patches)
 
-    def _self_then_image(self, expert_text, image_patches, image_key_padding_mask=None):
+    def _self_then_image(self, expert_text, image_patches):
         """Historical order, after the text step: self-attention, then image."""
         # Self-attention among expert tokens
         expert_refined, _ = self.self_attention(
@@ -318,7 +313,6 @@ class ExpertTokenCrossAttention(nn.Module):
         # Expert-to-ViT cross-attention
         expert_image, attention_weights = self.expert_to_image_attention(
             query=expert_refined, key=image_patches, value=image_patches,
-            key_padding_mask=image_key_padding_mask,
         )
         expert_image = self.norm_expert_image(expert_image + expert_refined)  # Residual connection
         expert_image = self.norm_ff(self.ffn_expert(expert_image) + expert_image)  # Feed-forward layer
@@ -347,8 +341,6 @@ class AbnormalityClassificationModel(nn.Module):
         stream_layouts=None,
         layer_order="text_first",
         text_mask_mode="report",
-        aux_view_tokens=False,
-        num_view_types=4,
     ):
         """``stream_layouts`` maps encoder name -> :class:`StreamLayout`.
 
@@ -363,12 +355,6 @@ class AbnormalityClassificationModel(nn.Module):
         and shares one positional encoding, which is the historical behaviour.
         The caller passes ``None`` whenever it cannot describe *every* enabled
         encoder, so a partially-described model can never be built.
-
-        ``aux_view_tokens`` (``model.view_fusion.mode: tokens``, 2026-10-27) builds
-        ``aux_pos_enc`` (one per stream, aux-view grid positions are different
-        anatomy) and ``aux_view_emb`` (view type of the aux view), created last so
-        every other configuration keeps its RNG order and state-dict keys. Needs
-        ``stream_layouts``.
         """
         super(AbnormalityClassificationModel, self).__init__()
 
@@ -489,62 +475,6 @@ class AbnormalityClassificationModel(nn.Module):
         self.capture_streams = False
         self._last_cam_streams = None
 
-        self.aux_view_tokens = bool(aux_view_tokens)
-        if self.aux_view_tokens:
-            if not self.stream_layouts:
-                raise ValueError(
-                    "aux_view_tokens (model.view_fusion.mode: tokens) needs native "
-                    "stream_layouts for every enabled encoder"
-                )
-            self.aux_pos_enc = nn.ModuleDict(
-                {
-                    name: TrainablePositionalEncoding(
-                        num_patches=layout.num_tokens, embed_dim=embed_dim
-                    )
-                    for name, layout in self.stream_layouts.items()
-                }
-            )
-            self.aux_view_emb = nn.Embedding(int(num_view_types), embed_dim)
-            nn.init.normal_(self.aux_view_emb.weight, std=0.02)
-
-    def _aux_image_patches(self, aux_visual_tokens, aux_slot_mask, aux_view_ids, batch_size):
-        """Aux-view key/value tokens and their key padding mask (mode ``tokens``).
-
-        ``aux_visual_tokens`` is a ``SharedVisualTokens`` over ``B * N`` aux slots
-        (padded slots may hold anything; their keys are masked), ``aux_slot_mask``
-        [B, N] marks the real slots and ``aux_view_ids`` [B, N] their view type.
-        Returns ``[B, N * K, D]`` patches and a ``[B, N * K]`` mask (True = ignore).
-        """
-        if not self.aux_view_tokens:
-            raise ValueError("aux view tokens given to an MHCAC built without aux_view_tokens")
-        slots = aux_slot_mask.shape[1]
-        aux_proj, _, _ = self.embedding_alignment(visual_tokens=aux_visual_tokens.tokens)
-        streams = []
-        for name, span in sorted(aux_visual_tokens.spans.items(), key=lambda item: item[1].start):
-            layout = self.stream_layouts.get(name)
-            if layout is None:
-                raise ValueError(f"aux stream {name!r} has no native stream layout")
-            stream = aux_proj[:, span, :]
-            if stream.size(1) != layout.num_tokens:
-                raise ValueError(
-                    f"aux stream {name!r} carries {stream.size(1)} tokens but its "
-                    f"layout declares {layout.num_tokens}"
-                )
-            streams.append(self.aux_pos_enc[name](stream))
-        patches = torch.cat(streams, dim=1)  # [B * N, K, D]
-        view_ids = (
-            torch.zeros_like(aux_slot_mask, dtype=torch.long)
-            if aux_view_ids is None
-            else aux_view_ids.to(device=patches.device, dtype=torch.long).clamp(min=0)
-        )
-        patches = patches + self.aux_view_emb(view_ids.reshape(-1)).unsqueeze(1).to(patches.dtype)
-        tokens_per_view = patches.size(1)
-        patches = patches.reshape(batch_size, slots * tokens_per_view, -1)
-        key_mask = (~aux_slot_mask.to(device=patches.device, dtype=torch.bool)).repeat_interleave(
-            tokens_per_view, dim=1
-        )
-        return patches, key_mask
-
     def _resize_patch_sequence(self, patches):
         if patches is None:
             return None
@@ -590,9 +520,6 @@ class AbnormalityClassificationModel(nn.Module):
         labels=None,
         sample_mask=None,
         text_row_mask=None,
-        aux_visual_tokens=None,
-        aux_slot_mask=None,
-        aux_view_ids=None,
     ):
         """Classify from the shared visual tokens produced upstream.
 
@@ -604,13 +531,6 @@ class AbnormalityClassificationModel(nn.Module):
         encoder its own within-stream positional encoding and its own resize to
         ``target_patch_count``; the projection to ``embed_dim`` happens once, on the
         merged tensor, so MHCAC and META-Former share one visual representation.
-
-        ``aux_visual_tokens`` / ``aux_slot_mask`` / ``aux_view_ids``
-        (``model.view_fusion.mode: tokens``): the aux views' tokens are appended to
-        the image key axis, so each expert token can attend to either view. A study
-        without a real aux view has those keys masked (zero attention weight); a
-        batch without any real aux view runs exactly the code path used without
-        these arguments.
         """
         self._last_cam_streams = {} if self.capture_streams else None
         tokens = shared_visual_tokens.tokens
@@ -700,27 +620,6 @@ class AbnormalityClassificationModel(nn.Module):
             raise ValueError("No image stream was provided to MHCAC.")
         image_patches = torch.cat(image_streams, dim=1)
 
-        image_key_mask = None
-        if (
-            aux_visual_tokens is not None
-            and aux_slot_mask is not None
-            and bool(aux_slot_mask.any())
-        ):
-            aux_patches, aux_key_mask = self._aux_image_patches(
-                aux_visual_tokens, aux_slot_mask, aux_view_ids, batch_size
-            )
-            image_key_mask = torch.cat(
-                [
-                    torch.zeros(
-                        batch_size, image_patches.size(1),
-                        dtype=torch.bool, device=image_patches.device,
-                    ),
-                    aux_key_mask,
-                ],
-                dim=1,
-            )
-            image_patches = torch.cat([image_patches, aux_patches.to(image_patches.dtype)], dim=1)
-
         # Pass through multiple attention layers
         attention_weights_list = []
         for i, layer in enumerate(self.attention_layers):
@@ -731,7 +630,6 @@ class AbnormalityClassificationModel(nn.Module):
                     txt_proj,
                     text_attention_mask=text_attention_mask,
                     text_row_mask=text_row_mask,
-                    image_key_padding_mask=image_key_mask,
                 )
             elif i == self.num_layers - 2: #last before layer
                 normalized_expert_tokens = self.expert_token_norm(self.expert_tokens)
@@ -739,12 +637,10 @@ class AbnormalityClassificationModel(nn.Module):
                 expert_tokens = expert_tokens + normalized_expert_tokens.unsqueeze(0).expand(batch_size, -1, -1)
                 expert_tokens, attention_weights = layer(
                     expert_tokens, image_patches, text_embeddings=None,
-                    image_key_padding_mask=image_key_mask,
                 )
             else:
                 expert_tokens, attention_weights = layer(
                     expert_tokens, image_patches, text_embeddings=None,
-                    image_key_padding_mask=image_key_mask,
                 )
                 
             attention_weights_list.append(attention_weights)
@@ -754,7 +650,6 @@ class AbnormalityClassificationModel(nn.Module):
             attention_weights_list,
             labels,
             sample_mask=sample_mask,
-            attention_key_mask=image_key_mask,
         )
         
         # Classification for each abnormality

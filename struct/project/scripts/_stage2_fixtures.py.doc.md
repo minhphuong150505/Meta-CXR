@@ -22,7 +22,7 @@ to end. Any numbers produced from them are illustrative, never model results."*
 
 ## Calls / Called by
 Gọi: stdlib.
-Được gọi: `scripts/run_prompt_ablation.py`, `export_stage2_prompt_samples.py`,
+Được gọi: `scripts/run_prompt_ablation.py` (đã xóa 2026-11-27), `export_stage2_prompt_samples.py`,
 `prompt_length_statistics.py` (khi không có dữ liệu thật).
 
 ## Side effects

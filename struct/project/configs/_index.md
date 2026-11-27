@@ -22,8 +22,6 @@ Siêu tham số Stage 1 nằm ở [`pretraining/configs/`](../pretraining/config
 | `env_config.yaml.example` | [📄](env_config.yaml.example.doc.md) | ✅ ★ | Mẫu; copy thành `env_config.yaml` |
 | `env_config.yaml` | — | ✅ | **git-ignored** ở checkout này |
 | `stage2_prompt_v2.yaml` | [📄](stage2_prompt_v2.yaml.doc.md) | ✅ | Prompt v2 — **opt-in** |
-| `experiments/pretrained_medgemma_findings_first.yaml` | [📄](experiments/pretrained_medgemma_findings_first.yaml.doc.md) | ✅ | Baseline P8 |
-| `prompt_ablation/P1..P9.yaml` | [📄](prompt_ablation/_index.md) | 🧪 | 9 biến thể prompt |
 | `stage1_cutpoints/run_20261005_paper.json` | [threshold_calibration](../training/evaluation/threshold_calibration.py.doc.md) | ✅ ★ | Hai ngưỡng/bệnh fit trên val (1.808) cho model Stage 1 báo cáo — luật của **số chính** từ 2026-10-10. Chỉ 28 số thực + metadata, không có dữ liệu bệnh nhân. Ghi bởi `calibrate_thresholds.py --rule cutpoints`, đọc bởi `evaluate_stage1.py --cutpoints` |
 
 ## `env_config.yaml` — bắt buộc trước mọi thứ
@@ -50,7 +48,7 @@ chứa **trực tiếp** `files/`), `paths.processed_{train,val,test}_csv`,
 | P5 visual primary | P6 qformer visual only | P7 confidence bins | P8 compact normal |
 | P9 full negative control | | | |
 
-Chạy bằng `scripts/run_prompt_ablation.py` — **dry run**, không load model.
+Chạy bằng `scripts/run_prompt_ablation.py` (đã xóa 2026-11-27) — **dry run**, không load model.
 
 ## Main responsibilities
 
@@ -69,7 +67,7 @@ Không phải entrypoint.
 ## Used by
 
 `local_config.py` · `training/run_medgemma_qlora.py:410` (`--prompt-config`) ·
-`scripts/*` (prompt) · `medgemma_inference/config.py` (validate `experiments/*.yaml`)
+`scripts/*` (prompt) · `medgemma_inference/config.py` (đã xóa 2026-11-27) (validate `experiments/*.yaml`)
 
 ## Status
 
@@ -80,7 +78,7 @@ Không phải entrypoint.
 
 ## Notes
 
-- ⚠ **`medgemma_inference/config.py` chỉ validate `configs/experiments/*.yaml`.**
+- ⚠ **`medgemma_inference/config.py` (đã xóa 2026-11-27) chỉ validate `configs/experiments/*.yaml`.**
   Config Stage 1 dưới `pretraining/configs/` là namespace riêng, không bị parse ở
   đó — `learning_rate`, `optimizer`, `warmup_steps` ở đó vẫn hợp lệ.
 

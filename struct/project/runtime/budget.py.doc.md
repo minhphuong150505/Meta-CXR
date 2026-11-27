@@ -32,7 +32,7 @@ Không có nó, một run bị restart 10 lần có thể tiêu 10× ngân sách
 
 ## Calls / Called by
 Gọi: stdlib (`time`).
-Được gọi: `medgemma_inference/runner.py:23,159`; `tests/test_pretrained_findings.py:39`.
+Được gọi: `medgemma_inference/runner.py:23,159` (đã xóa 2026-11-27); `tests/test_pretrained_findings.py:39` (đã xóa 2026-11-27).
 
 ## Side effects
 Không (đọc đồng hồ).
@@ -41,7 +41,7 @@ Không (đọc đồng hồ).
 Vượt trần → `BudgetExceeded` raise, run dừng.
 
 ## Related tests
-`tests/test_pretrained_findings.py`
+`tests/test_pretrained_findings.py` (đã xóa 2026-11-27)
 
 ## Developer notes
 Nếu thêm ngân sách cho Stage 1/Stage 2, **dùng lại module này** — đặc biệt là ngữ

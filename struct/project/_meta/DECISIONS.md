@@ -1392,3 +1392,58 @@ góc chụp như lúc dựng record Stage 2 (`eval_mode_modules: [view_fusion]`)
 chỉ dùng qua `scripts/merge_qformer_refit.py`, file gộp từ chối nếu tensor nào ngoài Q-Former lệch.
 Stage 2 dựng mô hình với `--stage1-options model.qformer_input_norm=per_stream`. Khác thứ tự bài
 báo (Q-Former train sau MHCAC). Cổng và quy tắc: `docs/handoff/PLAN-2026-10-15-qformer-refit.md`.
+
+**Cập nhật 2026-11-27:** toàn bộ mã của D-028 (pha `phase1q`, `qformer_input_norm`,
+`lambda_query_diversity`, `qformer_dropout`, `eval_mode_modules`,
+`scripts/merge_qformer_refit.py`, `vision_encoders/qformer_inputs.py`) đã bị gỡ — xem D-029.
+
+## D-029 — Dọn repo về pipeline chính OFF + residual R1 (2026-11-27)
+
+Status: **Confirmed (user chọn từng nhóm, 2026-11-27).** Chưa commit lúc viết; chưa chạy GPU sau khi gỡ.
+
+**Quyết định.** User chọn OFF (`run_20261024_nomv`) + residual lateral R1 làm pipeline chính và yêu cầu xóa
+những gì không liên quan, xác nhận từng nhóm. Kết quả số đo của mọi nhánh bị gỡ vẫn nằm trong `CLAUDE.md`
+và các `docs/handoff/PLAN-*.md`; mã thì chỉ còn trong git history.
+
+**Đã gỡ.**
+
+- *Nhóm 1 — script probe / chẩn đoán đã dùng xong:* `check_itc_gate`, `evaluate_stage1_cutpoints`,
+  `compare_stage1_operating_points`, `diagnose_stream_scale`, `diagnose_qformer_collapse`,
+  `probe_soft_tokens{,_cached}`, `probe_image_features`, `retrieval_report_baselines`,
+  `embed_{medgemma_images,cxr_encoders}`, `prior_report_baseline`, `biovil_prior_{features,fit}`,
+  `run_prompt_ablation` (+ `configs/prompt_ablation/`), `mbr_select_stage2`, `merge_qformer_refit`.
+- *Nhóm 3 — đường cũ:* `inference.py`/`inference.sh`/Docker (demo Vicuna-7B), `medgemma_inference/`,
+  `model/pretrained_medgemma/`, `configs/experiments/pretrained_medgemma_findings_first.yaml`, `utils/`,
+  `threshold.json`, `mhcac/mhcac.py`, `mhcac_2..11.py`, bản sao `vision_encoders/biovil_t/`.
+- *Nhóm 4 — nhánh opt-in đã thất bại:* late fusion (`view_fusion.mode: late`, `late_*`,
+  `mhcac/late_view_pool.py`), aux token trong MHCAC (`mode: tokens`), `detach_aux`, `mpc_temperature`,
+  ASL (`mhcac.asymmetric_loss`), TTA (`vis_processor.eval.tta`, `model/lavis/data/tta.py`), refit Q-Former
+  (D-028: `phase1q`, `qformer_input_norm`, `lambda_query_diversity`, `qformer_dropout`, `eval_mode_modules`,
+  `vision_encoders/qformer_inputs.py`). Phía Stage 2: finding token học được
+  (`--finding-tokens`, `training/medgemma/finding_tokens.py`), `--finding-feature-ablation`,
+  `--soft-token-ablation`, `--eval-cues oracle`, lấy mẫu MBR (`--num-samples/--temperature/--top-p/--top-k`,
+  `VariantLLM.generate_candidates`).
+- *Docs:* 23 biên bản audit/baseline/merge/research cũ trong `docs/`.
+
+**Giữ.** XAI (nhóm 2), mã View Fusion ON (nhóm 5), `oracle_cues.py` (`--train-cues oracle_mix` là công thức
+đã báo cáo), `class_logits` trong record Stage 2 (R1 `cue_override` đọc nó).
+
+**Bất biến.**
+
+- Khóa config đã gỡ bị TỪ CHỐI kèm giải thích (`pretraining.retired_keys.reject_removed_experiment_keys`,
+  `tests/test_removed_experiment_keys.py`), tách khỏi danh sách D-023 mà `test_three_class_only` quét.
+  `vis_processor.*.tta` bị `ReportDataset` từ chối; checkpoint mang khóa `qformer_input_norm.*` bị
+  `lavis_loader` từ chối.
+- Khi tắt, mọi nhánh bị gỡ đều bit-identical với đường mặc định, nên đường OFF không đổi về toán học.
+  Manifest/meta của adapter Stage 2 vẫn ghi `finding_tokens: "off"` và `num_finding_tokens: 0` như hằng
+  số, và `template_hash` không đổi (nhánh tắt chưa bao giờ thêm gì vào payload), nên cache đánh giá
+  và adapter cũ vẫn khớp danh tính.
+- ⚠ `pretraining/configs/mimic_cxr_full.yaml` ĐÃ SỬA (bỏ `phase1q`, `mpc_temperature`, `detach_aux`,
+  `late_view_pool` trong danh sách trainable) → đổi size/mtime → đổi `cohort_id` Stage 2 và lượt rút
+  `oracle_mix` ở checkout nào pull nó (bẫy mtime, xem `CLAUDE.md`). User chấp nhận (phương án a).
+
+Bộ test CPU ở máy phát triển: 21 lỗi nền (thiếu torchvision/transformers).
+
+**Kiểm trên máy train 2026-11-27** (`~/d029check_20261127/`, clone `53b86b2`): bộ test 1.244 đạt / 0 lỗi / 2 bỏ qua;
+OFF val evaluate-only trùng npz đã lưu từng bit (6/6 mảng); adapter P2 sinh lại 20 study test của G0 2026-10-28
+trùng 20/20 từng chữ (cần `env_config` trỏ manifest v3 cho Stage 2).

@@ -483,9 +483,8 @@ model:
     # or the ramp silently covers half an epoch instead of one. Rescaled back
     # 2026-08-19 with the batch, when the VL block went to 0.0.
     mpc_warmup_steps: 13922
-    # MPC softmax temperature. 0.07 reproduces every recorded run; EVOKE uses
-    # 0.5 (`region_temp`, τ1 in the paper). Measured 2026-10-10 (with detach_aux): worse; keep 0.07.
-    mpc_temperature: 0.07
+    # MPC softmax temperature is fixed at 0.07 (every recorded run); the
+    # mpc_temperature knob was removed 2026-11-27 (EVOKE's 0.5 lost, 2026-10-10).
     lambda_view_consistency: 0.05
     # TWO explanation terms, split 2026-08-16 because they are not the same
     # kind of evidence and must not carry the same weight.
@@ -652,17 +651,8 @@ model:
     num_view_types: 4
     dropout: 0.1
     p_view_drop: 0.15
-    # true = detach the auxiliary-view K/V inside fusion, as EVOKE's released
-    # code does (arXiv 2411.10224): aux views then learn only through MPC.
-    # false reproduces every recorded run. Measured 2026-10-10: true together
-    # with mpc_temperature 0.5 LOSES to the defaults on test -- keep false.
-    detach_aux: false
-    # mode (absent = early, every recorded run). `late` (2026-10-26, opt-in) builds
-    # no fusion block / adapter / MPC head: MHCAC reads each view on its own and
-    # `late_view_pool` pools the logits per finding (mhcac/late_view_pool.py). It
-    # needs multi_view: true and lambda_mpc = lambda_view_consistency = 0, set in
-    # the phase blocks. late_anchor_weight (0.5): loss = 0.5 CE(pooled) + 0.5 CE(anchor).
-    # Plan: docs/handoff/PLAN-2026-10-26-late-view-fusion.md.
+    # Removed 2026-11-27 (failed pilots, refused if set): detach_aux, mode
+    # (late / tokens), late_*. Records: CLAUDE.md and docs/handoff/.
   data:
     study_sampling: true
     anchor_priority: [PA, AP, lateral]
@@ -1030,7 +1020,7 @@ run:
       init_from: {phase: phase1a}
       trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias,
                   shared_visual_projector, ln_vision, stream_adapters, view_fusion,
-                  mpc_heads, late_view_pool]
+                  mpc_heads]
       # Paper: "progressively unfreeze the MHCAC module while gradually freezing
       # the META-Former". Formula not given; implemented as LR x (0 -> 1) for
       # MHCAC and x (1 -> 0) for META-Former over the first 10% of the phase's
@@ -1092,7 +1082,7 @@ run:
       unfreeze_encoder_blocks: true
       trainable: [mhcac, query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias,
                   shared_visual_projector, ln_vision, visual_encoder.projector,
-                  stream_adapters, view_fusion, mpc_heads, late_view_pool]
+                  stream_adapters, view_fusion, mpc_heads]
       itc_gate:
         every_epoch: true     # logged, never stops 1c
         pairs: 256
@@ -1152,87 +1142,3 @@ run:
         selection_metric: macro_recall
         save_predictions: true
         test_splits: [test]
-    # -------------------------------------------------------------------------
-    # phase1q -- opt-in, NOT in scripts/run_stage1_phases.sh's chain (2026-10-15,
-    # soft-token collapse fix; docs/handoff/PLAN-2026-10-15-qformer-refit.md).
-    # Re-fits ONLY the META-Former on a finished Stage-1 checkpoint. Everything
-    # else -- the encoders including the blocks 1c unfroze, StreamAdapters, view
-    # fusion, the shared projector, ln_vision, MHCAC -- is loaded from it and
-    # frozen, so MHCAC, the cutpoints and every Stage-1 number stay that
-    # checkpoint's. The Q-Former side is NOT loaded (init_from.skip) and starts
-    # from BLIP-2's pretrained weights, as in 1a. Name the checkpoint on the
-    # command line: run.phases.phase1q.init_from.path=<checkpoint_best.pth>.
-    # Differs from 1a in: LayerNorm per stream on the Q-Former's input
-    # (qformer_input_norm), the query-diversity penalty, no ITM (at chance all of
-    # 1a), multi-view tokens exactly as Stage-2 records see them (view fusion
-    # held in eval mode), no Q-Former dropout and no feature masking (so the
-    # training forward of the queries is the eval one), no feature cache, 2 epochs.
-    # ⚠ Its checkpoints lack the 1c-unfrozen encoder blocks (no phase lists them
-    # in `trainable`): use it ONLY through scripts/merge_qformer_refit.py, which
-    # writes the 1c checkpoint with the Q-Former side replaced.
-    phase1q:
-      description: META-Former refit on a frozen, finished Stage-1 checkpoint
-      epochs: 2
-      init_from:
-        path: null
-        skip: [query_tokens, Qformer, vision_proj, text_proj, itm_head, temp, siglip_logit_scale, siglip_bias]
-        # lambda_mpc 0 here -> no MPC heads are built; the checkpoint's are not
-        # loaded, and merge_qformer_refit.py keeps them in the merged file.
-        ignore: [mpc_heads]
-      trainable: [query_tokens, Qformer, vision_proj, text_proj, temp, siglip_logit_scale, siglip_bias,
-                  qformer_input_norm]
-      itc_gate:
-        every_epoch: true     # logged, never stops 1q
-        pairs: 256
-        min_delta: 0.10
-      model:
-        multi_view: true
-        qformer_input_norm: per_stream
-        eval_mode_modules: [view_fusion]
-        # The diversity term must score the query states Stage 2 receives. The first
-        # refit (2026-10-15) ran with BERT's dropout 0.1 and the model learned to make
-        # the dropout noise 3.9x the image-dependent part: PR ~30 in training, 2.32 in
-        # eval mode. Both training-only noise sources are off here, and the model
-        # refuses lambda_query_diversity > 0 without these two lines.
-        qformer_dropout: 0.0
-        feature_mask_ratio: 0.0
-        gradcache_chunk_size: 32
-        loss:
-          lambda_itc: 1.0
-          lambda_itm: 0.0
-          lambda_lm: 1.0
-          lambda_query_diversity: 1.0
-          lambda_cls: 0.0
-          lambda_teacher_cls: 0.0
-          lambda_distill: 0.0
-          lambda_mhcac_contrastive: 0.0
-          lambda_orthogonality: 0.0
-          lambda_sparsity: 0.0
-          lambda_mpc: 0.0
-          lambda_view_consistency: 0.0
-      datasets:
-        mimic_cxr:
-          vis_processor:
-            train:
-              augmentation:
-                enabled: false   # Stage-2 val/test records come from clean images
-      run:
-        feature_cache_dir: null  # the encoders run: the 1c weights are in no cache
-        # Image batches of 128 studies (three encoders' inputs + the auxiliary view,
-        # ~0.9 GB each) x 8 workers x prefetch 2 exhausted the 30 GB host on
-        # 2026-10-15 (kernel OOM killer, 1 min in). 4 workers hold ~8 batches.
-        num_workers: 4
-        batch_size_train: 128
-        batch_size_eval: 32
-        accum_grad_iters: 1
-        init_lr: 1.0e-4
-        init_lr_q: 1.0e-4
-        init_lr_cls: 1.0e-4
-        min_lr: 1.0e-5
-        warmup_lr: 1.0e-6
-        warmup_steps: 500
-        eval_start_epoch: 0
-        early_stop_patience: 0
-        selection_metric: loss
-        save_predictions: false
-        test_splits: []

@@ -40,8 +40,7 @@ class Stage1Context:
         default_factory=lambda: MappingProxyType({})
     )
     # ``KEY=VALUE`` overrides applied to the Stage-1 YAML when the model is built
-    # (``--stage1-options``, 2026-10-15): the META-Former refit's checkpoint needs
-    # ``model.qformer_input_norm=per_stream``. Empty for every earlier run.
+    # (``--stage1-options``, 2026-10-15). Empty for every recorded run.
     config_options: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:

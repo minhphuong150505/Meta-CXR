@@ -30,7 +30,7 @@ chừng sau khi đã tải 4 GB.
 
 ## Calls / Called by
 Gọi: `torch` (lazy).
-Được gọi: `model/pretrained_medgemma/findings_loader.py:24`.
+Được gọi: `model/pretrained_medgemma/findings_loader.py:24` (đã xóa 2026-11-27).
 
 ## Side effects
 Không.
@@ -39,7 +39,7 @@ Không.
 4-bit không dùng được → `QuantizationUnavailable`.
 
 ## Related tests
-`tests/test_pretrained_findings.py`
+`tests/test_pretrained_findings.py` (đã xóa 2026-11-27)
 
 ## Developer notes
 ⚠ Chỗ duy nhất còn hardcode GPU 0 trong repo là `inference.py:312`

@@ -22,7 +22,7 @@ def test_train_seed_enters_the_cache_identity_only_for_augmented_train_records(t
 
     def fp(split, seed, clean=False):
         return fig9.stage1_cohort_fingerprint(
-            context, tmp_path, split, None, "argmax", fig9.FINDING_TOKENS_OFF, clean,
+            context, tmp_path, split, None, "argmax", clean,
             train_seed=seed,
         )
 

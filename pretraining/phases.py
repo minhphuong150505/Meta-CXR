@@ -100,7 +100,7 @@ class PhaseSpec:
     #: initialisation (BLIP-2's pretrained Q-Former for the 2026-10-15 refit).
     init_skip: tuple[str, ...] = ()
     #: Prefixes of modules the init checkpoint has and this phase's model does NOT
-    #: build (phase1q: no MPC heads at lambda_mpc 0). Dropped, never loaded; a model
+    #: build (e.g. no MPC heads at lambda_mpc 0). Dropped, never loaded; a model
     #: that does build one is an error, so this cannot hide a real mismatch.
     init_ignore: tuple[str, ...] = ()
     transition: Transition | None = None

@@ -12,6 +12,16 @@ The working target is therefore: **Stage 1 with fusion ON must score better than
 fusion OFF** — same recipe, same budget, same test studies, paired bootstrap,
 three-class protocol (D-023), on the test split of 3,269 studies.
 
+## ⚠ Status since 2026-11-27 (D-029): main pipeline = OFF + residual lateral R1
+
+The user chose OFF (`run_20261024_nomv`) + the residual lateral expert R1 (`scripts/residual_stack.py`) as the
+main pipeline. The early-fusion ON code (ViewFusion, StreamAdapters, MPC, view consistency) is KEPT. The code
+of the failed variants is REMOVED and their config keys are refused (`reject_removed_experiment_keys`):
+late fusion (LF / LD / AH, `view_fusion.mode: late`, `late_*`, `mhcac/late_view_pool.py`), tokens fusion (TK,
+`mode: tokens`, MHCAC `aux_view_tokens`), the EVOKE flags (`detach_aux`, `mpc_temperature`), and the
+`biovil_prior_*` probe scripts. Re-trying one of them means restoring it from git history, which is a new change
+that needs the user's approval like any other. Their results below stay as evidence.
+
 ## Rule 1 — confirm every change with the user first
 
 Before ANY change aimed at this goal — code, YAML, loss weights, recipe, phase

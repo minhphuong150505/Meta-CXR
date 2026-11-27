@@ -103,10 +103,10 @@ class TestFingerprint(unittest.TestCase):
         plain = Stage1Context(run_name="r")
         self.assertEqual(plain.config_options, ())
         self.assertNotIn("config_options", plain.fingerprint_payload())
-        refit = Stage1Context(run_name="r", config_options=["model.qformer_input_norm=per_stream"])
-        self.assertEqual(refit.config_options, ("model.qformer_input_norm=per_stream",))
+        refit = Stage1Context(run_name="r", config_options=["model.mhcac.num_common_tokens=14"])
+        self.assertEqual(refit.config_options, ("model.mhcac.num_common_tokens=14",))
         self.assertEqual(refit.fingerprint_payload()["config_options"],
-                         ["model.qformer_input_norm=per_stream"])
+                         ["model.mhcac.num_common_tokens=14"])
 
     def test_config_options_must_be_key_value(self):
         for bad in (["per_stream"], ["=per_stream"]):

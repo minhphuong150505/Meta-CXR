@@ -12,7 +12,7 @@ def test_cache_identity_changes_only_for_clean_train_records(tmp_path):
 
     def fp(split, clean):
         return fig9.stage1_cohort_fingerprint(
-            context, tmp_path, split, None, "argmax", fig9.FINDING_TOKENS_OFF, clean
+            context, tmp_path, split, None, "argmax", clean
         )
 
     default_id, default_payload = fp("train", False)
@@ -22,7 +22,7 @@ def test_cache_identity_changes_only_for_clean_train_records(tmp_path):
     assert clean_payload["train_images"] == "clean"
     # the flag is absent from the positional default, so old call sites are unchanged
     assert default_id == fig9.stage1_cohort_fingerprint(
-        context, tmp_path, "train", None, "argmax", fig9.FINDING_TOKENS_OFF
+        context, tmp_path, "train", None, "argmax"
     )[0]
     for split in ("val", "test"):
         assert fp(split, False)[0] == fp(split, True)[0]
@@ -35,9 +35,9 @@ def test_stage1_options_enter_the_cache_identity_only_when_given(tmp_path):
 
     plain = Stage1Context(run_name="mimic_cxr_full_blip2", thresholds={})
     refit = Stage1Context(run_name="mimic_cxr_full_blip2", thresholds={},
-                          config_options=("model.qformer_input_norm=per_stream",))
+                          config_options=("model.mhcac.num_common_tokens=14",))
     a, pa = fig9.stage1_cohort_fingerprint(plain, tmp_path, "val", None, "argmax")
     b, pb = fig9.stage1_cohort_fingerprint(refit, tmp_path, "val", None, "argmax")
     assert a != b
     assert "stage1_options" not in pa
-    assert pb["stage1_options"] == ["model.qformer_input_norm=per_stream"]
+    assert pb["stage1_options"] == ["model.mhcac.num_common_tokens=14"]

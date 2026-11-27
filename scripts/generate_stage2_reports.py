@@ -106,22 +106,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="HF length_penalty, used only with --num-beams > 1. "
                              "0 = unset (HF default 1.0). 2.0 is the measured "
                              "operating point.")
-    # Sampled candidates for minimum-Bayes-risk selection (2026-10-14). 0 = off:
-    # one deterministic decode per study, which is what every recorded number
-    # used. On, the output is candidates_<split>.jsonl with NO "generated" key,
-    # so a scorer cannot mistake a random sample for the decode.
-    parser.add_argument("--num-samples", type=int, default=0,
-                        help="Sample this many reports per study and write them to "
-                             "candidates_<split>.jsonl for scripts/mbr_select_stage2.py. "
-                             "0 = off (default).")
-    parser.add_argument("--temperature", type=float, default=0.7,
-                        help="Sampling temperature (--num-samples only).")
-    parser.add_argument("--top-p", type=float, default=0.95,
-                        help="Nucleus filter (--num-samples only). 1.0 = off.")
-    parser.add_argument("--top-k", type=int, default=0,
-                        help="Top-k filter (--num-samples only). 0 = off; MedGemma's "
-                             "generation_config sets none, so it is always passed.")
-
     native = parser.add_argument_group("medgemma_direct record source")
     native.add_argument("--manifest", type=Path, default=None)
     native.add_argument("--image-root", type=Path, default=None)
@@ -137,10 +121,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     stage1.add_argument("--stage1-config", type=Path, default=None)
     stage1.add_argument("--stage1-checkpoint", type=Path, default=None)
     stage1.add_argument("--stage1-options", nargs="*", default=[], metavar="KEY=VALUE",
-                        help="Overrides for the Stage-1 YAML when the model is built, e.g. "
-                             "model.qformer_input_norm=per_stream for a META-Former refit "
-                             "checkpoint (scripts/merge_qformer_refit.py). Enters the "
-                             "Stage-1 cache identity only when given.")
+                        help="Overrides for the Stage-1 YAML when the model is built "
+                             "(KEY=VALUE). Enters the Stage-1 cache identity only when given.")
     stage1.add_argument("--threshold-path", type=Path, default=None)
     stage1.add_argument("--num-workers", type=int, default=4)
     stage1.add_argument("--reports-root", type=Path, default=None,
@@ -159,31 +141,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "--threshold-path from calibrate_thresholds.py --rule "
                              "cutpoints). "
                              "Changing this changes the Stage-1 cache identity.")
-    stage1.add_argument("--finding-tokens", default="off",
-                        choices=("off", "q_only"),
-                        help="EXPERIMENTAL, default off. Read Stage-1's per-finding "
-                             "three-class probabilities through 13 learnable tokens. "
-                             "Must match what the adapter was TRAINED with; "
-                             "finding_tokens.pt is required and its mode is checked.")
-    stage1.add_argument("--finding-feature-ablation", default=None,
-                        choices=("zero", "shuffle_within", "permute_across"),
-                        help="Inference-only intervention on the finding-token "
-                             "features, to test whether the model uses them. ⚠ "
-                             "Out of distribution: a mechanism probe, never a "
-                             "substitute for the trained q_only control arm.")
-    stage1.add_argument("--soft-token-ablation", default=None, choices=("permute_across",),
-                        help="Inference-only: give every study another study's 32 soft "
-                             "tokens (a derangement), keeping its own cues and context, to "
-                             "measure how much the adapter reads the image channel. ⚠ Out "
-                             "of distribution: a mechanism probe, not a control arm.")
-    stage1.add_argument("--eval-cues", default="predicted", choices=("predicted", "oracle"),
-                        help="predicted (default): the prompt's P/N/U cues are MHCAC's, by "
-                             "--cue-rule. oracle: inference-only probe, every reportable "
-                             "finding's cue is replaced by its TRUE CheXpert class (the "
-                             "D-018 mapping that --train-cues oracle_mix trains on). ⚠ The "
-                             "true class comes from the reference report, so this is a "
-                             "label-leaking upper bound that asks whether the adapter reads "
-                             "its cues, never a reportable result.")
     stage1.add_argument("--cue-override", type=Path, default=None,
                         help="2026-11-07 (opt-in): <prefix>_val.npz from scripts/r1_stage2_cues.py. "
                              "Recomputes the P/N/U cues of PL studies from each record's own logits with "
@@ -207,9 +164,6 @@ SPLIT_ALIASES = {"val": ("val", "validate"), "test": ("test",)}
 #: the heavy module can be imported.
 SOFT_TOKEN_IMAGE_MODES = frozenset({"qformer", "native_qformer"})
 
-#: Mirrored for the same reason: checked before the heavy import.
-FINDING_TOKENS_OFF = "off"
-
 
 def validate_invocation(args: argparse.Namespace, mode) -> None:
     """Reject impossible combinations before anything expensive is imported."""
@@ -217,20 +171,6 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
         raise SystemExit("--num-beams must be >= 1")
     if getattr(args, "length_penalty", 0.0) and getattr(args, "num_beams", 1) == 1:
         raise SystemExit("--length-penalty only applies to beam search; add --num-beams > 1")
-    num_samples = getattr(args, "num_samples", 0)
-    if num_samples < 0:
-        raise SystemExit("--num-samples must be >= 0")
-    if num_samples:
-        if getattr(args, "num_beams", 1) > 1:
-            raise SystemExit("--num-samples samples; it cannot be combined with --num-beams > 1")
-        if getattr(args, "no_repeat_ngram_size", 0) or getattr(args, "repetition_penalty", 0.0):
-            raise SystemExit("--num-samples does not apply the anti-repetition flags; drop them")
-        if not args.temperature > 0:
-            raise SystemExit("--temperature must be > 0")
-        if not 0 < args.top_p <= 1:
-            raise SystemExit("--top-p must be in (0, 1]")
-        if args.top_k < 0:
-            raise SystemExit("--top-k must be >= 0")
     # Callers (tests included) may hand in a partial Namespace; absent means
     # the default, which is what every invocation before the flag existed got.
     args.prompt_style = getattr(args, "prompt_style", DEFAULT_PROMPT_STYLE)
@@ -274,53 +214,11 @@ def validate_invocation(args: argparse.Namespace, mode) -> None:
             if (prompt.visual_mode.image_mode != mode.image_mode
                     or not prompt.visual_mode.includes_structured):
                 raise SystemExit("abstaining --cue-rule requires a matching guided --prompt-config")
-    if args.finding_tokens != FINDING_TOKENS_OFF:
-        if not mode.requires_stage1:
-            raise SystemExit(
-                "--finding-tokens needs a Stage-1 pipeline mode: the features are "
-                "MHCAC's three-class probabilities"
-            )
-        if args.prompt_config is None:
-            raise SystemExit(
-                "--finding-tokens requires a guided --prompt-config; the "
-                "placeholders come from the v2 prompt builder"
-            )
-        # Same failure mode as a missing img_proj.pt, and just as silent: a
-        # freshly initialised encoder emits 13 meaningless tokens and the model
-        # writes fluent reports around them.
-        if args.adapter is None:
-            raise SystemExit(
-                "--finding-tokens has no zero-shot form: the encoder is trained "
-                "in Stage 2. Pass --adapter."
-            )
-        encoder = Path(args.adapter) / "finding_tokens.pt"
-        if not encoder.is_file():
-            raise SystemExit(
-                f"{encoder} is missing. This adapter was not trained with finding "
-                "tokens; generating with them would substitute a randomly "
-                "initialised projection at 13 prompt positions."
-            )
-    if args.finding_feature_ablation and args.finding_tokens == FINDING_TOKENS_OFF:
-        raise SystemExit("--finding-feature-ablation needs --finding-tokens")
-    if args.soft_token_ablation and mode.image_mode not in SOFT_TOKEN_IMAGE_MODES:
-        raise SystemExit("--soft-token-ablation needs a soft-token pipeline mode")
-    if getattr(args, "eval_cues", "predicted") == "oracle":
-        if not mode.uses_mhcac_prompt:
-            raise SystemExit("--eval-cues oracle needs a pipeline mode with MHCAC cues in the prompt")
-        if args.cue_rule == "none":
-            raise SystemExit("--eval-cues oracle replaces the cues; --cue-rule none has none to replace")
-        if args.soft_token_ablation:
-            raise SystemExit(
-                "--eval-cues oracle and --soft-token-ablation are two interventions; "
-                "run them as separate arms against one control"
-            )
     if getattr(args, "cue_override", None) is not None:
         if not mode.uses_mhcac_prompt:
             raise SystemExit("--cue-override needs a pipeline mode with MHCAC cues in the prompt")
         if args.cue_rule != "cutpoints":
             raise SystemExit("--cue-override replaces cutpoint cues; pass --cue-rule cutpoints")
-        if getattr(args, "eval_cues", "predicted") == "oracle" or args.soft_token_ablation:
-            raise SystemExit("--cue-override is its own intervention; run it as a separate arm")
     if not mode.requires_stage1:
         if args.manifest is None or args.image_root is None:
             raise SystemExit(f"{mode.name} needs --manifest and --image-root")
@@ -365,15 +263,6 @@ def sample_key_for(image_path: str | Path) -> str:
     which carries no ``dicom_id`` column of its own.
     """
     return blake2b(Path(str(image_path)).stem.encode(), digest_size=12).hexdigest()
-
-
-def study_seed(seed: int, sample_key: str) -> int:
-    """Per-study sampling seed: depends on the study, not on its position.
-
-    So one study's candidates are the same whether it is generated alone, in a
-    500-study subset or in the whole split.
-    """
-    return (int(seed) * 1_000_003 + int(sample_key[:8], 16)) % (2**31)
 
 
 def native_records(args: argparse.Namespace, limit: int) -> list[dict]:
@@ -437,22 +326,10 @@ def stage1_records(args: argparse.Namespace) -> list[dict]:
     # "all" pass; --limit is applied afterwards, on the records themselves.
     records = fig9.build_stage1_records(
         context, args.checkpoint_root, cache_dir, args.split, None, args.num_workers,
-        cue_rule=args.cue_rule, finding_tokens=args.finding_tokens,
+        cue_rule=args.cue_rule,
     )
     for record in records:
         record["view_position"] = None
-    if args.finding_feature_ablation == "permute_across":
-        records = permute_finding_features_across_studies(records, args.seed)
-    if args.soft_token_ablation == "permute_across":
-        records = permute_soft_tokens_across_studies(records, args.seed)
-    if getattr(args, "eval_cues", "predicted") == "oracle":
-        from local_config import CHEXPERT_CSV
-
-        args.eval_cue_counts = apply_oracle_cues(
-            records, split_csv=fig9._split_csv_for(args.split), chexpert_csv=CHEXPERT_CSV,
-            findings=fig9.ABNORMALITIES_14, seed=args.seed,
-        )
-        print(f"[cues] {args.split} oracle: {args.eval_cue_counts}", flush=True)
     if args.prompt_style == fig9.PROMPT_STYLE_PAPER_CONTEXT:
         try:
             from training.dataio.study_context import attach_study_context
@@ -465,68 +342,6 @@ def stage1_records(args: argparse.Namespace) -> list[dict]:
                                       metadata_csv=METADATA_CSV, reports_root=reports_root)
         print(f"[context] {args.split}: {counts}", flush=True)
     return records
-
-
-def permute_finding_features_across_studies(
-    records: list[dict], seed: int
-) -> list[dict]:
-    """Give each study another study's Stage-1 numbers, keeping its own image.
-
-    A derangement, so no study keeps its own -- the point is to break the
-    image/prediction pairing entirely. Applied to the record BEFORE any feature
-    is computed, because unlike ``zero`` and ``shuffle_within`` this needs a
-    second study. ⚠ Out of distribution; a mechanism probe, not a control arm.
-    """
-    n = len(records)
-    if n < 2:
-        return records
-    shift = 1 + random.Random(seed).randrange(n - 1)
-    donors = [records[(i + shift) % n] for i in range(n)]
-    out = []
-    for record, donor in zip(records, donors, strict=True):
-        copied = dict(record)
-        copied["class_logits"] = donor.get("class_logits")
-        out.append(copied)
-    return out
-
-
-def permute_soft_tokens_across_studies(records: list[dict], seed: int) -> list[dict]:
-    """Give each study another study's 32 soft tokens; its cues and context stay its own.
-
-    The same derangement as :func:`permute_finding_features_across_studies`, on
-    ``qformer_embs``. If the reports barely change, the adapter does not read the image
-    channel. ⚠ Out of distribution; a mechanism probe, not a control arm.
-    """
-    n = len(records)
-    if n < 2:
-        return records
-    shift = 1 + random.Random(seed).randrange(n - 1)
-    out = []
-    for i, record in enumerate(records):
-        copied = dict(record)
-        copied["qformer_embs"] = records[(i + shift) % n]["qformer_embs"]
-        out.append(copied)
-    return out
-
-
-def apply_oracle_cues(
-    records: list[dict], *, split_csv, chexpert_csv, findings: Sequence[str], seed: int
-) -> dict[str, int]:
-    """Replace every record's cues by the true CheXpert classes; return counts only.
-
-    The training helper with ``model_share=0``: every finding with CheXpert
-    information takes its true class, a study with none keeps MHCAC's, and
-    No Finding is skipped, exactly as ``--train-cues oracle_mix`` builds its
-    training cues. Runs after the Stage-1 cache, so the cache identity is unchanged.
-    """
-    try:
-        from training.dataio.oracle_cues import mix_oracle_cues, true_label_codes
-    except ImportError:  # script layout
-        from dataio.oracle_cues import mix_oracle_cues, true_label_codes
-
-    codes = true_label_codes(records, split_csv=split_csv, chexpert_csv=chexpert_csv,
-                             findings=findings)
-    return mix_oracle_cues(records, codes, findings, model_share=0.0, seed=seed)
 
 
 def apply_cue_override(records: list[dict], path: Path, findings: Sequence[str]) -> dict[str, int | float]:
@@ -628,27 +443,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         train_adapter=False,
         quantize_4bit=False,
         prompt_config=prompt_config,
-        finding_tokens=args.finding_tokens,
         legacy_prompt_style=args.prompt_style,
     )
     # validate_invocation() has already established that img_proj.pt is there.
     if mode.image_mode in SOFT_TOKEN_IMAGE_MODES:
         llm.load_img_proj_if_present(args.adapter)
         print(f"[gen] img_proj loaded from {args.adapter}/img_proj.pt", flush=True)
-    if args.finding_tokens != FINDING_TOKENS_OFF:
-        llm.load_finding_encoder_if_present(args.adapter)
-        # `permute_across` was already applied to the records themselves.
-        llm.finding_feature_ablation = (
-            args.finding_feature_ablation
-            if args.finding_feature_ablation != "permute_across"
-            else None
-        )
-        print(
-            f"[gen] finding tokens={args.finding_tokens} "
-            f"ablation={args.finding_feature_ablation or 'none'}",
-            flush=True,
-        )
-
     # Inference only: nothing trains, so freeze everything before asserting.
     # Without this the assert fires a FALSE POSITIVE -- with no adapter applied,
     # no LoRA has narrowed anything, so every parameter still carries the base
@@ -660,27 +460,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     llm.model.eval()
     llm.assert_vision_tower_frozen()
 
-    sampling = args.num_samples > 0
-    path = output_dir / f"{'candidates' if sampling else 'generated'}_{args.split}.jsonl"
+    path = output_dir / f"generated_{args.split}.jsonl"
     started, failures = time.time(), 0
     with path.open("w", encoding="utf-8") as handle:
         for index, record in enumerate(records):
             try:
-                if sampling:
-                    torch.manual_seed(study_seed(args.seed, record["sample_key"]))
-                    output = {"candidates": llm.generate_candidates(
-                        record, args.prompt_style, args.max_new_tokens,
-                        num_samples=args.num_samples, temperature=args.temperature,
-                        top_p=args.top_p, top_k=args.top_k,
-                    )}
-                else:
-                    output = {"generated": llm.generate(
-                        record, args.prompt_style, args.max_new_tokens,
-                        no_repeat_ngram_size=args.no_repeat_ngram_size or None,
-                        repetition_penalty=args.repetition_penalty or None,
-                        num_beams=args.num_beams,
-                        length_penalty=args.length_penalty or None,
-                    )}
+                output = {"generated": llm.generate(
+                    record, args.prompt_style, args.max_new_tokens,
+                    no_repeat_ngram_size=args.no_repeat_ngram_size or None,
+                    repetition_penalty=args.repetition_penalty or None,
+                    num_beams=args.num_beams,
+                    length_penalty=args.length_penalty or None,
+                )}
             except Exception as exc:  # one bad study must not lose the run
                 failures += 1
                 print(f"[gen] study {index} failed: {type(exc).__name__}", flush=True)
@@ -713,11 +504,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             prompt_config.visual_mode.value if prompt_config else None
         ),
         "restrict_to": str(args.restrict_to) if args.restrict_to else None,
-        "finding_tokens": args.finding_tokens,
-        "finding_feature_ablation": args.finding_feature_ablation,
-        "soft_token_ablation": args.soft_token_ablation,
-        "eval_cues": args.eval_cues if mode.requires_stage1 else None,
-        "eval_cue_counts": getattr(args, "eval_cue_counts", None),
         "cue_override": str(args.cue_override) if getattr(args, "cue_override", None) else None,
         "cue_override_counts": getattr(args, "cue_override_counts", None),
         "stage1_options": list(args.stage1_options or []) or None,
@@ -733,10 +519,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "repetition_penalty": args.repetition_penalty or None,
         "num_beams": args.num_beams,
         "length_penalty": (args.length_penalty or None) if args.num_beams > 1 else None,
-        "num_samples": args.num_samples or None,
-        "temperature": args.temperature if sampling else None,
-        "top_p": args.top_p if sampling else None,
-        "top_k": args.top_k if sampling else None,
         "output_file": path.name,
         "seed": args.seed,
         "wall_seconds": round(time.time() - started, 1),

@@ -40,28 +40,12 @@ Chạy plain với 1 GPU. `init_distributed_mode`
 
 Chạy **trực tiếp bằng python**, không qua torchrun — Stage 2 là single-process.
 
-### `medgemma_inference/run_pretrained_findings.py`
+### Đã xóa 2026-11-27
 
-| | |
-|---|---|
-| Lệnh | `python -m medgemma_inference.run_pretrained_findings --config <yaml> --split validation [--max-samples N]` |
-| Pipeline | [P8](PIPELINES.md#p8--external-medgemma-inference-baseline) |
-| Status | ✅ PRIMARY (baseline) |
-| Doc | [`medgemma_inference/run_pretrained_findings.py.doc.md`](../medgemma_inference/run_pretrained_findings.py.doc.md) |
-
-Inference-only. **Không** gọi được qua `run_medgemma_qlora.py` — `resolve_pipeline_modes`
-chủ động từ chối.
-
-### `inference.py`
-
-| | |
-|---|---|
-| Lệnh | `bash inference.sh` hoặc `python inference.py --cfg-path <yaml>` |
-| Pipeline | [P9](PIPELINES.md#p9--gradio-demo-vicuna-7b) |
-| Status | ✅ PRIMARY (demo) — kiến trúc legacy, xem [D-002](DECISIONS.md#d-002--đường-vicuna-7b-legacy-vẫn-là-demo-active) |
-| Doc | [`inference.py.doc.md`](../inference.py.doc.md) |
-
-Gradio ở `:7860`. Cần Java cho CheXpert labeler.
+`medgemma_inference/run_pretrained_findings.py` (đã xóa 2026-11-27) (P8, baseline checkpoint ngoài) và
+`inference.py` / `inference.sh` / Docker (P9, demo Gradio Vicuna-7B) đã bị xóa
+trong đợt dọn repo về pipeline chính (OFF + residual R1). Xem git history và
+[DECISIONS.md](DECISIONS.md#d-029--dọn-repo-về-pipeline-chính-off--residual-r1-2026-11-27) D-029.
 
 ### `preporcessing/preprocess_mimic_cxr.py`
 
@@ -96,7 +80,7 @@ CPU-only, không đọc ảnh.
 
 | Entrypoint | Vai trò | Cảnh báo |
 |---|---|---|
-| `scripts/run_prompt_ablation.py` | [P6](PIPELINES.md#p6--prompt-ablation-dry-run) — dry run, không load model | Không sinh metric model |
+| `scripts/run_prompt_ablation.py` (đã xóa 2026-11-27) | [P6](PIPELINES.md#p6--prompt-ablation-dry-run) — dry run, không load model | Không sinh metric model |
 | `scripts/export_stage2_prompt_samples.py` | Render prompt ra JSONL để debug | ⚠ **Có chứa findings text** — `--output` phải ở nơi riêng tư |
 | `scripts/prompt_length_statistics.py` | Thống kê độ dài prompt/target | Không có tokenizer MedGemma → fallback whitespace, đánh dấu `"approximate": true` |
 | `scripts/audit_temporal_targets.py` | Đo ngôn ngữ so sánh thời gian trong target khi input không có prior | Bằng chứng để chọn `temporal_target_policy` |
@@ -129,24 +113,15 @@ còn code nào upload dữ liệu ra ngoài máy train — đó chính là lý d
 cần thiết. Nếu sau này thêm lại bất kỳ đường upload nào, phải dựng lại chốt chặn
 tương đương trước.
 
-### Root shell
+### Root shell — đã xóa 2026-11-27
 
-| Script | Vai trò |
-|---|---|
-| `inference.sh` | Chạy `inference.py` với config demo |
-| `build_container.sh` | Build Docker image |
-| `run_container.sh` | Chạy container với GPU + Gradio `:7860` |
+`inference.sh`, `build_container.sh`, `run_container.sh` đã xóa theo D-029.
 
 ---
 
-## Docker
+## Docker — đã xóa 2026-11-27
 
-```dockerfile
-ENTRYPOINT ["/bin/bash", "inference.sh"]     # Dockerfile:5
-```
-
-→ Container build ra chạy **đường demo Vicuna** ([P9](PIPELINES.md#p9--gradio-demo-vicuna-7b)),
-không phải Stage 1 hay Stage 2.
+`Dockerfile` (chạy demo Vicuna P9) đã xóa theo D-029.
 
 ---
 

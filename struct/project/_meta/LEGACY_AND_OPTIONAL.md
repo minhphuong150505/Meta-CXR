@@ -131,10 +131,7 @@ Nhóm riêng vì có **mâu thuẫn giữa code và documentation**, và
 
 | Path | LOC | Evidence |
 |---|---|---|
-| `utils/prompter.py` | 51 | Zero import. `docs/stage2_prompt_audit.md:20` ghi "dùng bởi inference.py" — **grep không xác nhận**. Class `Prompter` đọc `data/templates/{name}.json`; file template thật nằm ở `model/lavis/data/templates/vicuna.json`, đường dẫn không khớp. |
-| `utils/callbacks.py` | 75 | Zero import. Docstring ghi mượn từ text-generation-webui. |
-| `utils/datacollator.py` | 107 | Zero import. `MyDataCollatorForSeq2Seq`. |
-| `utils/split_emb.py` | 22 | **Chạy ngay khi import** — không có `if __name__` guard. Hardcode `pretraining/embs/2025_05_20_…pkl`; thư mục `pretraining/embs/` bị `.gitignore` và **không tồn tại** trong working tree. |
+| `utils/` (`prompter.py`, `callbacks.py`, `datacollator.py`, `split_emb.py`) | — | **ĐÃ XÓA 2026-11-27** (D-029). Zero import; `split_emb.py` từng chạy ngay khi import. |
 
 **Nguyên tắc áp dụng: code thắng documentation.** Documentation sẽ ghi trung thực
 "không có caller", không suy diễn rằng `inference.py` dùng chúng.
@@ -144,11 +141,9 @@ Nhóm riêng vì có **mâu thuẫn giữa code và documentation**, và
 
 ### `threshold.json`
 
-Status: **⚠ POTENTIALLY_UNUSED**, chưa có user confirmation.
+Status: **ĐÃ XÓA 2026-11-27** (D-029). Ghi chú cũ giữ lại:
 
 - `rg 'threshold.json' --glob '*.py'` không tìm thấy code nào hardcode path này.
-- `inference.py:get_response` gọi `classify_abnormalities(logits)` mà không truyền
-  `thresholds`, nên demo hiện tại dùng argmax.
 - Stage 2 mặc định cũng dùng argmax; chỉ đọc file được chọn tường minh bằng
   `--threshold-path`.
 - Comment `fig9:192-194` cảnh báo threshold lịch sử không có provenance
@@ -238,12 +233,7 @@ Nó validate được `evaluation.bootstrap.samples`, `evaluation.clinical_metri
 
 | Component | Cơ chế chặn |
 |---|---|
-| `model/pretrained_medgemma/impression_reporter.py` | Runtime guard. Module cố ý **trơ**: import nó không tải checkpoint, không dựng processor, không cấp VRAM, không import transformers. |
-| `pipeline_modes.PRETRAINED_MEDGEMMA_IMPRESSION_PHASE2` | Khai báo nhưng nằm trong `EXTERNAL_INFERENCE_MODES` → `resolve_pipeline_modes` raise |
-| `pipeline_modes.PRETRAINED_MEDGEMMA_FINDINGS_FIRST` | Cùng cơ chế — chỉ chạy qua `medgemma_inference/`, không qua CLI fine-tuning |
-
-Đây là **thiết kế**, không phải hỏng. Lý do: Phase 2 Impression chưa được duyệt
-ngân sách, và một run inference ngoại lai không được lọt vào đường fine-tuning.
+(Trống từ 2026-11-27: `impression_reporter.py` và hai mode `PRETRAINED_MEDGEMMA_*` đã xóa cùng P8, D-029.)
 
 ---
 
@@ -255,17 +245,17 @@ Task documentation không sửa code. Ghi lại để quyết định sau.
 |---|---|---|
 | I1 | File `.pyc` được **git track** — build artifact Python 3.7/3.8 lọt vào repo dù `.gitignore` có `__pycache__/` | `biovil_t/__pycache__/` (11 file), `model/lavis/**/__pycache__/` (13 file) |
 | I2 | Freeze-list trỏ tới attribute không tồn tại (`aggregator`) | `runner_base.py:189` |
-| I3 | `utils/split_emb.py` thực thi lúc import, đường dẫn hardcode không tồn tại | `utils/split_emb.py:6` |
-| I4 | `device_map={"": 0}` ghim cứng GPU 0 | `inference.py:312` |
+| I3 | ✅ **Không còn** — `utils/` đã xóa 2026-11-27 | — |
+| I4 | ✅ **Không còn** — `inference.py` đã xóa 2026-11-27 | — |
 | I5 | Documentation nói `selection_metric: f1_positive_macro`, config thực tế là `macro_auprc` | `CLAUDE.md`, `README.md` vs `mimic_cxr_full.yaml:109` |
 | I6 | ✅ **Đã sửa 2026-08-13** — đổi tên `mimic_cxr_full_l4.yaml` → `mimic_cxr_full.yaml` | — |
 | I7 | ✅ **Không còn** — `cloud/run_stage2.sh` đã bị xóa cùng `cloud/` | — |
-| I8 | `docs/stage2_prompt_audit.md` nói `utils/prompter.py` được `inference.py` dùng — không có import | `docs/stage2_prompt_audit.md:20` |
+| I8 | ✅ **Không còn** — `docs/stage2_prompt_audit.md` và `utils/` đã xóa 2026-11-27 | — |
 | I9 | Typo tham số `num_commmon_tokens` (ba chữ m) trong API công khai của MHCAC | `mhcac/mhcac_12.py:208`, `blip2_qformer.py:347` |
 | I10 | `pandas 3.0` Copy-on-Write: `df[col].fillna(x, inplace=True)` âm thầm không làm gì | `ReportDataset.py:897` (trong `CheXpertDataset` — **không** nằm trên đường MIMIC-CXR) |
-| I11 | Demo gọi `demo.launch(share=True)`, tạo public Gradio share URL trong khi UI nhận ảnh X-quang credentialed | `inference.py:670` |
+| I11 | ✅ **Không còn** — `inference.py` đã xóa 2026-11-27 | — |
 | I12 | ✅ **Không còn** — `cloud/run_paper_assets.sh` đã bị xóa cùng `cloud/` | — |
-| I13 | Container demo chạy `--privileged`, mount writable toàn repo và cấp `--gpus all`; quyền rộng hơn nhu cầu UI | `run_container.sh:17-21` |
+| I13 | ✅ **Không còn** — `run_container.sh` đã xóa 2026-11-27 | — |
 | I14 | Comment `pyproject.toml` nói Stage 1/2 pin torch/transformers xung đột, nhưng lock hiện tại là additive: Stage 2 include Stage 1 | `pyproject.toml:13-16` vs `requirements-stage2.txt:3` |
 
 ---

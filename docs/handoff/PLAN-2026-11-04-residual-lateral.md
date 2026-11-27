@@ -922,3 +922,30 @@ OFF16 cũ (số báo cáo trùng hệt).
   Δ BERTScore ≥ −0,0038.
 - Không đạt: "không cải thiện"; nếu TB CheXbert < −0,0136: "có hại".
 - Báo đủ mọi chỉ số, nhóm PL riêng (mô tả), số ô cue đổi ở train/val. Test KHÔNG đọc.
+
+## Execution report — R1 vào giai đoạn 2, bước B (GPU 2026-11-08, `~/r1s2b_20261108/`; test KHÔNG đọc)
+
+Ghi lại 2026-11-27 từ các file điểm trên máy train (`score/s{16,17}_{all,pl}_{ce,paper}.json`).
+
+**Guard:** `off_agreement` 1,0 ở train và val; ô cue đổi: train 1.137 / 1.142 (ô khác cutpoint), val 220 ô trong 170 bản ghi;
+1.360 / 1.360 báo cáo mỗi arm, C và R cùng `sample_key` và reference. Val loss: C16 1,1783, R16 1,1770, C17 1,1829, R17 1,1815.
+Mô tả: C16 / C17 so với adapter OFF pilot cũ: 349 / 1.360 và 378 / 1.360 báo cáo trùng hệt (cohort_id đổi vì mtime YAML, như dự kiến).
+
+**R − C, val n = 1.360, beam 4 / lp 2, bootstrap ghép cặp 2.000:**
+
+| | seed 16 | seed 17 | TB hai seed |
+|---|---|---|---|
+| CheXbert micro F1-14 (quyết định) | +0,0011 [−0,0115; +0,0145] | +0,0065 [−0,0066; +0,0199] | **+0,0038** (cần > 0,0136) |
+| CheXbert macro F1-14 | +0,0001 [−0,0171; +0,0185] | +0,0141 [−0,0026; +0,0319] | +0,0071 |
+| CheXbert micro F1-5 | +0,0027 [−0,0164; +0,0220] | +0,0131 [−0,0057; +0,0327] | +0,0079 |
+| BERTScore (rào chắn) | −0,0001 [−0,0055; +0,0056] | +0,0000 [−0,0051; +0,0055] | −0,0000 (≥ −0,0038: đạt) |
+| ROUGE-L | +0,0007 | −0,0008 | ~0 |
+| BLEU-4 | +0,0017 | +0,0006 | +0,0012 |
+| CIDEr | −0,0054 | −0,0036 | −0,0045 |
+| Báo cáo trùng hệt | 382 | 405 | |
+
+Nhóm PL (n = 714, mô tả): CheXbert micro F1-14 −0,0008 / +0,0042; BERTScore +0,0055 / +0,0027; mọi CI chứa 0.
+
+**Kết luận theo quy tắc chốt trước: KHÔNG CẢI THIỆN.** TB CheXbert micro F1-14 +0,0038 dưới NB/√2 0,0136 và CI chứa 0 ở cả hai seed;
+không "có hại" (TB > −0,0136); rào chắn BERTScore đạt. Huấn luyện lại Stage 2 với cue R1 không cho lợi đo được ở ngân sách pilot,
+giống bước A. Không chạy full Stage 2, không đọc test.

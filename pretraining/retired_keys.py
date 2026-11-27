@@ -75,6 +75,41 @@ def reject_retired_model_keys(model_cfg) -> None:
             raise RetiredConfigKey(f"model.{section}.{key} {EXPLANATION}")
 
 
+#: Opt-in experiment knobs removed on 2026-11-27, when the residual-lateral R1
+#: pipeline became the main one. Every one failed its pre-declared pilot rule;
+#: the measurements stay in CLAUDE.md and docs/handoff/. ``None`` section = a key
+#: directly under ``model``.
+REMOVED_EXPERIMENT_MODEL_KEYS = (
+    ("view_fusion", "mode"),
+    ("view_fusion", "late_anchor_weight"),
+    ("view_fusion", "late_detach_aux"),
+    ("view_fusion", "late_aux_head"),
+    ("view_fusion", "detach_aux"),
+    ("loss", "mpc_temperature"),
+    ("loss", "lambda_query_diversity"),
+    ("mhcac", "asymmetric_loss"),
+    (None, "qformer_input_norm"),
+    (None, "qformer_dropout"),
+    (None, "eval_mode_modules"),
+)
+
+REMOVED_EXPERIMENT_EXPLANATION = (
+    "was removed on 2026-11-27 with the failed experiments it belonged to (late "
+    "/ tokens view fusion, EVOKE flags, asymmetric loss, the phase-1q Q-Former "
+    "refit). Delete the key; the results are recorded in CLAUDE.md and "
+    "docs/handoff/."
+)
+
+
+def reject_removed_experiment_keys(model_cfg) -> None:
+    """Raise if ``model_cfg`` still names a removed experiment knob."""
+    for section, key in REMOVED_EXPERIMENT_MODEL_KEYS:
+        block = model_cfg if section is None else _get(model_cfg, section)
+        if block is not None and _get(block, key) is not None:
+            name = key if section is None else f"{section}.{key}"
+            raise RetiredConfigKey(f"model.{name} {REMOVED_EXPERIMENT_EXPLANATION}")
+
+
 def reject_retired_run_keys(run_cfg) -> None:
     """Raise if ``run_cfg`` still carries a retired binary-label key."""
     for key in RETIRED_RUN_KEYS:

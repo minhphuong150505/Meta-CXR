@@ -31,7 +31,7 @@ artifact. Sau này truy được một kết quả sinh bằng prompt nào.
 
 ## Calls / Called by
 Gọi: `schemas`, `policies`, `templates`, `ontology`, `validation`. **Chỉ stdlib.**
-Được gọi: `fig9:147,928`; `scripts/run_prompt_ablation.py:31`,
+Được gọi: `fig9:147,928`; `scripts/run_prompt_ablation.py:31` (đã xóa 2026-11-27),
 `export_stage2_prompt_samples.py:29`, `prompt_length_statistics.py:24`;
 `tests/test_stage2_prompts.py:23`.
 
@@ -55,10 +55,7 @@ Không.
 
 `_structured_parts` trả [] với not_provided/abstained; visual parts, context và task instruction không đổi. Negative subset không vào `_normal_parts`; chỉ đủ 13 modeled negatives mới được tóm tắt. Trạng thái cue được kiểm tra ở PromptContext. Template identity tăng để phân biệt kết quả cũ.
 
-## 🧪 Finding tokens — 2026-09-10
+## Finding tokens — đã gỡ 2026-11-27 cùng nhánh finding token (D-029)
 
-`_visual_parts` emit `FINDING_TOKEN_HEADER` + `PartKind.FINDING_TOKENS` **sau**
-soft token và **trước** instruction, chỉ khi `context.finding_token_count` khác
-0. `budget_priority = 0` — không bao giờ bị truncation cắt. Decoder là causal
-nên vị trí đó là đủ để instruction và mọi token sinh ra nhìn thấy chúng; **không
-cần và không được** thêm attention mask riêng.
+`_visual_parts` không còn emit header/part finding token; `template_hash` gọi không có `finding_token_count`.
+

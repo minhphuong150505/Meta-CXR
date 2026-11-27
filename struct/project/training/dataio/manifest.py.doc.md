@@ -57,8 +57,8 @@ và reference, rồi ghi metric full-report, từng section và omission rate.
 
 Gọi: `pandas`, `training.stage2_utils.stable_fingerprint` (`:21`, dual-import shim).
 Được gọi: `run_medgemma_qlora.py:27` · `fig9:116,122` ·
-`medgemma_inference/run_pretrained_findings.py:33` ·
-`model/pretrained_medgemma/output_schema.py:15` ·
+`medgemma_inference/run_pretrained_findings.py:33` (đã xóa 2026-11-27) ·
+`model/pretrained_medgemma/output_schema.py:15` (đã xóa 2026-11-27) ·
 `dataio/validate_manifest.py:23,33` · `tests/test_manifest.py`, `test_section_metrics.py`
 
 ## Side effects

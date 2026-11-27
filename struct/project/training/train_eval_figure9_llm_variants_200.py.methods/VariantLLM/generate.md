@@ -67,10 +67,8 @@ nguyên văn của bài báo META-CXR — xem `build_instruction` trong
 [file doc](../../train_eval_figure9_llm_variants_200.py.doc.md).
 
 ## Tách thân hàm (2026-10-14)
-Thân hàm nằm ở `_generate_texts(..., sampling=None) -> list[str]`, dùng chung với
-[`generate_candidates`](generate_candidates.md). `generate` gọi nó với đúng các tham số
-cũ và trả `[0]`; khi `sampling is None` kwargs gửi cho `model.generate` giống từng khoá
-với trước (`tests/test_beam_generation.py::test_greedy_sends_no_sampling_kwargs`). Số hàng
-soft/finding token = `num_beams` khi beam, `num_return_sequences` khi greedy/sampling —
-đúng cách HF 4.53 nhân batch.
+Thân hàm nằm ở `_generate_texts(...) -> list[str]`; `generate` trả `[0]`. Đường lấy mẫu
+(`generate_candidates`, `sampling=`) đã gỡ 2026-11-27, kwargs greedy/beam không đổi
+(`tests/test_beam_generation.py::test_greedy_sends_no_sampling_kwargs`). Số hàng soft token =
+`num_beams` khi beam — đúng cách HF 4.53 nhân batch.
 

@@ -48,7 +48,7 @@ Không.
 `tests/test_stage2_prompts.py -k negative_policy`
 
 ## Developer notes
-Chín config `configs/prompt_ablation/P1..P9.yaml` chính là để đo tác động của các
+Chín config `configs/prompt_ablation/P1..P9.yaml` (đã xóa 2026-11-27) chính là để đo tác động của các
 policy này. Đổi mặc định nên có bằng chứng từ ablation.
 
 ## Source relationships

@@ -95,9 +95,9 @@ trực tiếp** — bỏ qua resolve mode, kiểm tra leakage và ràng buộc s
 ## Used by
 
 `scripts/evaluate_stage1.py`, `evaluate_stage2.py`, `evaluate_explanation.py`,
-`calibrate_thresholds.py` (→ `evaluation/`) · `medgemma_inference/run_pretrained_findings.py`
+`calibrate_thresholds.py` (→ `evaluation/`) · `medgemma_inference/run_pretrained_findings.py` (đã xóa 2026-11-27)
 (→ `dataio/manifest.py`, `stage2_utils.stable_fingerprint`) ·
-`model/pretrained_medgemma/output_schema.py` (→ `manifest.split_generated_report`) ·
+`model/pretrained_medgemma/output_schema.py` (đã xóa 2026-11-27) (→ `manifest.split_generated_report`) ·
 `model/lavis/tasks/image_text_pretrain.py:223,259` (→ `evaluation/`, import trễ)
 
 ## Execution flow

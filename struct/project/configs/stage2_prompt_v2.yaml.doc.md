@@ -32,7 +32,7 @@ metadata artifact — truy được kết quả về đúng cấu hình.
 
 ## Related documentation
 [`stage2/prompts/_index.md`](../stage2/prompts/_index.md) ·
-[`prompt_ablation/_index.md`](prompt_ablation/_index.md) ·
+`configs/prompt_ablation/` (đã xóa 2026-11-27) ·
 [ARCHITECTURE.md §4](../_meta/ARCHITECTURE.md#4-prompt-v2)
 
 ## Developer notes

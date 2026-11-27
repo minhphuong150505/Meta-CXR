@@ -279,11 +279,7 @@ def test_native_layouts_cover_medclip_swin():
 
 
 def test_qformer_and_mhcac_read_the_same_token_tensor():
-    """forward() hands the Q-Former its copy of shared.tokens and MHCAC shared itself.
-
-    The copy IS shared.tokens unless model.qformer_input_norm is set (2026-10-15,
-    vision_encoders/qformer_inputs.py), which normalises the Q-Former's copy only.
-    """
+    """forward() hands the Q-Former shared.tokens and MHCAC shared itself."""
     source = (REPO / "model/lavis/models/blip2_models/blip2_qformer.py").read_text()
     body = source[source.index("    def forward(self, samples):"):]
     body = body[: body.index("    @torch.no_grad()")]
@@ -294,7 +290,7 @@ def test_qformer_and_mhcac_read_the_same_token_tensor():
     assert body.count("self.mhcac(\n                    shared_visual,") >= 1
     helper = source[source.index("    def _qformer_tokens(self, shared):"):]
     helper = helper[: helper.index("    def _encode_image_streams")]
-    assert "if norm is None:\n            return shared.tokens" in helper
+    assert "return shared.tokens" in helper
 
 
 def test_phase1a_does_not_run_mhcac():
